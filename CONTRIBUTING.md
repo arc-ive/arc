@@ -92,13 +92,17 @@ final
 
 ## 5. Main Branch
 
-`main` is the protected integration branch.
+`main` is the primary integration branch.
 
 Normal development must not occur directly on `main`.
 
 Changes should reach `main` through a Pull Request.
 
-Force-pushing to `main` is prohibited during normal development.
+The repository has a configured branch-protection policy for `main`. Enforcement of that policy currently depends on GitHub repository and organization plan capabilities.
+
+Force-pushing to `main` is prohibited by team policy.
+
+Deleting `main` is prohibited by team policy.
 
 ## 6. Commits
 
