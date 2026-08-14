@@ -83,6 +83,110 @@ intelligence system.
 
 ------------------------------------------------------------------------
 
+
+## High-Level Architecture
+
+The following is the canonical high-level architecture for Arc. It represents **Unified Intelligence as the single intelligence layer**. Company Brain and Agent capabilities are functional components within Unified Intelligence, not separate intelligence systems.
+
+```text
+                         ARC ENTERPRISE AI PLATFORM
+                                      │
+                ┌─────────────────────┼─────────────────────┐
+                │                     │                     │
+          Multi-Tenancy         Authentication             RBAC
+                │                     │                     │
+                └─────────────────────┼─────────────────────┘
+                                      │
+                                  PII GUARD
+                                      │
+                                      ▼
+              ┌──────────────────────────────────────────────┐
+              │              UNIFIED INTELLIGENCE             │
+              │                                              │
+              │  ┌────────────────────────────────────────┐  │
+              │  │             COMPANY BRAIN               │  │
+              │  │                                        │  │
+              │  │ Knowledge • Procedures • Policies     │  │
+              │  │ Decisions • Incidents • Solutions     │  │
+              │  │ Relationships • Provenance • Memory   │  │
+              │  └───────────────────┬────────────────────┘  │
+              │                      │                       │
+              │              RAG / Knowledge                 │
+              │                      │                       │
+              │          ┌───────────▼───────────┐           │
+              │          │      Embeddings       │           │
+              │          │  Semantic Retrieval   │           │
+              │          └───────────┬───────────┘           │
+              │                      │                       │
+              │  ┌───────────────────▼────────────────────┐  │
+              │  │             AGENT CAPABILITY            │  │
+              │  │                                        │  │
+              │  │ Reasoning • Planning • Skill Selection │  │
+              │  │ Tool Selection • Execution • Escalation│  │
+              │  └───────────────────┬────────────────────┘  │
+              │                      │                       │
+              │                 LLM LAYER                    │
+              └──────────────────────┼───────────────────────┘
+                                     │
+                         ┌───────────┴───────────┐
+                         │                       │
+                         ▼                       ▼
+                 SKILLS ENGINE              AI TOOLS
+                                                 │
+                                          TOOL EXECUTION
+                                                 │
+                                  ┌──────────────┴──────────────┐
+                                  │                             │
+                                  ▼                             ▼
+                           Internal Arc Systems        External Systems
+                                  │
+                         ┌────────┴─────────┐
+                         │                  │
+                         ▼                  ▼
+                     DATA INGESTION     WEBHOOKS
+                         │                  │
+              ┌──────────┴──────────┐       │
+              │                     │       │
+              ▼                     ▼       ▼
+       Structured Storage      Knowledge/RAG Data
+              │                     │
+              └──────────┬──────────┘
+                         │
+                         ▼
+                  OBSERVABILITY
+                         │
+          ┌──────────────┼───────────────┐
+          │              │               │
+       Usage          Health          Incidents
+       Metrics       Monitoring       / Actions
+          │              │               │
+          └──────────────┼───────────────┘
+                         │
+                 Human Intervention
+                         │
+                         ▼
+              Local Docker → AWS
+```
+
+### Architecture interpretation
+
+- **Unified Intelligence is the single intelligence layer.**
+- **Company Brain** provides company-specific knowledge, memory, procedures, policies, decisions, incidents, solutions, relationships, and provenance.
+- **Agent capability** provides reasoning, planning, Skill selection, Tool selection, execution, failure handling, and escalation.
+- **LLM** provides language understanding and reasoning capabilities used by Unified Intelligence.
+- **Embeddings** support semantic representation and retrieval of company knowledge.
+- **RAG / Knowledge** connects company knowledge to Unified Intelligence while enforcing tenant and permission boundaries.
+- **PII Guard** protects sensitive information before it crosses defined AI/data boundaries.
+- **Skills Engine** converts company procedures into structured workflows that Unified Intelligence can apply.
+- **AI Tools / Tool Execution** provides controlled actions against Arc or approved external systems.
+- **Data ingestion** brings company information and operational knowledge into the Company Brain.
+- **Storage** keeps structured company data and knowledge/RAG data.
+- **Webhooks** provide event-driven inputs and triggers.
+- **Observability** records usage, health, incidents, automated actions, and human escalations.
+- **Human intervention** is used when an action requires approval or when automated handling is insufficient.
+- **Local Docker → AWS** represents the deployment boundary: local validation is the first target, followed by AWS deployment.
+
+
 # 4. Product Vision
 
 Arc provides a company-specific intelligence layer that connects company
