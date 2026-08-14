@@ -1,1497 +1,1840 @@
-# Arc --- Technical Requirements Document (TRD)
+# ARC — Technical Requirements Document (TRD)
 
-**Project:** Arc\
-**Purpose:** Placement-focused enterprise AI engineering project\
-**Domain:** IT Services\
-**Implementation:** Python-first\
-**Deployment:** Local Docker\
-**Team:** Python developers\
-**Status:** Draft --- Technical Stack Proposal
+**Project:** Arc Enterprise AI Platform
+**Project Type:** 7-day placement-oriented engineering project
+**Domain:** IT Services / Enterprise AI
+**Status:** Revised — PR Review Changes Incorporated
+**Primary Technical Focus:** PII Guard, Company Brain, Secure RAG, Unified Intelligence, Skills, AI Tools, Webhooks, Observability
+**Deployment Strategy:** Local Docker-first → AWS deployment
+**Primary Development Language:** Python 3.12
+**AI Provider:** OpenRouter with configurable model selection
+**AI Routing:** OmniRoute / configurable routing where used
 
-------------------------------------------------------------------------
+---
 
 # 1. Purpose
 
-This document translates the Arc PRD into a practical technical stack
-and implementation boundary.
+This Technical Requirements Document translates the Arc Product Requirements Document into a practical technical implementation direction.
 
 The TRD defines:
 
--   technology choices
--   application layers
--   AI stack
--   data stack
--   authentication
--   connectors
--   webhooks
--   observability
--   Docker environment
--   testing
--   development tooling
--   technical boundaries
+- technical responsibilities of the major Arc components
+- proposed technology choices and why they are suitable
+- AI and RAG responsibilities
+- Unified Intelligence architecture
+- PII protection
+- AI tool execution
+- webhook processing
+- observability
+- local Docker development
+- CI requirements
+- AWS deployment direction
 
-The TRD does **not** redefine the product requirements.
+This document is intentionally designed for a **7-day placement-oriented engineering project**.
 
-The PRD remains the source of truth for what Arc should do.
+The goal is to demonstrate that the team understands and can implement an end-to-end enterprise AI workflow.
 
-------------------------------------------------------------------------
+The TRD does **not** require every conceptual component to become a separate service or container.
 
-# 2. Technical Goals
+---
 
-The technical implementation must:
+# 2. Technical Objectives
 
-1.  Be understandable by Python developers.
-2.  Be achievable within the 7-day project window.
-3.  Run locally through Docker.
-4.  Keep the AI components as the primary technical focus.
-5.  Avoid unnecessary enterprise infrastructure.
-6.  Keep components modular enough to demonstrate production-style
-    engineering.
-7.  Make tenant isolation and AI authorization testable.
-8.  Make Agent behavior observable.
-9.  Allow the team to explain every major technology used.
+Arc should technically demonstrate:
 
-------------------------------------------------------------------------
+1. authenticated user access
+2. simple tenant-aware RBAC
+3. PII detection and protection
+4. Company Brain
+5. permission-aware Secure RAG
+6. Skills Engine
+7. Unified Intelligence
+8. AI tool calling
+9. webhook-driven workflows
+10. automated actions
+11. human intervention / escalation
+12. usage-based observability
+13. service health monitoring
+14. incident response
+15. reproducible Docker-based development
+16. CI validation
+17. Local Docker-first deployment
+18. AWS deployment after local validation
 
-# 3. Proposed Technology Stack
+The technical implementation should prioritize:
 
-  -----------------------------------------------------------------------
-  Area                                Technology
-  ----------------------------------- -----------------------------------
-  Backend API                         Python + FastAPI
+- learning
+- correctness
+- security
+- end-to-end integration
+- demonstrability
 
-  Frontend                            Next.js / React
+over unnecessary infrastructure complexity.
 
-  Primary Database                    PostgreSQL
+---
 
-  Vector Search                       pgvector
+# 3. Technical Stack
 
-  ORM                                 SQLAlchemy
+The following is the current proposed technical direction.
 
-  Database Migrations                 Alembic
+| Area | Technology / Direction | Reason |
+|---|---|---|
+| Language | Python 3.12 | All developers are Python developers and Python has a strong AI, API, data, and testing ecosystem. |
+| Backend API | FastAPI | Lightweight Python API framework suitable for rapid development and async/webhook workloads. |
+| Database | PostgreSQL | Provides reliable structured persistence for tenants, users, skills, incidents, audit records, and Company Brain metadata. |
+| Vector Search | pgvector | Allows semantic retrieval while keeping vector storage close to PostgreSQL instead of introducing a separate vector database. |
+| PII Protection | Microsoft Presidio | Open-source PII detection/anonymization tooling that integrates naturally with Python and can run locally or in Docker. |
+| LLM Provider | OpenRouter | Provides configurable access to multiple models through a common API. |
+| LLM Model | Configurable | Prevents the project from being tied to one model and allows model selection based on quality, availability, tool-calling support, and cost. |
+| Embeddings | Configurable embedding model | Keeps semantic retrieval independent of one fixed embedding provider/model. |
+| AI Tools | Tool-agnostic interfaces | Allows suitable open-source tools/frameworks to be integrated or replaced without changing the product-level architecture. |
+| Webhooks | FastAPI HTTP endpoints | Provides a simple and locally testable mechanism for receiving external events. |
+| Containers | Docker | Provides reproducible development and execution environments. |
+| Local orchestration | Docker Compose | Allows the application and required local dependencies to run consistently. |
+| Testing | Pytest | Standard Python testing framework suitable for unit and integration tests. |
+| Formatting/Linting | Ruff | Fast Python linting and formatting with minimal configuration. |
+| CI | GitHub Actions | Provides automated testing and validation for pull requests. |
+| Cloud | AWS | Provides a practical cloud deployment target after local Docker validation. |
 
-  Authentication                      Google OAuth
+These are **implementation proposals for the current project scope**. Any technology that becomes architecture-significant should be confirmed through the appropriate engineering review/ADR process.
 
-  Authorization                       Application-level RBAC
+---
 
-  AI Provider Interface               OpenRouter-compatible API
+# 4. Architecture Principles
 
-  LLM                                 Provider/model selected during
-                                      implementation
+## 4.1 Logical Components Are Not Automatically Services
 
-  Embeddings                          Sentence Transformers or provider
-                                      embeddings
+The conceptual architecture contains:
 
-  RAG                                 Custom Python retrieval pipeline
+- PII Guard
+- Company Brain
+- Secure RAG
+- Skills Engine
+- Unified Intelligence
+- AI Tools
+- Webhooks
+- Observability
 
-  Agent                               LangGraph or lightweight custom
-                                      agent orchestration
+These are logical product/technical components.
 
-  Skills                              Python-based Skill definitions
+They do not automatically require:
 
-  PII                                 Microsoft Presidio
+- separate microservices
+- separate containers
+- separate databases
+- separate repositories
 
-  Webhooks                            FastAPI
+The implementation should use the simplest structure that demonstrates the required behavior.
 
-  Connectors                          Python API clients / official SDKs
+---
 
-  Background Tasks                    FastAPI background tasks initially;
-                                      worker/queue only if required
+## 4.2 Unified Intelligence
 
-  Cache                               Deferred
+Company Brain and AI Agent are not independent intelligence layers.
 
-  Message Broker                      Deferred
+They form one **Unified Intelligence**.
 
-  Object Storage                      Deferred
+The Unified Intelligence has different capabilities:
 
-  Observability                       Application logs + metrics + Agent
-                                      execution records
+### Company Brain side
 
-  Metrics                             Prometheus-compatible metrics where
-                                      useful
+Responsible for:
 
-  Dashboard                           Simple application dashboard
-                                      initially
+- company knowledge
+- procedures
+- policies
+- decisions
+- previous incidents
+- solutions
+- relationships
+- provenance
+- operational context
+- retrieved knowledge
 
-  Testing                             pytest
+### Agent side
 
-  API Testing                         httpx / FastAPI TestClient
+Responsible for:
 
-  Frontend Testing                    Playwright if required
+- reasoning
+- deciding what information is needed
+- selecting Skills
+- deciding when a Tool is appropriate
+- executing approved workflows
+- handling failures
+- requesting human intervention
 
-  Containers                          Docker
+The distinction is therefore about responsibility, not separate intelligence systems.
 
-  Local Orchestration                 Docker Compose
+---
 
-  CI                                  GitHub Actions
+# 5. High-Level Technical Architecture
 
-  Dependency Management               `uv` or pip/requirements
+```text
+                    ARC ENTERPRISE AI PLATFORM
+                              |
+             +----------------+----------------+
+             |                |                |
+        Multi-Tenant       Auth/RBAC       Connectors
+             |                |                |
+             +----------------+----------------+
+                              |
+                         PII GUARD
+                              |
+                              v
+                    +-------------------+
+                    | UNIFIED INTELLIGENCE|
+                    |                   |
+                    | Company Brain     |
+                    | Secure RAG         |
+                    | Skills             |
+                    | Reasoning          |
+                    | Agent Execution    |
+                    +---------+---------+
+                              |
+                    +---------+---------+
+                    |                   |
+                    v                   v
+               AI Tools             Webhooks
+                    |                   |
+                    +---------+---------+
+                              |
+                       Observability
+                              |
+                         Docker / AWS
+```
 
-  Code Quality                        Ruff
+The diagram represents logical responsibilities, not a mandatory deployment topology.
 
-  Type Checking                       mypy
+---
 
-  Formatting                          Ruff formatter
+# 6. Runtime Boundaries
 
-  Environment Variables               `.env` / `.env.example`
-  -----------------------------------------------------------------------
+The minimum technical runtime should contain:
 
-These choices are implementation defaults and may be adjusted if the
-team identifies a simpler or better option during implementation.
+```text
+Arc Application
+    |
+    +-- API
+    +-- Auth / RBAC
+    +-- Tenant Context
+    +-- PII Guard
+    +-- Company Brain
+    +-- Secure RAG
+    +-- Skills
+    +-- Unified Intelligence
+    +-- AI Tools
+    +-- Webhooks
+    +-- Observability
+```
 
-------------------------------------------------------------------------
+External dependencies may include:
 
-# 4. Python-First Architecture
-
-Arc should use Python for the majority of backend and AI implementation.
-
-Recommended structure:
-
-``` text
-Frontend
-   ↓
-FastAPI
-   ↓
-Application Services
-   ├── Auth / RBAC
-   ├── Tenant Context
-   ├── Company Brain
-   ├── Secure RAG
-   ├── Skills Engine
-   ├── AI Agent
-   ├── AI Tools
-   ├── PII Guard
-   ├── Connectors
-   ├── Webhooks
-   └── Observability
-   ↓
+```text
 PostgreSQL + pgvector
+OpenRouter / OmniRoute
+External connector APIs
 ```
 
-The system does not require a separate microservice for every component.
+Only dependencies actually required by the implementation should be provisioned.
 
-------------------------------------------------------------------------
+---
 
-# 5. Backend
+# 7. Multi-Tenancy and RBAC
 
-## 5.1 FastAPI
+Arc will simulate approximately:
 
-FastAPI will provide:
+- 3 tenants
+- 3–5 users per tenant
+- synthetic company data
 
--   REST APIs
--   authentication endpoints/callbacks
--   tenant-scoped APIs
--   Company Brain APIs
--   RAG APIs
--   Skill APIs
--   Agent APIs
--   Tool APIs
--   webhook endpoints
--   health endpoints
--   observability endpoints
+Tenant isolation is primarily an application-level security requirement.
 
-Example structure:
+Every tenant-scoped operation must establish tenant context before accessing protected resources.
 
-``` text
-backend/
-├── app/
-│   ├── main.py
-│   ├── api/
-│   ├── core/
-│   ├── models/
-│   ├── schemas/
-│   ├── services/
-│   ├── brain/
-│   ├── rag/
-│   ├── skills/
-│   ├── agent/
-│   ├── tools/
-│   ├── pii/
-│   ├── connectors/
-│   ├── webhooks/
-│   └── observability/
-└── tests/
+RBAC should distinguish at least:
+
+### Platform Administrator
+
+Responsibilities:
+
+- manage tenants
+- manage users
+- configure platform-level settings
+
+Access boundary:
+
+- platform-level operations
+- authorized tenant administration
+
+### Tenant Administrator
+
+Responsibilities:
+
+- manage users within their tenant
+- view tenant configuration
+- manage tenant-level settings
+
+Access boundary:
+
+- own tenant only
+
+### Employee / End User
+
+Responsibilities:
+
+- use permitted company knowledge
+- request approved workflows
+- interact with Unified Intelligence
+
+Access boundary:
+
+- own tenant
+- permissions assigned to the user
+
+### Operations / Service User
+
+Responsibilities:
+
+- monitor operational activity
+- investigate incidents
+- use authorized operational knowledge
+- approve or intervene in relevant workflows
+
+Access boundary:
+
+- authorized tenant and operational resources
+
+Exact role names and permissions remain governed by the PRD and implementation review.
+
+---
+
+# 8. Unified Intelligence
+
+## 8.1 Definition
+
+Unified Intelligence is the combined Company Brain + Agent capability of Arc.
+
+It is a living intelligence system that:
+
+1. receives company information
+2. understands company context
+3. retrieves relevant knowledge
+4. identifies applicable procedures/Skills
+5. reasons about the current request or event
+6. selects approved actions
+7. invokes permitted AI Tools
+8. observes the result
+9. escalates to a human when required
+
+---
+
+## 8.2 Company Brain Responsibilities
+
+The Company Brain portion manages:
+
+- knowledge
+- procedures
+- policies
+- decisions
+- incidents
+- solutions
+- relationships
+- provenance
+- operational context
+
+It is not simply a vector database.
+
+It combines structured company information with semantic retrieval.
+
+---
+
+## 8.3 Agent Responsibilities
+
+The Agent portion provides:
+
+- reasoning
+- workflow selection
+- Skill selection
+- tool selection
+- execution planning
+- result interpretation
+- failure handling
+- escalation
+
+The Agent must operate using Company Brain context for company-specific workflows.
+
+---
+
+## 8.4 Unified Intelligence Flow
+
+```text
+User / Event
+     |
+     v
+Tenant + User Context
+     |
+     v
+PII Guard
+     |
+     v
+Unified Intelligence
+     |
+     +---- Company Brain
+     |        |
+     |        +-- Structured Knowledge
+     |        +-- Semantic Retrieval
+     |        +-- Procedures
+     |        +-- Incidents
+     |        +-- Provenance
+     |
+     +---- Skills
+     |
+     +---- Reasoning
+     |
+     +---- AI Tools
+              |
+              v
+          Action / Result
+              |
+              +--> Success
+              |
+              +--> Retry / Recovery
+              |
+              +--> Human Escalation
 ```
 
-------------------------------------------------------------------------
+---
 
-# 6. Database
+# 9. Company Brain Technical Requirements
 
-## PostgreSQL
+The Company Brain requires both structured and semantic information.
 
-PostgreSQL is the proposed primary database.
+## 9.1 Structured Information
 
-It should store structured Arc information such as:
+Examples:
 
--   tenants
--   users
--   roles
--   permissions
--   documents
--   knowledge records
--   procedures
--   policies
--   incidents
--   solutions
--   decisions
--   Skills
--   Skill executions
--   Agent runs
--   Tool executions
--   webhook events
--   connector records
--   usage records
--   audit records
+- tenant
+- user
+- department
+- policy
+- procedure
+- Skill
+- incident
+- incident resolution
+- decision
+- tool
+- relationship
+- source
+- provenance
+- version
 
-------------------------------------------------------------------------
+Structured records provide deterministic information and relationships.
 
-# 7. Vector Search
+---
 
-## pgvector
+## 9.2 Semantic Information
 
-The first vector-search implementation should use PostgreSQL + pgvector
-rather than introducing a separate vector database.
+Documents and knowledge can be represented through embeddings to support semantic retrieval.
 
-Reason:
+Examples:
 
-``` text
+- company policies
+- support procedures
+- incident reports
+- troubleshooting documents
+- internal knowledge
+- historical solutions
+
+---
+
+## 9.3 Company Brain Storage Model
+
+The initial implementation should use a hybrid approach:
+
+```text
 Structured Data
-      +
-Vector Data
-      ↓
-One PostgreSQL system
+       |
+       v
+PostgreSQL
+       |
+       +---- metadata
+       +---- procedures
+       +---- incidents
+       +---- skills
+       +---- provenance
+       |
+       +---- pgvector
+              |
+              +---- embeddings
+              +---- semantic retrieval
 ```
 
-This reduces infrastructure and makes the 7-day project easier to
-understand.
+The Company Brain must not be treated as only a vector store.
 
-The team can store:
+---
 
--   document chunks
--   embeddings
--   metadata
--   tenant ID
--   permission metadata
--   source information
+# 10. LLM Layer
 
-The vector store must not be treated as the authorization system.
+## 10.1 Role
 
-Authorization must be checked using application/domain rules.
+The LLM provides language understanding, reasoning, planning, and generation capabilities for Unified Intelligence.
 
-------------------------------------------------------------------------
+The LLM may be used for:
 
-# 8. Company Brain Technical Model
+- understanding user requests
+- summarization
+- reasoning over retrieved context
+- Skill selection
+- tool selection
+- generating responses
+- interpreting tool results
 
-The Company Brain should not simply be:
+---
 
-``` text
-Documents → Embeddings → Chatbot
-```
+## 10.2 LLM Responsibilities
 
-It should combine structured records and searchable knowledge.
+The LLM should:
 
-Conceptual model:
+1. receive authorized context
+2. reason over that context
+3. produce a response or structured decision
+4. request approved tool calls where required
+5. interpret tool results
 
-``` text
-Company Brain
-│
-├── Knowledge
-├── Procedures
-├── Policies
-├── Incidents
-├── Solutions
-├── Decisions
-├── Relationships
-└── Provenance
-```
+---
 
-Each knowledge object should have appropriate metadata such as:
+## 10.3 LLM Security Boundary
 
-``` text
-id
-tenant_id
-type
-title
-content
-source
-created_at
-updated_at
-access metadata
-```
+The LLM is **not** the authorization system.
 
-Searchable content may additionally contain:
+The application must enforce:
 
-``` text
-embedding
-chunk metadata
-```
+- tenant isolation
+- authentication
+- RBAC
+- permission checks
+- tool authorization
+- data filtering
 
-------------------------------------------------------------------------
+before information is passed to the LLM.
 
-# 9. Secure RAG Architecture
+---
 
-RAG flow:
+## 10.4 LLM Request Flow
 
-``` text
-User / Agent
-      ↓
-Authenticate
-      ↓
-Resolve Tenant
-      ↓
-Resolve User Permissions
-      ↓
-Create Query
-      ↓
-Vector / Keyword Retrieval
-      ↓
-Metadata Filtering
-      ↓
-Authorization Filtering
-      ↓
-Approved Context
-      ↓
+```text
+User Request
+     |
+     v
+Authentication
+     |
+     v
+Tenant / Permission Context
+     |
+     v
+PII Guard
+     |
+     v
+Secure Retrieval
+     |
+     v
+Allowed Context
+     |
+     v
 LLM
-      ↓
-Response
+     |
+     v
+Response / Tool Request
 ```
 
-Critical rule:
+---
 
-> Retrieval must never bypass authorization.
+# 11. Embeddings Layer
 
-The vector database should not be trusted to determine the final
-authorization decision by itself.
+## 11.1 Purpose
 
-------------------------------------------------------------------------
+Embeddings convert text into numerical vector representations.
 
-# 10. Embeddings
+They allow semantically similar knowledge to be retrieved even when the query does not use exactly the same words as the stored content.
 
-The embedding layer should be abstracted behind an interface.
+---
 
-Example:
+## 11.2 Embedding Responsibilities
 
-``` python
-class EmbeddingProvider:
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        ...
+The embedding layer is responsible for:
 
-    def embed_query(self, text: str) -> list[float]:
-        ...
-```
+- embedding company knowledge
+- embedding queries
+- storing vectors
+- similarity retrieval
 
-This allows the team to change embedding providers without rewriting
-RAG.
+It is not responsible for:
 
-Preferred implementation:
+- reasoning
+- authorization
+- tool execution
+- final response generation
 
--   free/local embedding model where practical
--   provider embeddings if simpler and affordable
+---
 
-The exact model is an implementation decision.
+## 11.3 Retrieval Flow
 
-------------------------------------------------------------------------
-
-# 11. LLM Layer
-
-The application should avoid directly coupling business logic to a
-specific model.
-
-Conceptual interface:
-
-``` python
-class LLMProvider:
-    def generate(self, messages):
-        ...
-
-    def generate_with_tools(self, messages, tools):
-        ...
-```
-
-Possible provider route:
-
-``` text
-Arc
- ↓
-LLM Interface
- ↓
-OpenRouter
- ↓
-Selected Model
-```
-
-OpenRouter may be used because the project already anticipates an
-`OPENROUTER_API_KEY` and it allows model/provider flexibility.
-
-The actual model should be selected based on:
-
--   availability
--   cost
--   tool-calling support
--   response quality
--   latency
-
-------------------------------------------------------------------------
-
-# 12. AI Agent
-
-The Agent is the orchestration layer.
-
-Technical responsibilities:
-
--   understand incoming task
--   retrieve context
--   select Skill
--   plan execution
--   select Tools
--   call Tools
--   inspect Tool results
--   continue or stop
--   request human approval
--   record execution
-
-Conceptual flow:
-
-``` text
-Trigger
-  ↓
-Agent
-  ↓
-Company Brain / RAG
-  ↓
-Skill Selection
-  ↓
-Plan
-  ↓
-Tool Call
-  ↓
-Tool Result
-  ↓
-Reason
-  ↓
-Next Tool / Finish / Escalate
-```
-
-------------------------------------------------------------------------
-
-# 13. Agent Framework
-
-A framework may be used for orchestration if it reduces implementation
-complexity.
-
-Candidate:
-
-**LangGraph**
-
-Alternative:
-
-**Custom Python Agent Loop**
-
-The team should choose one.
-
-The project should not introduce multiple agent frameworks.
-
-### Selection Rule
-
-Use LangGraph if:
-
--   stateful workflows are useful
--   graph execution is easy to explain
--   it accelerates the implementation
-
-Use a custom Python loop if:
-
--   the workflow is simple
--   the team understands it better
--   framework overhead is unnecessary
-
-The choice should be recorded as an implementation decision.
-
-------------------------------------------------------------------------
-
-# 14. Skills Engine
-
-Skills are structured executable procedures.
-
-Example:
-
-``` text
-Skill:
-Payment API Recovery
-
-Allowed Tools:
-- get_service_health
-- get_service_logs
-- get_recent_incidents
-- restart_service
-
-Steps:
-1. Check health.
-2. Inspect logs.
-3. Check recent incidents.
-4. Restart if policy allows.
-5. Verify health.
-6. Update incident.
-```
-
-Technical representation may contain:
-
-``` text
-id
-tenant_id
-name
-description
-steps
-allowed_tools
-risk_level
-requires_approval
-status
-version
-created_by
-```
-
-Possible states:
-
-``` text
-DRAFT
-PENDING_REVIEW
-APPROVED
-DISABLED
-```
-
-Only approved Skills should be executable by the Agent.
-
-------------------------------------------------------------------------
-
-# 15. AI Tools
-
-Tools are controlled Python functions exposed to the Agent.
-
-Example:
-
-``` python
-@tool
-def get_service_health(service_name: str):
-    ...
-```
-
-Tool metadata should define:
-
-``` text
-name
-description
-input schema
-output schema
-permission
-risk level
-requires approval
-```
-
-Example:
-
-``` text
-get_service_health
-Risk: LOW
-Approval: NO
-```
-
-``` text
-restart_service
-Risk: MEDIUM
-Approval: POLICY
-```
-
-The Agent must not receive arbitrary Python execution.
-
-------------------------------------------------------------------------
-
-# 16. Human Approval
-
-Sensitive Agent actions should support approval.
-
-Flow:
-
-``` text
-Agent
- ↓
-Tool requested
- ↓
-Risk evaluation
- ↓
-Approval required?
- ├── No → Execute
- └── Yes
-       ↓
- Human approval
-       ↓
- Approve / Reject
-       ↓
- Execute / Stop
-```
-
-The first implementation can use a simple database-backed approval
-record and UI/API action.
-
-------------------------------------------------------------------------
-
-# 17. PII Guard
-
-Recommended tool:
-
-**Microsoft Presidio**
-
-Potential flow:
-
-``` text
-Incoming Data
-     ↓
-Presidio Analyzer
-     ↓
-Detected Entities
-     ↓
-Anonymizer / Redactor
-     ↓
-Safe Data
-```
-
-Initial entities can include:
-
--   email
--   phone number
--   person names where practical
-
-The PII layer should be implemented as a reusable Python service/module
-rather than scattered across every feature.
-
-------------------------------------------------------------------------
-
-# 18. Connectors
-
-Connectors should be Python modules with a common interface.
-
-Example:
-
-``` python
-class Connector:
-    def authenticate(self):
-        ...
-
-    def fetch(self):
-        ...
-
-    def normalize(self, data):
-        ...
-
-    def health(self):
-        ...
-```
-
-Potential real connectors:
-
--   GitHub
--   Google Drive
--   another free/easy source selected during implementation
-
-Connector selection remains implementation-driven.
-
-A controlled fake API is acceptable when a real connector would consume
-too much of the 7-day schedule.
-
-------------------------------------------------------------------------
-
-# 19. Webhooks
-
-FastAPI will provide webhook endpoints.
-
-Example:
-
-``` text
-POST /api/v1/webhooks/events
-```
-
-Flow:
-
-``` text
-External System
-      ↓
-FastAPI Webhook
-      ↓
-Validate
-      ↓
-Resolve Tenant
-      ↓
-PII Guard
-      ↓
-Store Event
-      ↓
-Trigger Workflow
-```
-
-Webhook records should include:
-
-``` text
-event_id
-tenant_id
-source
-event_type
-payload/reference
-received_at
-status
-processing_attempts
-correlation_id
-```
-
-The first implementation does not require Kafka or another message
-broker unless the actual workflow demonstrates a need for it.
-
-------------------------------------------------------------------------
-
-# 20. Background Processing
-
-Start simple.
-
-Possible first implementation:
-
-``` text
-FastAPI
-  ↓
-Background Task
-```
-
-If an actual workload requires durable asynchronous processing,
-evaluate:
-
--   Celery
--   Dramatiq
--   RQ
--   a lightweight queue
-
-Do not introduce a queue merely because an enterprise architecture
-diagram contains asynchronous processing.
-
-------------------------------------------------------------------------
-
-# 21. Observability
-
-The first implementation should record structured application events.
-
-Important events:
-
-``` text
-AgentStarted
-AgentFinished
-SkillSelected
-SkillExecutionStarted
-ToolCalled
-ToolFinished
-WebhookReceived
-RAGQuery
-RAGRetrieved
-PIIRedacted
-IncidentCreated
-IncidentResolved
-HumanApprovalRequested
-HumanApprovalCompleted
-```
-
-Agent execution should be traceable through:
-
-``` text
-agent_run_id
-tenant_id
-user_id
-trigger
-skill_id
-tool_calls
-result
-status
-duration
-```
-
-------------------------------------------------------------------------
-
-# 22. Usage Monitoring
-
-Usage records should be stored in PostgreSQL.
-
-Example:
-
-``` text
-tenant_id
-event_type
-quantity
-timestamp
-metadata
-```
-
-Track:
-
--   RAG requests
--   Agent runs
--   Tool executions
--   webhook events
--   connector operations
--   AI requests
-
-A simple dashboard is sufficient.
-
-No billing system is required.
-
-------------------------------------------------------------------------
-
-# 23. Health Monitoring
-
-Health endpoints should exist for important components.
-
-Example:
-
-``` text
-GET /health
-GET /health/ready
-```
-
-Potential checks:
-
--   API
--   PostgreSQL
--   vector search
--   AI provider
--   connector status
--   webhook processing
-
-The UI can expose a simple health dashboard.
-
-------------------------------------------------------------------------
-
-# 24. Incident Response
-
-Incidents should be stored as structured records.
-
-Example:
-
-``` text
-id
-tenant_id
-title
-severity
-status
-source
-assigned_to
-created_at
-resolved_at
-```
-
-Basic states:
-
-``` text
-OPEN
-INVESTIGATING
-RESOLVED
-CLOSED
-```
-
-Agent workflows may:
-
--   investigate
--   gather health
--   gather logs
--   retrieve previous solutions
--   execute approved recovery Skills
--   resolve
--   escalate
-
-------------------------------------------------------------------------
-
-# 25. Authentication
-
-Use Google OAuth.
-
-The system should establish:
-
-``` text
-Google Identity
-      ↓
-Arc User
-      ↓
-Tenant Membership
-      ↓
-Role
-      ↓
-Permissions
-```
-
-No enterprise SSO/SAML/SCIM is required.
-
-------------------------------------------------------------------------
-
-# 26. Authorization
-
-Authorization should be enforced in the backend.
-
-A request should effectively be evaluated against:
-
-``` text
-User
-+
-Tenant
-+
-Role
-+
-Permission
-+
-Resource
-```
-
-Example:
-
-``` python
-authorize(
-    user=user,
-    tenant=tenant,
-    permission="incident.update",
-    resource=incident,
-)
-```
-
-Authorization must not depend only on frontend checks.
-
-------------------------------------------------------------------------
-
-# 27. Frontend
-
-The frontend exists primarily to demonstrate the system.
-
-Recommended:
-
-**Next.js + React**
-
-Main screens:
-
-``` text
-Login
-Dashboard
-Company Brain
-Knowledge Search
-Skills
-Agent Runs
-Incidents
-Health
-Usage
-Connectors
-Tenant / Users
-```
-
-The frontend should remain simple.
-
-The AI/backend behavior is the priority.
-
-------------------------------------------------------------------------
-
-# 28. API Structure
-
-Recommended API grouping:
-
-``` text
-/api/v1/auth
-/api/v1/tenants
-/api/v1/users
-/api/v1/brain
-/api/v1/rag
-/api/v1/skills
-/api/v1/agent
-/api/v1/tools
-/api/v1/connectors
-/api/v1/webhooks
-/api/v1/incidents
-/api/v1/health
-/api/v1/usage
-```
-
-Exact endpoints can be finalized during implementation.
-
-------------------------------------------------------------------------
-
-# 29. Docker
-
-The project should run locally using Docker Compose.
-
-Conceptual environment:
-
-``` text
-Docker Compose
-│
-├── backend
-├── frontend
-└── postgres
-```
-
-Additional containers should be added only when required.
-
-Possible future additions:
-
-``` text
-redis
-prometheus
-grafana
-```
-
-These are not mandatory at the beginning.
-
-------------------------------------------------------------------------
-
-# 30. Environment Variables
-
-Example:
-
-``` env
-APP_ENV=development
-
-DATABASE_URL=postgresql://...
-
-OPENROUTER_API_KEY=
-
-OMNIROUTE_BASE_URL=
-
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=
-
-SECRET_KEY=
-```
-
-Rules:
-
--   `.env` is local only.
--   `.env` must not be committed.
--   `.env.example` contains placeholders only.
--   Secrets must not appear in source code.
--   Production secrets are outside the scope of this local project.
-
-`OPENROUTER_API_KEY` is relevant once the LLM workflow is implemented.
-
-`DATABASE_URL` becomes relevant once PostgreSQL is introduced.
-
-`OMNIROUTE_BASE_URL` should remain only if the project actually uses
-OmniRoute.
-
-------------------------------------------------------------------------
-
-# 31. Testing
-
-## Framework
-
-Use:
-
-``` text
-pytest
-```
-
-Important test categories:
-
-### Unit Tests
-
--   PII detection
--   Skill parsing
--   permission checks
--   Tool validation
--   data transformations
-
-### Integration Tests
-
--   database
--   RAG
--   connectors
--   webhook processing
--   Agent + Tools
-
-### Security Tests
-
--   cross-tenant access
--   unauthorized role
--   unauthorized knowledge retrieval
--   unauthorized Tool execution
-
-### End-to-End Test
-
-``` text
-Webhook
- ↓
-PII
- ↓
-Company Brain
- ↓
-RAG
- ↓
-Skill
- ↓
-Agent
- ↓
-Tool
- ↓
-Incident
- ↓
-Observability
-```
-
-------------------------------------------------------------------------
-
-# 32. Code Quality
-
-Recommended tooling:
-
-``` text
-Ruff
-mypy
-pytest
-pre-commit
-```
-
-Ruff should handle:
-
--   linting
--   formatting
-
-The project should avoid excessive tooling.
-
-------------------------------------------------------------------------
-
-# 33. Repository Structure
-
-Recommended:
-
-``` text
-arc/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   ├── core/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   ├── brain/
-│   │   ├── rag/
-│   │   ├── skills/
-│   │   ├── agent/
-│   │   ├── tools/
-│   │   ├── pii/
-│   │   ├── connectors/
-│   │   ├── webhooks/
-│   │   └── observability/
-│   └── tests/
-│
-├── frontend/
-│
-├── docs/
-│   ├── requirements/
-│   │   ├── PRD.md
-│   │   └── TRD.md
-│   ├── architecture/
-│   └── learning/
-│
-├── docker-compose.yml
-├── .env.example
-├── .gitignore
-└── README.md
-```
-
-------------------------------------------------------------------------
-
-# 34. Technical Dependency Strategy
-
-## Required Now
-
-For the first meaningful implementation:
-
--   Python
--   FastAPI
--   PostgreSQL
--   pgvector
--   Google authentication
--   Docker
--   pytest
-
-AI implementation additionally requires:
-
--   LLM provider
--   embedding provider
--   PII implementation
--   Agent orchestration
--   RAG implementation
-
-## Potentially Later
-
--   Redis
--   background worker
--   Prometheus
--   Grafana
--   object storage
--   message broker
-
-## Not Justified Initially
-
--   Kafka
--   Kubernetes
--   multiple databases
--   multiple vector databases
--   service mesh
--   cloud infrastructure
--   complex event buses
-
-------------------------------------------------------------------------
-
-# 35. Technical Decisions That Must Not Be Prematurely Locked
-
-The following should remain flexible until implementation requires them:
-
--   exact LLM
--   exact embedding model
--   LangGraph vs custom Agent loop
--   exact connector list
--   background worker
--   Redis
--   Prometheus/Grafana
--   object storage
--   message broker
-
-The team should prefer simple choices that can be explained clearly.
-
-------------------------------------------------------------------------
-
-# 36. Seven-Day Technical Execution
-
-## Day 1
-
-``` text
-FastAPI
-PostgreSQL
-Docker
-Google Auth
-Tenant/RBAC
-```
-
-## Day 2
-
-``` text
-Company Brain
-PII Guard
-Knowledge ingestion
-```
-
-## Day 3
-
-``` text
+```text
+Knowledge
+   |
+   v
+Chunking
+   |
+   v
+Embedding Model
+   |
+   v
+Vector
+   |
+   v
 pgvector
+```
+
+For a query:
+
+```text
+User Query
+   |
+   v
+Query Embedding
+   |
+   v
+Similarity Search
+   |
+   v
+Candidate Knowledge
+   |
+   v
+Permission Filtering
+   |
+   v
+Approved Context
+```
+
+---
+
+## 11.4 Embeddings vs LLM
+
+```text
 Embeddings
-Secure RAG
+    |
+    +-- represent semantic meaning
+    +-- enable similarity search
+    +-- support retrieval
+
+LLM
+    |
+    +-- understands language
+    +-- reasons over context
+    +-- generates responses
+    +-- selects/requests tools
 ```
 
-## Day 4
+They work together but have different responsibilities.
 
-``` text
-Skills
-Agent
-Tools
-Approval
+---
+
+# 12. Secure RAG
+
+## 12.1 Purpose
+
+Secure RAG allows Unified Intelligence to retrieve relevant company knowledge while enforcing tenant and permission boundaries.
+
+---
+
+## 12.2 Retrieval Flow
+
+```text
+User Query
+     |
+     v
+Tenant Context
+     |
+     v
+Permission Context
+     |
+     v
+Query Embedding
+     |
+     v
+Vector Retrieval
+     |
+     v
+Candidate Documents
+     |
+     v
+Permission / Tenant Filtering
+     |
+     v
+Approved Context
+     |
+     v
+LLM
 ```
 
-## Day 5
+---
 
-``` text
-Webhooks
-Incidents
-Health
-Agent actions
+## 12.3 Security Rules
+
+The retrieval system must:
+
+- enforce tenant context
+- filter unauthorized information
+- prevent cross-tenant retrieval
+- avoid returning unauthorized documents
+- provide only approved context to the LLM
+
+The LLM must never be relied upon to perform authorization.
+
+---
+
+# 13. Skills Engine
+
+## 13.1 Purpose
+
+The Skills Engine converts company procedures and operational knowledge into structured, reusable workflows that Unified Intelligence can apply.
+
+---
+
+## 13.2 Skill Structure
+
+A Skill should contain information such as:
+
+- name
+- purpose
+- inputs
+- preconditions
+- steps
+- constraints
+- allowed tools
+- approval requirements
+- failure behavior
+- expected output
+- provenance
+- version
+
+Example:
+
+```yaml
+name: resolve_password_reset
+purpose: Resolve a standard employee password reset request
+
+preconditions:
+  - user_identity_verified
+  - account_is_active
+
+steps:
+  - check_account
+  - reset_password
+  - notify_user
+
+allowed_tools:
+  - identity_lookup
+  - password_reset
+  - notification
+
+approval_required: false
 ```
 
-## Day 6
+The exact Skill representation can evolve as implementation proceeds.
 
-``` text
-Connectors
-Usage
-Observability
+---
+
+# 14. AI Tools
+
+AI Tools are controlled interfaces through which Unified Intelligence can interact with Arc or approved external systems.
+
+Examples:
+
+- ticket lookup
+- incident lookup
+- knowledge search
+- notification
+- account lookup
+- controlled ticket update
+- webhook action
+- health check
+
+---
+
+## 14.1 Tool Execution Flow
+
+```text
+Unified Intelligence
+       |
+       v
+Tool Selection
+       |
+       v
+Authorization Check
+       |
+       v
+Tool Input Validation
+       |
+       v
+Tool Execution
+       |
+       v
+Tool Result
+       |
+       v
+Unified Intelligence
 ```
 
-## Day 7
+---
 
-``` text
-Integration
-Testing
-Security tests
-Docker validation
-Documentation
-Demo
+## 14.2 Tool Security
+
+Tools must:
+
+- validate inputs
+- enforce authorization
+- enforce tenant context
+- expose only approved operations
+- avoid exposing secrets
+- produce observable execution records
+
+The LLM must not be allowed to execute arbitrary Python code or arbitrary system commands.
+
+---
+
+## 14.3 Tool Framework
+
+Arc remains tool/framework agnostic at the product architecture level.
+
+Suitable open-source AI libraries/frameworks may be used where they provide real value.
+
+A framework can be replaced without changing the concept of AI Tools.
+
+---
+
+# 15. PII Guard
+
+## 15.1 Technology
+
+Arc will use **Microsoft Presidio** for the initial PII protection layer.
+
+Presidio is an open-source framework for detecting, analyzing, and anonymizing sensitive information.
+
+---
+
+## 15.2 Components
+
+The primary workflow uses:
+
+- Presidio Analyzer
+- Presidio Anonymizer
+
+The Analyzer identifies PII entities.
+
+The Anonymizer applies configured de-identification operations such as:
+
+- redaction
+- replacement
+- masking
+- hashing
+- encryption
+
+---
+
+## 15.3 Arc PII Flow
+
+```text
+Input
+  |
+  v
+Presidio Analyzer
+  |
+  v
+Detected PII
+  |
+  v
+Presidio Anonymizer
+  |
+  v
+Sanitized Content
+  |
+  v
+Company Brain / RAG / LLM
 ```
 
-------------------------------------------------------------------------
+---
 
-# 37. Golden Technical Flow
+## 15.4 PII Boundary
 
-The implementation should prove this flow:
+PII Guard should be applied before sensitive information crosses defined AI/data boundaries.
 
-``` text
-External Monitoring Event
-          ↓
-      Webhook API
-          ↓
-      Tenant Resolve
-          ↓
-       PII Guard
-          ↓
-     Company Brain
-          ↓
-      Secure RAG
-          ↓
-     Skill Selection
-          ↓
-       AI Agent
-          ↓
-       AI Tool
-          ↓
-     Service Action
-          ↓
-     Health Check
-          ↓
-      Incident
-          ↓
-   Agent Resolution
-          ↓
-     Observability
-          ↓
-    Company Brain
+The first implementation should focus on practical text PII protection.
+
+Image PII redaction is not required merely because the technology can support it.
+
+---
+
+## 15.5 PII Limitations
+
+Presidio uses automated detection and cannot guarantee detection of every sensitive value.
+
+Presidio is not a complete security boundary.
+
+Arc must continue to enforce:
+
+- authorization
+- tenant isolation
+- access control
+- data minimization
+- secure logging
+
+---
+
+# 16. Webhooks
+
+## 16.1 Purpose
+
+Webhooks allow external or simulated systems to send events into Arc.
+
+---
+
+## 16.2 Initial Implementation
+
+The first implementation should use simple HTTP webhook endpoints.
+
+External systems may be represented by:
+
+- controlled APIs
+- local event generators
+- approved free external services
+
+No unnecessary event infrastructure should be introduced.
+
+---
+
+## 16.3 Webhook Flow
+
+```text
+External System
+      |
+      v
+Webhook Endpoint
+      |
+      v
+Validate Event
+      |
+      v
+Resolve Tenant
+      |
+      v
+PII Protection if required
+      |
+      v
+Process Event
+      |
+      v
+Unified Intelligence
+      |
+      +---- Skill
+      +---- AI Tool
+      +---- Incident
+      +---- Human Escalation
 ```
 
-------------------------------------------------------------------------
+---
 
-# 38. Technical Acceptance Criteria
+## 16.4 Webhook Requirements
 
-The technical implementation is acceptable when:
+The system must define behavior for:
 
--   the system starts through Docker
--   backend starts successfully
--   frontend starts successfully
--   PostgreSQL starts successfully
--   migrations can run
--   Google authentication works
--   tenant context works
--   RBAC works
--   Company Brain stores knowledge
--   PII Guard processes data
--   pgvector retrieval works
--   RAG respects tenant/permission boundaries
--   Skills can be represented and approved
--   Agent can execute approved Skills
--   Agent can call Tools
--   Tool permissions work
--   webhook events are accepted
--   webhook events can trigger Agent workflows
--   incidents can be created
--   health can be monitored
--   usage is recorded
--   Agent runs are observable
--   at least two useful connectors work where feasible
--   critical tests pass
--   no secrets are committed
+- valid events
+- invalid events
+- duplicate events
+- processing failures
+- retries
+- downstream failures
 
-------------------------------------------------------------------------
+Webhook payloads must not unnecessarily expose sensitive information in logs.
 
-# 39. Technical Definition of Done
+---
 
-A technical component is complete when:
+# 17. Observability
 
-1.  Its product requirement is known.
-2.  Its technical responsibility is documented.
-3.  Implementation exists.
-4.  Tests exist where applicable.
-5.  Security behavior is tested where applicable.
-6.  Tenant behavior is tested where applicable.
-7.  Failure behavior is addressed.
-8.  Observability exists where required.
-9.  Documentation is updated.
-10. Docker environment remains reproducible.
-11. CI passes.
-12. The implementing developer can explain the component.
+Arc requires usage-based and operational observability.
 
-------------------------------------------------------------------------
+The project specifically focuses on:
 
-# 40. Learning Requirement
+- API request count
+- AI request count
+- token usage
+- agent/Unified Intelligence execution count
+- tool invocation count
+- webhook event count
+- successful/failed executions
+- latency
+- error rate
+- tenant usage
+- service health
+- incident count
+- automated action count
+- human escalation count
 
-Technology must not be selected solely because it is popular.
+---
 
-For every major component, the team should be able to answer:
+## 17.1 Health Monitoring
 
--   What problem does it solve?
--   Why do we need it?
--   Why did we choose it?
--   What alternatives exist?
--   What data enters it?
--   What comes out?
--   What can fail?
--   How is it secured?
--   How does it connect to the next component?
+Health monitoring should expose whether important Arc components are functioning.
 
-Major components:
+Examples:
 
-``` text
-FastAPI
-PostgreSQL
-pgvector
-RAG
-PII
-Company Brain
-Skills
-Agent
-Tools
-Webhooks
-Observability
-Docker
+```text
+Application Health
+Database Health
+AI Provider Health
+Webhook Health
+RAG Health
+Tool Health
 ```
 
-------------------------------------------------------------------------
+The implementation should use the simplest practical mechanism.
 
-# 41. Final Technical Boundary
+---
 
-Arc is not intended to demonstrate every enterprise technology.
+## 17.2 Incident Response
 
-The technical target is:
+Important failures should be observable and capable of creating or contributing to an incident.
 
-``` text
-Simple Platform
-      +
-Strong AI Workflow
-      +
-Good Security Boundaries
-      +
-Useful Observability
-      +
-Reproducible Docker Environment
+Example:
+
+```text
+AI Provider Failure
+      |
+      v
+Error Detected
+      |
+      v
+Health Degraded
+      |
+      v
+Incident
+      |
+      v
+Investigation
+      |
+      v
+Resolution / Human Action
 ```
 
-The team should spend most engineering effort on:
+---
 
-``` text
-Company Brain
-Secure RAG
-Skills Engine
-AI Agent
-AI Tools
+## 17.3 Agent-Driven Actions
+
+Unified Intelligence may initiate approved automated actions when:
+
+- the Skill allows the action
+- the Tool is authorized
+- required conditions are satisfied
+- the action does not require human approval
+
+For higher-risk actions:
+
+```text
+Unified Intelligence
+       |
+       v
+Human Approval Required
+       |
+       v
+Human Decision
+       |
+       +---- Approve → Tool
+       |
+       +---- Reject → Stop / Escalate
+```
+
+---
+
+# 18. Authentication
+
+Enterprise SSO is **out of scope**.
+
+The project will use a simple user identity model suitable for approximately:
+
+- 3 simulated tenants
+- 3–5 users per tenant
+- synthetic data
+
+The exact authentication implementation must remain consistent with the approved PRD and engineering decision.
+
+Authentication establishes identity.
+
+Authorization determines what the identity can access.
+
+---
+
+# 19. Authorization
+
+Authorization must be enforced by the application.
+
+The application must consider:
+
+- authenticated user
+- tenant
+- role
+- permissions
+- resource ownership
+
+Authorization must not be delegated to:
+
+- the LLM
+- embeddings
+- the vector store
+- an external AI provider
+
+---
+
+# 20. Data Protection
+
+Arc must protect:
+
+- credentials
+- API keys
+- PII
+- customer data
+- tenant-scoped information
+- tool execution data
+
+Secrets must not be committed to Git.
+
+Development should use `.env.example` for variable documentation and local environment configuration.
+
+---
+
+# 21. Environment Variables
+
+Current expected configuration includes:
+
+```text
+APP_ENV
+DATABASE_URL
+OPENROUTER_API_KEY
+OMNIROUTE_BASE_URL
+```
+
+### APP_ENV
+
+Used to distinguish the development/runtime environment.
+
+### DATABASE_URL
+
+Used to configure database connectivity.
+
+### OPENROUTER_API_KEY
+
+Used for the configurable LLM provider path.
+
+The real secret must never be committed.
+
+### OMNIROUTE_BASE_URL
+
+Used when the project uses OmniRoute as the configurable AI routing layer.
+
+The exact use of OmniRoute should remain implementation-configurable.
+
+---
+
+# 22. Docker Development
+
+Arc is **Local Docker-first**.
+
+The local environment should allow a developer to start the project using documented commands.
+
+The environment should provide:
+
+- Python runtime
+- application dependencies
+- required local persistence
+- AI configuration
+- testing tools
+- reproducible configuration
+
+Docker Compose should be used where multiple local dependencies are actually required.
+
+The project should not create unnecessary containers for conceptual components.
+
+---
+
+# 23. CI
+
+CI should validate every relevant pull request.
+
+Minimum CI checks:
+
+```text
+Install dependencies
+      |
+      v
+Lint / Format Check
+      |
+      v
+Unit Tests
+      |
+      v
+Integration Tests where applicable
+      |
+      v
+Docker Build
+```
+
+CI should not require expensive cloud infrastructure merely to validate the project.
+
+---
+
+# 24. AWS Deployment
+
+After the local Docker workflow is stable and validated, Arc should be deployable to AWS.
+
+The AWS deployment should reuse the containerized application rather than creating a completely different architecture.
+
+The exact AWS service mapping remains a platform/implementation decision.
+
+The AWS target should not block local development.
+
+The project does not require a complex multi-region or enterprise production deployment.
+
+---
+
+# 25. Testing Requirements
+
+Testing should focus on the highest-risk behavior.
+
+## Required Testing Areas
+
+### Tenant Isolation
+
+Test:
+
+- Tenant A can access Tenant A data.
+- Tenant A cannot access Tenant B data.
+
+### RBAC
+
+Test:
+
+- authorized operation succeeds
+- unauthorized operation fails
+
+### PII
+
+Test:
+
+- defined PII is detected
+- configured redaction occurs
+- safe content remains usable
+
+### Secure RAG
+
+Test:
+
+- authorized knowledge is retrieved
+- unauthorized knowledge is filtered
+- cross-tenant retrieval fails
+
+### Skills
+
+Test:
+
+- valid Skill executes
+- invalid preconditions prevent execution
+- unauthorized tools cannot be called
+
+### AI Tools
+
+Test:
+
+- authorized tool execution
+- invalid inputs
+- unauthorized tool execution
+
+### Webhooks
+
+Test:
+
+- valid event
+- invalid event
+- duplicate event
+- processing failure
+
+### Unified Intelligence
+
+Test:
+
+- retrieval
+- Skill selection
+- tool selection
+- successful execution
+- failure handling
+- human escalation
+
+---
+
+# 26. Error Handling
+
+The system must define safe behavior for:
+
+- LLM provider failure
+- embedding failure
+- retrieval failure
+- database failure
+- webhook failure
+- tool failure
+- Skill failure
+- invalid input
+- unauthorized operation
+- human approval timeout
+
+The system should fail safely rather than inventing successful results.
+
+---
+
+# 27. Security Boundaries
+
+The following boundaries are mandatory:
+
+```text
+User
+  |
+Authentication
+  |
+Authorization
+  |
+Tenant Context
+  |
 PII Guard
+  |
+Secure Retrieval
+  |
+LLM
+  |
+Tool Authorization
+  |
+External Action
 ```
 
-rather than spending the seven-day window building elaborate
-infrastructure.
+The LLM must never bypass:
 
-------------------------------------------------------------------------
+- authentication
+- authorization
+- tenant isolation
+- tool authorization
+- human approval requirements
 
-# 42. Status
+---
 
-**Document:** Technical Requirements Document\
-**File:** `docs/requirements/TRD.md`\
-**Project:** Arc\
-**Primary Language:** Python\
-**Frontend:** React/Next.js\
-**Backend:** FastAPI\
-**Database:** PostgreSQL + pgvector\
-**Deployment:** Docker / Docker Compose\
-**Authentication:** Google OAuth\
-**AI:** Provider-agnostic interface, initial OpenRouter-compatible path\
-**Status:** Draft --- Team Technical Review Required
+# 28. Logging
+
+Logs should support debugging and operational investigation.
+
+Useful information includes:
+
+- request identifier
+- tenant context where safe
+- event type
+- operation
+- execution status
+- latency
+- error category
+
+Logs must not unnecessarily contain:
+
+- API keys
+- passwords
+- access tokens
+- raw PII
+- confidential customer content
+
+---
+
+# 29. Project Constraints
+
+The technical implementation must respect:
+
+1. 7-day implementation window
+2. placement-oriented objective
+3. Python-first team
+4. synthetic tenants and data
+5. local Docker-first development
+6. AWS deployment after local validation
+7. AI-focused learning
+8. simple supporting infrastructure
+9. no unnecessary microservices
+10. no unnecessary enterprise infrastructure
+11. open-source AI tooling where useful
+12. configurable AI model/provider
+
+---
+
+# 30. Deployment Strategy
+
+## 30.1 Local Docker-First
+
+The first target is:
+
+```text
+Developer
+   |
+   v
+Docker Compose
+   |
+   +-- Arc Application
+   +-- PostgreSQL / pgvector
+   +-- Required local dependencies
+   |
+   v
+Working Local System
+```
+
+The local environment must be reproducible by the team.
+
+---
+
+## 30.2 AWS
+
+After local validation:
+
+```text
+Dockerized Arc
+     |
+     v
+AWS
+     |
+     v
+Deployed Demonstration
+```
+
+The exact AWS service selection is not prescribed by this TRD.
+
+---
+
+# 31. Performance
+
+Because this is a 7-day placement project, performance targets should focus on measurable behavior rather than production-scale capacity.
+
+Measure:
+
+- API latency
+- retrieval latency
+- embedding latency
+- LLM latency
+- tool execution latency
+- webhook processing latency
+- end-to-end workflow latency
+
+Exact numerical targets may be established during implementation if useful.
+
+---
+
+# 32. Scalability
+
+The project does not require production-scale horizontal scaling.
+
+The implementation should nevertheless avoid unnecessary architectural choices that make future scaling impossible.
+
+The design should be understandable enough that a developer can explain how:
+
+- tenants
+- users
+- knowledge
+- events
+- AI requests
+
+could grow later.
+
+---
+
+# 33. External Integrations
+
+The project may use approximately 2–3 useful real connectors where they are:
+
+- free
+- easy to integrate
+- useful for demonstrating the product
+
+Controlled/fake APIs are acceptable where real integrations introduce unnecessary complexity or cost.
+
+Connector selection remains an implementation planning decision and should not dictate unnecessary platform infrastructure.
+
+---
+
+# 34. AI Provider and Model Strategy
+
+OpenRouter is the primary configurable AI provider.
+
+The model must remain configurable.
+
+The project should support changing the model without changing the product architecture.
+
+OmniRoute may be used as an AI routing layer where appropriate.
+
+The system should not assume that one model is permanently required.
+
+Model selection should consider:
+
+- tool-calling support
+- reasoning quality
+- latency
+- availability
+- cost
+- context window
+- reliability
+
+---
+
+# 35. AI Tooling Strategy
+
+The AI Tool layer remains framework/tool agnostic.
+
+The team may use suitable open-source libraries/frameworks where they provide clear value.
+
+The selection should be based on:
+
+- ease of learning
+- compatibility with Python
+- tool-calling support
+- maintainability
+- ability to replace the library later
+- suitability for the 7-day project
+
+The framework must not become more important than understanding the underlying agent/tool architecture.
+
+---
+
+# 36. Technical Decision Boundaries
+
+The following should not be silently decided by implementation:
+
+- replacing the Unified Intelligence model
+- changing the Company Brain concept
+- changing the Secure RAG security boundary
+- changing the AI provider strategy
+- introducing major infrastructure
+- introducing a new service architecture
+- changing tenant isolation behavior
+- changing authentication scope
+- changing deployment scope
+
+Architecture-significant decisions should be recorded through ADRs when appropriate.
+
+---
+
+# 37. Deferred / Open Technical Decisions
+
+The following may remain open until implementation review:
+
+- exact backend package structure
+- exact AI agent framework
+- exact embedding model
+- exact AI Tool framework
+- exact external connectors
+- exact AWS service mapping
+- exact observability implementation
+- exact webhook retry strategy
+- exact database schema
+- exact Skill serialization format
+- exact human approval implementation
+
+An open decision must not be treated as an implementation omission.
+
+---
+
+# 38. Recommended Initial Implementation Order
+
+```text
+1. Project / Docker environment
+        |
+        v
+2. FastAPI application
+        |
+        v
+3. PostgreSQL + pgvector
+        |
+        v
+4. Simple authentication + tenant/RBAC
+        |
+        v
+5. PII Guard
+        |
+        v
+6. Company Brain data model
+        |
+        v
+7. Embedding + Secure RAG
+        |
+        v
+8. Skills
+        |
+        v
+9. Unified Intelligence
+        |
+        v
+10. AI Tools
+        |
+        v
+11. Webhooks
+        |
+        v
+12. Observability
+        |
+        v
+13. Automated actions + human escalation
+        |
+        v
+14. Tests
+        |
+        v
+15. CI
+        |
+        v
+16. Local Docker demonstration
+        |
+        v
+17. AWS deployment
+```
+
+This ordering is intended to support the 7-day implementation and learning objective.
+
+---
+
+# 39. Minimum End-to-End Demonstration
+
+The final demonstration should show a connected workflow similar to:
+
+```text
+Employee raises a request
+        |
+        v
+Authentication
+        |
+        v
+Tenant / Permission Context
+        |
+        v
+PII Guard
+        |
+        v
+Unified Intelligence
+        |
+        +---- Company Brain
+        |        |
+        |        v
+        |    Secure RAG
+        |
+        +---- Skill Selection
+        |
+        +---- Reasoning
+        |
+        v
+Approved AI Tool
+        |
+        v
+External / Internal Action
+        |
+        v
+Result
+        |
+        +---- Success
+        |
+        +---- Incident
+        |
+        +---- Human Escalation
+        |
+        v
+Observability
+```
+
+This is the primary end-to-end technical proof of the project.
+
+---
+
+# 40. Technical Quality Bar
+
+The implementation should demonstrate:
+
+### Correctness
+
+Requirements work as documented.
+
+### Security
+
+Tenant boundaries, authorization, PII controls, and tool permissions are enforced.
+
+### AI Safety
+
+The LLM cannot bypass authorization or tenant boundaries.
+
+### Reliability
+
+Failures are handled and observable.
+
+### Observability
+
+AI and operational behavior can be measured.
+
+### Reproducibility
+
+Another developer can run the system locally using the documented Docker workflow.
+
+### Maintainability
+
+Another developer can understand the major components and workflows.
+
+### Explainability
+
+Each team member should be able to explain:
+
+- why the component exists
+- how it works
+- what data it receives
+- what it produces
+- how it fails
+- how security is enforced
+
+---
+
+# 41. Final Technical Requirements
+
+The completed system should demonstrate the following connected architecture:
+
+```text
+                 ARC ENTERPRISE AI PLATFORM
+                            |
+       +--------------------+--------------------+
+       |                    |                    |
+   Tenant/RBAC          PII Guard            Webhooks
+       |                    |                    |
+       +--------------------+--------------------+
+                            |
+                            v
+                 +----------------------+
+                 | UNIFIED INTELLIGENCE |
+                 |                      |
+                 | Company Brain        |
+                 | Secure RAG           |
+                 | Skills               |
+                 | Reasoning / Agent    |
+                 +----------+-----------+
+                            |
+                            v
+                       AI Tools
+                            |
+                            v
+                    Controlled Actions
+                            |
+                 +----------+----------+
+                 |                     |
+            Automated Action       Human Escalation
+                 |                     |
+                 +----------+----------+
+                            |
+                            v
+                      Observability
+                            |
+                       Docker / AWS
+```
+
+The project should remain a single understandable system rather than becoming an unnecessarily distributed enterprise architecture.
+
+---
+
+# 42. TRD Acceptance Criteria
+
+The TRD is ready for implementation when:
+
+- Python 3.12 is defined.
+- Proposed technologies have reasons.
+- Local Docker-first deployment is defined.
+- AWS deployment follows local validation.
+- Company Brain and Agent are represented as Unified Intelligence.
+- LLM responsibilities are defined.
+- Embedding responsibilities are defined.
+- LLM and embeddings interaction is defined.
+- Secure RAG authorization boundaries are defined.
+- Skills responsibilities are defined.
+- AI Tools are controlled and tool/framework agnostic.
+- Microsoft Presidio is identified for the initial PII layer.
+- Webhooks are defined.
+- Observability requirements are defined.
+- Health monitoring is defined.
+- Incident response is defined.
+- Automated actions and human escalation are defined.
+- Tenant/RBAC boundaries are defined.
+- Testing requirements are defined.
+- CI requirements are defined.
+- AWS deployment does not block local development.
+- Unresolved architecture decisions are explicitly identified.
+- The technical architecture remains proportional to the 7-day project.
+
+---
+
+# 43. Relationship to PRD
+
+The PRD remains the product source of truth.
+
+The TRD translates the approved product requirements into a practical technical direction.
+
+```text
+PRD
+ |
+ | What / Why
+ v
+TRD
+ |
+ | How / Technical Direction
+ v
+ADR
+ |
+ | Architecture Decision
+ v
+Implementation
+ |
+ v
+Tests / CI
+```
+
+If a technical implementation requires changing a product requirement, the PRD must be reviewed rather than silently changed through implementation.
+
+---
+
+# 44. Document Status
+
+**Status:** Revised — PR Review Changes Incorporated
+
+**Primary Development Language:** Python 3.12
+
+**Deployment:** Local Docker-first → AWS
+
+**AI Provider:** OpenRouter
+
+**Model:** Configurable
+
+**PII Technology:** Microsoft Presidio
+
+**Core Intelligence Model:** Unified Intelligence
+
+**Primary AI Focus:**
+
+- Company Brain
+- Secure RAG
+- Skills
+- AI Agent capabilities
+- AI Tools
+- PII protection
+- Webhooks
+- Observability
+- Automated actions
+- Human intervention
+
+**Next Step:**
+
+Bala and the engineering team review the technical direction and identify any architecture decisions that require ADRs before implementation.

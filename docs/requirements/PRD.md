@@ -1,1696 +1,1294 @@
-# Arc --- Product Requirements Document
+# ARC — Product Requirements Document
 
-**Project:** Arc\
-**Type:** Enterprise AI Engineering / Placement Project\
-**Domain:** IT Services\
-**Purpose:** Placement and end-to-end engineering learning\
-**Implementation Window:** 7 days\
-**Status:** Active Implementation PRD
+**Product:** Arc
+**Domain:** Enterprise AI / IT Services
+**Project Type:** Placement-oriented engineering project
+**Duration:** 7-day implementation
+**Status:** Revised — PR Review Changes Incorporated
+**Primary Focus:** AI, Company Brain, Unified Intelligence, Secure RAG, Skills, Tools, Webhooks, Observability
 
-------------------------------------------------------------------------
+---
 
-## 1. Purpose
+# 1. Document Purpose
 
-This PRD defines the actual Arc project to be built during the 7-day
-implementation sprint.
+This PRD defines what Arc is, why it exists, who uses it, the major product capabilities, their relationships, and the expected end-to-end behavior.
 
-Arc is **not a startup, commercial SaaS product, or production
-enterprise platform**. It is a serious engineering project intended to
-demonstrate and teach how an enterprise AI system works end to end.
+Arc is being built as a practical engineering project to demonstrate an end-to-end enterprise AI system.
 
-The project prioritizes the AI domain while keeping generic platform
-capabilities intentionally simple.
+The project prioritizes understanding and demonstrating AI-driven workflows rather than implementing production-scale infrastructure for every enterprise concern.
 
-The core objective is to build one connected system around:
+The PRD defines **what Arc should do and why**.
 
--   Company Brain
--   Secure RAG
--   Skills Engine
--   AI Agent
--   AI Tools
--   PII protection
--   Webhooks
--   Observability
+It does not prescribe unnecessary implementation details such as a specific microservice topology, cloud architecture, or infrastructure stack unless explicitly required by the product.
 
-Supporting capabilities provide the minimum platform foundation required
-for these AI workflows:
+---
 
--   Multi-tenancy
--   Authentication / RBAC
--   Connectors
--   Docker-based local deployment
+# 2. Product Objective
 
-------------------------------------------------------------------------
+Arc demonstrates how an organization can turn scattered company knowledge and operational information into a controlled AI system capable of:
 
-# 2. Project Objective
+- understanding company knowledge
+- retrieving relevant information securely
+- understanding company procedures
+- selecting appropriate skills
+- using approved tools
+- responding to events
+- performing controlled actions
+- monitoring outcomes
+- escalating serious situations to humans
 
-Arc should demonstrate how an IT Services organization can collect
-scattered organizational knowledge, protect it, retrieve it according to
-user permissions, turn procedures into executable Skills, and allow an
-AI Agent to use those Skills and controlled Tools to perform operational
-work.
+The central product concept is **Unified Intelligence**.
 
-The central loop is:
+---
 
-``` text
-Information / Event
-        ↓
-Connectors / Webhooks
-        ↓
-PII Guard
-        ↓
+# 3. Problem Statement
+
+Companies accumulate critical operational knowledge across:
+
+- documents
+- procedures
+- policies
+- previous incidents
+- incident resolutions
+- operational records
+- employee knowledge
+- connected systems
+- other internal information sources
+
+Traditional AI applications often treat this information as a collection of documents to search.
+
+That is insufficient for reliable company automation.
+
+Arc aims to create a **living Company Brain** that understands:
+
+- what the company knows
+- how the company operates
+- what procedures should be followed
+- what happened previously
+- which actions are allowed
+- when a human must intervene
+
+The Company Brain and AI Agent therefore operate as one **Unified Intelligence**, with different responsibilities within the same intelligence system.
+
+---
+
+# 4. Product Vision
+
+Arc provides a company-specific intelligence layer that connects:
+
+```text
+Company Knowledge
+       ↓
 Company Brain
-        ↓
-Secure RAG / Skills
-        ↓
-AI Agent
-        ↓
-AI Tools
-        ↓
-Action
-        ↓
-Observability / Incident
-        ↓
-Outcome becomes organizational knowledge
+       ↓
+Secure Retrieval
+       ↓
+Skills / Procedures
+       ↓
+Unified Intelligence
+       ↓
+Approved AI Tools
+       ↓
+Actions
+       ↓
+Observability
+       ↓
+Human Intervention
 ```
 
-The final system should be understandable by the team without depending
-on an AI assistant to explain its own implementation.
+The objective is not to build a generic chatbot.
 
-------------------------------------------------------------------------
+The objective is to demonstrate how AI can understand company context and safely participate in company workflows.
 
-# 3. Product Vision
+---
 
-The problem Arc demonstrates is that important company knowledge is
-scattered across documents, procedures, previous incidents, solutions,
-communications, and external systems.
+# 5. Project Scope
 
-The Company Brain acts as the organization's living memory.
+## In Scope
 
-It contains and connects:
+The 7-day project focuses on:
 
--   Knowledge
--   Procedures
--   Policies
--   Incidents
--   Solutions
--   Decisions
--   Relationships
--   Provenance
--   Operational experience
+1. Simple multi-tenancy
+2. Authentication and RBAC
+3. PII protection
+4. Company Brain
+5. Secure RAG
+6. Skills Engine
+7. Unified Intelligence / AI Agent
+8. AI Tools
+9. Webhooks
+10. Usage-based observability
+11. Incident and health monitoring
+12. Automated actions
+13. Human intervention
+14. Docker-based local execution
+15. CI validation
 
-The AI Agent uses this organizational context to perform useful work.
+## Out of Scope
 
-Arc is therefore **not simply a chatbot over documents**.
+- Enterprise SSO
+- AWS deployment as a required deliverable
+- production-scale cloud infrastructure
+- Kubernetes
+- complex microservice architecture
+- commercial billing platform
+- real customer data
+- training a foundation model
+- unnecessary enterprise infrastructure
 
-The intended concept is:
+---
 
-``` text
-Company data
-      ↓
-Company Brain
-      ↓
-Secure knowledge
-      ↓
-Skills
-      ↓
-AI Agent
-      ↓
-Controlled actions
-      ↓
-New operational experience
-      ↓
-Company Brain
-```
+# 6. Target Environment
 
-------------------------------------------------------------------------
+Arc uses simulated organizations rather than real companies.
 
-# 4. Scope
+The demonstration environment contains approximately:
 
-## 4.1 In Scope
+- 3 tenants
+- 3–5 users per tenant
+- synthetic company information
+- synthetic procedures
+- synthetic incidents
+- synthetic knowledge
+- controlled integrations/events
 
-### Platform
+The purpose is to demonstrate the architecture without exposing real company data.
 
-1.  Multi-Tenant Platform
-2.  Google/Gmail Authentication
-3.  Basic RBAC
-4.  Docker local environment
+---
 
-### AI / Data
+# 7. Users
 
-5.  PII Guard
-6.  Company Brain
-7.  Secure RAG
-8.  Skills Engine
-9.  AI Agent
-10. AI Tools
+## 7.1 Platform Administrator
 
-### Integration / Operations
+### Responsibility
 
-11. Connectors
-12. Webhook Integration Engine
-13. Usage Monitoring
-14. Health Monitoring
-15. Incident Response
-16. Agent-driven automatic actions
-17. Human approval for sensitive actions
+Manages Arc-level configuration and tenant administration.
 
-The numbers above are implementation areas, not the old 12-module PRD.
+### Permissions
 
-## 4.2 Out of Scope
+May:
 
--   Startup/business model
--   Sales
--   Fundraising
--   Customer acquisition
--   Commercial launch
--   AWS deployment
--   Kubernetes
--   Production multi-region architecture
--   Enterprise SSO
--   Customer-hosted deployment
--   Advanced IAM
--   Advanced multi-tenancy
--   Custom foundation-model training
--   Real customer data
--   Full commercial billing
--   Unnecessary microservices
--   Infrastructure added only to appear enterprise
+- create tenants
+- configure tenants
+- manage tenant membership
+- assign roles
+- view platform-level operational information where permitted
 
-------------------------------------------------------------------------
+### Access Boundary
 
-# 5. Target Environment
+The Platform Administrator may access administrative information required to manage tenants, but normal tenant data access remains subject to authorization and audit requirements.
 
-There are no real customers.
+---
 
-Arc will use synthetic data and three simulated tenants.
+## 7.2 Company Administrator
 
-``` text
-Tenant A
- ├── 3–5 users
- └── tenant-specific data
+### Responsibility
 
-Tenant B
- ├── 3–5 users
- └── tenant-specific data
+Manages one customer organization's users, knowledge, procedures, and configuration.
 
-Tenant C
- ├── 3–5 users
- └── tenant-specific data
-```
+### Permissions
 
-Each tenant should have its own:
+May:
 
--   users
--   knowledge
--   procedures
--   incidents
--   solutions
--   Skills
--   operational information
--   AI context
+- manage users within the tenant
+- assign permitted tenant roles
+- manage company knowledge
+- manage procedures and skills where authorized
+- review incidents
+- review company health
+- review tenant usage
 
-The exact number of users can be adjusted for implementation
-convenience.
+### Access Boundary
 
-------------------------------------------------------------------------
+Restricted to the administrator's tenant.
 
-# 6. Architecture
+A Company Administrator must not access another tenant's protected data.
 
-``` text
-                         ARC ENTERPRISE AI PLATFORM
-                                      │
-             ┌────────────────────────┼────────────────────────┐
-             │                        │                        │
-        Multi-Tenant              Auth/RBAC               Connectors
-             │                        │                        │
-             └────────────────────────┼────────────────────────┘
-                                      │
-                                  PII GUARD
-                                      │
-                                      ▼
-                              ┌───────────────┐
-                              │ COMPANY BRAIN │
-                              │               │
-                              │ Knowledge     │
-                              │ Procedures    │
-                              │ Policies      │
-                              │ Incidents     │
-                              │ Solutions     │
-                              │ Decisions     │
-                              │ Provenance    │
-                              └───────┬───────┘
-                                      │
-                         ┌────────────┴────────────┐
-                         │                         │
-                         ▼                         ▼
-                    SECURE RAG                SKILLS ENGINE
-                         │                         │
-                         └────────────┬────────────┘
-                                      ▼
-                                  AI AGENT
-                                      │
-                         ┌────────────┴────────────┐
-                         │                         │
-                         ▼                         ▼
-                     AI TOOLS                  WEBHOOKS
-                         │                         │
-                         └────────────┬────────────┘
-                                      ▼
-                               OBSERVABILITY
-                                      │
-                               HUMAN APPROVAL
-                                      │
-                                    DOCKER
-```
+---
 
-This is the product-level architecture. It is not a requirement to
-create a separate service for every box.
+## 7.3 Operations User
 
-------------------------------------------------------------------------
+### Responsibility
 
-# 7. Multi-Tenant Platform
+Monitors company/service operations and handles incidents.
 
-## Purpose
+### Permissions
 
-Provide basic separation between simulated customer organizations.
+May:
 
-## Required Behavior
+- view permitted operational information
+- search authorized company knowledge
+- review incidents
+- execute permitted operational tools
+- trigger approved workflows
+- respond to alerts
+- escalate incidents
 
-Arc must support:
+### Access Boundary
 
--   multiple tenants
--   users associated with tenants
--   tenant-scoped data
--   tenant-aware requests
--   basic tenant isolation
+Restricted to assigned tenant data and explicitly permitted operational actions.
 
-## Example
+---
 
-``` text
-Tenant A user
-     ↓
-Tenant A data       ALLOWED
+## 7.4 Employee / End User
 
-Tenant A user
-     ↓
-Tenant B data       DENIED
-```
+### Responsibility
 
-## Acceptance Criteria
+Uses Arc to obtain approved company information and assistance.
 
--   Three simulated tenants exist.
--   Each tenant has multiple users.
--   Tenant-scoped records can be created.
--   Tenant-scoped records can be retrieved.
--   Cross-tenant access is rejected.
--   Cross-tenant behavior is tested.
+### Permissions
 
-Advanced enterprise tenancy is not required.
+May:
 
-------------------------------------------------------------------------
+- search permitted company knowledge
+- ask questions through Unified Intelligence
+- access procedures they are authorized to access
+- initiate permitted low-risk workflows
 
-# 8. Authentication and RBAC
+### Access Boundary
+
+Cannot access restricted company information, administrative functions, or high-risk tools unless explicitly authorized.
+
+---
+
+# 8. Authentication & RBAC
 
 ## Authentication
 
-Use Google/Gmail-based authentication.
+Arc requires authentication before protected functionality is accessed.
 
-Enterprise SSO is not required.
+### Enterprise SSO
+
+**Enterprise SSO is Out of Scope.**
+
+The project uses a simple authentication approach suitable for the simulated environment.
+
+The exact authentication implementation is a technical decision.
 
 ## RBAC
 
-Use a small practical role model, for example:
+RBAC determines what an authenticated user is allowed to access or perform.
 
-``` text
-Admin
-Operator
-Employee
+Authorization must consider:
+
+```text
+User
+ ↓
+Tenant
+ ↓
+Role
+ ↓
+Permission
+ ↓
+Resource / Action
 ```
 
-### Admin
+Authentication alone does not grant permission.
 
-Can manage:
+## Access Boundary
 
--   users
--   roles
--   tenant configuration
--   operational information
+Every tenant-scoped request must be evaluated against the authenticated user's tenant and permissions.
 
-### Operator
+Cross-tenant access must be denied.
 
-Can:
+---
 
--   investigate incidents
--   use Company Brain
--   use AI workflows
--   execute approved operational tasks
+# 9. Multi-Tenancy
 
-### Employee
+Arc simulates multiple customer environments.
 
-Can:
+Example:
 
--   access permitted company knowledge
--   use approved knowledge workflows
+```text
+Tenant A
+ ├── Users
+ ├── Knowledge
+ ├── Skills
+ ├── Incidents
+ └── Usage
 
-The exact permissions should remain simple.
+Tenant B
+ ├── Users
+ ├── Knowledge
+ ├── Skills
+ ├── Incidents
+ └── Usage
 
-## Acceptance Criteria
-
--   Users can authenticate.
--   Users belong to a tenant.
--   Roles can be assigned.
--   Protected functionality requires authentication.
--   Role permissions are enforced.
--   Tenant isolation remains enforced after authentication.
-
-------------------------------------------------------------------------
-
-# 9. Connectors
-
-## Purpose
-
-Bring external organizational information into the Company Brain.
-
-The project should implement **2--3 real connectors where feasible**.
-
-Selection criteria:
-
-1.  Free or low cost
-2.  Easy to authenticate
-3.  Useful for Company Brain
-4.  Useful for demonstrating external data ingestion
-5.  Achievable within seven days
-
-Likely candidates include:
-
--   GitHub
--   Google Drive
--   another simple useful source if feasible
-
-If a real connector becomes too expensive or technically distracting, a
-controlled/fake API may be used.
-
-## Flow
-
-``` text
-External System
-      ↓
-Connector
-      ↓
-Fetch Data
-      ↓
-Tenant Association
-      ↓
-PII Guard
-      ↓
-Company Brain
+Tenant C
+ ├── Users
+ ├── Knowledge
+ ├── Skills
+ ├── Incidents
+ └── Usage
 ```
 
-## Acceptance Criteria
+Tenant boundaries apply to:
 
--   At least two useful sources can be connected where feasible.
--   Imported data has tenant context.
--   Connector failures are handled.
--   Secrets are protected.
--   Imported information can enter the Company Brain.
+- users
+- knowledge
+- retrieval
+- skills
+- tools
+- incidents
+- events
+- observability
+- usage
 
-------------------------------------------------------------------------
+Cross-tenant data leakage is a critical negative test.
+
+---
 
 # 10. PII Guard
 
 ## Purpose
 
-Detect and protect personally identifiable information before it reaches
-sensitive downstream workflows.
+PII Guard protects sensitive information before it reaches downstream AI processing or other defined boundaries.
 
-## Flow
+## Workflow
 
-``` text
+```text
 Input
-  ↓
+ ↓
 PII Detection
-  ↓
+ ↓
 Redaction / Masking
-  ↓
-Safe Data
-  ↓
+ ↓
+Sanitized Content
+ ↓
 Company Brain / RAG / AI
 ```
 
-## Example
+## Requirements
 
-Input:
+PII Guard should:
 
-``` text
-Contact John at john@example.com about the outage.
-```
+- identify supported PII categories
+- redact or mask configured PII
+- preserve useful non-sensitive information
+- avoid unnecessary sensitive-data logging
+- provide predictable failure behavior
 
-Output:
+The exact detection library is an implementation decision.
 
-``` text
-Contact John at [EMAIL_REDACTED] about the outage.
-```
-
-The first implementation can focus on common categories such as email
-addresses and phone numbers.
-
-Perfect PII detection is not required.
-
-## Acceptance Criteria
-
--   Defined PII examples are detected.
--   Defined PII is redacted or masked.
--   Useful non-sensitive information remains.
--   Sensitive values are not unnecessarily logged.
--   PII processing is integrated into relevant data flows.
-
-------------------------------------------------------------------------
+---
 
 # 11. Company Brain
 
 ## Purpose
 
-The Company Brain is the central organizational memory of Arc.
+The Company Brain is Arc's central company-specific knowledge and operational intelligence layer.
 
-It stores and connects information that humans and AI systems need to
-understand how the simulated company operates.
+It is not simply a document search system.
 
-## Brain Contents
+It maintains structured and searchable representations of:
 
-### Knowledge
+- knowledge
+- procedures
+- policies
+- skills
+- decisions
+- incidents
+- previous solutions
+- relationships
+- provenance
+- permissions
+- tenant context
 
-General company and technical knowledge.
+## Company Brain as Living Intelligence
 
-### Procedures
+The Company Brain is continuously informed by company information and operational history.
 
-Step-by-step ways of performing work.
+Conceptually:
 
-Example:
-
-``` text
-Payment API Incident Procedure
-
-1. Check service health.
-2. Check recent logs.
-3. Check recent deployments.
-4. Restart service if permitted.
-5. Verify health.
-6. Escalate if recovery fails.
+```text
+Company Information
+       ↓
+Knowledge
+       ↓
+Procedures
+       ↓
+Incidents
+       ↓
+Solutions
+       ↓
+Decisions
+       ↓
+Relationships
+       ↓
+Provenance
+       ↓
+Unified Intelligence
 ```
 
-### Policies
+## Relationship With AI Agent
 
-Rules controlling employee and Agent behavior.
+The Company Brain and AI Agent are **not separate intelligence systems**.
 
-### Incidents
+They form one **Unified Intelligence**.
 
-Previous operational problems.
+The distinction is functional:
 
-### Solutions
+### Company Brain capabilities
 
-How previous incidents were solved.
+- remember
+- retrieve
+- relate
+- understand company context
+- maintain knowledge
+- provide procedures and history
 
-### Decisions
+### Agent capabilities
 
-Important organizational or operational decisions.
+- reason over available context
+- select skills
+- decide which approved tools are appropriate
+- execute workflows
+- evaluate tool results
+- determine whether to continue, finish, or escalate
 
-### Relationships
+Therefore:
 
-Example:
-
-``` text
-Incident
-   ↓
-Service
-   ↓
-Procedure
-   ↓
-Skill
-   ↓
-Solution
+```text
+             UNIFIED INTELLIGENCE
+                     |
+          +----------+----------+
+          |                     |
+   Company Brain            Agent
+   Knowledge/Memory       Reasoning/Action
+          |                     |
+          +----------+----------+
+                     |
+              Skills + Tools
 ```
 
-### Provenance
+The Agent should not operate independently of the Company Brain for company-specific workflows.
 
-The Brain should record where information originated:
-
--   document
--   connector
--   incident
--   procedure
--   user-created entry
-
-## Living Knowledge
-
-Operational outcomes can become future knowledge.
-
-``` text
-Incident
-   ↓
-Investigation
-   ↓
-Solution
-   ↓
-Outcome
-   ↓
-Company Brain
-```
-
-## Important Boundary
-
-The Company Brain is not just a vector database.
-
-Structured organizational information and its relationships should be
-retained separately from retrieval representations.
-
-## Acceptance Criteria
-
--   Knowledge can be stored.
--   Procedures can be stored.
--   Incidents can be stored.
--   Solutions can be stored.
--   Provenance can be recorded.
--   Information is tenant-scoped.
--   Brain information can be retrieved through Secure RAG.
--   Operational outcomes can become stored experience/history.
-
-------------------------------------------------------------------------
+---
 
 # 12. Secure RAG
 
 ## Purpose
 
-Allow users and Agents to retrieve relevant Company Brain information
-while respecting authorization and tenant boundaries.
+Secure RAG allows Unified Intelligence to retrieve relevant company knowledge while enforcing tenant and permission boundaries.
 
-## Flow
+## Workflow
 
-``` text
-User / Agent
+```text
+User / Event
      ↓
-Tenant
+Authentication
      ↓
-Permissions
+Tenant Context
+     ↓
+Authorization
      ↓
 Query
      ↓
 Retrieval
      ↓
-Permission Filtering
+Tenant + Permission Filtering
      ↓
-Allowed Context
+Approved Context
      ↓
-LLM
+Unified Intelligence
      ↓
-Response
+Response / Action
 ```
 
-## Critical Requirement
+## Requirements
 
-RAG must never become an authorization bypass.
+Secure RAG must:
 
-Retrieval must consider:
+- preserve tenant context
+- retrieve relevant knowledge
+- enforce access permissions
+- prevent cross-tenant retrieval
+- prevent unauthorized knowledge from entering AI context
+- provide source/provenance information where appropriate
 
--   tenant
--   user
--   role
--   permission
--   knowledge access
+Authentication is not sufficient.
 
-## Acceptance Criteria
+The retrieval layer must also enforce authorization.
 
--   Authorized knowledge can be retrieved.
--   Unauthorized knowledge is excluded.
--   Cross-tenant retrieval is prevented.
--   Permission filtering is tested.
--   The LLM receives only permitted context.
--   Retrieval failures are handled safely.
-
-------------------------------------------------------------------------
+---
 
 # 13. Skills Engine
 
 ## Purpose
 
-Turn organizational procedures into controlled, executable Skills for
-the AI Agent.
+The Skills Engine converts company procedures and operational knowledge into structured, reusable workflows that Unified Intelligence can apply.
 
-A Skill represents a repeatable way of performing a task.
+A Skill describes **how the company performs a task**.
 
 ## Example
 
-``` text
-Skill: Payment API Recovery
+```text
+Skill: Service Recovery
 
-1. Get service health.
-2. Get service logs.
-3. Check recent deployment.
-4. Restart service if allowed.
-5. Verify service health.
-6. Update incident.
+Purpose:
+Recover a degraded service.
+
+Preconditions:
+- service health is degraded
+
+Steps:
+1. Check service health
+2. Retrieve recent incidents
+3. Determine approved recovery action
+4. Execute permitted recovery tool
+5. Verify service health
+
+Constraints:
+- do not restart protected production services automatically
+
+Approval:
+- human approval required for high-risk recovery
+
+Failure:
+- create/escalate incident
 ```
 
-## Skill Lifecycle
+## Skill Responsibilities
 
-``` text
-Company Brain
-      ↓
-Procedure / Knowledge
-      ↓
-AI proposes Skill
-      ↓
-Human reviews
-      ↓
-Approved Skill
-      ↓
-Available to Agent
-```
+A Skill may define:
 
-The Agent must not invent unrestricted executable behavior.
+- purpose
+- inputs
+- preconditions
+- steps
+- constraints
+- allowed tools
+- risk level
+- approval requirements
+- expected output
+- failure behavior
+- provenance/version
 
-Skills should operate within defined boundaries.
+Skills are part of Unified Intelligence's operational capability.
 
-## Acceptance Criteria
+---
 
--   Procedures can be represented as Skills.
--   Skills have defined steps.
--   Skills identify permitted Tools.
--   Skill proposals can be reviewed.
--   Human approval can be required before activation.
--   Approved Skills can be invoked by the Agent.
--   Skill execution is observable.
-
-------------------------------------------------------------------------
-
-# 14. AI Agent
+# 14. Unified Intelligence / AI Agent
 
 ## Purpose
 
-The AI Agent is the reasoning and orchestration layer.
+Unified Intelligence is the combined Company Brain + Agent system.
 
-It uses:
+It provides both:
 
--   Company Brain
--   Secure RAG
--   Skills
--   AI Tools
--   operational events
+- company memory/context
+- reasoning and action
 
-to perform tasks.
+The system is designed to move from:
 
-## Company Brain vs AI Agent
-
-They are both part of the same living system, but they have different
-responsibilities.
-
-### Company Brain
-
-``` text
-Memory
-Knowledge
-Experience
-Procedures
-Policies
-History
-```
-
-### AI Agent
-
-``` text
+```text
+Know
+ ↓
 Understand
-Reason
-Plan
-Select Skill
-Select Tools
-Execute
+ ↓
+Decide
+ ↓
+Act
+ ↓
 Observe
-Adapt
-Escalate
+ ↓
+Learn / Update Context
 ```
 
-The Brain tells the Agent what the organization knows and how it works.
+## Core Capabilities
 
-The Agent determines what to do in the current situation within its
-permissions and approved Skills.
+Unified Intelligence can:
 
-## Agent Flow
+1. understand a user/event request
+2. retrieve company knowledge
+3. identify relevant procedures
+4. select an appropriate Skill
+5. determine required tools
+6. execute permitted actions
+7. inspect results
+8. continue or stop
+9. escalate to a human when required
+10. record execution context
 
-``` text
-Trigger
-  ↓
-Understand task
-  ↓
-Search Company Brain
-  ↓
-Secure RAG
-  ↓
-Identify Skill
-  ↓
-Plan
-  ↓
-Select Tools
-  ↓
-Execute
-  ↓
-Observe result
-  ↓
-Continue / Resolve / Escalate
+## Example
+
+```text
+Webhook:
+"Payment service is unhealthy."
+
+        ↓
+
+Unified Intelligence
+        ↓
+Company Brain:
+Find previous payment incidents
+        ↓
+Skill:
+Payment Service Recovery
+        ↓
+Reasoning
+        ↓
+Tool:
+Check Service Health
+        ↓
+Tool:
+Restart Service
+        ↓
+Verify Health
+        ↓
+Success?
+   /       \
+ Yes       No
+ |          |
+Close      Human
+           Escalation
 ```
 
-## Acceptance Criteria
+## Safety Boundary
 
--   Agent can receive a task/event.
--   Agent can retrieve authorized knowledge.
--   Agent can identify an appropriate Skill.
--   Agent can invoke allowed Tools.
--   Agent can observe Tool results.
--   Agent can perform a multi-step workflow.
--   Agent can stop or request human intervention.
--   Agent execution is observable.
+Unified Intelligence cannot arbitrarily execute actions.
 
-------------------------------------------------------------------------
+Actions must pass through approved AI Tools and authorization controls.
+
+---
 
 # 15. AI Tools
 
 ## Purpose
 
-Provide controlled capabilities that the AI Agent can invoke.
+AI Tools are controlled capabilities that Unified Intelligence can invoke to interact with Arc or approved external systems.
 
-AI Tools are the Agent's controlled interface to the rest of Arc.
+Tools are the **action interface** between AI reasoning and the real system.
 
-## Initial Examples
+Examples:
 
-``` text
-search_company_knowledge()
-get_service_health()
-get_service_logs()
-get_recent_incidents()
+- search_company_knowledge
+- get_incident_history
+- check_service_health
+- create_incident
+- update_ticket
+- send_notification
+- restart_service
+- escalate_to_human
 
-create_incident()
-update_incident()
+## Tool Requirements
 
-send_notification()
+Each tool should have:
 
-restart_service()
-```
+- defined purpose
+- input schema
+- output schema
+- authorization requirements
+- risk level
+- validation
+- failure behavior
+- audit/observability behavior
 
-The initial Tool set should remain small.
+## Open-Source Tools and Frameworks
 
-## Tool Definition
+Arc should use suitable open-source AI tools and frameworks where they provide clear value.
 
-Each Tool should have:
+The architecture remains tool-agnostic and extensible.
 
--   name
--   purpose
--   input
--   output
--   permission
--   risk level
--   execution behavior
+A selected tool/framework may be:
 
-## Example
+- integrated
+- replaced
+- removed
+- evaluated against another option
 
-``` text
-Tool: get_service_health
-Risk: Low
-Agent: Allowed
-Approval: No
-```
+without changing the product-level concept of AI Tools.
 
-``` text
-Tool: restart_service
-Risk: Medium
-Agent: Conditional
-Approval: Policy-dependent
-```
+The project should avoid choosing a framework solely because it is popular.
 
-The Agent should never receive unrestricted arbitrary code execution.
+---
 
-## Acceptance Criteria
-
--   Agent can use approved Tools.
--   Tool inputs are validated.
--   Tool permissions are enforced.
--   Tool results return to the Agent.
--   Tool failures are handled.
--   Tool executions are observable.
-
-------------------------------------------------------------------------
-
-# 16. Webhook Integration Engine
+# 16. Webhooks
 
 ## Purpose
 
-Allow external operational events to enter Arc and trigger workflows.
+Webhooks allow external or simulated systems to notify Arc about events.
 
 ## Example
 
-``` text
+```text
 Monitoring System
        ↓
-POST /webhooks/events
+Webhook
        ↓
-Validate
+Event Validation
        ↓
-Resolve Tenant
+Tenant Resolution
        ↓
-PII Guard
+Unified Intelligence
        ↓
-AI Agent
+Skill
+       ↓
+AI Tool
+       ↓
+Action
 ```
 
-Example event:
+## Requirements
 
-``` json
-{
-  "event": "service_unhealthy",
-  "service": "payment-api",
-  "tenant_id": "tenant-a"
-}
-```
+The webhook system should support:
 
-## Required Behavior
+- event validation
+- tenant association
+- event identification
+- processing status
+- failure handling
+- duplicate handling where applicable
+- observability
 
-1.  Receive event.
-2.  Validate event.
-3.  Resolve tenant.
-4.  Protect sensitive data.
-5.  Process event.
-6.  Trigger relevant workflow.
-7.  Record result.
+Controlled/fake APIs are acceptable for demonstration.
 
-## Acceptance Criteria
-
--   Valid events are accepted.
--   Invalid events are rejected safely.
--   Tenant context is preserved.
--   Duplicate behavior is defined sufficiently.
--   Failures are observable.
--   Webhooks can trigger Agent workflows.
-
-------------------------------------------------------------------------
+---
 
 # 17. Observability
 
-Observability is intentionally focused on the project needs.
+Arc uses usage-based and operational observability.
 
-## 17.1 Usage Monitoring
+The project should monitor:
 
-Track:
+- API request count
+- AI request count
+- token usage
+- Agent execution count
+- tool invocation count
+- webhook events
+- successful Agent runs
+- failed Agent runs
+- latency
+- error rate
+- tenant usage
+- service health
+- incident count
+- automated action count
+- human escalation count
 
--   AI requests
--   RAG requests
--   Agent executions
--   Tool calls
--   webhook events
--   connector activity
+## Agent Observability
+
+A completed Agent execution should allow the team to understand:
+
+```text
+What triggered it?
+ ↓
+Which tenant?
+ ↓
+What knowledge was retrieved?
+ ↓
+Which Skill?
+ ↓
+Which Tools?
+ ↓
+Which actions?
+ ↓
+Result?
+ ↓
+Human intervention?
+```
+
+---
+
+# 18. Health Monitoring
+
+Health monitoring provides visibility into simulated services and Arc components.
 
 Example:
 
-``` text
-Tenant A
-
-RAG requests:      42
-Agent runs:        15
-Tool executions:   31
-Webhook events:    18
-```
-
-## 17.2 Health Monitoring
-
-Track relevant health such as:
-
--   API
--   Company Brain
--   RAG
--   Agent
--   connectors
--   webhook processing
-
-## 17.3 Incident Response
-
-Operational failures should become incidents.
-
-``` text
-Failure
-  ↓
+```text
+Service
+ ↓
 Health Signal
-  ↓
-Incident
-  ↓
-Agent Investigation
-  ↓
-Resolution / Human Escalation
+ ↓
+Healthy / Degraded / Unhealthy
+ ↓
+Unified Intelligence
+ ↓
+Skill
+ ↓
+Action or Escalation
 ```
 
-## 17.4 Agent-Driven Actions
+Health information should be tenant-scoped where applicable.
 
-Observability should expose:
+---
 
--   Agent run
--   trigger
--   selected Skill
--   Tools used
--   actions performed
--   result
--   failure
--   human approval
--   final outcome
+# 19. Incident Response
+
+Incidents represent operational problems requiring investigation or action.
+
+An incident may originate from:
+
+- webhook event
+- health degradation
+- failed AI action
+- failed tool
+- external integration
+- human report
 
 Example:
 
-``` text
-Agent Run #102
-
-Trigger:
-payment-api unhealthy
-
-Knowledge:
-Payment API Incident Procedure
-
-Skill:
-payment_api_recovery
-
-Tools:
-get_service_health()
-get_service_logs()
-restart_service()
-
-Result:
-Service recovered
-
-Human approval:
-Not required
-```
-
-## Acceptance Criteria
-
--   Usage can be viewed.
--   Health can be viewed.
--   Incidents can be tracked.
--   Agent executions can be inspected.
--   Tool executions can be inspected.
--   Important failures are visible.
--   Sensitive information is not unnecessarily logged.
-
-------------------------------------------------------------------------
-
-# 18. Human Intervention
-
-AI autonomy must have boundaries.
-
-``` text
-AI Agent
-    │
-    ├── Low-risk action
-    │       ↓
-    │    Execute
-    │
-    └── Sensitive action
-            ↓
-       Human Approval
-            │
-       ┌────┴────┐
-       │         │
-    Approve    Reject
-       │
-    Execute
-```
-
-Examples of potentially low-risk actions:
-
--   search knowledge
--   inspect health
--   inspect logs
--   create incident
-
-Potentially higher-risk actions:
-
--   restart service
--   change configuration
--   destructive operations
-
-The project only needs a simple approval workflow.
-
-------------------------------------------------------------------------
-
-# 19. Docker Local Deployment
-
-Arc will run locally using Docker.
-
-## Required
-
--   reproducible local setup
--   documented environment configuration
--   no committed secrets
--   consistent startup process
--   all required application infrastructure containerized where
-    practical
-
-## Not Required
-
--   AWS
--   Kubernetes
--   production cloud deployment
--   customer-hosted deployment
-
-The exact container topology is an engineering decision.
-
-------------------------------------------------------------------------
-
-# 20. AI Provider Strategy
-
-The application should avoid being tightly coupled to one AI provider.
-
-Conceptually:
-
-``` text
-Application
-     ↓
-LLM Interface
-     ↓
-Provider Adapter
-     ↓
-Model
-```
-
-This allows a free/local/provider-based model to be substituted without
-rewriting the Agent.
-
-Prefer free or low-cost options where practical.
-
-The exact model and provider are technical decisions.
-
-------------------------------------------------------------------------
-
-# 21. Data Strategy
-
-Use synthetic data only.
-
-Example data:
-
--   company policies
--   technical procedures
--   incidents
--   solutions
--   service information
--   documents
--   employee information
--   operational events
-
-No real customer/company data is required.
-
-------------------------------------------------------------------------
-
-# 22. Security Requirements
-
-The project requires the following minimum controls:
-
--   authentication for protected functionality
--   role-based authorization
--   tenant isolation
--   server-side authorization
--   protected credentials
--   no committed secrets
--   PII protection
--   permission-aware RAG
--   controlled Agent Tools
--   human approval for sensitive actions
--   safe logging
-
-The project does not require a full enterprise security program.
-
-------------------------------------------------------------------------
-
-# 23. AI Safety Requirements
-
-The Agent must not:
-
--   bypass tenant authorization
--   retrieve unauthorized knowledge
--   execute arbitrary code
--   access arbitrary systems
--   invent permissions
--   execute restricted actions without required approval
--   unnecessarily expose PII
-
-The Agent operates through controlled Tools and approved Skills.
-
-------------------------------------------------------------------------
-
-# 24. Testing Strategy
-
-Testing should concentrate on critical behavior.
-
-## Tenant Tests
-
--   Tenant A can access Tenant A data.
--   Tenant A cannot access Tenant B data.
-
-## Authentication Tests
-
--   authenticated user succeeds
--   unauthenticated user is rejected
-
-## Authorization Tests
-
--   allowed role succeeds
--   disallowed role fails
-
-## PII Tests
-
--   known PII is detected
--   known PII is redacted
-
-## RAG Tests
-
--   authorized knowledge retrieved
--   unauthorized knowledge excluded
--   cross-tenant retrieval blocked
-
-## Skill Tests
-
--   approved Skill executes
--   restricted Skill requires approval
-
-## Agent Tests
-
--   Agent selects appropriate Tool
--   Agent receives Tool result
--   Agent handles Tool failure
--   Agent escalates when required
-
-## Webhook Tests
-
--   valid event accepted
--   invalid event rejected
--   tenant context preserved
-
-## End-to-End Test
-
-The golden workflow must work:
-
-``` text
-Webhook
- → PII
- → Company Brain
- → Secure RAG
- → Skill
- → Agent
- → Tool
- → Health
- → Incident
- → Observability
-```
-
-------------------------------------------------------------------------
-
-# 25. Golden End-to-End Scenario
-
-A simulated customer service becomes unhealthy.
-
-## Step 1 --- Event
-
-``` text
-Monitoring System
+```text
+Health Failure
       ↓
-Webhook
-      ↓
-service_unhealthy
-```
-
-## Step 2 --- Tenant Resolution
-
-``` text
-Webhook
-   ↓
-Tenant A
-```
-
-## Step 3 --- PII Protection
-
-``` text
-Event
-   ↓
-PII Guard
-   ↓
-Safe Event
-```
-
-## Step 4 --- Company Brain
-
-The Agent searches organizational knowledge about the affected service.
-
-## Step 5 --- Secure RAG
-
-``` text
-Query
- ↓
-Tenant-scoped procedure
- ↓
-Previous incidents
- ↓
-Previous solutions
-```
-
-## Step 6 --- Skill
-
-``` text
-Payment API Recovery Skill
-```
-
-## Step 7 --- Agent
-
-The Agent determines the appropriate sequence.
-
-``` text
-Get health
-   ↓
-Get logs
-   ↓
-Check recent incidents
-   ↓
-Determine action
-```
-
-## Step 8 --- Tool
-
-If allowed:
-
-``` text
-restart_service()
-```
-
-## Step 9 --- Verification
-
-``` text
-get_service_health()
-```
-
-## Step 10 --- Incident
-
-If recovered:
-
-``` text
-Incident resolved
-```
-
-If not:
-
-``` text
-Human intervention required
-```
-
-## Step 11 --- Learning
-
-``` text
 Incident
-   ↓
-Solution
-   ↓
-Outcome
-   ↓
+      ↓
+Unified Intelligence
+      ↓
+Retrieve Previous Solutions
+      ↓
+Select Skill
+      ↓
+Attempt Approved Action
+      ↓
+Verify
+      ↓
+Resolve / Escalate
+```
+
+Serious or high-risk situations should require human intervention.
+
+---
+
+# 20. Automated Actions
+
+Arc demonstrates controlled AI-driven actions.
+
+Examples:
+
+- restart a simulated service
+- create an incident
+- update a ticket
+- send a notification
+- trigger a controlled webhook
+- escalate to a human
+
+Automated actions must be:
+
+- authorized
+- validated
+- observable
+- auditable
+
+High-risk actions should require human approval.
+
+---
+
+# 21. Human Intervention
+
+AI should not be treated as autonomous in every situation.
+
+Human intervention is required when:
+
+- the action is high risk
+- confidence is insufficient
+- required information is missing
+- an action fails repeatedly
+- policy requires approval
+- the Agent cannot safely determine the next step
+
+Example:
+
+```text
+Agent
+ ↓
+High-risk action detected
+ ↓
+Human Approval
+ ↓
+Approved → Tool → Action
+Rejected → Stop / Escalate
+```
+
+---
+
+# 22. Connectors
+
+Arc may integrate with 2–3 practical external systems where free/open-source or controlled APIs are available.
+
+Connector selection is based on:
+
+- ease of integration
+- cost
+- usefulness to the demonstration
+- ability to support company knowledge or operational workflows
+
+Connector-specific technical decisions are implementation decisions and should not unnecessarily expand infrastructure.
+
+---
+
+# 23. Data Model — Product-Level
+
+The exact technical schema is defined separately, but Arc requires conceptual entities including:
+
+### Tenant
+
+Represents a simulated customer/company environment.
+
+### User
+
+Represents a person accessing Arc.
+
+### Role
+
+Represents a collection of permissions.
+
+### Knowledge
+
+Represents company-specific information.
+
+### Procedure / Skill
+
+Represents how a company performs an operation.
+
+### Policy
+
+Represents rules or constraints.
+
+### Incident
+
+Represents an operational problem.
+
+### Decision
+
+Represents an important company decision.
+
+### Provenance
+
+Describes where knowledge or procedures originated.
+
+### Agent Execution
+
+Represents a Unified Intelligence execution.
+
+### Tool Execution
+
+Represents an AI Tool invocation.
+
+### Event
+
+Represents a webhook or internal operational event.
+
+### Usage Record
+
+Represents measurable activity.
+
+---
+
+# 24. Core End-to-End Workflow
+
+The primary demonstration should connect the major AI components.
+
+```text
+Company Data
+      ↓
+PII Guard
+      ↓
 Company Brain
+      ↓
+Secure RAG
+      ↓
+Unified Intelligence
+      ↓
+Skill Selection
+      ↓
+AI Tool
+      ↓
+Action
+      ↓
+Health Verification
+      ↓
+Observability
+      ↓
+Human Intervention if Required
 ```
 
-## Step 12 --- Observability
+---
 
-The complete Agent execution is visible.
+# 25. Example End-to-End Scenario
 
-------------------------------------------------------------------------
+## Scenario: Service Failure
 
-# 26. Implementation Priority
+A simulated service becomes unhealthy.
 
-AI capabilities receive the highest priority.
-
-Recommended priority:
-
-1.  Company Brain
-2.  Secure RAG
-3.  Skills Engine
-4.  AI Agent
-5.  AI Tools
-6.  PII Guard
-7.  Webhook → Agent integration
-8.  AI/Agent Observability
-9.  Connectors
-10. Multi-tenancy
-11. Auth/RBAC
-12. Docker/platform polish
-
-Lower-priority platform components should remain simple so they do not
-consume time needed for AI components.
-
-------------------------------------------------------------------------
-
-# 27. Seven-Day Roadmap
-
-## Day 1 --- Foundation
-
--   Docker
--   backend/frontend skeleton
--   required data foundation
--   three simulated tenants
--   users
--   Google authentication
--   basic RBAC
-
-**Exit:** A user can authenticate and access tenant-scoped
-functionality.
-
-## Day 2 --- Company Brain + PII
-
--   knowledge
--   documents
--   procedures
--   policies
--   incidents
--   solutions
--   provenance
--   PII detection/redaction
-
-**Exit:** Synthetic company information can enter and be safely stored
-in the Brain.
-
-## Day 3 --- Secure RAG
-
--   chunking
--   embeddings
--   retrieval
--   tenant filtering
--   permission filtering
--   context construction
--   response generation
-
-**Exit:** Authorized users/Agents can retrieve permitted knowledge
-without cross-tenant leakage.
-
-## Day 4 --- Skills + Agent + Tools
-
--   Skill representation
--   Skill proposal
--   approval
--   Agent
--   planning
--   Tool definitions
--   Tool calling
--   Tool permissions
--   execution tracking
-
-**Exit:** Agent can use an approved Skill and controlled Tools for a
-multi-step task.
-
-## Day 5 --- Webhooks + Operations
-
--   webhook endpoint
--   validation
--   tenant resolution
--   event processing
--   incident workflow
--   health checks
--   Agent-driven actions
--   human approval
-
-**Exit:** A webhook can trigger an Agent workflow that investigates a
-simulated operational problem.
-
-## Day 6 --- Connectors + Observability
-
--   2--3 connectors where feasible
--   connector ingestion
--   usage monitoring
--   health monitoring
--   Agent run visibility
--   Tool execution visibility
--   incident visibility
-
-**Exit:** External information can enter the Brain and important
-workflows can be inspected.
-
-## Day 7 --- Integration + Testing + Documentation
-
--   golden workflow
--   tenant isolation tests
--   security tests
--   RAG tests
--   Agent tests
--   failure tests
--   Docker validation
--   documentation
--   architecture diagram
--   final demonstration
-
-**Exit:** Team can explain and demonstrate the complete Arc workflow
-independently.
-
-------------------------------------------------------------------------
-
-# 28. Definition of Done
-
-Arc is complete for this project when:
-
--   application runs locally
--   Docker setup works
--   three simulated tenants exist
--   Google authentication works
--   basic RBAC works
--   tenant isolation works
--   PII protection works
--   Company Brain works
--   Secure RAG works
--   Skills can be created/approved
--   AI Agent can execute an approved workflow
--   AI Tools work through controlled interfaces
--   Webhooks can trigger workflows
--   incidents can be created/handled
--   usage monitoring exists
--   health monitoring exists
--   Agent activity is observable
--   at least two useful connectors work where feasible
--   golden end-to-end workflow works
--   critical security cases are tested
--   documentation explains the implementation
-
-------------------------------------------------------------------------
-
-# 29. Learning Requirement
-
-The project is not successful merely because the code works.
-
-Each team member should understand the component they implement.
-
-Learning process:
-
-``` text
-1. Concept explained
-        ↓
-2. Architecture understood
-        ↓
-3. Questions asked
-        ↓
-4. Team member explains it back
-        ↓
-5. Implementation designed
-        ↓
-6. Team member implements
-        ↓
-7. Implementation reviewed/debugged
-        ↓
-8. Team member documents what was learned
+```text
+1. Service health changes
+2. Event is generated
+3. Webhook receives event
+4. Tenant context is established
+5. Unified Intelligence is triggered
+6. Company Brain retrieves previous incidents
+7. Secure RAG retrieves authorized knowledge
+8. Unified Intelligence identifies the relevant Skill
+9. Skill determines permitted action
+10. AI Tool checks service health
+11. AI Tool performs approved recovery action
+12. Service health is checked again
+13. Action result is recorded
+14. Observability records the execution
+15. If recovery fails, human intervention is requested
 ```
 
-The final goal is that the team can explain the complete system without
-relying on an AI assistant to explain their own implementation.
+This scenario demonstrates the core value of Arc.
 
-------------------------------------------------------------------------
+---
 
-# 30. Placement Demonstration Requirements
+# 26. First Demonstration Slice
 
-A developer working on Arc should be able to explain:
+The first working AI slice should demonstrate:
 
-## Product
+```text
+Tenant
+ ↓
+Authenticated User
+ ↓
+Company Knowledge
+ ↓
+Secure Retrieval
+ ↓
+Unified Intelligence
+ ↓
+Skill
+ ↓
+AI Tool
+ ↓
+Controlled Action
+ ↓
+Observability
+```
 
-What problem Arc demonstrates.
+A webhook-triggered version should be demonstrated after the basic flow works.
 
-## Company Brain
+---
 
-How organizational knowledge is collected, structured, stored,
-connected, and reused.
-
-## Secure RAG
-
-How AI retrieves only authorized information.
-
-## Skills Engine
-
-How procedures become controlled executable Skills.
-
-## AI Agent
-
-How the Agent reasons, plans, selects Skills, and orchestrates actions.
-
-## AI Tools
-
-How the Agent interacts with controlled capabilities.
-
-## PII Guard
-
-How sensitive information is detected and protected.
-
-## Webhooks
-
-How external events enter Arc and trigger workflows.
-
-## Observability
-
-How Agent and system behavior is monitored.
+# 27. Non-Functional Requirements
 
 ## Security
 
-How tenant isolation and authorization prevent data leakage.
+- authentication required for protected functionality
+- server-side authorization
+- tenant isolation
+- permission-aware retrieval
+- protected secrets
+- controlled tool access
+- PII protection
+- auditability
 
-## Docker
+## Reliability
 
-How the entire project runs locally.
+The system should handle:
 
-------------------------------------------------------------------------
+- invalid requests
+- retrieval failure
+- AI provider failure
+- tool failure
+- webhook failure
+- action failure
+- human escalation
 
-# 31. Deferred Technical Decisions
+## Performance
 
-The PRD does not finalize:
+The project should measure:
 
--   backend language/framework
--   frontend framework
--   database
--   vector database
--   cache
--   message broker
--   object storage
--   AI provider
--   AI model
--   Agent framework
--   orchestration framework
--   exact connector list
--   container/service topology
+- API latency
+- retrieval latency
+- AI latency
+- Agent execution latency
+- tool latency
 
-These should be selected only when required by implementation.
+Exact production-scale targets are not required for the placement project.
 
-No technology should be added merely because the architecture diagram
-contains a conceptual component.
+## Reproducibility
 
-------------------------------------------------------------------------
+The system must run locally using Docker-based tooling.
 
-# 32. Decision Rule
+## Testability
 
-Before adding infrastructure or a framework, ask:
+Tests should cover:
 
-1.  Does the current Arc workflow require it?
-2.  Does it provide useful learning value?
-3.  Can the team understand it within seven days?
-4.  Is there a simpler alternative?
-5.  Does it improve the final demonstration?
+- successful workflows
+- invalid requests
+- RBAC failures
+- cross-tenant access
+- retrieval permissions
+- Agent behavior
+- tool authorization
+- webhook processing
+- PII behavior
 
-If not, defer it.
+---
 
-------------------------------------------------------------------------
+# 28. Product Boundaries
 
-# 33. Final Product Flow
+Arc is intentionally a project-sized implementation.
 
-``` text
-                   EXTERNAL INFORMATION
-                           │
-                           ▼
-                     CONNECTORS
-                           │
-                           ▼
-                      PII GUARD
-                           │
-                           ▼
-                    COMPANY BRAIN
-                     │         │
-                     │         │
-                     ▼         ▼
-                SECURE RAG   SKILLS
-                     │         │
-                     └────┬────┘
-                          ▼
-                       AI AGENT
-                          │
-                    ┌─────┴─────┐
-                    │           │
-                    ▼           ▼
-                 AI TOOLS    WEBHOOKS
-                    │           │
-                    └─────┬─────┘
-                          ▼
-                    OBSERVABILITY
-                          │
-                    ┌─────┴─────┐
-                    │           │
-                 Resolved    Escalated
-                    │           │
-                    │      Human Approval
-                    │           │
-                    └─────┬─────┘
-                          ▼
-                    COMPANY BRAIN
-                 learns from outcome
+The project does not attempt to solve every enterprise platform problem.
+
+The emphasis is:
+
+```text
+Simple Platform Foundation
+          +
+Strong AI Demonstration
 ```
 
-------------------------------------------------------------------------
+The team should spend more engineering time understanding and implementing:
 
-# 34. Final Scope Statement
+- Company Brain
+- Secure RAG
+- Skills
+- Unified Intelligence
+- AI Tools
+- PII
+- Webhooks
+- Observability
+- Automated actions
 
-Arc is a **simplified enterprise AI engineering project for placement**.
+than implementing deep enterprise infrastructure.
 
-Its main demonstration is:
+---
 
-> How a Company Brain, Secure RAG, Skills Engine, AI Agent, AI Tools,
-> PII protection, Webhooks, and Observability can work together to turn
-> organizational knowledge and operational events into controlled
-> AI-assisted actions.
+# 29. Success Criteria
 
-The supporting platform capabilities exist only to make this AI workflow
-realistic:
+Arc is successful when the team can independently explain and demonstrate:
 
-``` text
-Multi-Tenant
-Auth/RBAC
-Connectors
-PII
-Company Brain
-Secure RAG
-Skills Engine
-AI Agent
-AI Tools
-Webhooks
-Observability
-Docker
+### Company Brain
+
+What information it stores and why.
+
+### Secure RAG
+
+How relevant knowledge is retrieved without violating tenant or permission boundaries.
+
+### Skills Engine
+
+How company procedures become structured workflows.
+
+### Unified Intelligence
+
+How Company Brain and Agent capabilities work together.
+
+### AI Tools
+
+How the intelligence interacts with controlled systems.
+
+### PII Guard
+
+How sensitive information is protected.
+
+### Webhooks
+
+How external events enter Arc.
+
+### Observability
+
+How an Agent action can be investigated.
+
+### Human Intervention
+
+When and why the system stops autonomous execution.
+
+Most importantly, each team member should understand the end-to-end flow rather than only their assigned code.
+
+---
+
+# 30. Product Review Acceptance Criteria
+
+The revised PRD is ready for implementation planning when:
+
+- authentication terminology is consistent
+- Enterprise SSO is explicitly Out of Scope
+- RBAC responsibilities and access boundaries are defined
+- Company Brain and AI Agent are consistently described as Unified Intelligence
+- Skills are clearly distinguished from knowledge and tools
+- AI Tools are described as controlled action interfaces
+- open-source AI tools/frameworks can be evaluated without locking the product to one framework
+- Secure RAG is permission-aware
+- tenant isolation is explicit
+- webhooks are connected to AI workflows
+- observability covers AI and operational actions
+- human intervention is explicitly defined
+- product scope remains limited to the 7-day placement project
+
+---
+
+# 31. Ownership
+
+### Joe — Product + Roadmap
+
+Owns:
+
+- product scope
+- problem definition
+- user roles
+- product behavior
+- acceptance criteria
+- roadmap
+- product decisions
+
+### Bala — Engineering + AI
+
+Reviews:
+
+- AI architecture
+- technical feasibility
+- RAG implementation
+- Agent implementation
+- Skills implementation
+- security implications
+- architecture decisions
+
+### Bharath — Platform + DevOps
+
+Reviews:
+
+- Docker
+- local environment
+- CI
+- reproducibility
+- platform implications
+- deployment workflow
+
+---
+
+# 32. Source of Truth
+
+The canonical product document is:
+
+```text
+docs/requirements/Arc_PRD.md
 ```
 
-The project should remain simple enough to complete and understand
-within seven days.
+Technical requirements are maintained in:
 
-The goal is not to build everything an enterprise would ever need.
+```text
+docs/requirements/TRD.md
+```
 
-The goal is to build **one coherent enterprise AI system that the team
-can explain, implement, demonstrate, and defend technically.**
+Architecture decisions are maintained in:
 
-------------------------------------------------------------------------
+```text
+docs/architecture/decisions/
+```
 
-# 35. Document Status
+The PRD defines product behavior.
 
-**Status:** Active Implementation PRD\
-**Purpose:** 7-Day Placement Project\
-**Primary Focus:** Company Brain / Secure RAG / Skills / AI Agent\
-**Deployment:** Local Docker\
-**Authentication:** Google/Gmail\
-**Tenants:** Three simulated tenants\
-**Real Customer Data:** Not used\
-**AWS:** Out of scope\
-**Enterprise SSO:** Out of scope\
-**Commercial Product:** Out of scope
+The TRD defines technical requirements.
 
-**Next Step:** Finalize the implementation stack and repository
-architecture, then begin Day 1.
+ADRs record important architectural decisions.
+
+---
+
+# 33. Current Status
+
+**Status:** Revised — PR Review Changes Incorporated
+
+**Next Step:**
+
+1. Bala reviews revised PRD.
+2. Bala reviews TRD.
+3. Team resolves blocking architecture questions.
+4. Required ADRs are created and reviewed.
+5. Implementation begins.
