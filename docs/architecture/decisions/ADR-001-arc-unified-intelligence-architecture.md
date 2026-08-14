@@ -1,12 +1,15 @@
 # ADR-001: Arc Unified Intelligence and Secure Application Architecture
 
 ## Status
-Proposed
+
+Accepted
 
 ## Date
+
 2026-08-14
 
 ## Decision Owners
+
 - Joe — Product scope and requirements
 - Bala — Engineering and AI architecture review
 - Bharath — Platform, Docker, CI, and delivery review
@@ -726,25 +729,46 @@ ADRs record significant architecture decisions.
 - GitHub: Arc repository and pull requests
 
 ## Supersedes
+
 None.
 
 ## Superseded By
+
 None.
 
 ## Review Notes
 
-This ADR remains **Proposed** until architecture review is complete.
+The architecture review has been completed and approved by Bala.
 
-It intentionally does not finalize the exact AI model, authentication
-implementation, connector selection, observability implementation,
-frontend, Skill schema, Company Brain schema, Agent memory/state, webhook
-schema/security details, embedding model, AI Tool framework, backend
-package structure, AWS service mapping, or human-approval implementation.
+This ADR is therefore **Accepted** and represents the approved Arc
+architecture.
+
+The ADR intentionally does not finalize implementation details that remain
+open, including:
+
+- exact AI model
+- authentication implementation
+- connector selection
+- observability implementation
+- frontend implementation
+- Skill schema
+- Company Brain schema
+- Agent memory/state implementation
+- webhook schema/security details
+- embedding model
+- AI Tool framework
+- backend package structure
+- AWS service mapping
+- human-approval implementation
 
 Microsoft Presidio is the approved initial PII protection technology.
 
-OmniRoute -> OpenRouter -> Configurable LLM is the intended Arc runtime AI
-path.
+The intended Arc runtime AI path is:
 
-If a future decision materially changes this architecture, record it in a
-new ADR rather than silently changing the historical decision.
+```text
+Arc → OmniRoute → OpenRouter → Configurable LLM
+```
+
+If a future architectural decision materially changes this architecture,
+record it through a new ADR rather than silently changing this accepted
+decision record.
