@@ -157,8 +157,8 @@ External Company Sources / Connectors
 
 Connector data must not bypass the applicable PII/security boundary.
 
-The PII Guard is a logical security boundary. The exact PII technology is
-an implementation decision unless separately approved.
+The PII Guard is a logical security boundary. The approved initial PII
+technology is Microsoft Presidio.
 
 Tenant isolation and authorization remain application responsibilities.
 
@@ -220,7 +220,7 @@ They are not independent intelligence layers.
 
 ## AI Provider and Model Boundary
 
-The Arc runtime path is:
+The intended Arc runtime AI path is:
 
 ```text
 Arc
@@ -235,10 +235,13 @@ OpenRouter
 Configurable LLM
 ```
 
-- **OmniRoute** is the Arc AI routing/gateway layer where configured.
-- **OpenRouter** is the external model provider/gateway.
-- **LLM** is the configurable model used by Unified Intelligence.
-- The exact model is not fixed by this ADR.
+**OmniRoute** is the intended AI routing/gateway layer used by the Arc
+runtime.
+
+**OpenRouter** is the external model provider/gateway.
+
+The **LLM** is the configurable model used by Unified Intelligence. The
+exact model is not fixed by this ADR.
 
 Model selection remains configurable and may be evaluated using
 tool-calling capability, reasoning quality, latency, availability, cost,
@@ -283,6 +286,7 @@ The current PRD/TRD direction establishes:
 - AWS as the follow-on deployment target
 - External-input ingestion, validation, and applicable security/PII
   boundaries
+- Microsoft Presidio as the initial PII protection technology
 
 ### Implementation recommendations
 
@@ -305,7 +309,6 @@ They should remain proportional to the 7-day scope.
 The following must remain explicitly open:
 
 - exact AI model
-- exact PII implementation
 - authentication implementation
 - connector selection
 - observability implementation
@@ -436,14 +439,20 @@ network access.
 
 ## PII Guard
 
-The architecture requires a PII/security protection layer.
+**Microsoft Presidio is the approved initial PII protection technology for
+Arc.**
 
-The exact implementation is **not finalized by this ADR**.
+Presidio provides the initial PII detection and anonymization capability
+within the PII Guard.
 
-Microsoft Presidio is the current TRD technology direction/candidate, but
-this ADR does not convert it into an irreversible architecture commitment.
+Presidio is **not the complete security boundary**. Authentication,
+authorization, tenant isolation, data minimization, secure data handling,
+and secure logging remain application-level security responsibilities.
 
-If Presidio is selected, the initial text flow is:
+The PII implementation may be replaced or extended through a future ADR if
+project requirements change.
+
+If Presidio is used for the initial text workflow:
 
 ```text
 Input
@@ -463,10 +472,6 @@ Sanitized Content
   v
 Protected AI / Data Processing
 ```
-
-PII protection is not the complete security boundary. Authentication,
-authorization, tenant isolation, data minimization, and secure logging
-remain necessary.
 
 ## Logical Components Are Not Automatically Services
 
@@ -559,7 +564,9 @@ The most important constraints are:
 1. external data/events cannot bypass applicable security/PII controls;
 2. Company Brain and Agent remain one Unified Intelligence system;
 3. the Arc runtime AI path is distinct from developer AI tooling;
-4. open implementation decisions remain open.
+4. the LLM remains configurable;
+5. approved technology decisions such as Microsoft Presidio are recorded
+   consistently with the PRD/TRD.
 
 ## Consequences
 
@@ -569,14 +576,14 @@ The most important constraints are:
 - Explicit connector and webhook security boundaries.
 - Clear separation between runtime AI and development tooling.
 - Configurable LLM architecture.
-- Open decisions are not accidentally finalized.
+- Approved technology decisions are aligned with the TRD.
 - Practical for the 7-day project.
 
 ### Negative
 
 - Some implementation details remain undecided.
 - Application-level boundaries provide less isolation than separate services.
-- PII, authentication, connectors, observability, and memory still require
+- Authentication, connectors, observability, and memory still require
   implementation decisions.
 
 ### Risks
@@ -591,64 +598,77 @@ The most important constraints are:
 ## Security Considerations
 
 ### Authentication
+
 Authentication establishes identity. Enterprise SSO is **Out of Scope**.
 The exact implementation remains open.
 
 ### Authorization / RBAC
+
 Authorization determines whether an authenticated user may access a
 resource or perform an action. Tenant context must be established before
 tenant-scoped data access.
 
 ### Connector Security
+
 Connector data must pass through ingestion, validation, and applicable
 PII/security controls before protected Company Brain/Unified Intelligence
 processing.
 
 ### Webhook Security
+
 Webhook requests are untrusted external input. Validation and applicable
 authentication, authorization, tenant, and PII controls must be applied
 before protected processing.
 
 ### Secure RAG
+
 Retrieved content must be tenant- and permission-filtered before being
 provided to the LLM.
 
 ### AI Security
+
 The LLM cannot bypass authorization, tenant isolation, approved Tools, or
 human approval requirements and cannot execute arbitrary code.
 
 ### Secrets
+
 Credentials must remain outside Git.
 
 ## Operational Considerations
 
 ### Local Development
+
 The project is Local Docker-first and must be reproducible.
 
 ### Observability
+
 Relevant AI and operational events should include usage, token counts
 where available, agent runs, tool calls, webhook events, latency,
 success/failure, tenant usage, health, incidents, actions, and human
 escalations. Exact implementation remains open.
 
 ### AWS
+
 AWS follows local validation. Exact service mapping remains open.
 
 ## Testing / Validation
 
 ### Connector security
+
 - Connector data enters through ingestion/validation.
 - Applicable PII/security processing occurs.
 - Tenant context is preserved.
 - Cross-tenant data cannot enter another tenant's context.
 
 ### Webhook security
+
 - External events reach the webhook boundary.
 - Events are validated.
 - Applicable PII/security controls run.
 - Tenant/authorization controls run before protected processing.
 
 ### Unified Intelligence
+
 - Company Brain context can be retrieved.
 - Agent capability can select a Skill.
 - Agent capability can select an approved Tool.
@@ -657,27 +677,32 @@ AWS follows local validation. Exact service mapping remains open.
 - Failure/high-risk conditions can escalate.
 
 ### AI provider
-- Arc can use OmniRoute where configured.
+
+- Arc can use OmniRoute as the intended runtime AI routing layer.
 - OmniRoute can route to OpenRouter.
 - The LLM model can be changed without changing product architecture.
 
 ### Secure RAG
+
 - Authorized knowledge is retrieved.
 - Unauthorized knowledge is filtered.
 - Cross-tenant retrieval fails.
 
 ### PII
-- The selected PII implementation detects supported test PII.
+
+- Microsoft Presidio performs the initial supported PII detection/anonymization workflow.
 - Sanitization occurs before protected processing.
 - Sensitive values are not unnecessarily logged.
 
 ### Tool security
+
 - Authorized tool execution succeeds.
 - Invalid inputs are rejected.
 - Unauthorized tool execution is blocked.
 - Arbitrary code execution is unavailable.
 
 ### Reproducibility
+
 - Docker startup works as documented.
 - CI builds/tests the application.
 - Developers can explain the major architecture and flows.
@@ -710,11 +735,16 @@ None.
 
 This ADR remains **Proposed** until architecture review is complete.
 
-It intentionally does not finalize the exact AI model, PII
-implementation, authentication implementation, connectors, observability,
+It intentionally does not finalize the exact AI model, authentication
+implementation, connector selection, observability implementation,
 frontend, Skill schema, Company Brain schema, Agent memory/state, webhook
 schema/security details, embedding model, AI Tool framework, backend
 package structure, AWS service mapping, or human-approval implementation.
+
+Microsoft Presidio is the approved initial PII protection technology.
+
+OmniRoute -> OpenRouter -> Configurable LLM is the intended Arc runtime AI
+path.
 
 If a future decision materially changes this architecture, record it in a
 new ADR rather than silently changing the historical decision.
