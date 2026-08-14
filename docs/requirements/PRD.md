@@ -1,1965 +1,616 @@
 # Arc --- Product Requirements Document
 
-**Product:** Arc\
+**Project:** Arc\
+**Type:** Enterprise AI Engineering / Placement Project\
 **Domain:** IT Services\
-**Product Type:** Enterprise Multi-Tenant AI Platform\
-**Phase:** Foundation / Sprint 0\
-**Document Owner:** Joe --- Product + Roadmap Lead\
-**Engineering Lead:** Bala --- Engineering + AI Lead\
-**Platform + DevOps Lead:** Bharath --- Platform + DevOps Lead\
-**Status:** Foundation Draft --- Ready for Team Review
+**Purpose:** Placement and end-to-end engineering learning\
+**Implementation Window:** 7 days\
+**Status:** Active Implementation PRD
 
 ------------------------------------------------------------------------
 
-# 1. Document Purpose
+## 1. Purpose
 
-This document defines the product requirements for Arc.
+This PRD defines the actual Arc project to be built during the 7-day
+implementation sprint.
 
-It explains:
+Arc is **not a startup, commercial SaaS product, or production
+enterprise platform**. It is a serious engineering project intended to
+demonstrate and teach how an enterprise AI system works end to end.
 
--   what Arc is
--   what problem Arc is intended to address
--   who Arc is intended for
--   what the product should enable
--   what the 12 capabilities are responsible for
--   how the capabilities connect
--   the major product workflows
--   the product-level dependencies
--   functional requirements
--   non-functional requirements
--   security and tenant-isolation expectations
--   AI requirements
--   operational expectations
--   the first end-to-end product slice
--   implementation priorities
--   acceptance criteria
--   open questions and assumptions
+The project prioritizes the AI domain while keeping generic platform
+capabilities intentionally simple.
 
-This document is intended to be used by the engineering team as the
-product-level source for implementation planning.
+The core objective is to build one connected system around:
 
-The PRD defines **what Arc should do and why**.
+-   Company Brain
+-   Secure RAG
+-   Skills Engine
+-   AI Agent
+-   AI Tools
+-   PII protection
+-   Webhooks
+-   Observability
 
-It does not prescribe the final technical implementation.
+Supporting capabilities provide the minimum platform foundation required
+for these AI workflows:
 
-Technical architecture, infrastructure, service topology, technology
-choices, and deployment implementation are handled through the
-engineering and platform decision process.
+-   Multi-tenancy
+-   Authentication / RBAC
+-   Connectors
+-   Docker-based local deployment
 
 ------------------------------------------------------------------------
 
-# 2. Product Context
+# 2. Project Objective
 
-## 2.1 Product
+Arc should demonstrate how an IT Services organization can collect
+scattered organizational knowledge, protect it, retrieve it according to
+user permissions, turn procedures into executable Skills, and allow an
+AI Agent to use those Skills and controlled Tools to perform operational
+work.
 
-Arc is an enterprise-style multi-tenant AI platform for IT Services
-organizations.
+The central loop is:
 
-Arc is intended to bring together multiple capabilities required to
-manage and deliver technology services across multiple customer
-organizations.
+``` text
+Information / Event
+        ↓
+Connectors / Webhooks
+        ↓
+PII Guard
+        ↓
+Company Brain
+        ↓
+Secure RAG / Skills
+        ↓
+AI Agent
+        ↓
+AI Tools
+        ↓
+Action
+        ↓
+Observability / Incident
+        ↓
+Outcome becomes organizational knowledge
+```
 
-The product is designed as one connected platform rather than twelve
-unrelated projects.
-
-------------------------------------------------------------------------
-
-# 3. Project Objective
-
-The objective of the Arc project is to design and build a serious,
-production-style enterprise system that demonstrates how multiple
-platform, AI, integration, operational, and customer-lifecycle
-capabilities can work together.
-
-The project is intended to demonstrate engineering ability across:
-
--   product design
--   multi-tenancy
--   enterprise identity
--   integrations
--   event processing
--   AI/RAG
--   security
--   operational visibility
--   incident handling
--   deployment
--   onboarding
--   usage tracking
--   CI/CD
--   observability
--   reproducibility
-
-The project is not currently being defined as a startup business plan or
-commercial launch.
-
-Therefore this PRD focuses on the product and engineering problem rather
-than:
-
--   market research
--   fundraising
--   sales
--   customer acquisition
--   pricing strategy
--   go-to-market planning
--   commercial launch strategy
+The final system should be understandable by the team without depending
+on an AI assistant to explain its own implementation.
 
 ------------------------------------------------------------------------
 
-# 4. Problem Statement
+# 3. Product Vision
 
-IT Services organizations need to manage and deliver services across
-multiple customer organizations with different users, systems,
-permissions, integrations, data, and operational workflows.
+The problem Arc demonstrates is that important company knowledge is
+scattered across documents, procedures, previous incidents, solutions,
+communications, and external systems.
 
-As these customer environments grow, managing them securely and
-consistently becomes more complex, particularly around:
+The Company Brain acts as the organization's living memory.
 
--   tenant isolation
--   access control
--   customer integrations
--   event handling
--   AI-assisted services
--   operational visibility
--   reliability
--   auditability
--   onboarding
--   deployment
--   usage tracking
+It contains and connects:
 
-Arc is intended to provide a unified platform through which these
-concerns can be managed as connected parts of one system.
+-   Knowledge
+-   Procedures
+-   Policies
+-   Incidents
+-   Solutions
+-   Decisions
+-   Relationships
+-   Provenance
+-   Operational experience
 
-------------------------------------------------------------------------
+The AI Agent uses this organizational context to perform useful work.
 
-# 5. Desired Product Outcome
+Arc is therefore **not simply a chatbot over documents**.
 
-Arc should provide an integrated platform that helps an IT Services
-organization:
+The intended concept is:
 
--   manage multiple customer organizations
--   maintain separation between customer environments and data
--   manage users and access
--   connect with customer systems
--   process customer events
--   monitor customer/service health
--   manage operational incidents
--   securely access customer knowledge through AI
--   protect sensitive information
--   onboard customers
--   deploy customer environments
--   track customer usage
--   maintain operational and security visibility
-
-The result should be a connected platform rather than a collection of
-isolated demonstrations.
+``` text
+Company data
+      ↓
+Company Brain
+      ↓
+Secure knowledge
+      ↓
+Skills
+      ↓
+AI Agent
+      ↓
+Controlled actions
+      ↓
+New operational experience
+      ↓
+Company Brain
+```
 
 ------------------------------------------------------------------------
 
-# 6. Product Vision
+# 4. Scope
 
-Arc aims to make it easier for IT Services organizations to securely
-manage, operate, and deliver technology services across multiple
-customer organizations through one connected platform.
+## 4.1 In Scope
 
-Arc should bring together:
+### Platform
 
--   customer management
--   identity and access
--   integrations
--   event handling
--   AI-assisted knowledge
--   operational visibility
--   automation
--   security
--   usage management
--   onboarding
--   deployment
+1.  Multi-Tenant Platform
+2.  Google/Gmail Authentication
+3.  Basic RBAC
+4.  Docker local environment
 
-into a coherent product.
+### AI / Data
+
+5.  PII Guard
+6.  Company Brain
+7.  Secure RAG
+8.  Skills Engine
+9.  AI Agent
+10. AI Tools
+
+### Integration / Operations
+
+11. Connectors
+12. Webhook Integration Engine
+13. Usage Monitoring
+14. Health Monitoring
+15. Incident Response
+16. Agent-driven automatic actions
+17. Human approval for sensitive actions
+
+The numbers above are implementation areas, not the old 12-module PRD.
+
+## 4.2 Out of Scope
+
+-   Startup/business model
+-   Sales
+-   Fundraising
+-   Customer acquisition
+-   Commercial launch
+-   AWS deployment
+-   Kubernetes
+-   Production multi-region architecture
+-   Enterprise SSO
+-   Customer-hosted deployment
+-   Advanced IAM
+-   Advanced multi-tenancy
+-   Custom foundation-model training
+-   Real customer data
+-   Full commercial billing
+-   Unnecessary microservices
+-   Infrastructure added only to appear enterprise
 
 ------------------------------------------------------------------------
 
-# 7. Product Principles
+# 5. Target Environment
 
-## 7.1 One Connected Product
+There are no real customers.
 
-The twelve capabilities are parts of one Arc platform.
+Arc will use synthetic data and three simulated tenants.
 
-They should not be implemented as twelve unrelated applications.
+``` text
+Tenant A
+ ├── 3–5 users
+ └── tenant-specific data
 
-## 7.2 Shared Platform Foundations
+Tenant B
+ ├── 3–5 users
+ └── tenant-specific data
 
-Capabilities should use common product concepts where appropriate,
-including:
+Tenant C
+ ├── 3–5 users
+ └── tenant-specific data
+```
 
--   tenants
--   organizations
+Each tenant should have its own:
+
+-   users
+-   knowledge
+-   procedures
+-   incidents
+-   solutions
+-   Skills
+-   operational information
+-   AI context
+
+The exact number of users can be adjusted for implementation
+convenience.
+
+------------------------------------------------------------------------
+
+# 6. Architecture
+
+``` text
+                         ARC ENTERPRISE AI PLATFORM
+                                      │
+             ┌────────────────────────┼────────────────────────┐
+             │                        │                        │
+        Multi-Tenant              Auth/RBAC               Connectors
+             │                        │                        │
+             └────────────────────────┼────────────────────────┘
+                                      │
+                                  PII GUARD
+                                      │
+                                      ▼
+                              ┌───────────────┐
+                              │ COMPANY BRAIN │
+                              │               │
+                              │ Knowledge     │
+                              │ Procedures    │
+                              │ Policies      │
+                              │ Incidents     │
+                              │ Solutions     │
+                              │ Decisions     │
+                              │ Provenance    │
+                              └───────┬───────┘
+                                      │
+                         ┌────────────┴────────────┐
+                         │                         │
+                         ▼                         ▼
+                    SECURE RAG                SKILLS ENGINE
+                         │                         │
+                         └────────────┬────────────┘
+                                      ▼
+                                  AI AGENT
+                                      │
+                         ┌────────────┴────────────┐
+                         │                         │
+                         ▼                         ▼
+                     AI TOOLS                  WEBHOOKS
+                         │                         │
+                         └────────────┬────────────┘
+                                      ▼
+                               OBSERVABILITY
+                                      │
+                               HUMAN APPROVAL
+                                      │
+                                    DOCKER
+```
+
+This is the product-level architecture. It is not a requirement to
+create a separate service for every box.
+
+------------------------------------------------------------------------
+
+# 7. Multi-Tenant Platform
+
+## Purpose
+
+Provide basic separation between simulated customer organizations.
+
+## Required Behavior
+
+Arc must support:
+
+-   multiple tenants
+-   users associated with tenants
+-   tenant-scoped data
+-   tenant-aware requests
+-   basic tenant isolation
+
+## Example
+
+``` text
+Tenant A user
+     ↓
+Tenant A data       ALLOWED
+
+Tenant A user
+     ↓
+Tenant B data       DENIED
+```
+
+## Acceptance Criteria
+
+-   Three simulated tenants exist.
+-   Each tenant has multiple users.
+-   Tenant-scoped records can be created.
+-   Tenant-scoped records can be retrieved.
+-   Cross-tenant access is rejected.
+-   Cross-tenant behavior is tested.
+
+Advanced enterprise tenancy is not required.
+
+------------------------------------------------------------------------
+
+# 8. Authentication and RBAC
+
+## Authentication
+
+Use Google/Gmail-based authentication.
+
+Enterprise SSO is not required.
+
+## RBAC
+
+Use a small practical role model, for example:
+
+``` text
+Admin
+Operator
+Employee
+```
+
+### Admin
+
+Can manage:
+
 -   users
 -   roles
--   permissions
--   customer context
--   audit events
--   integrations
--   operational events
--   usage
-
-## 7.3 Security Is a Product Requirement
-
-Security is not only an infrastructure concern.
-
-Tenant boundaries, authorization, sensitive-data handling, AI access
-control, and auditability must be reflected in product behavior.
-
-## 7.4 Requirements Before Implementation
-
-The engineering team should not invent product behavior where the
-requirement is unresolved.
-
-Unresolved decisions must be explicitly marked as:
-
--   TBD
--   Open
--   Pending Review
-
-## 7.5 Avoid Artificial Complexity
-
-Arc should demonstrate production-quality engineering without
-introducing complexity only to appear enterprise.
-
-Examples:
-
--   unnecessary microservices are not required
--   Kubernetes is not required unless justified
--   every capability does not require a separate service
--   every capability does not require a dedicated frontend
--   infrastructure should be introduced only when justified by
-    requirements
-
-## 7.6 AI Must Provide Real Product Value
-
-AI should support meaningful Arc workflows.
-
-AI should not simply be added as a generic chatbot.
-
-The primary AI direction is secure customer knowledge access through
-permission-aware RAG.
-
-------------------------------------------------------------------------
-
-# 8. Target Users
-
-## 8.1 Primary User Group
-
-### IT Services Provider Team
-
-The primary users are teams within an IT Services organization
-responsible for managing and delivering services to customer
-organizations.
-
-------------------------------------------------------------------------
-
-# 9. Working Personas
-
-These personas are working hypotheses based on the current IT Services
-product direction.
-
-They are not customer-specific requirements.
-
-They must be validated as the product is refined.
-
-## 9.1 IT Services Administrator
-
-### Goal
-
-Manage customer organizations, users, access, integrations,
-configuration, onboarding, deployment, and usage.
-
-### Potential Activities
-
--   create/configure customers
--   manage tenant configuration
--   manage users
--   assign roles
--   configure integrations
--   initiate onboarding
--   initiate deployments
--   review usage
--   review audit information
-
-### Product Needs
-
--   customer/tenant management
--   identity and access
--   configuration
--   integrations
--   onboarding
--   deployment
--   usage visibility
--   auditability
-
-## 9.2 Service / Operations User
-
-### Goal
-
-Monitor and operate customer services.
-
-### Potential Activities
-
--   monitor customer health
--   review events
--   investigate incidents
--   review operational information
--   use customer knowledge
--   monitor service conditions
-
-### Product Needs
-
--   customer context
--   health information
--   events
--   incidents
--   operational history
--   authorized customer knowledge
-
-## 9.3 Customer Administrator
-
-### Goal
-
-Manage their organization's access to services provided through Arc.
-
-### Potential Activities
-
--   manage access
--   view organization-specific services
--   view permitted information
--   use supported AI-assisted knowledge functionality
-
-The exact workflow remains TBD.
-
-## 9.4 Customer Employee / End User
-
-### Goal
-
-Consume services provided through Arc.
-
-### Potential Activities
-
--   access permitted services
--   view relevant information
--   use approved knowledge functionality
--   interact with supported workflows
-
-The exact workflow remains TBD.
-
-------------------------------------------------------------------------
-
-# 10. Product Domain Model
-
-The following terms are used throughout this PRD.
-
-## 10.1 Organization
-
-An organization represents an entity managed within Arc.
-
-The exact relationship between Organization and Tenant remains an open
-product decision.
-
-## 10.2 Tenant
-
-A tenant represents an isolated customer environment.
-
-Tenant boundaries are security boundaries.
-
-## 10.3 Customer
-
-A customer represents an organization receiving services from the IT
-Services provider.
-
-The exact relationship between Customer, Organization, and Tenant
-remains TBD.
-
-## 10.4 User
-
-A user represents a person interacting with Arc.
-
-## 10.5 Role
-
-A role represents a collection of permissions available to a user.
-
-## 10.6 Permission
-
-A permission defines whether a user is allowed to perform a protected
-action or access protected information.
-
-## 10.7 Integration
-
-An integration represents a configured connection between Arc and an
-external customer system or service.
-
-## 10.8 Event
-
-An event represents operational or integration activity moving through
-Arc.
-
-## 10.9 Incident
-
-An incident represents an operational problem requiring investigation,
-action, or resolution.
-
-## 10.10 Knowledge
-
-Knowledge represents customer-specific information that may be accessed
-by authorized AI workflows.
-
-## 10.11 Usage Record
-
-A usage record represents measurable activity associated with a
-customer/tenant.
-
-## 10.12 Deployment
-
-A deployment represents the provisioning/configuration process required
-to make a customer environment available.
-
-------------------------------------------------------------------------
-
-# 11. Product Capability Map
-
-Arc contains twelve approved capabilities.
-
-  \#   Capability                       Product Area         Runtime
-  ---- -------------------------------- -------------------- ---------
-  1    Multi-Tenant SaaS Platform       Core Platform        Yes
-  2    Enterprise SSO Integration       Identity             Yes
-  3    Customer Connector Pack          Integrations         Yes
-  4    Secure Customer RAG System       AI / Data            Yes
-  5    Customer Health Dashboard        Operations           Yes
-  6    Webhook Integration Engine       Integrations         Yes
-  7    One-Click Customer Deployment    Deployment           Yes
-  8    PII Redaction Middleware         Security / AI        Yes
-  9    Incident Response System         Operations           Yes
-  10   Usage Metering and Billing       Usage / Commercial   Yes
-  11   Customer Onboarding Automation   Customer Lifecycle   Yes
-  12   Public Deployment Case Study     Evidence             No
-
-------------------------------------------------------------------------
-
-# 12. Capability Requirements
-
-## 12.1 Multi-Tenant SaaS Platform
-
-### Purpose
-
-Provide the shared foundation that allows Arc to support multiple
-customer organizations while maintaining strict separation between their
-environments and data.
-
-### Problem
-
-Multiple customers may use the same Arc platform.
-
-Arc therefore needs a consistent way to identify, isolate, and authorize
-access to customer-specific resources.
-
-### Primary User
-
-IT Services Administrator.
-
-### Supporting Users
-
--   Service / Operations User
--   Customer Administrator
--   Customer Employee
-
-### Responsibilities
-
-The capability must establish product-level support for:
-
--   tenants
--   tenant context
--   tenant-scoped resources
--   tenant membership
--   tenant-aware authorization
--   tenant isolation
--   tenant lifecycle
-
-### Expected Workflow
-
-``` text
-Create Customer
-      ↓
-Create / Associate Tenant
-      ↓
-Configure Tenant
-      ↓
-Associate Users
-      ↓
-Assign Roles
-      ↓
-Create Tenant Resources
-      ↓
-Access Tenant Resources
-```
-
-### Inputs
-
-Potential inputs include:
-
--   customer information
--   tenant information
--   user information
--   role information
--   configuration
-
-### Outputs
-
-Potential outputs include:
-
--   tenant identity
 -   tenant configuration
--   tenant membership
--   tenant-scoped resources
+-   operational information
 
-### Security Requirements
+### Operator
 
--   Tenant boundaries must be enforced server-side.
--   Tenant identifiers supplied by clients must not automatically grant
-    access.
--   Authorization must be evaluated against the authenticated user's
-    context.
--   Cross-tenant access must be denied.
--   Tenant-scoped data must remain tenant-scoped throughout product
-    workflows.
+Can:
 
-### Acceptance Criteria
+-   investigate incidents
+-   use Company Brain
+-   use AI workflows
+-   execute approved operational tasks
 
--   An authorized user can create a tenant.
--   A tenant receives a unique identity.
--   Users can be associated with a tenant.
--   Tenant-scoped resources can be created.
--   Authorized users can access permitted resources.
--   Unauthorized users cannot access protected resources.
--   Tenant A cannot access Tenant B's protected data.
--   Cross-tenant access is covered by automated tests.
--   Denied requests do not expose protected information.
+### Employee
 
-### Dependencies
+Can:
 
--   Identity
--   RBAC
--   Core data
--   Audit
+-   access permitted company knowledge
+-   use approved knowledge workflows
 
-### Out of Scope
+The exact permissions should remain simple.
 
--   Final cloud topology
--   Multi-region deployment
--   Customer-hosted architecture
--   Final infrastructure architecture
+## Acceptance Criteria
+
+-   Users can authenticate.
+-   Users belong to a tenant.
+-   Roles can be assigned.
+-   Protected functionality requires authentication.
+-   Role permissions are enforced.
+-   Tenant isolation remains enforced after authentication.
 
 ------------------------------------------------------------------------
 
-## 12.2 Enterprise SSO Integration
+# 9. Connectors
 
-### Purpose
+## Purpose
 
-Provide enterprise authentication integration for Arc.
+Bring external organizational information into the Company Brain.
 
-### Problem
+The project should implement **2--3 real connectors where feasible**.
 
-Enterprise users may already authenticate through centralized identity
-systems.
+Selection criteria:
 
-Arc should support enterprise authentication while keeping
-authentication separate from authorization.
+1.  Free or low cost
+2.  Easy to authenticate
+3.  Useful for Company Brain
+4.  Useful for demonstrating external data ingestion
+5.  Achievable within seven days
 
-### Primary User
+Likely candidates include:
 
-IT Services Administrator.
+-   GitHub
+-   Google Drive
+-   another simple useful source if feasible
 
-### Supporting Users
+If a real connector becomes too expensive or technically distracting, a
+controlled/fake API may be used.
 
--   Service / Operations User
--   Customer Administrator
--   Customer Employee
-
-### Expected Workflow
-
-``` text
-User
- ↓
-Enterprise Identity Provider
- ↓
-Authentication
- ↓
-Arc Identity
- ↓
-Tenant Context
- ↓
-Role / Permission Evaluation
- ↓
-Authorized Arc Access
-```
-
-### Requirements
-
-Arc must:
-
--   authenticate users through an approved enterprise mechanism
--   validate authentication results
--   establish an Arc user identity
--   establish the appropriate tenant context
--   apply authorization after authentication
-
-### Security
-
-Authentication must not automatically grant access to protected Arc
-resources.
-
-### Acceptance Criteria
-
--   Valid authentication succeeds.
--   Invalid authentication is rejected.
--   Authenticated users receive the appropriate identity.
--   Tenant context is established correctly.
--   Authorization remains enforced after authentication.
--   Authentication failures do not expose sensitive information.
-
-### Open Questions
-
--   First SSO provider?
--   SSO protocol?
--   User provisioning?
--   Role mapping?
--   Customer-side identity model?
-
-------------------------------------------------------------------------
-
-## 12.3 Customer Connector Pack
-
-### Purpose
-
-Provide a consistent way for Arc to connect with external customer
-systems.
-
-### Problem
-
-IT Services organizations operate across different customer systems.
-
-Arc needs to exchange relevant information without allowing external
-integrations to bypass Arc's security boundaries.
-
-### Primary User
-
-IT Services Administrator.
-
-### Supporting User
-
-Service / Operations User.
-
-### Responsibilities
-
--   integration configuration
--   connection validation
--   authentication
--   data exchange
--   status
--   failure handling
--   tenant association
-
-### Expected Workflow
-
-``` text
-Select Customer
-      ↓
-Configure Connector
-      ↓
-Validate Configuration
-      ↓
-Connect
-      ↓
-Exchange Data
-      ↓
-Observe Status
-```
-
-### Requirements
-
-An authorized user should be able to:
-
-1.  Configure an approved integration.
-2.  Validate its configuration.
-3.  Establish the connection.
-4.  Exchange approved data.
-5.  View connection status.
-6.  Detect integration failure.
-
-### Security
-
--   Credentials must be protected.
--   Integrations must be tenant-scoped.
--   External access must be authorized.
--   Secrets must not be exposed in normal responses or logs.
-
-### Acceptance Criteria
-
--   An approved connector can be configured.
--   Valid configuration succeeds.
--   Invalid configuration fails safely.
--   Integration data remains tenant-scoped.
--   Integration status is observable.
--   Credentials are not exposed.
-
-### Open Questions
-
--   First connector?
--   Connector authentication mechanism?
--   First data types?
--   Polling vs event-driven behavior?
-
-------------------------------------------------------------------------
-
-## 12.4 Secure Customer RAG System
-
-### Purpose
-
-Provide secure AI-assisted access to customer-specific knowledge.
-
-### Problem
-
-AI systems can expose information if retrieval is not constrained by
-authorization.
-
-Arc must ensure that users only receive knowledge they are allowed to
-access.
-
-### Primary User
-
-IT Services / Operations User.
-
-### Supporting Users
-
--   Customer Administrator
--   Customer Employee
-
-### Expected Workflow
-
-``` text
-Customer Knowledge
-       ↓
-Ingestion
-       ↓
-Tenant Context
-       ↓
-Permission Metadata
-       ↓
-Retrieval
-       ↓
-Permission Filtering
-       ↓
-Approved Context
-       ↓
-AI Generation
-       ↓
-Response
-```
-
-### Core Requirements
-
-The system must:
-
--   maintain tenant context
--   associate knowledge with appropriate access information
--   retrieve relevant knowledge
--   enforce permissions during retrieval
--   prevent cross-tenant retrieval
--   provide AI-assisted responses from permitted context
-
-### Critical Product Constraint
-
-Authentication alone is not enough.
-
-The retrieval process must consider:
-
--   tenant
--   user
--   role
--   permissions
--   resource access
-
-### Acceptance Criteria
-
--   Authorized information can be retrieved.
--   Unauthorized information is excluded.
--   Cross-tenant retrieval is prevented.
--   Permission filtering is tested.
--   AI generation receives only permitted context.
--   Retrieval failures are handled safely.
-
-### AI Boundary
-
-Arc is not required to train its own foundation model.
-
-The AI model/provider remains a technical decision.
-
-### Open Questions
-
--   First knowledge source?
--   First RAG workflow?
--   AI provider?
--   Model?
--   Required retrieval trace?
--   Agent requirement beyond RAG?
-
-------------------------------------------------------------------------
-
-## 12.5 Customer Health Dashboard
-
-### Purpose
-
-Provide visibility into customer/service health.
-
-### Primary User
-
-Service / Operations User.
-
-### Supporting User
-
-IT Services Administrator.
-
-### Responsibilities
-
--   customer health
--   service health
--   operational signals
--   usage/adoption indicators where approved
--   SLA-related information where defined
-
-### Expected Workflow
-
-``` text
-Select Customer
-      ↓
-Retrieve Health Information
-      ↓
-Aggregate Relevant Signals
-      ↓
-Display Health
-      ↓
-Investigate Degraded State
-```
-
-### Acceptance Criteria
-
--   Health information is tenant-scoped.
--   Authorized users can view relevant health data.
--   Health information can be linked to relevant operational signals.
--   Missing or stale information is represented appropriately.
--   Unauthorized users cannot view protected health data.
-
-### Open Questions
-
--   Health metrics?
--   Health calculation?
--   SLA definitions?
--   Thresholds?
--   Refresh frequency?
-
-------------------------------------------------------------------------
-
-## 12.6 Webhook Integration Engine
-
-### Purpose
-
-Provide reliable event ingestion and delivery between Arc and external
-systems.
-
-### Problem
-
-Arc will need to receive events from external systems.
-
-Events must be validated, associated with the correct tenant, processed
-reliably, and made observable.
-
-### Expected Workflow
+## Flow
 
 ``` text
 External System
       ↓
-Webhook
+Connector
       ↓
-Validation
+Fetch Data
       ↓
-Tenant Resolution
+Tenant Association
       ↓
-Event Processing
+PII Guard
       ↓
-Internal Consumer
-      ↓
-Health / Incident / Workflow
+Company Brain
 ```
 
-### Requirements
+## Acceptance Criteria
 
-The system must define behavior for:
-
--   valid events
--   invalid events
--   duplicate events
--   processing failures
--   retries
--   downstream failures
-
-### Security
-
--   Event source must be validated.
--   Tenant context must be established.
--   Sensitive payloads should not be unnecessarily logged.
-
-### Acceptance Criteria
-
--   Valid events are accepted.
--   Invalid events are rejected safely.
--   Events are associated with the correct tenant.
--   Duplicate behavior is defined.
--   Retry behavior is defined.
--   Failed processing is observable.
-
-### Open Questions
-
--   First event source?
--   Event schema?
--   Retry strategy?
--   Idempotency strategy?
+-   At least two useful sources can be connected where feasible.
+-   Imported data has tenant context.
+-   Connector failures are handled.
+-   Secrets are protected.
+-   Imported information can enter the Company Brain.
 
 ------------------------------------------------------------------------
 
-## 12.7 One-Click Customer Deployment
+# 10. PII Guard
 
-### Purpose
+## Purpose
 
-Provide a repeatable customer deployment/provisioning workflow.
+Detect and protect personally identifiable information before it reaches
+sensitive downstream workflows.
 
-### Primary User
-
-IT Services Administrator.
-
-### Expected Workflow
-
-``` text
-Customer Selected
-      ↓
-Deployment Request
-      ↓
-Configuration Validation
-      ↓
-Provision / Configure
-      ↓
-Initialize Required Components
-      ↓
-Health Check
-      ↓
-Customer Ready
-```
-
-### Requirements
-
-The workflow should:
-
--   validate required configuration
--   initiate deployment
--   provide deployment status
--   report failures
--   verify resulting environment health
--   record deployment activity
-
-### Acceptance Criteria
-
--   Authorized users can initiate deployment.
--   Required configuration is validated.
--   Deployment status is visible.
--   Deployment failure is visible.
--   Successful deployment produces the expected customer environment
-    state.
--   Deployment actions are auditable.
-
-### Dependencies
-
--   Tenant
--   Identity/RBAC
--   Customer onboarding
--   Environment configuration
--   Integration configuration
-
-### Open Questions
-
--   SaaS-only?
--   Customer-hosted deployment?
--   Environment types?
--   Infrastructure provider?
--   What exactly qualifies as "one-click"?
-
-------------------------------------------------------------------------
-
-## 12.8 PII Redaction Middleware
-
-### Purpose
-
-Protect sensitive information before it reaches defined downstream
-systems, particularly AI workflows.
-
-### Expected Workflow
+## Flow
 
 ``` text
 Input
- ↓
+  ↓
 PII Detection
- ↓
+  ↓
 Redaction / Masking
- ↓
-Safe Payload
- ↓
-Downstream Processing
+  ↓
+Safe Data
+  ↓
+Company Brain / RAG / AI
 ```
 
-### Requirements
+## Example
 
-The middleware must:
+Input:
 
--   identify approved sensitive-data categories
--   apply defined redaction rules
--   preserve useful non-sensitive information
--   prevent unnecessary sensitive-data exposure
--   provide predictable failure behavior
+``` text
+Contact John at john@example.com about the outage.
+```
 
-### Acceptance Criteria
+Output:
+
+``` text
+Contact John at [EMAIL_REDACTED] about the outage.
+```
+
+The first implementation can focus on common categories such as email
+addresses and phone numbers.
+
+Perfect PII detection is not required.
+
+## Acceptance Criteria
 
 -   Defined PII examples are detected.
--   Required PII is redacted.
--   Safe information remains usable.
--   Sensitive information is not unnecessarily logged.
--   Redaction failure behavior is defined.
-
-### Open Questions
-
--   PII categories?
--   Detection mechanism?
--   False-positive behavior?
--   Reversible or irreversible redaction?
+-   Defined PII is redacted or masked.
+-   Useful non-sensitive information remains.
+-   Sensitive values are not unnecessarily logged.
+-   PII processing is integrated into relevant data flows.
 
 ------------------------------------------------------------------------
 
-## 12.9 Incident Response System
+# 11. Company Brain
 
-### Purpose
+## Purpose
 
-Provide structured operational incident handling.
+The Company Brain is the central organizational memory of Arc.
 
-### Primary User
+It stores and connects information that humans and AI systems need to
+understand how the simulated company operates.
 
-Service / Operations User.
+## Brain Contents
 
-### Supporting User
+### Knowledge
 
-IT Services Administrator.
+General company and technical knowledge.
 
-### Core Responsibilities
+### Procedures
 
--   incident creation
--   severity
--   status
--   assignment
--   timeline
--   related events
--   resolution
--   closure
--   auditability
+Step-by-step ways of performing work.
 
-### Expected Workflow
+Example:
 
 ``` text
-Operational Event
-      ↓
-Potential Incident
-      ↓
-Incident Created
-      ↓
-Investigation
-      ↓
-Action
-      ↓
-Resolution
-      ↓
-Closure
+Payment API Incident Procedure
+
+1. Check service health.
+2. Check recent logs.
+3. Check recent deployments.
+4. Restart service if permitted.
+5. Verify health.
+6. Escalate if recovery fails.
 ```
 
-### Acceptance Criteria
+### Policies
 
--   Authorized users can create incidents.
--   Incidents are tenant-scoped.
--   Authorized users can update incidents.
--   Unauthorized users cannot modify protected incidents.
--   Relevant events can be associated with incidents.
--   Important changes are auditable.
+Rules controlling employee and Agent behavior.
 
-### Open Questions
+### Incidents
 
--   Severity model?
--   Incident states?
--   Escalation rules?
--   SLA behavior?
--   Automatic incident creation?
+Previous operational problems.
 
-------------------------------------------------------------------------
+### Solutions
 
-## 12.10 Usage Metering and Billing
+How previous incidents were solved.
 
-### Purpose
+### Decisions
 
-Track tenant-level usage and provide the foundation for usage-based
-billing behavior.
+Important organizational or operational decisions.
 
-### Important Boundary
+### Relationships
 
-The project does not need to reproduce a complete commercial billing
-platform unless explicitly approved.
-
-The core requirement is reliable usage tracking.
-
-### Expected Workflow
+Example:
 
 ``` text
-Customer Activity
-      ↓
-Usage Event
-      ↓
-Tenant Association
-      ↓
-Metering
-      ↓
-Aggregation
-      ↓
-Usage View
-      ↓
-Billing Calculation (if approved)
-```
-
-### Requirements
-
-Arc should support:
-
--   usage event collection
--   tenant association
--   aggregation
--   usage visibility
--   billing calculation where approved
-
-### Acceptance Criteria
-
--   Usage events can be recorded.
--   Usage events contain tenant context.
--   Usage can be aggregated.
--   Authorized users can view usage.
--   Duplicate usage behavior is defined.
--   Billing calculation is separated from raw usage collection.
-
-### Open Questions
-
--   Billable units?
--   Pricing model?
--   Billing provider?
--   Simulated billing or real integration?
--   Which activities count as usage?
-
-------------------------------------------------------------------------
-
-## 12.11 Customer Onboarding Automation
-
-### Purpose
-
-Provide a repeatable workflow for establishing a new customer in Arc.
-
-### Primary User
-
-IT Services Administrator.
-
-### Expected Workflow
-
-``` text
-New Customer
-      ↓
-Customer Configuration
-      ↓
-Tenant Creation
-      ↓
-Identity / Access Setup
-      ↓
-Integration Setup
-      ↓
-Deployment
-      ↓
-Validation
-      ↓
-Customer Ready
-```
-
-### Requirements
-
-The onboarding process should:
-
--   validate required information
--   establish the customer/tenant
--   configure required access
--   configure required integrations
--   initiate required deployment
--   track progress
--   expose failures
--   support completion
-
-### Acceptance Criteria
-
--   Authorized users can initiate onboarding.
--   Required information is validated.
--   Customer/tenant creation is completed.
--   Required steps are tracked.
--   Failures are visible.
--   Successful onboarding produces a usable customer environment.
--   Important onboarding actions are auditable.
-
-------------------------------------------------------------------------
-
-## 12.12 Public Deployment Case Study
-
-### Purpose
-
-Document the actual engineering and deployment experience of Arc.
-
-This is not a runtime product capability.
-
-It is a continuous evidence stream.
-
-### Evidence Should Include
-
--   architecture decisions
--   implementation decisions
--   deployment approach
--   environment setup
--   integration behavior
--   security decisions
--   failures
--   debugging
--   fixes
--   performance observations
--   reliability observations
--   lessons learned
--   important trade-offs
-
-### Acceptance Criteria
-
--   Evidence is captured throughout development.
--   Major decisions are documented.
--   Significant failures and fixes are documented.
--   Deployment evidence is captured.
--   Final case study reflects the actual implementation.
-
-------------------------------------------------------------------------
-
-# 13. Cross-Capability Workflows
-
-The product must demonstrate that the capabilities operate together.
-
-## 13.1 Customer Onboarding
-
-``` text
-IT Services Administrator
-        ↓
-Start Onboarding
-        ↓
-Customer / Tenant
-        ↓
-Identity
-        ↓
-Users / Roles
-        ↓
-Integrations
-        ↓
-Deployment
-        ↓
-Health Validation
-        ↓
-Audit
-        ↓
-Customer Ready
-```
-
-Capabilities:
-
--   Multi-Tenant SaaS
--   Enterprise SSO
--   Customer Connector Pack
--   One-Click Deployment
--   Customer Onboarding
--   Customer Health
--   Audit
-
-## 13.2 Integration and Event Flow
-
-``` text
-Customer System
-       ↓
-Connector
-       ↓
-Webhook / Event
-       ↓
-Validation
-       ↓
-Tenant Context
-       ↓
-Internal Event
-       ↓
-Health / Incident / Workflow
-       ↓
-Audit
-```
-
-## 13.3 Incident Flow
-
-``` text
-Customer System
-       ↓
-Event
-       ↓
-Webhook
-       ↓
-Processing
-       ↓
-Health Signal / Failure
-       ↓
 Incident
-       ↓
+   ↓
+Service
+   ↓
+Procedure
+   ↓
+Skill
+   ↓
+Solution
+```
+
+### Provenance
+
+The Brain should record where information originated:
+
+-   document
+-   connector
+-   incident
+-   procedure
+-   user-created entry
+
+## Living Knowledge
+
+Operational outcomes can become future knowledge.
+
+``` text
+Incident
+   ↓
 Investigation
-       ↓
-Resolution
-       ↓
-Audit
+   ↓
+Solution
+   ↓
+Outcome
+   ↓
+Company Brain
 ```
 
-## 13.4 Secure AI Flow
+## Important Boundary
+
+The Company Brain is not just a vector database.
+
+Structured organizational information and its relationships should be
+retained separately from retrieval representations.
+
+## Acceptance Criteria
+
+-   Knowledge can be stored.
+-   Procedures can be stored.
+-   Incidents can be stored.
+-   Solutions can be stored.
+-   Provenance can be recorded.
+-   Information is tenant-scoped.
+-   Brain information can be retrieved through Secure RAG.
+-   Operational outcomes can become stored experience/history.
+
+------------------------------------------------------------------------
+
+# 12. Secure RAG
+
+## Purpose
+
+Allow users and Agents to retrieve relevant Company Brain information
+while respecting authorization and tenant boundaries.
+
+## Flow
 
 ``` text
-Customer Knowledge
-       ↓
-Ingestion
-       ↓
-Tenant Context
-       ↓
-PII Protection
-       ↓
-Permission-aware Retrieval
-       ↓
-AI Generation
-       ↓
-Response
-       ↓
-Audit / Trace
-```
-
-## 13.5 Usage Flow
-
-``` text
-Customer Activity
-       ↓
-Usage Event
-       ↓
-Tenant Association
-       ↓
-Metering
-       ↓
-Aggregation
-       ↓
-Usage View
-       ↓
-Billing Calculation
-```
-
-## 13.6 Deployment Flow
-
-``` text
-Customer Onboarding
-       ↓
+User / Agent
+     ↓
 Tenant
-       ↓
-Configuration
-       ↓
-Deployment
-       ↓
-Health Check
-       ↓
-Integration Validation
-       ↓
-Ready
+     ↓
+Permissions
+     ↓
+Query
+     ↓
+Retrieval
+     ↓
+Permission Filtering
+     ↓
+Allowed Context
+     ↓
+LLM
+     ↓
+Response
 ```
 
-------------------------------------------------------------------------
+## Critical Requirement
 
-# 14. Product-Level Dependency Map
+RAG must never become an authorization bypass.
 
-The current dependency model is a hypothesis.
-
-It is not final technical architecture.
-
-``` text
-Organization / Tenant
-        ↓
-Identity + RBAC
-        ↓
-Core Data + Audit
-        ↓
-Connectors / Webhooks
-        ↓
-Usage / Health / Operations
-        ↓
-RAG / AI
-        ↓
-Deployment / Onboarding / Billing
-```
-
-## Important Dependency Relationships
-
-### Tenant
-
-Required by:
-
--   identity
--   RBAC
--   customer data
--   integrations
--   RAG
--   usage
--   health
--   incidents
--   onboarding
--   deployment
-
-### Identity + RBAC
-
-Required before:
-
--   protected APIs
--   customer access
--   SSO
--   permission-aware RAG
--   tenant-scoped workflows
-
-### Core Data + Audit
-
-Required for:
-
--   tenant-scoped data
--   operational history
--   usage
--   security events
--   incident investigation
-
-### Connectors + Webhooks
-
-Required for:
-
--   customer integrations
--   external events
--   operational data
--   customer health
--   event-driven workflows
-
-### RAG / AI
-
-Depends on:
-
--   tenant boundaries
--   identity
--   authorization
--   customer knowledge
--   PII controls
-
-### Usage
-
-Depends on:
-
--   tenant identification
--   usage events
--   metering rules
-
-### Deployment / Onboarding
-
-Depends on:
-
--   tenant model
--   identity
--   configuration
--   integration configuration
--   environment decisions
-
-------------------------------------------------------------------------
-
-# 15. Dependency Review Boundary
-
-The dependency map is a product-level hypothesis.
-
-It is not:
-
--   finalized technical architecture
--   service topology
--   Docker service list
--   infrastructure specification
--   deployment architecture
-
-## Bala Review
-
-Bala reviews:
-
--   technical dependencies
--   architecture implications
--   service boundaries
--   AI implications
--   security implications
--   technical constraints
--   first vertical slice feasibility
-
-## Bharath Review
-
-Bharath reviews:
-
--   environment implications
--   deployment implications
--   CI implications
--   reproducibility
--   platform constraints
--   operational implications
-
-Any disagreement must remain explicitly documented until resolved.
-
-------------------------------------------------------------------------
-
-# 16. Functional Requirements
-
-Final functional requirements must be independently testable.
-
-Each detailed requirement should use:
-
-``` text
-FR-XXX
-Requirement Title
-Actor:
-Preconditions:
-Trigger:
-Main Flow:
-Alternative Flows:
-Failure Cases:
-Security Rules:
-Data Requirements:
-Audit Requirement:
-Dependencies:
-Acceptance Criteria:
-```
-
-## FR-001 --- Create Tenant
-
-**Actor:** IT Services Administrator
-
-**Requirement:**
-
-Arc must allow an authorized IT Services administrator to create a
-customer/tenant environment.
-
-**Acceptance Criteria:**
-
--   Valid authorized requests create a tenant.
--   Each tenant receives a unique identity.
--   Unauthorized requests are rejected.
--   Tenant creation is auditable.
--   Tenant information is isolated.
-
-## FR-002 --- Tenant-Scoped Resource Access
-
-**Actor:** Authenticated user
-
-**Requirement:**
-
-Arc must enforce tenant context when accessing tenant-scoped resources.
-
-**Acceptance Criteria:**
-
--   Authorized access succeeds.
--   Unauthorized access fails.
--   Cross-tenant access fails.
--   Protected data is not returned in denied responses.
--   Cross-tenant access is tested.
-
-## FR-003 --- Authentication
-
-**Actor:** User
-
-**Requirement:**
-
-Arc must authenticate users before allowing protected functionality.
-
-**Acceptance Criteria:**
-
--   Valid authentication succeeds.
--   Invalid authentication fails.
--   Protected endpoints reject unauthenticated access.
--   Authentication state is handled securely.
-
-## FR-004 --- Authorization
-
-**Actor:** Authenticated user
-
-**Requirement:**
-
-Arc must enforce authorization based on user identity, tenant, role, and
-permissions.
-
-**Acceptance Criteria:**
-
--   Authorized operations succeed.
--   Unauthorized operations fail.
--   Authorization is server-side.
--   Positive and negative authorization cases are tested.
-
-## FR-005 --- Audit Event
-
-**Actor:** System
-
-**Requirement:**
-
-Arc must record defined security and operational actions as audit
-events.
-
-**Acceptance Criteria:**
-
--   Required actions produce audit events.
--   Audit records contain sufficient context.
--   Audit data respects tenant boundaries.
--   Sensitive information is not unnecessarily logged.
-
-## FR-006 --- Customer Integration
-
-**Actor:** IT Services Administrator
-
-**Requirement:**
-
-Arc must allow an authorized user to configure an approved external
-customer integration.
-
-**Acceptance Criteria:**
-
--   Valid configuration succeeds.
--   Invalid configuration fails safely.
--   Integration data is tenant-scoped.
--   Connection status is observable.
--   Credentials are protected.
-
-## FR-007 --- Webhook Event Processing
-
-**Actor:** System
-
-**Requirement:**
-
-Arc must process approved external events.
-
-**Acceptance Criteria:**
-
--   Valid events are processed.
--   Invalid events are rejected safely.
--   Tenant context is preserved.
--   Duplicate handling is defined.
--   Failure handling is defined.
--   Processing status is observable.
-
-## FR-008 --- Customer Health
-
-**Actor:** Service / Operations User
-
-**Requirement:**
-
-Arc must provide authorized users with customer/service health
-information.
-
-**Acceptance Criteria:**
-
--   Health data is tenant-scoped.
--   Authorized users can view health data.
--   Relevant signals can be associated with health.
--   Missing/stale data is represented appropriately.
-
-## FR-009 --- Incident Management
-
-**Actor:** Service / Operations User
-
-**Requirement:**
-
-Arc must support structured incident management.
-
-**Acceptance Criteria:**
-
--   Authorized users can create incidents.
--   Incidents are tenant-scoped.
--   Authorized users can update incidents.
--   Unauthorized updates fail.
--   Important changes are auditable.
-
-## FR-010 --- Permission-Aware AI Retrieval
-
-**Actor:** Authorized user
-
-**Requirement:**
-
-Arc must prevent AI retrieval from returning information the requesting
-user is not authorized to access.
-
-**Acceptance Criteria:**
-
--   Authorized knowledge is retrievable.
--   Unauthorized knowledge is excluded.
--   Cross-tenant retrieval is prevented.
--   Permission filtering is tested.
-
-## FR-011 --- PII Redaction
-
-**Actor:** System
-
-**Requirement:**
-
-Arc must apply defined PII protection before sensitive information
-crosses required downstream boundaries.
-
-**Acceptance Criteria:**
-
--   Defined PII is detected.
--   Required redaction is applied.
--   Safe information remains usable.
--   Sensitive information is not unnecessarily logged.
-
-## FR-012 --- Usage Metering
-
-**Actor:** System
-
-**Requirement:**
-
-Arc must record approved usage events against the correct tenant.
-
-**Acceptance Criteria:**
-
--   Usage events are captured.
--   Tenant context is preserved.
--   Usage can be aggregated.
--   Authorized users can view usage.
--   Duplicate behavior is defined.
-
-## FR-013 --- Customer Onboarding
-
-**Actor:** IT Services Administrator
-
-**Requirement:**
-
-Arc must support a repeatable customer onboarding workflow.
-
-**Acceptance Criteria:**
-
--   Onboarding can be initiated.
--   Required information is validated.
--   Required steps are tracked.
--   Failures are visible.
--   Successful onboarding results in a usable customer environment.
-
-## FR-014 --- Customer Deployment
-
-**Actor:** IT Services Administrator
-
-**Requirement:**
-
-Arc must support an approved customer deployment workflow.
-
-**Acceptance Criteria:**
-
--   Authorized users can initiate deployment.
--   Required configuration is validated.
--   Deployment status is visible.
--   Failures are visible.
--   Successful deployment results in the expected environment state.
-
-------------------------------------------------------------------------
-
-# 17. Non-Functional Requirements
-
-## NFR-001 --- Security
-
-Arc must:
-
--   authenticate protected users
--   enforce server-side authorization
--   protect tenant boundaries
--   protect credentials
--   prevent sensitive information from being unnecessarily exposed
--   protect AI workflows
--   prevent integrations from bypassing authorization
-
-## NFR-002 --- Tenant Isolation
-
-Arc must:
-
--   prevent unauthorized cross-tenant access
--   enforce tenant context server-side
--   test cross-tenant access
--   prevent cross-tenant AI retrieval
--   prevent cross-tenant API leakage
--   prevent cross-tenant operational leakage
-
-## NFR-003 --- Reliability
-
-Arc must define behavior for:
-
--   transient failures
--   downstream failures
--   event-processing failures
--   retries
--   duplicate events
--   partial failures
--   recovery
-
-Exact availability/recovery targets remain TBD.
-
-## NFR-004 --- Performance
-
-Important workflows must have measurable performance expectations.
-
-The team should measure at minimum:
-
--   API behavior
--   event processing
--   dashboard response
--   AI retrieval
--   AI generation
--   onboarding
--   integration operations
-
-Specific numerical targets remain TBD until workload assumptions are
-finalized.
-
-## NFR-005 --- Scalability
-
-Arc should account for growth in:
-
--   tenants
--   users
--   customer data
--   integrations
--   events
--   AI requests
--   usage records
-
-Exact capacity targets remain TBD.
-
-## NFR-006 --- Availability
-
-Critical workflows should have defined availability expectations.
-
-The exact target remains TBD.
-
-## NFR-007 --- Observability
-
-Arc must provide appropriate:
-
--   logs
--   metrics
--   traces where applicable
--   health information
--   readiness information
--   error information
--   request/correlation identifiers where applicable
-
-Logs must not unnecessarily expose secrets or PII.
-
-## NFR-008 --- Auditability
-
-Important actions should generate audit information.
-
-Examples:
-
--   authentication
--   authorization/security events
--   tenant changes
--   user/role changes
--   integration changes
--   deployment
--   onboarding
--   incidents
--   relevant AI operations
--   usage
-
-The exact audit-event catalog remains TBD.
-
-## NFR-009 --- Maintainability
-
-Arc should maintain:
-
--   automated tests
--   documentation
--   clear interfaces
--   architecture decisions
--   reproducible environments
--   consistent engineering workflows
--   traceable changes
-
-## NFR-010 --- Testability
-
-Critical behavior must be testable.
-
-Tests should cover:
-
--   successful workflows
--   invalid inputs
--   unauthorized access
--   cross-tenant access
--   failure behavior
--   retry behavior
--   integrations
--   AI authorization boundaries
-
-## NFR-011 --- Privacy
-
-Arc must:
-
--   use synthetic development data unless explicitly approved otherwise
--   avoid normal development use of customer/production data
--   minimize sensitive information in logs
--   protect customer information
--   apply PII controls where required
-
-## NFR-012 --- Documentation
-
-The implemented system must be documented sufficiently for another
-developer to understand:
-
--   product behavior
--   major workflows
--   architecture
--   setup
--   operational behavior
--   important decisions
-
-------------------------------------------------------------------------
-
-# 18. AI Requirements
-
-## 18.1 Primary AI Use Case
-
-The primary AI capability is permission-aware customer knowledge access
-through RAG.
-
-## 18.2 AI Authorization
-
-AI must respect:
+Retrieval must consider:
 
 -   tenant
 -   user
@@ -1967,1061 +618,1079 @@ AI must respect:
 -   permission
 -   knowledge access
 
-AI must not become an authorization bypass.
+## Acceptance Criteria
 
-## 18.3 AI Data Protection
-
-Customer information passed into AI workflows must respect:
-
--   tenant boundaries
--   access permissions
--   PII protection
--   approved data-handling rules
-
-## 18.4 AI Traceability
-
-Where required, Arc should be able to determine:
-
--   user
--   tenant
--   workflow
--   retrieval context
--   AI operation
-
-## 18.5 AI Failure Handling
-
-The system must define behavior for:
-
--   AI provider unavailable
--   retrieval failure
--   no relevant knowledge
--   permission filtering removes relevant content
--   AI generation failure
--   invalid input
-
-The system must not represent unavailable or unverified customer
-information as retrieved knowledge.
+-   Authorized knowledge can be retrieved.
+-   Unauthorized knowledge is excluded.
+-   Cross-tenant retrieval is prevented.
+-   Permission filtering is tested.
+-   The LLM receives only permitted context.
+-   Retrieval failures are handled safely.
 
 ------------------------------------------------------------------------
 
-# 19. Data Requirements
+# 13. Skills Engine
 
-## 19.1 Tenant Data
+## Purpose
 
-Tenant-scoped data must always have a clear ownership/context boundary.
+Turn organizational procedures into controlled, executable Skills for
+the AI Agent.
 
-## 19.2 User Data
+A Skill represents a repeatable way of performing a task.
 
-User data must support:
-
--   identity
--   tenant association
--   roles
--   permissions where applicable
-
-## 19.3 Integration Data
-
-Integration data must maintain tenant association.
-
-## 19.4 Event Data
-
-Events should contain enough context to determine:
-
--   source
--   type
--   tenant
--   timestamp
--   processing state
--   correlation information where applicable
-
-## 19.5 Incident Data
-
-Incidents should support:
-
--   tenant
--   status
--   severity
--   ownership
--   timeline
--   related events
--   resolution information
-
-Exact schema remains TBD.
-
-## 19.6 Knowledge Data
-
-Knowledge used by RAG must support appropriate:
-
--   tenant association
--   authorization metadata
--   source information
--   retrieval context
-
-## 19.7 Usage Data
-
-Usage records should support:
-
--   tenant
--   usage type
--   quantity
--   timestamp
--   source/context
-
-------------------------------------------------------------------------
-
-# 20. Security Requirements
-
-Security must be considered across every capability.
-
-## Mandatory Product Security Rules
-
-1.  Authentication must protect protected functionality.
-2.  Authorization must be enforced server-side.
-3.  Tenant boundaries must be treated as security boundaries.
-4.  Cross-tenant access must fail.
-5.  Customer credentials must be protected.
-6.  Secrets must not be committed to source control.
-7.  Sensitive information must not be unnecessarily logged.
-8.  AI retrieval must respect authorization.
-9.  Integrations must remain tenant-scoped.
-10. Important security actions must be auditable.
-
-------------------------------------------------------------------------
-
-# 21. Event Requirements
-
-Events may originate from:
-
--   external systems
--   customer connectors
--   webhooks
--   internal Arc workflows
-
-Events should preserve:
-
--   source
--   event type
--   tenant context
--   timestamp
--   processing state
--   correlation information where required
-
-The exact event architecture is an engineering decision.
-
-------------------------------------------------------------------------
-
-# 22. Integration Requirements
-
-Integrations must:
-
--   be tenant-aware
--   use approved authentication
--   protect credentials
--   provide connection status
--   handle failures
--   preserve customer context
--   support observability
--   integrate with audit where required
-
-The first integration remains TBD.
-
-------------------------------------------------------------------------
-
-# 23. First Vertical Slice
-
-## Objective
-
-Prove that Arc's most important shared product foundations can operate
-together.
-
-The first slice should not attempt to implement all twelve capabilities.
-
-## User Story
-
-As an IT Services user, I want to securely access a customer-scoped
-resource so that Arc proves authentication, authorization, tenant
-isolation, data access, and auditability end to end.
-
-## Workflow
+## Example
 
 ``` text
-Tenant
- ↓
-User
- ↓
-Authentication
- ↓
-Role
- ↓
-Authorization
- ↓
-Protected API
- ↓
-Tenant-scoped Data
- ↓
-Audit Event
- ↓
-Automated Tests
- ↓
-CI
- ↓
-PR / Review / Merge
+Skill: Payment API Recovery
+
+1. Get service health.
+2. Get service logs.
+3. Check recent deployment.
+4. Restart service if allowed.
+5. Verify service health.
+6. Update incident.
 ```
 
-## Product Acceptance Criteria
+## Skill Lifecycle
 
--   A tenant can be created.
--   A user can be associated with a tenant.
--   A user can authenticate.
--   A role can be assigned.
--   Protected functionality requires authentication.
--   Authorization is enforced server-side.
--   An authorized user can access an allowed tenant-scoped resource.
--   Tenant A cannot access Tenant B's resource.
--   Cross-tenant access is explicitly tested.
--   Denied access does not expose protected data.
--   Important actions generate audit information.
--   Automated tests cover the successful flow.
--   Automated tests cover unauthorized access.
--   Automated tests cover cross-tenant access.
--   CI executes required checks.
--   The implementation can pass through:
-    `Issue → Branch → PR → CI → Review → Merge`.
+``` text
+Company Brain
+      ↓
+Procedure / Knowledge
+      ↓
+AI proposes Skill
+      ↓
+Human reviews
+      ↓
+Approved Skill
+      ↓
+Available to Agent
+```
 
-## Dependencies
+The Agent must not invent unrestricted executable behavior.
 
--   Tenant model
--   Authentication
--   RBAC
--   Data layer
--   Audit
--   Testing
--   CI
+Skills should operate within defined boundaries.
 
-## Technical Review
+## Acceptance Criteria
 
-Bala validates technical feasibility.
-
-Bharath validates platform/environment feasibility.
+-   Procedures can be represented as Skills.
+-   Skills have defined steps.
+-   Skills identify permitted Tools.
+-   Skill proposals can be reviewed.
+-   Human approval can be required before activation.
+-   Approved Skills can be invoked by the Agent.
+-   Skill execution is observable.
 
 ------------------------------------------------------------------------
 
-# 24. Roadmap
+# 14. AI Agent
 
-The roadmap follows dependencies rather than capability numbering.
+## Purpose
 
-## Phase 0 --- Foundation
+The AI Agent is the reasoning and orchestration layer.
 
-### Objective
+It uses:
 
-Establish the product and engineering foundation required before
-implementation.
+-   Company Brain
+-   Secure RAG
+-   Skills
+-   AI Tools
+-   operational events
 
-### Includes
+to perform tasks.
 
--   Problem Statement
--   Product Vision
--   Personas
--   Module Map
--   Dependency Map
--   PRD
--   Functional Requirements
--   NFRs
--   Repository workflow
--   Development environment
--   CI baseline
--   Security baseline
--   Architecture decision process
--   AI development workflow
+## Company Brain vs AI Agent
 
-### Entry Criteria
+They are both part of the same living system, but they have different
+responsibilities.
 
--   Product direction exists.
--   Foundation responsibilities are assigned.
+### Company Brain
 
-### Exit Criteria
+``` text
+Memory
+Knowledge
+Experience
+Procedures
+Policies
+History
+```
 
--   Product direction is documented.
--   PRD is reviewed.
--   Dependencies are identified.
--   Engineering/platform review is complete where required.
--   Development workflow is reproducible.
--   Foundation gate is passed.
+### AI Agent
 
-## Phase 1 --- Core Platform
+``` text
+Understand
+Reason
+Plan
+Select Skill
+Select Tools
+Execute
+Observe
+Adapt
+Escalate
+```
 
-### Objective
+The Brain tells the Agent what the organization knows and how it works.
 
-Build the shared platform foundations.
+The Agent determines what to do in the current situation within its
+permissions and approved Skills.
 
-### Priority
+## Agent Flow
 
-1.  Tenant / Organization
-2.  Authentication
-3.  RBAC
-4.  Tenant-scoped data
-5.  Audit
-6.  Protected APIs
+``` text
+Trigger
+  ↓
+Understand task
+  ↓
+Search Company Brain
+  ↓
+Secure RAG
+  ↓
+Identify Skill
+  ↓
+Plan
+  ↓
+Select Tools
+  ↓
+Execute
+  ↓
+Observe result
+  ↓
+Continue / Resolve / Escalate
+```
 
-### Exit Criteria
+## Acceptance Criteria
 
-The First Vertical Slice passes.
-
-## Phase 2 --- Integrations and Events
-
-### Objective
-
-Connect Arc with external systems and support reliable event processing.
-
-### Priority
-
-1.  Customer Connector Pack
-2.  Webhook Engine
-3.  Event processing
-4.  Retry/idempotency behavior
-5.  Integration observability
-
-### Dependencies
-
-Phase 1 foundations.
-
-## Phase 3 --- Operations
-
-### Objective
-
-Provide operational visibility and incident handling.
-
-### Priority
-
-1.  Customer Health Dashboard
-2.  Incident Response
-3.  Operational visibility
-
-### Dependencies
-
--   Tenant
--   Identity
--   Integrations
--   Events
-
-## Phase 4 --- AI and Data Protection
-
-### Objective
-
-Provide secure AI-assisted customer knowledge workflows.
-
-### Priority
-
-1.  PII Redaction
-2.  Customer knowledge ingestion
-3.  Permission-aware retrieval
-4.  Secure RAG
-5.  AI workflow observability
-
-### Dependencies
-
--   Tenant isolation
--   Identity
--   RBAC
--   Customer data
--   Security controls
-
-AI should not be treated as a separate security boundary from the rest
-of Arc.
-
-## Phase 5 --- Customer Lifecycle
-
-### Objective
-
-Automate customer setup and deployment.
-
-### Priority
-
-1.  Customer Onboarding
-2.  One-Click Deployment
-3.  Customer readiness/validation
-
-### Dependencies
-
--   Tenant
--   Identity
--   Integrations
--   Deployment/environment decisions
-
-## Phase 6 --- Usage and Billing
-
-### Objective
-
-Provide reliable tenant-level usage tracking and approved billing
-behavior.
-
-### Priority
-
-1.  Usage events
-2.  Metering
-3.  Aggregation
-4.  Usage visibility
-5.  Billing calculation if approved
-
-## Continuous --- Public Deployment Case Study
-
-Module 12 is maintained throughout all phases.
-
-Evidence should be captured continuously rather than implemented as a
-final runtime feature.
+-   Agent can receive a task/event.
+-   Agent can retrieve authorized knowledge.
+-   Agent can identify an appropriate Skill.
+-   Agent can invoke allowed Tools.
+-   Agent can observe Tool results.
+-   Agent can perform a multi-step workflow.
+-   Agent can stop or request human intervention.
+-   Agent execution is observable.
 
 ------------------------------------------------------------------------
 
-# 25. Priority Model
+# 15. AI Tools
 
-Priority should be determined by:
+## Purpose
 
-1.  dependency importance
-2.  security importance
-3.  value to the connected product
-4.  ability to unblock other capabilities
-5.  ability to demonstrate an end-to-end workflow
-6.  implementation feasibility
+Provide controlled capabilities that the AI Agent can invoke.
 
-A capability should not be prioritized solely because it has a lower or
-higher module number.
+AI Tools are the Agent's controlled interface to the rest of Arc.
+
+## Initial Examples
+
+``` text
+search_company_knowledge()
+get_service_health()
+get_service_logs()
+get_recent_incidents()
+
+create_incident()
+update_incident()
+
+send_notification()
+
+restart_service()
+```
+
+The initial Tool set should remain small.
+
+## Tool Definition
+
+Each Tool should have:
+
+-   name
+-   purpose
+-   input
+-   output
+-   permission
+-   risk level
+-   execution behavior
+
+## Example
+
+``` text
+Tool: get_service_health
+Risk: Low
+Agent: Allowed
+Approval: No
+```
+
+``` text
+Tool: restart_service
+Risk: Medium
+Agent: Conditional
+Approval: Policy-dependent
+```
+
+The Agent should never receive unrestricted arbitrary code execution.
+
+## Acceptance Criteria
+
+-   Agent can use approved Tools.
+-   Tool inputs are validated.
+-   Tool permissions are enforced.
+-   Tool results return to the Agent.
+-   Tool failures are handled.
+-   Tool executions are observable.
 
 ------------------------------------------------------------------------
 
-# 26. Product Boundaries
+# 16. Webhook Integration Engine
 
-## In Scope
+## Purpose
 
-The connected implementation of the twelve approved capabilities.
+Allow external operational events to enter Arc and trigger workflows.
 
-## Out of Scope
+## Example
 
--   startup business planning
--   market research
--   sales
--   fundraising
--   customer acquisition
--   unnecessary enterprise complexity
--   unsupported customer-specific requirements
--   arbitrary infrastructure
--   custom foundation-model training
--   complete commercial billing platform unless approved
--   every possible third-party connector
--   production customer data
+``` text
+Monitoring System
+       ↓
+POST /webhooks/events
+       ↓
+Validate
+       ↓
+Resolve Tenant
+       ↓
+PII Guard
+       ↓
+AI Agent
+```
+
+Example event:
+
+``` json
+{
+  "event": "service_unhealthy",
+  "service": "payment-api",
+  "tenant_id": "tenant-a"
+}
+```
+
+## Required Behavior
+
+1.  Receive event.
+2.  Validate event.
+3.  Resolve tenant.
+4.  Protect sensitive data.
+5.  Process event.
+6.  Trigger relevant workflow.
+7.  Record result.
+
+## Acceptance Criteria
+
+-   Valid events are accepted.
+-   Invalid events are rejected safely.
+-   Tenant context is preserved.
+-   Duplicate behavior is defined sufficiently.
+-   Failures are observable.
+-   Webhooks can trigger Agent workflows.
 
 ------------------------------------------------------------------------
 
-# 27. Technical Implementation Boundary
+# 17. Observability
 
-This PRD defines product requirements.
+Observability is intentionally focused on the project needs.
 
-It does not finalize:
+## 17.1 Usage Monitoring
+
+Track:
+
+-   AI requests
+-   RAG requests
+-   Agent executions
+-   Tool calls
+-   webhook events
+-   connector activity
+
+Example:
+
+``` text
+Tenant A
+
+RAG requests:      42
+Agent runs:        15
+Tool executions:   31
+Webhook events:    18
+```
+
+## 17.2 Health Monitoring
+
+Track relevant health such as:
+
+-   API
+-   Company Brain
+-   RAG
+-   Agent
+-   connectors
+-   webhook processing
+
+## 17.3 Incident Response
+
+Operational failures should become incidents.
+
+``` text
+Failure
+  ↓
+Health Signal
+  ↓
+Incident
+  ↓
+Agent Investigation
+  ↓
+Resolution / Human Escalation
+```
+
+## 17.4 Agent-Driven Actions
+
+Observability should expose:
+
+-   Agent run
+-   trigger
+-   selected Skill
+-   Tools used
+-   actions performed
+-   result
+-   failure
+-   human approval
+-   final outcome
+
+Example:
+
+``` text
+Agent Run #102
+
+Trigger:
+payment-api unhealthy
+
+Knowledge:
+Payment API Incident Procedure
+
+Skill:
+payment_api_recovery
+
+Tools:
+get_service_health()
+get_service_logs()
+restart_service()
+
+Result:
+Service recovered
+
+Human approval:
+Not required
+```
+
+## Acceptance Criteria
+
+-   Usage can be viewed.
+-   Health can be viewed.
+-   Incidents can be tracked.
+-   Agent executions can be inspected.
+-   Tool executions can be inspected.
+-   Important failures are visible.
+-   Sensitive information is not unnecessarily logged.
+
+------------------------------------------------------------------------
+
+# 18. Human Intervention
+
+AI autonomy must have boundaries.
+
+``` text
+AI Agent
+    │
+    ├── Low-risk action
+    │       ↓
+    │    Execute
+    │
+    └── Sensitive action
+            ↓
+       Human Approval
+            │
+       ┌────┴────┐
+       │         │
+    Approve    Reject
+       │
+    Execute
+```
+
+Examples of potentially low-risk actions:
+
+-   search knowledge
+-   inspect health
+-   inspect logs
+-   create incident
+
+Potentially higher-risk actions:
+
+-   restart service
+-   change configuration
+-   destructive operations
+
+The project only needs a simple approval workflow.
+
+------------------------------------------------------------------------
+
+# 19. Docker Local Deployment
+
+Arc will run locally using Docker.
+
+## Required
+
+-   reproducible local setup
+-   documented environment configuration
+-   no committed secrets
+-   consistent startup process
+-   all required application infrastructure containerized where
+    practical
+
+## Not Required
+
+-   AWS
+-   Kubernetes
+-   production cloud deployment
+-   customer-hosted deployment
+
+The exact container topology is an engineering decision.
+
+------------------------------------------------------------------------
+
+# 20. AI Provider Strategy
+
+The application should avoid being tightly coupled to one AI provider.
+
+Conceptually:
+
+``` text
+Application
+     ↓
+LLM Interface
+     ↓
+Provider Adapter
+     ↓
+Model
+```
+
+This allows a free/local/provider-based model to be substituted without
+rewriting the Agent.
+
+Prefer free or low-cost options where practical.
+
+The exact model and provider are technical decisions.
+
+------------------------------------------------------------------------
+
+# 21. Data Strategy
+
+Use synthetic data only.
+
+Example data:
+
+-   company policies
+-   technical procedures
+-   incidents
+-   solutions
+-   service information
+-   documents
+-   employee information
+-   operational events
+
+No real customer/company data is required.
+
+------------------------------------------------------------------------
+
+# 22. Security Requirements
+
+The project requires the following minimum controls:
+
+-   authentication for protected functionality
+-   role-based authorization
+-   tenant isolation
+-   server-side authorization
+-   protected credentials
+-   no committed secrets
+-   PII protection
+-   permission-aware RAG
+-   controlled Agent Tools
+-   human approval for sensitive actions
+-   safe logging
+
+The project does not require a full enterprise security program.
+
+------------------------------------------------------------------------
+
+# 23. AI Safety Requirements
+
+The Agent must not:
+
+-   bypass tenant authorization
+-   retrieve unauthorized knowledge
+-   execute arbitrary code
+-   access arbitrary systems
+-   invent permissions
+-   execute restricted actions without required approval
+-   unnecessarily expose PII
+
+The Agent operates through controlled Tools and approved Skills.
+
+------------------------------------------------------------------------
+
+# 24. Testing Strategy
+
+Testing should concentrate on critical behavior.
+
+## Tenant Tests
+
+-   Tenant A can access Tenant A data.
+-   Tenant A cannot access Tenant B data.
+
+## Authentication Tests
+
+-   authenticated user succeeds
+-   unauthenticated user is rejected
+
+## Authorization Tests
+
+-   allowed role succeeds
+-   disallowed role fails
+
+## PII Tests
+
+-   known PII is detected
+-   known PII is redacted
+
+## RAG Tests
+
+-   authorized knowledge retrieved
+-   unauthorized knowledge excluded
+-   cross-tenant retrieval blocked
+
+## Skill Tests
+
+-   approved Skill executes
+-   restricted Skill requires approval
+
+## Agent Tests
+
+-   Agent selects appropriate Tool
+-   Agent receives Tool result
+-   Agent handles Tool failure
+-   Agent escalates when required
+
+## Webhook Tests
+
+-   valid event accepted
+-   invalid event rejected
+-   tenant context preserved
+
+## End-to-End Test
+
+The golden workflow must work:
+
+``` text
+Webhook
+ → PII
+ → Company Brain
+ → Secure RAG
+ → Skill
+ → Agent
+ → Tool
+ → Health
+ → Incident
+ → Observability
+```
+
+------------------------------------------------------------------------
+
+# 25. Golden End-to-End Scenario
+
+A simulated customer service becomes unhealthy.
+
+## Step 1 --- Event
+
+``` text
+Monitoring System
+      ↓
+Webhook
+      ↓
+service_unhealthy
+```
+
+## Step 2 --- Tenant Resolution
+
+``` text
+Webhook
+   ↓
+Tenant A
+```
+
+## Step 3 --- PII Protection
+
+``` text
+Event
+   ↓
+PII Guard
+   ↓
+Safe Event
+```
+
+## Step 4 --- Company Brain
+
+The Agent searches organizational knowledge about the affected service.
+
+## Step 5 --- Secure RAG
+
+``` text
+Query
+ ↓
+Tenant-scoped procedure
+ ↓
+Previous incidents
+ ↓
+Previous solutions
+```
+
+## Step 6 --- Skill
+
+``` text
+Payment API Recovery Skill
+```
+
+## Step 7 --- Agent
+
+The Agent determines the appropriate sequence.
+
+``` text
+Get health
+   ↓
+Get logs
+   ↓
+Check recent incidents
+   ↓
+Determine action
+```
+
+## Step 8 --- Tool
+
+If allowed:
+
+``` text
+restart_service()
+```
+
+## Step 9 --- Verification
+
+``` text
+get_service_health()
+```
+
+## Step 10 --- Incident
+
+If recovered:
+
+``` text
+Incident resolved
+```
+
+If not:
+
+``` text
+Human intervention required
+```
+
+## Step 11 --- Learning
+
+``` text
+Incident
+   ↓
+Solution
+   ↓
+Outcome
+   ↓
+Company Brain
+```
+
+## Step 12 --- Observability
+
+The complete Agent execution is visible.
+
+------------------------------------------------------------------------
+
+# 26. Implementation Priority
+
+AI capabilities receive the highest priority.
+
+Recommended priority:
+
+1.  Company Brain
+2.  Secure RAG
+3.  Skills Engine
+4.  AI Agent
+5.  AI Tools
+6.  PII Guard
+7.  Webhook → Agent integration
+8.  AI/Agent Observability
+9.  Connectors
+10. Multi-tenancy
+11. Auth/RBAC
+12. Docker/platform polish
+
+Lower-priority platform components should remain simple so they do not
+consume time needed for AI components.
+
+------------------------------------------------------------------------
+
+# 27. Seven-Day Roadmap
+
+## Day 1 --- Foundation
+
+-   Docker
+-   backend/frontend skeleton
+-   required data foundation
+-   three simulated tenants
+-   users
+-   Google authentication
+-   basic RBAC
+
+**Exit:** A user can authenticate and access tenant-scoped
+functionality.
+
+## Day 2 --- Company Brain + PII
+
+-   knowledge
+-   documents
+-   procedures
+-   policies
+-   incidents
+-   solutions
+-   provenance
+-   PII detection/redaction
+
+**Exit:** Synthetic company information can enter and be safely stored
+in the Brain.
+
+## Day 3 --- Secure RAG
+
+-   chunking
+-   embeddings
+-   retrieval
+-   tenant filtering
+-   permission filtering
+-   context construction
+-   response generation
+
+**Exit:** Authorized users/Agents can retrieve permitted knowledge
+without cross-tenant leakage.
+
+## Day 4 --- Skills + Agent + Tools
+
+-   Skill representation
+-   Skill proposal
+-   approval
+-   Agent
+-   planning
+-   Tool definitions
+-   Tool calling
+-   Tool permissions
+-   execution tracking
+
+**Exit:** Agent can use an approved Skill and controlled Tools for a
+multi-step task.
+
+## Day 5 --- Webhooks + Operations
+
+-   webhook endpoint
+-   validation
+-   tenant resolution
+-   event processing
+-   incident workflow
+-   health checks
+-   Agent-driven actions
+-   human approval
+
+**Exit:** A webhook can trigger an Agent workflow that investigates a
+simulated operational problem.
+
+## Day 6 --- Connectors + Observability
+
+-   2--3 connectors where feasible
+-   connector ingestion
+-   usage monitoring
+-   health monitoring
+-   Agent run visibility
+-   Tool execution visibility
+-   incident visibility
+
+**Exit:** External information can enter the Brain and important
+workflows can be inspected.
+
+## Day 7 --- Integration + Testing + Documentation
+
+-   golden workflow
+-   tenant isolation tests
+-   security tests
+-   RAG tests
+-   Agent tests
+-   failure tests
+-   Docker validation
+-   documentation
+-   architecture diagram
+-   final demonstration
+
+**Exit:** Team can explain and demonstrate the complete Arc workflow
+independently.
+
+------------------------------------------------------------------------
+
+# 28. Definition of Done
+
+Arc is complete for this project when:
+
+-   application runs locally
+-   Docker setup works
+-   three simulated tenants exist
+-   Google authentication works
+-   basic RBAC works
+-   tenant isolation works
+-   PII protection works
+-   Company Brain works
+-   Secure RAG works
+-   Skills can be created/approved
+-   AI Agent can execute an approved workflow
+-   AI Tools work through controlled interfaces
+-   Webhooks can trigger workflows
+-   incidents can be created/handled
+-   usage monitoring exists
+-   health monitoring exists
+-   Agent activity is observable
+-   at least two useful connectors work where feasible
+-   golden end-to-end workflow works
+-   critical security cases are tested
+-   documentation explains the implementation
+
+------------------------------------------------------------------------
+
+# 29. Learning Requirement
+
+The project is not successful merely because the code works.
+
+Each team member should understand the component they implement.
+
+Learning process:
+
+``` text
+1. Concept explained
+        ↓
+2. Architecture understood
+        ↓
+3. Questions asked
+        ↓
+4. Team member explains it back
+        ↓
+5. Implementation designed
+        ↓
+6. Team member implements
+        ↓
+7. Implementation reviewed/debugged
+        ↓
+8. Team member documents what was learned
+```
+
+The final goal is that the team can explain the complete system without
+relying on an AI assistant to explain their own implementation.
+
+------------------------------------------------------------------------
+
+# 30. Placement Demonstration Requirements
+
+A developer working on Arc should be able to explain:
+
+## Product
+
+What problem Arc demonstrates.
+
+## Company Brain
+
+How organizational knowledge is collected, structured, stored,
+connected, and reused.
+
+## Secure RAG
+
+How AI retrieves only authorized information.
+
+## Skills Engine
+
+How procedures become controlled executable Skills.
+
+## AI Agent
+
+How the Agent reasons, plans, selects Skills, and orchestrates actions.
+
+## AI Tools
+
+How the Agent interacts with controlled capabilities.
+
+## PII Guard
+
+How sensitive information is detected and protected.
+
+## Webhooks
+
+How external events enter Arc and trigger workflows.
+
+## Observability
+
+How Agent and system behavior is monitored.
+
+## Security
+
+How tenant isolation and authorization prevent data leakage.
+
+## Docker
+
+How the entire project runs locally.
+
+------------------------------------------------------------------------
+
+# 31. Deferred Technical Decisions
+
+The PRD does not finalize:
 
 -   backend language/framework
 -   frontend framework
 -   database
+-   vector database
 -   cache
 -   message broker
--   vector database
 -   object storage
--   cloud provider
--   AI model/provider
--   service topology
--   container topology
--   Kubernetes architecture
+-   AI provider
+-   AI model
+-   Agent framework
+-   orchestration framework
+-   exact connector list
+-   container/service topology
 
-These decisions must be handled through the engineering/platform
-architecture process.
+These should be selected only when required by implementation.
 
-The selected technology must satisfy the requirements in this PRD.
-
-------------------------------------------------------------------------
-
-# 28. Current Technical Decision Status
-
-  Area                           Status
-  ------------------------------ ------------------------
-  Backend                        TBD
-  Frontend                       TBD
-  Database                       TBD
-  Cache                          TBD
-  Message/Event Infrastructure   TBD
-  Vector Storage                 TBD
-  Object Storage                 TBD
-  AI Provider                    TBD
-  AI Model                       TBD
-  Identity Provider              TBD
-  Cloud Provider                 TBD
-  Deployment Model               TBD
-  Containerization               Foundation requirement
-  CI                             Foundation requirement
-  Observability                  Required
-  Architecture                   Engineering review
+No technology should be added merely because the architecture diagram
+contains a conceptual component.
 
 ------------------------------------------------------------------------
 
-# 29. Open Questions
+# 32. Decision Rule
 
-## Customer Model
+Before adding infrastructure or a framework, ask:
 
--   What exact IT Services organization are we modeling?
--   What services does the organization provide?
--   What exactly represents a customer?
--   What exactly represents a tenant?
--   Is one customer always one tenant?
--   Can a customer have multiple environments?
+1.  Does the current Arc workflow require it?
+2.  Does it provide useful learning value?
+3.  Can the team understand it within seven days?
+4.  Is there a simpler alternative?
+5.  Does it improve the final demonstration?
 
-## Users
-
--   What exact provider-side roles are required?
--   What exact customer-side roles are required?
--   What permissions belong to each role?
-
-## Authentication
-
--   Which SSO provider should be used first?
--   Which SSO protocol?
--   Is provisioning required?
--   How are roles mapped?
-
-## Integrations
-
--   Which external system is the first connector?
--   What data should it exchange?
--   Which authentication mechanism is required?
-
-## Events
-
--   What is the first event type?
--   What event schema is required?
--   What retry behavior is required?
--   What idempotency behavior is required?
-
-## AI
-
--   Which knowledge source is used first?
--   Which RAG workflow is demonstrated?
--   Which PII categories are required?
--   Is an agent required beyond RAG?
--   Which AI provider/model is selected?
-
-## Operations
-
--   Which health metrics matter?
--   What defines degraded health?
--   Which incidents should be created automatically?
--   What SLA/SLO expectations are required?
-
-## Billing
-
--   What usage is measured?
--   What is billable?
--   Is billing simulated?
--   Is an external billing system required?
-
-## Deployment
-
--   Is Arc SaaS-only?
--   Is customer-hosted deployment required?
--   What does one-click deployment mean for the first implementation?
--   Which environment types are required?
-
-## NFR Targets
-
--   API performance target?
--   Event processing target?
--   Availability target?
--   Recovery target?
--   Expected tenant count?
--   Expected user count?
--   Expected event volume?
--   Expected AI request volume?
+If not, defer it.
 
 ------------------------------------------------------------------------
 
-# 30. Assumptions
-
-The following are assumptions unless explicitly approved.
-
-1.  Arc is primarily designed for IT Services organizations.
-2.  Arc is multi-tenant.
-3.  Tenant boundaries are security boundaries.
-4.  The twelve capabilities form one connected product.
-5.  Some capabilities may be primarily backend/platform capabilities.
-6.  The exact customer operating model is not yet finalized.
-7.  The exact user-role model is not yet finalized.
-8.  The first external integration is not yet finalized.
-9.  The first AI knowledge source is not yet finalized.
-10. The AI provider/model is not yet finalized.
-11. The deployment model is not yet finalized.
-12. Numerical NFR targets are not yet finalized.
-13. Module 12 is continuous evidence rather than a runtime feature.
-14. The dependency map is a product hypothesis rather than final
-    architecture.
-15. Technical architecture must be reviewed by the engineering/platform
-    owners.
-16. The project does not require startup/commercial planning at this
-    stage.
-
-------------------------------------------------------------------------
-
-# 31. Assumption Rules
-
-An assumption must not silently become an approved requirement.
-
-For unresolved decisions:
-
--   record the assumption
--   identify the owner
--   identify affected capabilities
--   identify dependencies
--   update the PRD when the decision is made
-
-Technical assumptions should be reviewed by Bala.
-
-Platform/deployment assumptions should be reviewed by Bharath.
-
-Product/scope assumptions should be reviewed by Joe/team.
-
-------------------------------------------------------------------------
-
-# 32. GitHub / Linear Implementation Boundary
-
-The PRD defines what needs to exist.
-
-The implementation process should convert approved requirements into:
+# 33. Final Product Flow
 
 ``` text
-PRD
- ↓
-Roadmap
- ↓
-Functional Requirement
- ↓
-Linear Issue
- ↓
-GitHub Branch
- ↓
-Implementation
- ↓
-Tests
- ↓
-Pull Request
- ↓
-CI
- ↓
-Review
- ↓
-Merge
+                   EXTERNAL INFORMATION
+                           │
+                           ▼
+                     CONNECTORS
+                           │
+                           ▼
+                      PII GUARD
+                           │
+                           ▼
+                    COMPANY BRAIN
+                     │         │
+                     │         │
+                     ▼         ▼
+                SECURE RAG   SKILLS
+                     │         │
+                     └────┬────┘
+                          ▼
+                       AI AGENT
+                          │
+                    ┌─────┴─────┐
+                    │           │
+                    ▼           ▼
+                 AI TOOLS    WEBHOOKS
+                    │           │
+                    └─────┬─────┘
+                          ▼
+                    OBSERVABILITY
+                          │
+                    ┌─────┴─────┐
+                    │           │
+                 Resolved    Escalated
+                    │           │
+                    │      Human Approval
+                    │           │
+                    └─────┬─────┘
+                          ▼
+                    COMPANY BRAIN
+                 learns from outcome
 ```
 
-Issues must not introduce product behavior that is not supported by the
-approved requirements.
-
 ------------------------------------------------------------------------
 
-# 33. Engineering-Ready Issue Requirements
+# 34. Final Scope Statement
 
-Each implementation issue generated from this PRD should contain:
+Arc is a **simplified enterprise AI engineering project for placement**.
 
-### Scope
+Its main demonstration is:
 
-What is being implemented.
+> How a Company Brain, Secure RAG, Skills Engine, AI Agent, AI Tools,
+> PII protection, Webhooks, and Observability can work together to turn
+> organizational knowledge and operational events into controlled
+> AI-assisted actions.
 
-### Product Requirement
-
-Which PRD requirement it satisfies.
-
-### Dependencies
-
-What must exist first.
-
-### Acceptance Criteria
-
-How completion is verified.
-
-### Security
-
-Relevant security requirements.
-
-### Data
-
-Relevant data requirements.
-
-### Testing
-
-Required tests.
-
-### Observability
-
-Required logs/metrics/traces/audit.
-
-### Out of Scope
-
-What the issue deliberately does not implement.
-
-### Review
-
-Relevant technical/platform reviewer.
-
-------------------------------------------------------------------------
-
-# 34. Definition of Ready
-
-A capability is ready for implementation when:
-
--   purpose is defined
--   primary user is defined
--   expected behavior is defined
--   trigger is defined
--   inputs are understood
--   outputs are understood
--   dependencies are known
--   security expectations are known
--   data expectations are known
--   AI involvement is known or marked N/A
--   external integrations are identified
--   acceptance criteria are testable
--   out-of-scope behavior is documented
--   implementation-blocking open questions are resolved
--   required technical dependencies have been reviewed
-
-------------------------------------------------------------------------
-
-# 35. Definition of Done
-
-A capability is complete when:
-
--   approved requirements are implemented
--   acceptance criteria pass
--   happy paths pass
--   negative paths pass
--   authorization tests pass
--   tenant-isolation tests pass where applicable
--   failure behavior is tested where applicable
--   integration behavior is tested where applicable
--   AI authorization is tested where applicable
--   observability requirements are satisfied
--   audit requirements are satisfied where applicable
--   documentation is updated
--   architecture decisions are documented
--   CI passes
--   human review is completed
-
-------------------------------------------------------------------------
-
-# 36. Product Quality Bar
-
-Arc should demonstrate:
-
-### Correctness
-
-The system behaves according to approved requirements.
-
-### Security
-
-Identity, authorization, tenant isolation, and sensitive-data boundaries
-are enforced.
-
-### Reliability
-
-Expected failures are handled and observable.
-
-### Integration
-
-Capabilities operate together as one platform.
-
-### AI Safety
-
-AI cannot bypass authorization or tenant boundaries.
-
-### Observability
-
-Important product behavior can be investigated.
-
-### Maintainability
-
-Another developer can understand and modify the system.
-
-### Reproducibility
-
-The development environment can be reproduced by the team.
-
-### Traceability
-
-Requirements can be traced through implementation and test evidence.
-
-------------------------------------------------------------------------
-
-# 37. Evidence Requirements
-
-The project should retain evidence for important product and engineering
-decisions.
-
-Evidence may include:
-
--   requirements
--   architecture decisions
--   implementation decisions
--   tests
--   CI results
--   deployment results
--   security tests
--   tenant-isolation tests
--   AI evaluation results
--   integration tests
--   failures
--   fixes
--   performance observations
--   operational observations
-
-The final system documentation must describe what was actually built.
-
-Planned architecture must not be presented as implemented architecture.
-
-------------------------------------------------------------------------
-
-# 38. Change Management
-
-If a product requirement changes:
-
-1.  Identify the affected requirement.
-2.  Document why it changed.
-3.  Identify affected capabilities.
-4.  Identify dependency changes.
-5.  Identify roadmap impact.
-6.  Identify acceptance-criteria impact.
-7.  Review technical implications with Bala.
-8.  Review platform/deployment implications with Bharath where
-    applicable.
-9.  Update the PRD.
-10. Update affected requirements/issues.
-
-Major product decisions should not exist only in private AI
-conversations.
-
-------------------------------------------------------------------------
-
-# 39. Traceability Model
-
-The product planning chain is:
+The supporting platform capabilities exist only to make this AI workflow
+realistic:
 
 ``` text
-Problem
- ↓
-Product Objective
- ↓
-Capability
- ↓
-User
- ↓
-Use Case
- ↓
-Requirement
- ↓
-Acceptance Criteria
- ↓
-Roadmap
- ↓
-Linear Issue
- ↓
-GitHub Implementation
- ↓
-Test Evidence
+Multi-Tenant
+Auth/RBAC
+Connectors
+PII
+Company Brain
+Secure RAG
+Skills Engine
+AI Agent
+AI Tools
+Webhooks
+Observability
+Docker
 ```
 
-Each implementation should be traceable back to a product requirement.
+The project should remain simple enough to complete and understand
+within seven days.
+
+The goal is not to build everything an enterprise would ever need.
+
+The goal is to build **one coherent enterprise AI system that the team
+can explain, implement, demonstrate, and defend technically.**
 
 ------------------------------------------------------------------------
 
-# 40. PRD Acceptance Criteria
+# 35. Document Status
 
-The PRD is ready for Foundation handoff when:
+**Status:** Active Implementation PRD\
+**Purpose:** 7-Day Placement Project\
+**Primary Focus:** Company Brain / Secure RAG / Skills / AI Agent\
+**Deployment:** Local Docker\
+**Authentication:** Google/Gmail\
+**Tenants:** Three simulated tenants\
+**Real Customer Data:** Not used\
+**AWS:** Out of scope\
+**Enterprise SSO:** Out of scope\
+**Commercial Product:** Out of scope
 
-## Product
-
--   Problem is defined.
--   Product objective is defined.
--   Product vision is defined.
--   Primary users are identified.
--   Working personas are documented.
--   Product terminology is documented.
--   Project boundary is explicit.
-
-## Capabilities
-
--   All 12 capabilities are documented.
--   Each capability has a purpose.
--   Each capability has a primary user.
--   Expected workflows are documented.
--   Inputs/outputs are documented where known.
--   Dependencies are documented.
--   Security implications are documented.
--   Data expectations are documented.
--   Acceptance criteria are documented.
--   Out-of-scope behavior is documented.
--   Module 12 is treated as continuous evidence.
-
-## Integration
-
--   Customer onboarding workflow is documented.
--   Integration workflow is documented.
--   Event workflow is documented.
--   Incident workflow is documented.
--   AI workflow is documented.
--   Usage workflow is documented.
--   Deployment workflow is documented.
-
-## Requirements
-
--   Functional requirements are defined.
--   Functional requirements are testable.
--   Negative cases are included.
--   Authorization cases are included.
--   Cross-tenant cases are included.
--   Failure behavior is defined where applicable.
--   Audit requirements are identified.
-
-## NFR
-
--   Security requirements are defined.
--   Tenant isolation requirements are defined.
--   Reliability requirements are defined.
--   Performance requirements are defined.
--   Scalability requirements are defined.
--   Availability requirements are defined.
--   Observability requirements are defined.
--   Auditability requirements are defined.
--   Maintainability requirements are defined.
--   Testability requirements are defined.
--   Privacy requirements are defined.
--   Unknown numerical targets are explicitly marked TBD.
-
-## Technical Boundary
-
--   Product requirements are separated from technical implementation.
--   Technical architecture is not prematurely locked.
--   Technical unknowns are marked TBD.
--   Technical dependencies are identified for review.
-
-## Review
-
--   Bala reviews technical dependencies.
--   Bharath reviews platform/environment implications.
--   Open questions have owners.
--   Product requirements are ready to become implementation issues.
-
-------------------------------------------------------------------------
-
-# 41. Document Ownership
-
-## Joe --- Product + Roadmap Lead
-
-Owns:
-
--   product definition
--   product scope
--   users
--   personas
--   use cases
--   product requirements
--   acceptance criteria
--   product-level dependencies
--   roadmap
--   open product decisions
-
-## Bala --- Engineering + AI Lead
-
-Reviews:
-
--   technical feasibility
--   architecture
--   service boundaries
--   technical dependencies
--   AI architecture
--   security implications
--   first vertical slice feasibility
-
-## Bharath --- Platform + DevOps Lead
-
-Reviews:
-
--   environment
--   deployment
--   CI
--   reproducibility
--   platform constraints
--   operational requirements affecting platform implementation
-
-------------------------------------------------------------------------
-
-# 42. Source of Truth
-
-The canonical PRD is:
-
-``` text
-docs/requirements/PRD.md
-```
-
-The PRD should be maintained together with:
-
-``` text
-docs/requirements/
-docs/architecture/decisions/
-```
-
-Linear is used to track work.
-
-Git is the canonical source for finalized documentation.
-
-Private AI conversations are not the permanent source of truth.
-
-------------------------------------------------------------------------
-
-# 43. Final Foundation Handoff
-
-The Product + Roadmap Foundation handoff is considered ready when the
-following exist:
-
--   Problem Statement
--   Product Vision
--   Personas / Users
--   Module Map
--   Dependency Map
--   PRD
--   Functional Requirements
--   Non-Functional Requirements
--   First Vertical Slice
--   Roadmap
--   GitHub/Linear-ready implementation work
--   Open Questions / Assumptions
--   Bala technical review
--   Bharath platform review
-
-The Foundation phase must be completed before full product
-implementation begins.
-
-------------------------------------------------------------------------
-
-# 44. Document Status
-
-**Status:** Foundation Draft --- Ready for Team Review
-
-**Owner:** Joe --- Product + Roadmap Lead
-
-**Bala Review:** Pending technical validation
-
-**Bharath Review:** Product-level dependency review acknowledged;
-platform/environment validation continues during implementation planning
-
-## Next Steps
-
-1.  Review PRD with the team.
-2.  Resolve product decisions that block implementation.
-3.  Complete Functional Requirements.
-4.  Complete measurable NFR targets where possible.
-5.  Validate product dependencies with Bala.
-6.  Validate platform/deployment implications with Bharath.
-7.  Create roadmap-linked Linear/GitHub issues.
-8.  Complete Foundation gate.
-9.  Begin implementation.
+**Next Step:** Finalize the implementation stack and repository
+architecture, then begin Day 1.
