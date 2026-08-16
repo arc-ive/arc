@@ -1264,13 +1264,13 @@ At the beginning of X-9:
 
 - The AI development architecture is defined.
 
-- OpenCode is installed and verified.
+- OpenCode was installed and verified on the reference development machine (see setup.md §27).
 
-- OmniRoute is installed and verified.
+- OmniRoute was installed and verified on the reference development machine (see setup.md §27).
 
-- OpenRouter is configured and verified.
+- OpenRouter provider connectivity was verified on the reference development machine (see setup.md §27).
 
-- End-to-end model routing has been demonstrated.
+- End-to-end model routing was verified on the reference development machine (see setup.md §27).
 
 - Final Primary model is not selected.
 
@@ -1281,6 +1281,10 @@ At the beginning of X-9:
 - Formal benchmark execution has not yet been completed.
 
 - Final fallback ordering has not yet been approved.
+
+
+
+These machine-scoped verification statements are observations from the reference development machine (see setup.md §27) and do not constitute project-wide verification or acceptance. Independent reproduction on another developer's machine remains pending (see setup.md §27.9 and architecture.md §21).
 
 
 

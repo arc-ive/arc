@@ -164,7 +164,7 @@ The exact local path differs between developers.
 
 Direct Windows installation is also valid when the required AI development tooling operates correctly on the developer's machine.
 
-The Bala X-9 environment was successfully verified using:
+The following environment was verified on Bala's development machine on 2026-08-14. This is machine-scoped verification and does not constitute project-wide verification.
 
 ```text
 Windows
@@ -178,7 +178,7 @@ OmniRoute
 OpenRouter
 ```
 
-The verified versions were:
+The versions recorded on Bala's development machine were:
 
 ```text
 Node.js: 24.15.0
@@ -187,7 +187,7 @@ OpenCode: 1.18.18
 OmniRoute: 3.8.49
 ```
 
-Therefore, X-9 does not require every developer to use WSL.
+This machine-scoped verification does not establish that every Arc developer can reproduce the environment. Independent reproduction on another developer's machine remains pending (see §27.9).
 
 The standardized requirement is the functioning AI development workflow, not a particular operating-system shell.
 
@@ -1222,14 +1222,6 @@ Check:
 
 
 
-Detailed troubleshooting procedures are maintained separately in:
-
-
-
-`docs/engineering/ai/troubleshooting.md`
-
-
-
 ---
 
 
@@ -1442,15 +1434,17 @@ These documents remain authoritative for their respective responsibilities.
 
 ## 27. Current Verification Status
 
+This section records machine-scoped observations from Bala's development machine only.
 
+These observations:
 
-## 27. Current Verification Status
+- Are NOT proof that every Arc developer can reproduce the environment.
+- Are NOT proof that the capability is project-wide verified.
+- Represent the current verification status as of 2026-08-14 unless an actual evidence artifact/link exists in the repository to establish otherwise.
 
-X-9 has been partially verified on the Bala development machine.
+The following environment components were installed and tested on Bala's development machine:
 
-The following environment components have been installed and tested:
-
-| Component | Verified Version | Status |
+| Component | Version Recorded | Status on Bala's Development Machine |
 |---|---:|---|
 | Node.js | 24.15.0 | Verified |
 | npm | 11.12.1 | Verified |
@@ -1463,25 +1457,25 @@ The following environment components have been installed and tested:
 
 ### 27.1 Verified Installation
 
-OpenCode was installed using npm and verified with:
+OpenCode was installed using npm and verified on Bala's development machine with:
 
 ```text
 opencode --version
 ```
 
-Verified result:
+Result recorded on Bala's development machine:
 
 ```text
 1.18.18
 ```
 
-OmniRoute was installed using npm and verified with:
+OmniRoute was installed using npm and verified on Bala's development machine with:
 
 ```text
 omniroute --version
 ```
 
-Verified result:
+Result recorded on Bala's development machine:
 
 ```text
 3.8.49
@@ -1493,9 +1487,9 @@ The installed executables were resolved successfully through the developer's loc
 
 ### 27.2 OpenRouter Provider Verification
 
-OpenRouter was configured as the initial downstream provider for OmniRoute.
+OpenRouter was configured as the initial downstream provider for OmniRoute on Bala's development machine.
 
-The configured provider was verified using:
+The configured provider was verified on Bala's development machine using:
 
 ```text
 omniroute providers list
@@ -1513,13 +1507,13 @@ The provider connection was tested using:
 omniroute providers test openrouter
 ```
 
-The verified result was:
+The result recorded on Bala's development machine was:
 
 ```text
 OK OpenRouter: provider test passed
 ```
 
-This confirms that OmniRoute can authenticate and communicate with the configured OpenRouter provider.
+On Bala's development machine, this confirms that OmniRoute can authenticate and communicate with the configured OpenRouter provider.
 
 The OpenRouter credential is stored in OmniRoute's local credential storage and must not be committed to the Arc repository.
 
@@ -1535,14 +1529,14 @@ The initial installation exposed:
 - Missing `better-sqlite3` native binary
 - Server health failures before migration completion
 
-These issues were resolved using the supported OmniRoute setup and runtime-repair mechanisms.
+These issues were resolved on Bala's development machine using the supported OmniRoute setup and runtime-repair mechanisms.
 
 After initialization:
 
 - The local OmniRoute database was created.
 - Required migrations were applied.
 - The native SQLite dependency was repaired.
-- OmniRoute was able to start successfully.
+- OmniRoute was able to start successfully on Bala's development machine.
 
 The resulting local OmniRoute data directory is:
 
@@ -1556,13 +1550,13 @@ This directory is local developer state and must not be copied into the Arc repo
 
 ### 27.4 OmniRoute Server Verification
 
-OmniRoute was started using:
+OmniRoute was started on Bala's development machine using:
 
 ```text
 omniroute serve
 ```
 
-The server reported successful startup and exposed the local service on:
+On Bala's development machine, the server reported successful startup and exposed the local service on:
 
 ```text
 http://localhost:20128
@@ -1620,7 +1614,7 @@ Selected downstream model
 
 ### 27.6 End-to-End Verification
 
-A real model request was successfully completed through the standardized development path:
+On Bala's development machine, a real model request was successfully completed through the standardized development path:
 
 ```text
 OpenCode
@@ -1632,12 +1626,14 @@ OpenRouter
 Downstream model
 ```
 
-The successful test demonstrated that:
+The successful test on Bala's development machine demonstrated that:
 
 - OpenCode can operate with the OmniRoute integration.
 - OmniRoute can route requests to a configured downstream provider.
 - OpenRouter can serve as the downstream model gateway.
 - A downstream model can return a successful response.
+
+These results are machine-scoped observations and do not constitute project-wide verification.
 
 The specific model used for this connectivity test does not constitute the final Arc Primary, Review, or Fast model selection.
 
@@ -1695,20 +1691,26 @@ Real credentials must never be placed in:
 
 ### 27.9 Current X-9 Verification Checklist
 
-The current verified status is:
+Checklist scope is defined as follows:
 
-- [x] OpenCode installed.
-- [x] OpenCode version recorded.
-- [x] OmniRoute installed.
-- [x] OmniRoute version recorded.
-- [x] OpenRouter provider configured.
-- [x] OpenRouter provider connectivity verified.
-- [x] OmniRoute initialized.
-- [x] OmniRoute server started.
-- [x] OpenCode OmniRoute integration installed.
-- [x] OpenCode can route a real request through OmniRoute.
-- [x] Downstream model request succeeded.
-- [x] No repository credentials were committed.
+- **Documented/defined:** the step is documented as part of the standardized setup.
+- **Verified on Bala's development machine:** recorded output from Bala's development machine exists (see §27.1–§27.6).
+- **Independently reproduced / project-wide accepted:** not yet established; requires recorded evidence from another developer's machine.
+
+The current status on Bala's development machine is:
+
+- [x] OpenCode installation documented and verified on Bala's development machine.
+- [x] OpenCode version recorded on Bala's development machine.
+- [x] OmniRoute installation documented and verified on Bala's development machine.
+- [x] OmniRoute version recorded on Bala's development machine.
+- [x] OpenRouter provider configuration documented and verified on Bala's development machine.
+- [x] OpenRouter provider connectivity verified on Bala's development machine.
+- [x] OmniRoute initialization documented and performed on Bala's development machine.
+- [x] OmniRoute server started on Bala's development machine.
+- [x] OpenCode OmniRoute integration installed on Bala's development machine.
+- [x] OpenCode can route a real request through OmniRoute on Bala's development machine.
+- [x] Downstream model request succeeded on Bala's development machine.
+- [x] No repository credentials were committed (repository-wide; checked against repository history).
 
 The following remain incomplete:
 
@@ -1772,35 +1774,39 @@ This setup does not:
 
 
 
-The AI development environment is considered ready for Foundation acceptance when:
+The following are Foundation acceptance conditions. They describe what must be demonstrated for acceptance; they do not claim that those conditions are already satisfied. Reference-machine verification is recorded in §27 and does not by itself constitute acceptance.
 
 
 
-1\. OpenCode is installed and verified.
+Reference-machine verification alone does not satisfy Foundation acceptance. Unless explicitly stated otherwise, each verification condition below requires independent reproduction and recorded evidence before it can be considered accepted project-wide.
 
-2\. OmniRoute is installed and verified.
 
-3\. OpenRouter connectivity is verified.
 
-4\. An approved model endpoint responds successfully.
+1. OpenCode installation is documented and has been verified on the reference development machine; acceptance requires successful reproduction by another developer.
 
-5\. OpenCode operates against the Arc repository through OmniRoute.
+2. OmniRoute installation is documented and has been verified on the reference development machine; acceptance requires successful reproduction by another developer.
 
-6\. The repository-context test succeeds.
+3. OpenRouter provider connectivity is documented and has been verified on the reference development machine; acceptance requires successful reproduction by another developer.
 
-7\. A small AI-assisted development change is completed safely.
+4. An approved model endpoint responds successfully on the reference development machine; acceptance requires successful independent reproduction and recorded evidence.
 
-8\. Security and least-privilege rules are verified.
+5. OpenCode operates against the Arc repository through OmniRoute on the reference development machine; acceptance requires successful independent reproduction and recorded evidence.
 
-9\. The model benchmark procedure has been completed.
+6. The repository-context test succeeds on the reference development machine; acceptance requires successful independent reproduction and recorded evidence.
 
-10\. Primary, Review, and Fast model roles are documented.
+7. A small AI-assisted development change is completed safely on the reference development machine; acceptance requires successful independent reproduction and recorded evidence.
 
-11\. Fallback behavior is documented and verified.
+8. Security and least-privilege rules are documented and verified on the reference development machine; acceptance requires successful independent reproduction and recorded evidence.
 
-12\. Another developer can reproduce the setup from repository documentation.
+9. The model benchmark procedure has been completed and its results documented.
 
-13\. No secrets or production/customer data entered Git or the development AI workflow.
+10. Primary, Review, and Fast model roles are documented.
+
+11. Fallback behavior is documented and verified on the reference development machine; acceptance requires successful independent reproduction and recorded evidence.
+
+12. Another developer can reproduce the setup from repository documentation (independent reproduction).
+
+13. No secrets or production/customer data entered Git or the development AI workflow.
 
 
 
@@ -1862,4 +1868,4 @@ It must remain:
 
 
 
-Specific tool versions, provider configuration, model assignments, benchmark results, and verification evidence must be recorded only after they have been actually tested.
+Specific tool versions and provider configuration are recorded in this document only after they have been actually tested on a developer's machine (see §27). Model assignments, benchmark results, and project-acceptance verification evidence must be recorded only after they have been actually tested and evidenced.
