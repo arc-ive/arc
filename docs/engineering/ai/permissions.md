@@ -830,6 +830,12 @@ The Foundation objective is to establish a secure development workflow, not auto
 
 ## 24. Verification Checklist
 
+
+
+The following items define what should be verified. The items below are policy-level expectations, not assertions that verification has been completed. Each item requires supporting implementation evidence or recorded verification to be considered satisfied.
+
+
+
 - [ ] Repository read access verified.
 - [ ] Repository write boundary verified.
 - [ ] Git workflow boundary verified.
@@ -844,11 +850,19 @@ The Foundation objective is to establish a secure development workflow, not auto
 - [ ] Permission matrix reviewed.
 - [ ] Any enabled external tools have documented permissions.
 
+
+
+Machine-scoped verification evidence for the reference development machine is recorded in verification-evidence.md. These observations do not constitute project-wide verification.
+
 ---
 
 ## 25. Completion Criteria
 
-This permission policy is complete when:
+
+
+This permission policy documentation is considered complete when the items below are documented. Documentation completeness does not imply that the underlying permission controls have been verified with evidence.
+
+
 
 - [ ] Allowed AI capabilities are documented.
 - [ ] Human-gated capabilities are documented.

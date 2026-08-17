@@ -360,7 +360,7 @@ The agent must distinguish between:
 
 
 
-During periods where the Arc PRD is under construction:
+Because the PRD is the current requirements baseline and individual requirements may carry different approval statuses:
 
 
 
@@ -964,11 +964,11 @@ Content and approval status matter.
 
 
 
-## 18. Product Requirements Under Construction
+## 18. Product Requirements Status
 
 
 
-Arc's product requirements may evolve during the Foundation Phase.
+The Arc PRD is the current requirements baseline. Individual requirements may carry different approval statuses.
 
 
 
@@ -1912,11 +1912,11 @@ Changing the model must not require rewriting the project's durable context syst
 
 
 
-## 36. Relationship to the Evolving PRD
+## 36. Relationship to the PRD
 
 
 
-The Arc PRD may change during Foundation development.
+The Arc PRD is the current requirements baseline. Individual requirements may have different approval statuses.
 
 
 
@@ -2044,4 +2044,4 @@ Persist important new knowledge
 
 
 
-This approach allows Arc's AI development environment to remain useful while the product requirements continue to evolve, without allowing temporary assumptions to become permanent project architecture.
+This approach allows Arc's AI development environment to remain useful regardless of individual requirement approval statuses, without allowing temporary assumptions to become permanent project architecture.

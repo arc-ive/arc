@@ -26,7 +26,7 @@ The benchmark is designed to support selection of:
 
 
 
-The benchmark is intentionally product-agnostic while the Arc PRD is under construction.
+The benchmark is intentionally product-agnostic while individual PRD requirements carry different approval statuses.
 
 
 
@@ -1978,7 +1978,7 @@ Do not compare scores from materially different benchmark versions without expla
 
 
 
-The Arc PRD is currently under construction.
+The Arc PRD is the current requirements baseline. Individual requirements may carry different approval statuses.
 
 
 
@@ -2150,35 +2150,37 @@ AI may help summarize benchmark results, but final role selection remains a huma
 
 
 
-At the beginning of X-9:
+The benchmark methodology is defined by this document. The following summarizes current status by category.
 
 
+
+### Defined / prepared
+
+- [x] Benchmark methodology documented.
+- [x] Benchmark task suite defined (ARC-B01 through ARC-B10).
+- [x] Scoring dimensions and weighting defined.
+- [x] Failure classification defined.
+- [x] Benchmark execution procedure defined.
+- [x] Benchmark completion criteria defined.
+
+### Pending execution
 
 - [ ] Benchmark tasks executed.
-
 - [ ] Candidate models selected for evaluation.
-
 - [ ] Evaluation environment recorded.
 
+### Pending analysis and selection
+
 - [ ] Results collected.
-
 - [ ] Results reviewed.
-
 - [ ] Primary model selected.
-
 - [ ] Review model selected.
-
 - [ ] Fast model selected.
-
 - [ ] Fallback ordering approved.
 
 
 
-The benchmark methodology is defined by this document.
-
-
-
-Execution remains a subsequent X-9 task.
+Execution, result collection, model-role selection, and fallback approval remain subsequent X-9 tasks.
 
 
 

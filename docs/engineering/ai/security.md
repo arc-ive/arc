@@ -1064,6 +1064,10 @@ High-severity failures require human review before the workflow continues.
 
 
 
+The following policy boundaries define what is permitted, restricted, and prohibited for the initial X-9 AI development environment. These are documented security requirements, not assertions that the controls have been verified.
+
+
+
 At the Foundation stage:
 
 
@@ -1118,6 +1122,10 @@ Any expansion of AI privileges requires explicit review.
 
 
 
+The following items define security expectations that should be verified. Each item requires supporting evidence or recorded verification to be considered satisfied. The items below are documented requirements, not assertions that the corresponding controls have been verified.
+
+
+
 - [ ] No production credentials were provided to development AI.
 
 - [ ] No customer data was provided to development AI.
@@ -1144,6 +1152,10 @@ Any expansion of AI privileges requires explicit review.
 
 
 
+Machine-scoped verification evidence for the reference development machine is recorded in verification-evidence.md. These observations do not constitute project-wide verification.
+
+
+
 ---
 
 
@@ -1152,7 +1164,7 @@ Any expansion of AI privileges requires explicit review.
 
 
 
-This security documentation is considered complete when:
+This security documentation is considered complete when the items below are documented. Documentation completeness does not imply that the underlying security controls have been verified with evidence.
 
 
 
