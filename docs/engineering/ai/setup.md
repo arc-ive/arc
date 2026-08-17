@@ -1541,8 +1541,6 @@ Checklist scope is defined as follows:
 - **Verified on Bala's development machine:** recorded output from Bala's development machine exists (see [verification-evidence.md](verification-evidence.md)).
 - **Independently reproduced / project-wide accepted:** not yet established; requires recorded evidence from another developer's machine.
 
-The current status on Bala's development machine is:
-
 - [x] OpenCode installation documented and verified on Bala's development machine.
 - [x] OpenCode version recorded on Bala's development machine.
 - [x] OmniRoute installation documented and verified on Bala's development machine.
