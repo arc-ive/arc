@@ -1,11 +1,14 @@
 """Tests for Arc multi-tenancy foundation."""
 
-import pytest
-import uuid
+import os
 from datetime import datetime
 
-from arc.domain.models import Tenant, User, Membership, UserRole, TenantContext
-from arc.db.connection import ArcDatabase, DatabaseError, DuplicateKeyError, NotFoundError
+import pytest
+
+from arc.db.connection import ArcDatabase, DatabaseError, NotFoundError
+from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
 
 
 class TestDatabaseConnection:
@@ -14,7 +17,7 @@ class TestDatabaseConnection:
     @pytest.fixture
     async def db(self):
         """Create a database instance for testing."""
-        db = ArcDatabase("postgresql://arc:arc-dev-password@localhost:5432/arc")
+        db = ArcDatabase(DATABASE_URL)
         await db.connect()
         yield db
         await db.disconnect()
@@ -22,7 +25,7 @@ class TestDatabaseConnection:
     @pytest.fixture
     async def db_with_transactions(self):
         """Create a database instance with transaction support."""
-        db = ArcDatabase("postgresql://arc:arc-dev-password@localhost:5432/arc")
+        db = ArcDatabase(DATABASE_URL)
         await db.connect()
         yield db
         await db.disconnect()
@@ -44,11 +47,7 @@ class TestTenantModel:
 
     def test_tenant_creation(self):
         """Test creating a tenant."""
-        tenant = Tenant(
-            id="test-tenant-1",
-            name="Test Tenant",
-            status="active"
-        )
+        tenant = Tenant(id="test-tenant-1", name="Test Tenant", status="active")
         assert tenant.id == "test-tenant-1"
         assert tenant.name == "Test Tenant"
         assert tenant.status == "active"
@@ -76,11 +75,7 @@ class TestUserModel:
 
     def test_user_creation(self):
         """Test creating a user."""
-        user = User(
-            id="test-user-1",
-            email="test@example.com",
-            username="testuser"
-        )
+        user = User(id="test-user-1", email="test@example.com", username="testuser")
         assert user.id == "test-user-1"
         assert user.email == "test@example.com"
         assert user.username == "testuser"
@@ -106,7 +101,7 @@ class TestMembershipModel:
             id="test-membership-1",
             user_id="test-user-1",
             tenant_id="test-tenant-1",
-            role=UserRole.OWNER
+            role=UserRole.OWNER,
         )
         assert membership.id == "test-membership-1"
         assert membership.user_id == "test-user-1"
@@ -131,9 +126,7 @@ class TestMembershipModel:
     def test_membership_default_role(self):
         """Test membership default role."""
         membership = Membership(
-            id="test-membership-2",
-            user_id="test-user-2",
-            tenant_id="test-tenant-2"
+            id="test-membership-2", user_id="test-user-2", tenant_id="test-tenant-2"
         )
         assert membership.role == UserRole.MEMBER
 
@@ -147,7 +140,7 @@ class TestTenantContextModel:
             tenant_id="test-tenant-1",
             tenant_name="Test Tenant",
             user_id="test-user-1",
-            role=UserRole.OWNER
+            role=UserRole.OWNER,
         )
         assert context.tenant_id == "test-tenant-1"
         assert context.tenant_name == "Test Tenant"
@@ -158,22 +151,12 @@ class TestTenantContextModel:
     def test_tenant_context_validation(self):
         """Test tenant context validation."""
         # Test empty tenant ID
-        context = TenantContext(
-            tenant_id="",
-            tenant_name="Test",
-            user_id="user-1",
-            role=UserRole.OWNER
-        )
-        assert context.is_valid is False
+        with pytest.raises(ValueError, match="Tenant ID cannot be empty in context"):
+            TenantContext(tenant_id="", tenant_name="Test", user_id="user-1", role=UserRole.OWNER)
 
         # Test empty user ID
-        context = TenantContext(
-            tenant_id="tenant-1",
-            tenant_name="Test",
-            user_id="",
-            role=UserRole.OWNER
-        )
-        assert context.is_valid is False
+        with pytest.raises(ValueError, match="User ID cannot be empty in context"):
+            TenantContext(tenant_id="tenant-1", tenant_name="Test", user_id="", role=UserRole.OWNER)
 
 
 class TestUserRoleEnum:
@@ -189,6 +172,164 @@ class TestUserRoleEnum:
         """Test that all expected roles are valid."""
         for role in UserRole:
             assert role.value in ["owner", "member", "viewer"]
+
+
+class TestDomainServices:
+    """Test domain services with repository dependencies."""
+
+    @pytest.fixture
+    def repositories(self):
+        """Create mock repositories for testing."""
+        from unittest.mock import AsyncMock
+
+        from arc.repositories import MembershipRepository, TenantRepository, UserRepository
+
+        tenant_repo = AsyncMock(spec=TenantRepository)
+        user_repo = AsyncMock(spec=UserRepository)
+        membership_repo = AsyncMock(spec=MembershipRepository)
+
+        # Mock tenant exists
+        tenant_repo.exists.return_value = True
+        tenant_repo.get_by_id.return_value = Tenant(
+            id="test-tenant", name="Test Tenant", status="active"
+        )
+
+        # Mock user exists
+        user_repo.exists.return_value = True
+        user_repo.get_by_id.return_value = User(
+            id="test-user", email="test@example.com", username="testuser"
+        )
+
+        # Mock membership exists
+        membership_repo.exists.return_value = True
+        membership_repo.get_by_user_and_tenant.return_value = Membership(
+            id="test-membership", user_id="test-user", tenant_id="test-tenant", role=UserRole.MEMBER
+        )
+
+        return tenant_repo, user_repo, membership_repo
+
+    async def test_tenant_context_service_with_membership_dependency(self, repositories):
+        """Test TenantContextService uses MembershipRepository."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        context = await service.create_tenant_context("test-tenant", "test-user")
+
+        assert context.tenant_id == "test-tenant"
+        assert context.user_id == "test-user"
+        assert context.role == UserRole.MEMBER
+
+    async def test_valid_membership_creates_context(self, repositories):
+        """Test A: Valid membership creates context."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        context = await service.create_tenant_context("test-tenant", "test-user")
+
+        assert context.tenant_id == "test-tenant"
+        assert context.user_id == "test-user"
+        assert context.role == UserRole.MEMBER
+
+    async def test_cross_tenant_access_is_rejected(self, repositories):
+        """Test B: Cross-tenant access is rejected."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        membership_repo.get_by_user_and_tenant.side_effect = NotFoundError("No membership")
+
+        with pytest.raises(NotFoundError):
+            await service.create_tenant_context("different-tenant", "test-user")
+
+    async def test_role_is_derived_from_membership(self, repositories):
+        """Test C: Role cannot be escalated - context role comes from persisted membership."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+        membership_repo.get_by_user_and_tenant.return_value = Membership(
+            id="test-membership", user_id="test-user", tenant_id="test-tenant", role=UserRole.VIEWER
+        )
+
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        context = await service.create_tenant_context("test-tenant", "test-user")
+
+        assert context.role == UserRole.VIEWER
+
+    async def test_missing_membership_is_rejected(self, repositories):
+        """Test D: Missing membership is rejected."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        membership_repo.get_by_user_and_tenant.side_effect = NotFoundError("No membership")
+
+        with pytest.raises(NotFoundError):
+            await service.create_tenant_context("test-tenant", "test-user")
+
+    async def test_validate_context_rejects_missing_membership(self, repositories):
+        """Test E: validate_context() rejects missing membership."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        tenant_repo.exists.return_value = True
+        user_repo.exists.return_value = True
+        membership_repo.get_by_user_and_tenant.side_effect = NotFoundError("No membership")
+
+        context = TenantContext(
+            tenant_id="test-tenant",
+            tenant_name="Test Tenant",
+            user_id="test-user",
+            role=UserRole.MEMBER,
+        )
+
+        assert await service.validate_context(context) is False
+
+    async def test_validate_context_rejects_role_mismatch(self, repositories):
+        """Test F: validate_context() rejects role mismatch."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        context = TenantContext(
+            tenant_id="test-tenant",
+            tenant_name="Test Tenant",
+            user_id="test-user",
+            role=UserRole.OWNER,
+        )
+
+        assert await service.validate_context(context) is False
+
+    async def test_validate_context_accepts_correct_membership_and_role(self, repositories):
+        """Test G: validate_context() accepts correct membership + role."""
+        from arc.services.domain import TenantContextService
+
+        tenant_repo, user_repo, membership_repo = repositories
+
+        service = TenantContextService(user_repo, tenant_repo, membership_repo)
+
+        context = TenantContext(
+            tenant_id="test-tenant",
+            tenant_name="Test Tenant",
+            user_id="test-user",
+            role=UserRole.MEMBER,
+        )
+
+        assert await service.validate_context(context) is True
 
 
 if __name__ == "__main__":

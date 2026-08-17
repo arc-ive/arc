@@ -1,10 +1,13 @@
 """Application setup and initialization."""
 
 import os
-from typing import Dict, Any
 
 from arc.db.connection import ArcDatabase
-from arc.repositories.tenancy import PostgreSQLTenancyRepository
+from arc.repositories.tenancy import (
+    PostgreSQLMembershipRepository,
+    PostgreSQLTenantRepository,
+    PostgreSQLUserRepository,
+)
 from arc.services.domain import ServiceFactory
 
 
@@ -25,7 +28,9 @@ class Application:
         print("Initializing Arc application...")
 
         # Get database URL from environment or use default
-        database_url = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+        database_url = os.getenv(
+            "DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc"
+        )
 
         # Initialize database
         self.db = ArcDatabase(database_url)
@@ -33,18 +38,17 @@ class Application:
 
         # Initialize repositories
         self.repositories = {
-            'tenant': PostgreSQLTenancyRepository(self.db),
-            'user': PostgreSQLTenancyRepository(self.db),
-            'membership': PostgreSQLTenancyRepository(self.db),
+            "tenant": PostgreSQLTenantRepository(self.db),
+            "user": PostgreSQLUserRepository(self.db),
+            "membership": PostgreSQLMembershipRepository(self.db),
         }
 
         # Initialize services
-        self.services = ServiceFactory.create_domain_services(
-            list(self.repositories.values())
-        )
+        self.services = ServiceFactory.create_domain_services(list(self.repositories.values()))
 
         # Register services in app context
         from arc.api.controllers import app_context
+
         app_context.register_services(self.services)
 
         self._is_initialized = True

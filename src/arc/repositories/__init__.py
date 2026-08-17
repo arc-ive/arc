@@ -1,9 +1,8 @@
 """Repository interfaces for Arc domain."""
 
-from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import List, Protocol
 
-from arc.domain.models import Tenant, User, Membership, UserRole, TenantContext
+from arc.domain.models import Membership, Tenant, User
 
 
 class TenantRepository(Protocol):
@@ -41,6 +40,10 @@ class UserRepository(Protocol):
         """Get user by email."""
         ...
 
+    async def get_by_tenant(self, tenant_id: str) -> List[User]:
+        """Get all users for a tenant."""
+        ...
+
     async def exists(self, user_id: str) -> bool:
         """Check if user exists."""
         ...
@@ -69,14 +72,41 @@ class MembershipRepository(Protocol):
         """Delete membership."""
         ...
 
+    async def get_tenants_for_user(self, user_id: str) -> List[Tenant]:
+        """Get all tenants for a user."""
+        ...
+
+    async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
+        """Get all users for a tenant."""
+        ...
+
+    async def get_memberships_for_user(self, user_id: str) -> List[Membership]:
+        """Get all memberships for a user."""
+        ...
+
+    async def get_memberships_for_tenant(self, tenant_id: str) -> List[Membership]:
+        """Get all memberships for a tenant."""
+        ...
+
 
 class RepositoryFactory:
     """Factory for creating repository instances."""
 
     @staticmethod
     def create_tenancy_repositories(db_instance):
-        """Create repository instances for tenancy."""
-        from arc.db.connection import ArcDatabase
-        from arc.repositories.tenancy import PostgreSQLTenancyRepository
+        """Create the tenancy repository instances for a database.
 
-        return PostgreSQLTenancyRepository(db_instance)
+        Returns a list ordered as (tenant, user, membership) for direct use
+        with ServiceFactory.create_domain_services.
+        """
+        from arc.repositories.tenancy import (
+            PostgreSQLMembershipRepository,
+            PostgreSQLTenantRepository,
+            PostgreSQLUserRepository,
+        )
+
+        return [
+            PostgreSQLTenantRepository(db_instance),
+            PostgreSQLUserRepository(db_instance),
+            PostgreSQLMembershipRepository(db_instance),
+        ]
