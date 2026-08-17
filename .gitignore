@@ -68,3 +68,6 @@ docker-data/
 *.temp
 *.swp
 *.swo
+
+# Local developer secret storage
+API_KEYS/
