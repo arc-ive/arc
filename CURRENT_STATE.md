@@ -93,7 +93,7 @@ X-10 enforces that every `TenantContext` is backed by a persisted `Membership` r
 
 - **Repository contracts aligned.** Three concrete PostgreSQL repos (`PostgreSQLTenantRepository`, `PostgreSQLUserRepository`, `PostgreSQLMembershipRepository`) in `src/arc/repositories/tenancy.py` implement exact Protocol signatures from `src/arc/repositories/__init__.py`. The old `PostgreSQLTenancyRepository` was removed.
 - **Domain services are membership-aware.** `TenantContextService.create_tenant_context(tenant_id, user_id)` has no role parameter; `validate_context` verifies persisted membership and role. Defined in `src/arc/services/domain.py`.
-- **API validate endpoint fixed.** `POST /tenant-contexts/validate` in `src/arc/api/controllers.py` fetches the real tenant via `tenant_service.get_tenant` and catches `NotFoundError` → `{"is_valid": False}`.
+- **API validate endpoint fixed.** `GET /tenant-contexts/validate` (development-only, in `src/arc/api/dev_controllers.py`) fetches the real tenant via `tenant_service.get_tenant` and catches `NotFoundError` → `{"is_valid": False}`.
 - **Integration tests added.** `tests/test_repository_integration.py` — 10 real-PostgreSQL tests (repo contracts, `create_tenant_context` valid/cross-tenant/missing-membership, role derived from persisted membership, `validate_context` valid/role-mismatch/missing).
 - **Dependencies added.** `asyncpg>=0.30,<1.0` (runtime), `pytest-asyncio>=0.23,<1.0` (dev), `asyncio_mode = "auto"` in `pyproject.toml`.
 
@@ -110,9 +110,28 @@ X-10 enforces that every `TenantContext` is backed by a persisted `Membership` r
 - ruff check and format pass on X-10 files.
 - Security review passed — all invariants confirmed.
 
+### Review fix: API boundary isolation (working tree, not committed)
+
+Bharath's X-10 PR review raised two API-boundary concerns; both are
+addressed without implementing authentication or RBAC:
+
+- Membership provisioning (`POST /users/{user_id}/tenants/{tenant_id}/memberships`)
+  was a public, unauthenticated endpoint capable of granting OWNER. It is
+  now isolated in a development-only router under `/internal/dev/...`,
+  mounted only when `APP_ENV=development`. The service and repository
+  provisioning capability (`UserService.associate_user_with_tenant`,
+  `MembershipService.create_membership`) is preserved for X-11.
+- Tenant-context endpoints accepted a caller-supplied `user_id`. They are
+  now development-only scaffolding. The service boundary
+  (`Authenticated Principal -> trusted user identity -> TenantContextService
+  -> TenantContext`) is unchanged; X-11 will supply the trusted identity.
+
+Regression tests in `tests/test_api_surface.py` verify the public API
+surface, the development-only isolation, and the intended identity flow.
+
 ### Known gaps (pre-existing, not X-10 defects)
 
-- Unauthenticated membership provisioning: any client can grant any role including OWNER. Issue #14 will add auth.
+- Membership provisioning is development-only (no public endpoint) and remains unauthenticated at the service layer. Issue #14 will add auth.
 - `httpx2>=2.0,<3.0` is the original dependency; real `httpx` has no 2.x releases. `tests/test_health.py` uses FastAPI's `TestClient` which requires real `httpx`. Pre-existing separate dependency defect.
 - Repo-wide ruff CI gate will fail due to pre-existing violations in unmodified files.
 
@@ -232,7 +251,7 @@ Bharath
 - Unclear ownership between team members.
 - Overengineering infrastructure before demonstrating the need.
 - Treating GitHub branch-protection policy as technically enforced when the current plan does not enforce the ruleset.
-- Unauthenticated membership provisioning (any client can grant any role including OWNER) — pre-existing foundation gap, not an X-10 defect. Issue #14 will add auth.
+- Membership provisioning is development-only (no public endpoint) and remains unauthenticated at the service layer. Issue #14 will add auth.
 
 ## Foundation Completion Criteria
 
