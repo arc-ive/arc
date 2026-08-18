@@ -28,16 +28,6 @@ def setup_database(database_url: str) -> None:
     host_port = host_db[0]
     database = host_db[1]
 
-    # Create database if it doesn't exist
-    create_db_cmd = [
-        "createdb",
-        "-h", host_port.split(':')[0],
-        "-p", host_port.split(':')[1],
-        "-U", user,
-        "-E", "utf8",
-        database
-    ]
-
     # Set password environment
     env = dict(os.environ)
     env["PGPASSWORD"] = password
@@ -45,9 +35,20 @@ def setup_database(database_url: str) -> None:
     try:
         # Try to connect to existing database
         run_command(
-            ["psql", "-h", host_port.split(':')[0], "-p", host_port.split(':')[1],
-             "-U", user, "-d", database, "-c", "SELECT 1"],
-            "Testing database connection"
+            [
+                "psql",
+                "-h",
+                host_port.split(":")[0],
+                "-p",
+                host_port.split(":")[1],
+                "-U",
+                user,
+                "-d",
+                database,
+                "-c",
+                "SELECT 1",
+            ],
+            "Testing database connection",
         )
         print(f"Database '{database}' already exists and is accessible.")
     except RuntimeError:
@@ -56,15 +57,30 @@ def setup_database(database_url: str) -> None:
         env = dict(os.environ)
         env["PGPASSWORD"] = password
         run_command(
-            ["createdb", "-h", host_port.split(':')[0], "-p", host_port.split(':')[1],
-             "-U", user, database],
-            "Creating database"
+            [
+                "createdb",
+                "-h",
+                host_port.split(":")[0],
+                "-p",
+                host_port.split(":")[1],
+                "-U",
+                user,
+                database,
+            ],
+            "Creating database",
         )
 
     # Run schema initialization
     psql_cmd = [
-        "psql", "-h", host_port.split(':')[0], "-p", host_port.split(':')[1],
-        "-U", user, "-d", database
+        "psql",
+        "-h",
+        host_port.split(":")[0],
+        "-p",
+        host_port.split(":")[1],
+        "-U",
+        user,
+        "-d",
+        database,
     ]
 
     init_script = """
@@ -124,10 +140,7 @@ def setup_database(database_url: str) -> None:
     );
     """
 
-    run_command(
-        psql_cmd + ["-c", init_script.strip()],
-        "Initializing database schema"
-    )
+    run_command(psql_cmd + ["-c", init_script.strip()], "Initializing database schema")
 
 
 if __name__ == "__main__":
