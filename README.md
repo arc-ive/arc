@@ -4,9 +4,9 @@
 
 ## Project Status
 
-**Foundation Phase / Sprint 0**
+**Foundation Phase — X-10 complete, X-11 next**
 
-Arc is currently in its pre-development foundation phase. The team is establishing the engineering workflow, development environment, AI development system, documentation, security baseline, architecture decision process, and product roadmap before implementing the product modules.
+Arc has completed X-10 (tenant membership boundary enforcement) and is continuing Foundation Phase work. The team is establishing the engineering workflow, development environment, AI development system, documentation, security baseline, architecture decision process, and product roadmap before implementing the product modules.
 
 ## Domain
 
@@ -38,6 +38,7 @@ The Foundation Phase aims to establish:
 .devcontainer/    Reproducible development container configuration
 docs/             Product, requirements, architecture and operational documentation
 scripts/          Developer and automation scripts
+src/              Application source code
 tests/            Shared test infrastructure
 ```
 
@@ -66,6 +67,6 @@ AI tools are development aids. They do not replace the repository's authoritativ
 
 ## Development Status
 
-The product modules are **not yet under implementation**.
+X-10 (tenant membership boundary) is implemented and verified. The product modules are **not yet under implementation**.
 
 See `CURRENT_STATE.md` for the current engineering state.
