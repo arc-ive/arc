@@ -26,6 +26,7 @@ from arc.security.dependencies import (
     require_tenant_permission,
 )
 from arc.security.models import AuthenticatedPrincipal
+from arc.services.connectors import ConnectorService
 from arc.services.domain import (
     MembershipService,
     TenantContextService,
@@ -75,6 +76,10 @@ class ApplicationContext:
     @property
     def tenant_context_service(self) -> TenantContextService:
         return self.services.get("tenant_context_service")
+
+    @property
+    def connector_service(self) -> ConnectorService:
+        return self.services.get("connector_service")
 
 
 # Global application context

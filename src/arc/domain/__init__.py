@@ -1,6 +1,9 @@
 """Arc domain module."""
 
 from arc.domain.models import (
+    ConnectorConfig,
+    ConnectorProvider,
+    ConnectorStatus,
     Membership,
     Tenant,
     TenantContext,
@@ -9,9 +12,12 @@ from arc.domain.models import (
 )
 
 __all__ = [
-    "Tenant",
-    "User",
+    "ConnectorConfig",
+    "ConnectorProvider",
+    "ConnectorStatus",
     "Membership",
-    "UserRole",
+    "Tenant",
     "TenantContext",
+    "User",
+    "UserRole",
 ]
