@@ -3,11 +3,13 @@
 import os
 
 from arc.db.connection import ArcDatabase
+from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.tenancy import (
     PostgreSQLMembershipRepository,
     PostgreSQLTenantRepository,
     PostgreSQLUserRepository,
 )
+from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
 
 
@@ -41,10 +43,21 @@ class Application:
             "tenant": PostgreSQLTenantRepository(self.db),
             "user": PostgreSQLUserRepository(self.db),
             "membership": PostgreSQLMembershipRepository(self.db),
+            "connector": PostgreSQLConnectorRepository(self.db),
         }
 
         # Initialize services
-        self.services = ServiceFactory.create_domain_services(list(self.repositories.values()))
+        tenancy_repos = [
+            self.repositories["tenant"],
+            self.repositories["user"],
+            self.repositories["membership"],
+        ]
+        self.services = ServiceFactory.create_domain_services(tenancy_repos)
+
+        # Initialize connector service
+        self.services["connector_service"] = ConnectorService(
+            self.repositories["connector"]
+        )
 
         # Register services in app context
         from arc.api.controllers import app_context
