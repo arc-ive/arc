@@ -1,15 +1,31 @@
 """API controllers for Arc multi-tenant foundation.
 
-Privileged and identity-sensitive endpoints (membership provisioning and
-tenant-context creation/validation) are isolated in
-``arc.api.dev_controllers`` and are NOT part of this public router.
+Security-sensitive operations are protected by X-11 authentication and
+application RBAC:
+
+- Tenant and user provisioning require a global permission
+  (PLATFORM_ADMINISTRATOR only).
+- Tenant-scoped reads require a trusted X-10 tenant context and the
+  ``tenant:read`` permission.
+- Identity-scoped listing is self-only: the requested ``user_id`` must
+  equal the authenticated principal's user ID (JWT ``sub``).
+
+Privileged and identity-sensitive development endpoints (membership
+provisioning) are isolated in ``arc.api.dev_controllers``.
 """
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from arc.domain.models import Tenant, User
+from arc.domain.models import Tenant, TenantContext, User
+from arc.security.authorization import TENANT_CREATE, TENANT_READ, USER_CREATE
+from arc.security.dependencies import (
+    get_authenticated_principal,
+    require_permission,
+    require_tenant_permission,
+)
+from arc.security.models import AuthenticatedPrincipal
 from arc.services.domain import (
     MembershipService,
     TenantContextService,
@@ -78,9 +94,14 @@ async def health() -> Dict[str, str]:
 @api_router.post("/tenants")
 async def create_tenant(
     tenant_data: Dict[str, Any],
+    _: AuthenticatedPrincipal = Depends(require_permission(TENANT_CREATE)),
     tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
 ) -> Dict[str, Any]:
-    """Create a new tenant."""
+    """Create a new tenant.
+
+    Protected: requires the global ``tenant:create`` permission
+    (PLATFORM_ADMINISTRATOR). No tenant context is required.
+    """
     tenant = Tenant(
         id=tenant_data.get("id"),
         name=tenant_data.get("name"),
@@ -99,9 +120,15 @@ async def create_tenant(
 @api_router.get("/tenants/{tenant_id}")
 async def get_tenant(
     tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(TENANT_READ)),
     tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
 ) -> Dict[str, Any]:
-    """Get tenant by ID."""
+    """Get tenant by ID.
+
+    Protected: requires a trusted X-10 tenant context for the
+    authenticated principal and the ``tenant:read`` permission. Cross-tenant
+    access and missing membership are denied.
+    """
     tenant = await tenant_service.get_tenant(tenant_id)
     return {
         "id": tenant.id,
@@ -115,9 +142,14 @@ async def get_tenant(
 @api_router.post("/users")
 async def create_user(
     user_data: Dict[str, Any],
+    _: AuthenticatedPrincipal = Depends(require_permission(USER_CREATE)),
     user_service: UserService = Depends(lambda: app_context.user_service),
 ) -> Dict[str, Any]:
-    """Create a new user."""
+    """Create a new user.
+
+    Protected: requires the global ``user:create`` permission
+    (PLATFORM_ADMINISTRATOR). No tenant context is required.
+    """
     user = User(
         id=user_data.get("id"),
         email=user_data.get("email"),
@@ -138,9 +170,14 @@ async def create_user(
 @api_router.get("/tenants/{tenant_id}/users")
 async def get_users_for_tenant(
     tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(TENANT_READ)),
     user_service: UserService = Depends(lambda: app_context.user_service),
 ) -> List[Dict[str, Any]]:
-    """Get all users for a tenant."""
+    """Get all users for a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the ``tenant:read``
+    permission. Cross-tenant access and missing membership are denied.
+    """
     users = await user_service.get_users_for_tenant(tenant_id)
     return [
         {
@@ -158,10 +195,23 @@ async def get_users_for_tenant(
 @api_router.get("/users/{user_id}/tenants")
 async def get_tenants_for_user(
     user_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     membership_service: MembershipService = Depends(lambda: app_context.membership_service),
 ) -> List[Dict[str, Any]]:
-    """Get all tenants for a user."""
-    tenants = await membership_service.get_tenants_for_user(user_id)
+    """Get all tenants for a user.
+
+    Protected: self-scoped. The authenticated identity (JWT ``sub``) is
+    authoritative. If the requested ``user_id`` differs from the principal's
+    user ID, the request is denied with 403. The client-supplied ``user_id``
+    is never treated as the authenticated identity and never silently
+    substituted for the JWT identity.
+    """
+    if principal.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
+
+    tenants = await membership_service.get_tenants_for_user(principal.user_id)
     return [
         {
             "id": tenant.id,

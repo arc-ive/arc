@@ -1,5 +1,6 @@
 """Database setup utilities for Arc multi-tenant foundation."""
 
+import os
 import subprocess
 import sys
 
@@ -8,63 +9,95 @@ def run_command(command: list[str], description: str) -> None:
     """Run a command and check its success."""
     print(f"\n{description}")
     print(f"Running: {' '.join(command)}")
-    result = subprocess.run(command, capture_output=True, text=True)
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        env=os.environ.copy(),
+    )
+
     if result.returncode != 0:
         print(f"STDOUT:\n{result.stdout}")
         print(f"STDERR:\n{result.stderr}")
         raise RuntimeError(f"Command failed: {' '.join(command)}")
+
     print("Success!")
 
 
 def setup_database(database_url: str) -> None:
     """Set up the Arc database with required tables."""
-    # Parse database URL
-    # Format: postgresql://user:password@localhost:5432/database
+    # Parse database URL.
+    # Format:
+    # postgresql://user:password@localhost:5432/database
     parts = database_url.replace("postgresql://", "").split("@")
     auth = parts[0].split(":")
     host_db = parts[1].split("/")
+
     user = auth[0]
     password = auth[1]
     host_port = host_db[0]
     database = host_db[1]
 
-    # Create database if it doesn't exist
-    create_db_cmd = [
-        "createdb",
-        "-h", host_port.split(':')[0],
-        "-p", host_port.split(':')[1],
-        "-U", user,
-        "-E", "utf8",
-        database
-    ]
+    host = host_port.split(":")[0]
+    port = host_port.split(":")[1]
 
-    # Set password environment
-    env = dict(os.environ)
+    # Set password environment for PostgreSQL commands.
+    env = os.environ.copy()
     env["PGPASSWORD"] = password
 
     try:
-        # Try to connect to existing database
+        # Try to connect to the existing database.
         run_command(
-            ["psql", "-h", host_port.split(':')[0], "-p", host_port.split(':')[1],
-             "-U", user, "-d", database, "-c", "SELECT 1"],
-            "Testing database connection"
-        )
-        print(f"Database '{database}' already exists and is accessible.")
-    except RuntimeError:
-        # Database doesn't exist, create it
-        print(f"Database '{database}' does not exist. Creating...")
-        env = dict(os.environ)
-        env["PGPASSWORD"] = password
-        run_command(
-            ["createdb", "-h", host_port.split(':')[0], "-p", host_port.split(':')[1],
-             "-U", user, database],
-            "Creating database"
+            [
+                "psql",
+                "-h",
+                host,
+                "-p",
+                port,
+                "-U",
+                user,
+                "-d",
+                database,
+                "-c",
+                "SELECT 1",
+            ],
+            "Testing database connection",
         )
 
-    # Run schema initialization
+        print(
+            f"Database '{database}' already exists and is accessible."
+        )
+
+    except RuntimeError:
+        # Database doesn't exist, create it.
+        print(f"Database '{database}' does not exist. Creating...")
+
+        run_command(
+            [
+                "createdb",
+                "-h",
+                host,
+                "-p",
+                port,
+                "-U",
+                user,
+                database,
+            ],
+            "Creating database",
+        )
+
+    # Run schema initialization.
     psql_cmd = [
-        "psql", "-h", host_port.split(':')[0], "-p", host_port.split(':')[1],
-        "-U", user, "-d", database
+        "psql",
+        "-h",
+        host,
+        "-p",
+        port,
+        "-U",
+        user,
+        "-d",
+        database,
     ]
 
     init_script = """
@@ -101,40 +134,51 @@ def setup_database(database_url: str) -> None:
         FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     );
 
-    CREATE INDEX IF NOT EXISTS idx_memberships_user_id ON memberships(user_id);
-    CREATE INDEX IF NOT EXISTS idx_memberships_tenant_id ON memberships(tenant_id);
-    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_memberships_user_id
+        ON memberships(user_id);
 
-    -- Insert a demo tenant if none exists
+    CREATE INDEX IF NOT EXISTS idx_memberships_tenant_id
+        ON memberships(tenant_id);
+
+    CREATE INDEX IF NOT EXISTS idx_users_email
+        ON users(email);
+
+    -- Insert a demo tenant if none exists.
     INSERT INTO tenants (id, name, status)
     SELECT 'demo-tenant', 'Demo Tenant', 'active'
-    WHERE NOT EXISTS (SELECT 1 FROM tenants);
+    WHERE NOT EXISTS (
+        SELECT 1 FROM tenants
+    );
 
-    -- Insert a demo user if none exists
+    -- Insert a demo user if none exists.
     INSERT INTO users (id, email, username, status)
     SELECT 'demo-user', 'demo@example.com', 'demo_user', 'active'
-    WHERE NOT EXISTS (SELECT 1 FROM users);
+    WHERE NOT EXISTS (
+        SELECT 1 FROM users
+    );
 
-    -- Create demo membership if it doesn't exist
+    -- Create demo membership if it doesn't exist.
     INSERT INTO memberships (id, user_id, tenant_id, role)
     SELECT 'demo-membership', 'demo-user', 'demo-tenant', 'owner'
     WHERE NOT EXISTS (
-        SELECT 1 FROM memberships
-        WHERE user_id = 'demo-user' AND tenant_id = 'demo-tenant'
+        SELECT 1
+        FROM memberships
+        WHERE user_id = 'demo-user'
+          AND tenant_id = 'demo-tenant'
     );
     """
 
     run_command(
         psql_cmd + ["-c", init_script.strip()],
-        "Initializing database schema"
+        "Initializing database schema",
     )
 
 
 if __name__ == "__main__":
-    import os
-
-    # Get database URL from environment or use default
-    database_url = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+    database_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql://arc:arc-dev-password@localhost:5432/arc",
+    )
 
     print("Arc Platform Security Foundation - Database Setup")
     print("=" * 60)
