@@ -2,11 +2,11 @@
 
 Last Updated:
 
-2026-08-13
+2026-08-18
 
 Current Phase:
 
-Foundation Phase / Sprint 0
+Foundation Phase — X-10 complete, X-11 next
 
 ## Completed
 
@@ -82,6 +82,59 @@ CI-specific required status checks will be added after the platform and CI found
 
 The team may revisit repository visibility or GitHub plan options later if enforced branch protection becomes necessary.
 
+## X-10: Tenant Membership Boundary (Complete)
+
+**Commit:** `b85c06a feat(security): enforce tenant membership boundary`
+**Branch:** `feat/platform-security-foundation`
+
+X-10 enforces that every `TenantContext` is backed by a persisted `Membership` row. The membership role (OWNER / MEMBER / VIEWER) is derived from the database, never supplied by the caller.
+
+### What changed
+
+- **Repository contracts aligned.** Three concrete PostgreSQL repos (`PostgreSQLTenantRepository`, `PostgreSQLUserRepository`, `PostgreSQLMembershipRepository`) in `src/arc/repositories/tenancy.py` implement exact Protocol signatures from `src/arc/repositories/__init__.py`. The old `PostgreSQLTenancyRepository` was removed.
+- **Domain services are membership-aware.** `TenantContextService.create_tenant_context(tenant_id, user_id)` has no role parameter; `validate_context` verifies persisted membership and role. Defined in `src/arc/services/domain.py`.
+- **API validate endpoint fixed.** `GET /tenant-contexts/validate` (development-only, in `src/arc/api/dev_controllers.py`) fetches the real tenant via `tenant_service.get_tenant` and catches `NotFoundError` → `{"is_valid": False}`.
+- **Integration tests added.** `tests/test_repository_integration.py` — 10 real-PostgreSQL tests (repo contracts, `create_tenant_context` valid/cross-tenant/missing-membership, role derived from persisted membership, `validate_context` valid/role-mismatch/missing).
+- **Dependencies added.** `asyncpg>=0.30,<1.0` (runtime), `pytest-asyncio>=0.23,<1.0` (dev), `asyncio_mode = "auto"` in `pyproject.toml`.
+
+### What was NOT changed
+
+- PRD, TRD, ADRs — read-only, not modified.
+- Source code outside X-10 scope — not modified.
+- `app.py` composition root — already does its own wiring (not via `RepositoryFactory`).
+- `httpx2` dependency — left as original (pre-existing separate issue).
+
+### Verification
+
+- 33 tests pass (Docker + real PostgreSQL).
+- ruff check and format pass on X-10 files.
+- Security review passed — all invariants confirmed.
+
+### Review fix: API boundary isolation (working tree, not committed)
+
+Bharath's X-10 PR review raised two API-boundary concerns; both are
+addressed without implementing authentication or RBAC:
+
+- Membership provisioning (`POST /users/{user_id}/tenants/{tenant_id}/memberships`)
+  was a public, unauthenticated endpoint capable of granting OWNER. It is
+  now isolated in a development-only router under `/internal/dev/...`,
+  mounted only when `APP_ENV=development`. The service and repository
+  provisioning capability (`UserService.associate_user_with_tenant`,
+  `MembershipService.create_membership`) is preserved for X-11.
+- Tenant-context endpoints accepted a caller-supplied `user_id`. They are
+  now development-only scaffolding. The service boundary
+  (`Authenticated Principal -> trusted user identity -> TenantContextService
+  -> TenantContext`) is unchanged; X-11 will supply the trusted identity.
+
+Regression tests in `tests/test_api_surface.py` verify the public API
+surface, the development-only isolation, and the intended identity flow.
+
+### Known gaps (pre-existing, not X-10 defects)
+
+- Membership provisioning is development-only (no public endpoint) and remains unauthenticated at the service layer. Issue #14 will add auth.
+- `httpx2>=2.0,<3.0` is the original dependency; real `httpx` has no 2.x releases. `tests/test_health.py` uses FastAPI's `TestClient` which requires real `httpx`. Pre-existing separate dependency defect.
+- Repo-wide ruff CI gate will fail due to pre-existing violations in unmodified files.
+
 ## In Progress
 
 ### GitHub / Engineering Workflow
@@ -151,15 +204,16 @@ Bala is responsible for:
 
 ## Next
 
-1. Complete X-6 verification and close the Linear issue.
-2. Coordinate the next Bala Foundation issue with Joe and Bharath.
-3. Continue the AI development setup.
-4. Coordinate CI and reproducible environment work with Bharath.
-5. Connect GitHub with Linear.
-6. Benchmark candidate AI models.
-7. Complete Foundation cross-platform verification.
-8. Conduct the final Foundation review.
-9. Begin product implementation only after Foundation acceptance.
+1. **X-11: Application RBAC** — introduce Platform Administrator, Company Administrator, Operations User, Employee/End User roles. These are application-level RBAC roles, distinct from tenant membership roles (OWNER/MEMBER/VIEWER). Do NOT implement until X-11 is explicitly requested.
+2. Complete X-6 verification and close the Linear issue.
+3. Coordinate the next Bala Foundation issue with Joe and Bharath.
+4. Continue the AI development setup.
+5. Coordinate CI and reproducible environment work with Bharath.
+6. Connect GitHub with Linear.
+7. Benchmark candidate AI models.
+8. Complete Foundation cross-platform verification.
+9. Conduct the final Foundation review.
+10. Begin product implementation only after Foundation acceptance.
 
 ## Blocked / Waiting
 
@@ -197,6 +251,7 @@ Bharath
 - Unclear ownership between team members.
 - Overengineering infrastructure before demonstrating the need.
 - Treating GitHub branch-protection policy as technically enforced when the current plan does not enforce the ruleset.
+- Membership provisioning is development-only (no public endpoint) and remains unauthenticated at the service layer. Issue #14 will add auth.
 
 ## Foundation Completion Criteria
 

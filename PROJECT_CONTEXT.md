@@ -34,7 +34,7 @@ Current Phase:
 
 
 
-Foundation Phase / Sprint 0
+Foundation Phase — X-10 complete, X-11 next
 
 
 

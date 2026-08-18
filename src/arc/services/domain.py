@@ -1,0 +1,246 @@
+"""Domain services for Arc multi-tenant foundation."""
+
+from typing import List
+
+from arc.db.connection import NotFoundError
+from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
+from arc.repositories import MembershipRepository, TenantRepository, UserRepository
+
+
+class TenantService:
+    """Domain service for tenant operations."""
+
+    def __init__(self, tenant_repo: TenantRepository):
+        self.tenant_repo = tenant_repo
+
+    async def create_tenant(self, tenant: Tenant) -> Tenant:
+        """Create a new tenant."""
+        if not tenant.id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not tenant.name:
+            raise ValueError("Tenant name cannot be empty")
+        return await self.tenant_repo.create(tenant)
+
+    async def get_tenant(self, tenant_id: str) -> Tenant:
+        """Get tenant by ID."""
+        return await self.tenant_repo.get_by_id(tenant_id)
+
+    async def tenant_exists(self, tenant_id: str) -> bool:
+        """Check if tenant exists."""
+        return await self.tenant_repo.exists(tenant_id)
+
+
+class UserService:
+    """Domain service for user operations."""
+
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        membership_repo: MembershipRepository,
+        tenant_repo: TenantRepository,
+    ):
+        self.user_repo = user_repo
+        self.membership_repo = membership_repo
+        self.tenant_repo = tenant_repo
+
+    async def create_user(self, user: User) -> User:
+        """Create a new user."""
+        if not user.id:
+            raise ValueError("User ID cannot be empty")
+        if not user.email:
+            raise ValueError("User email cannot be empty")
+        return await self.user_repo.create(user)
+
+    async def get_user(self, user_id: str) -> User:
+        """Get user by ID."""
+        return await self.user_repo.get_by_id(user_id)
+
+    async def get_user_by_email(self, email: str) -> User:
+        """Get user by email."""
+        return await self.user_repo.get_by_email(email)
+
+    async def associate_user_with_tenant(
+        self,
+        user_id: str,
+        tenant_id: str,
+        role: UserRole = UserRole.MEMBER,
+        membership_id: str = None,
+    ) -> Membership:
+        """Associate a user with a tenant."""
+        if not await self.user_repo.exists(user_id):
+            raise ValueError(f"User with id {user_id} does not exist")
+
+        if not await self.tenant_repo.exists(tenant_id):
+            raise ValueError(f"Tenant with id {tenant_id} does not exist")
+
+        if await self.membership_repo.exists(user_id, tenant_id):
+            raise ValueError(f"User {user_id} already belongs to tenant {tenant_id}")
+
+        import uuid
+
+        if not membership_id:
+            membership_id = str(uuid.uuid4())
+
+        membership = Membership(id=membership_id, user_id=user_id, tenant_id=tenant_id, role=role)
+        return await self.membership_repo.create(membership)
+
+    async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
+        """Get all users for a tenant."""
+        return await self.user_repo.get_by_tenant(tenant_id)
+
+
+class MembershipService:
+    """Domain service for membership operations."""
+
+    def __init__(self, membership_repo: MembershipRepository):
+        self.membership_repo = membership_repo
+
+    async def create_membership(self, membership: Membership) -> Membership:
+        """Create a new membership."""
+        if not membership.id:
+            import uuid
+
+            membership.id = str(uuid.uuid4())
+
+        if not membership.user_id:
+            raise ValueError("User ID cannot be empty")
+
+        if not membership.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+
+        if membership.role not in [UserRole.OWNER, UserRole.MEMBER, UserRole.VIEWER]:
+            raise ValueError(f"Invalid role: {membership.role}")
+
+        return await self.membership_repo.create(membership)
+
+    async def get_membership(self, user_id: str, tenant_id: str) -> Membership:
+        """Get membership by user and tenant IDs."""
+        return await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)
+
+    async def membership_exists(self, user_id: str, tenant_id: str) -> bool:
+        """Check if membership exists."""
+        return await self.membership_repo.exists(user_id, tenant_id)
+
+    async def get_tenants_for_user(self, user_id: str) -> List[Tenant]:
+        """Get all tenants for a user."""
+        return await self.membership_repo.get_tenants_for_user(user_id)
+
+    async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
+        """Get all users for a tenant."""
+        return await self.membership_repo.get_users_for_tenant(tenant_id)
+
+    async def get_memberships_for_user(self, user_id: str) -> List[Membership]:
+        """Get all memberships for a user."""
+        return await self.membership_repo.get_memberships_for_user(user_id)
+
+    async def get_memberships_for_tenant(self, tenant_id: str) -> List[Membership]:
+        """Get all memberships for a tenant."""
+        return await self.membership_repo.get_memberships_for_tenant(tenant_id)
+
+
+class TenantContextService:
+    """Service for managing tenant context."""
+
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        tenant_repo: TenantRepository,
+        membership_repo: MembershipRepository,
+    ):
+        self.user_repo = user_repo
+        self.tenant_repo = tenant_repo
+        self.membership_repo = membership_repo
+
+    async def create_tenant_context(
+        self,
+        tenant_id: str,
+        user_id: str,
+    ) -> TenantContext:
+        """Create a trusted tenant context.
+
+        A trusted context requires a verified User-Tenant Membership.
+        The persisted Membership.role is the authoritative role and is
+        never taken from caller input.
+
+        Args:
+            tenant_id: The requested tenant ID.
+            user_id: The authenticated user ID.
+
+        Returns:
+            TenantContext derived from the verified membership.
+
+        Raises:
+            ValueError: If tenant_id or user_id is empty.
+            NotFoundError: If the tenant, user, or membership does not exist.
+        """
+        if not tenant_id:
+            raise ValueError("Tenant ID cannot be empty in context")
+
+        if not user_id:
+            raise ValueError("User ID cannot be empty in context")
+
+        tenant = await self.tenant_repo.get_by_id(tenant_id)
+        await self.user_repo.get_by_id(user_id)
+
+        membership = await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)
+
+        return TenantContext(
+            tenant_id=membership.tenant_id,
+            tenant_name=tenant.name,
+            user_id=membership.user_id,
+            role=membership.role,
+        )
+
+    async def validate_context(self, context: TenantContext) -> bool:
+        """Validate a tenant context.
+
+        A context is valid only when a verified membership exists for the
+        context's user/tenant pair and the membership's persisted values
+        match the context.
+
+        Args:
+            context: The TenantContext to validate.
+
+        Returns:
+            True if the context matches a verified membership, False otherwise.
+        """
+        if not context.is_valid:
+            return False
+
+        if not await self.tenant_repo.exists(context.tenant_id):
+            return False
+
+        if not await self.user_repo.exists(context.user_id):
+            return False
+
+        try:
+            membership = await self.membership_repo.get_by_user_and_tenant(
+                context.user_id, context.tenant_id
+            )
+        except NotFoundError:
+            return False
+
+        if membership is None:
+            return False
+
+        return (
+            membership.user_id == context.user_id
+            and membership.tenant_id == context.tenant_id
+            and membership.role == context.role
+        )
+
+
+class ServiceFactory:
+    """Factory for creating service instances."""
+
+    @staticmethod
+    def create_domain_services(repositories):
+        """Create domain service instances."""
+        tenant_repo, user_repo, membership_repo = repositories
+
+        return {
+            "tenant_service": TenantService(tenant_repo),
+            "user_service": UserService(user_repo, membership_repo, tenant_repo),
+            "membership_service": MembershipService(membership_repo),
+            "tenant_context_service": TenantContextService(user_repo, tenant_repo, membership_repo),
+        }
