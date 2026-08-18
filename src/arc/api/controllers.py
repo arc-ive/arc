@@ -207,9 +207,7 @@ async def get_tenants_for_user(
     substituted for the JWT identity.
     """
     if principal.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     tenants = await membership_service.get_tenants_for_user(principal.user_id)
     return [

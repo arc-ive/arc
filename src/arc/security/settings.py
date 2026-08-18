@@ -73,6 +73,14 @@ def _parse_role_assignments(raw: str) -> Dict[str, ApplicationRole]:
     return assignments
 
 
+def _parse_expiry_seconds(raw: str) -> int:
+    """Parse JWT expiry seconds and fail closed on invalid values."""
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise SecurityConfigurationError("JWT_EXPIRY_SECONDS must be a valid integer") from exc
+
+
 def get_security_settings() -> SecuritySettings:
     """Build security settings from the environment.
 
@@ -84,7 +92,7 @@ def get_security_settings() -> SecuritySettings:
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
         jwt_issuer=os.getenv("JWT_ISSUER", "arc"),
         jwt_audience=os.getenv("JWT_AUDIENCE", "arc-api"),
-        jwt_expiry_seconds=int(os.getenv("JWT_EXPIRY_SECONDS", "3600")),
+        jwt_expiry_seconds=_parse_expiry_seconds(os.getenv("JWT_EXPIRY_SECONDS", "3600")),
         application_role_assignments=_parse_role_assignments(
             os.getenv("APPLICATION_ROLE_ASSIGNMENTS", "")
         ),

@@ -65,9 +65,7 @@ def setup_database(database_url: str) -> None:
             "Testing database connection",
         )
 
-        print(
-            f"Database '{database}' already exists and is accessible."
-        )
+        print(f"Database '{database}' already exists and is accessible.")
 
     except RuntimeError:
         # Database doesn't exist, create it.

@@ -31,9 +31,7 @@ class ArcDatabase:
 
     def __init__(
         self,
-        database_url: str = (
-            "postgresql://arc:arc-dev-password@localhost:5432/arc"
-        ),
+        database_url: str = ("postgresql://arc:arc-dev-password@localhost:5432/arc"),
     ):
         self.database_url = database_url
         self._connection_pool = None
@@ -74,26 +72,19 @@ class ArcDatabase:
                 )
                 return tenant
             except asyncpg.UniqueViolationError as e:
-                raise DuplicateKeyError(
-                    f"Tenant with id {tenant.id} already exists"
-                ) from e
+                raise DuplicateKeyError(f"Tenant with id {tenant.id} already exists") from e
             except Exception as e:
-                raise DatabaseError(
-                    f"Failed to create tenant: {e}"
-                ) from e
+                raise DatabaseError(f"Failed to create tenant: {e}") from e
 
     async def get_tenant(self, tenant_id: str) -> Tenant:
         """Get tenant by ID."""
         async with self._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, name, status, created_at, updated_at "
-                "FROM tenants WHERE id = $1",
+                "SELECT id, name, status, created_at, updated_at FROM tenants WHERE id = $1",
                 tenant_id,
             )
             if not row:
-                raise NotFoundError(
-                    f"Tenant with id {tenant_id} not found"
-                )
+                raise NotFoundError(f"Tenant with id {tenant_id} not found")
             return Tenant(
                 id=row["id"],
                 name=row["name"],
@@ -122,13 +113,9 @@ class ArcDatabase:
                 )
                 return user
             except asyncpg.UniqueViolationError as e:
-                raise DuplicateKeyError(
-                    f"User with email {user.email} already exists"
-                ) from e
+                raise DuplicateKeyError(f"User with email {user.email} already exists") from e
             except Exception as e:
-                raise DatabaseError(
-                    f"Failed to create user: {e}"
-                ) from e
+                raise DatabaseError(f"Failed to create user: {e}") from e
 
     async def get_user(self, user_id: str) -> User:
         """Get user by ID."""
@@ -139,9 +126,7 @@ class ArcDatabase:
                 user_id,
             )
             if not row:
-                raise NotFoundError(
-                    f"User with id {user_id} not found"
-                )
+                raise NotFoundError(f"User with id {user_id} not found")
             return User(
                 id=row["id"],
                 email=row["email"],
@@ -151,9 +136,7 @@ class ArcDatabase:
                 updated_at=row["updated_at"],
             )
 
-    async def create_membership(
-        self, membership: Membership
-    ) -> Membership:
+    async def create_membership(self, membership: Membership) -> Membership:
         """Create a new membership (user-tenant relationship)."""
         async with self.transaction() as conn:
             try:
@@ -174,17 +157,12 @@ class ArcDatabase:
                 return membership
             except asyncpg.UniqueViolationError as e:
                 raise DuplicateKeyError(
-                    f"User {membership.user_id} already belongs to tenant "
-                    f"{membership.tenant_id}"
+                    f"User {membership.user_id} already belongs to tenant {membership.tenant_id}"
                 ) from e
             except Exception as e:
-                raise DatabaseError(
-                    f"Failed to create membership: {e}"
-                ) from e
+                raise DatabaseError(f"Failed to create membership: {e}") from e
 
-    async def get_membership(
-        self, user_id: str, tenant_id: str
-    ) -> Membership:
+    async def get_membership(self, user_id: str, tenant_id: str) -> Membership:
         """Get membership by user and tenant IDs."""
         async with self._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -196,8 +174,7 @@ class ArcDatabase:
             )
             if not row:
                 raise NotFoundError(
-                    f"Membership not found for user {user_id} "
-                    f"in tenant {tenant_id}"
+                    f"Membership not found for user {user_id} in tenant {tenant_id}"
                 )
             return Membership(
                 id=row["id"],
@@ -260,9 +237,7 @@ class ArcDatabase:
                 )
             return users
 
-    async def get_memberships_for_user(
-        self, user_id: str
-    ) -> list[Membership]:
+    async def get_memberships_for_user(self, user_id: str) -> list[Membership]:
         """Get all memberships for a user."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -287,9 +262,7 @@ class ArcDatabase:
                 )
             return memberships
 
-    async def get_memberships_for_tenant(
-        self, tenant_id: str
-    ) -> list[Membership]:
+    async def get_memberships_for_tenant(self, tenant_id: str) -> list[Membership]:
         """Get all memberships for a tenant."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(

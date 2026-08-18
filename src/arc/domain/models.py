@@ -8,6 +8,7 @@ from typing import Optional
 
 class UserRole(str, Enum):
     """Initial role for membership."""
+
     OWNER = "owner"
     MEMBER = "member"
     VIEWER = "viewer"
@@ -16,6 +17,7 @@ class UserRole(str, Enum):
 @dataclass
 class Tenant:
     """Tenant domain model."""
+
     id: str
     name: str
     status: str = "active"
@@ -32,6 +34,7 @@ class Tenant:
 @dataclass
 class User:
     """User domain model."""
+
     id: str
     email: str
     username: Optional[str] = None
@@ -49,6 +52,7 @@ class User:
 @dataclass
 class Membership:
     """User-Tenant relationship domain model."""
+
     id: str
     user_id: str
     tenant_id: str
@@ -72,6 +76,7 @@ class Membership:
 @dataclass
 class TenantContext:
     """Application-level tenant context."""
+
     tenant_id: str
     tenant_name: str
     user_id: str
