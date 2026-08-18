@@ -110,7 +110,9 @@ X-10 enforces that every `TenantContext` is backed by a persisted `Membership` r
 - ruff check and format pass on X-10 files.
 - Security review passed — all invariants confirmed.
 
-### Review fix: API boundary isolation (working tree, not committed)
+### Review fix: API boundary isolation (merged)
+
+Merged to `main` as `fa82369` via PR #15 (merge commit `63b36bf`).
 
 Bharath's X-10 PR review raised two API-boundary concerns; both are
 addressed without implementing authentication or RBAC:
@@ -134,6 +136,47 @@ surface, the development-only isolation, and the intended identity flow.
 - Membership provisioning is development-only (no public endpoint) and remains unauthenticated at the service layer. Issue #14 will add auth.
 - `httpx2>=2.0,<3.0` is the original dependency; real `httpx` has no 2.x releases. `tests/test_health.py` uses FastAPI's `TestClient` which requires real `httpx`. Pre-existing separate dependency defect.
 - Repo-wide ruff CI gate will fail due to pre-existing violations in unmodified files.
+
+## PII Guard: Phase 1 Foundation (implemented, not committed)
+
+**Branch:** `feat/pii-guard`
+
+Implemented the approved PII Guard foundation: an in-process, stateless
+Microsoft Presidio-based text sanitization service in
+`src/arc/services/pii.py` (`PiiGuardService.sanitize(text) -> PiiResult`,
+`PiiGuardConfig`, `PiiGuardError`).
+
+### What changed
+
+- **Pinned dependencies added** in `pyproject.toml`:
+  `presidio-analyzer==2.2.364`, `presidio-anonymizer==2.2.364`,
+  `spacy==3.8.15`, and the `en-core-web-lg` 3.8.0 model wheel (pinned via
+  the official GitHub release URL; spaCy models are no longer published
+  to PyPI).
+- **Tests added.** `tests/test_pii.py` — 22 tests (14 unit with injected
+  fake engines, 8 integration with real Presidio + spaCy covering email,
+  phone, person, SSN, credit card, non-sensitive preservation, disabled
+  categories, custom operators).
+
+### Behavior
+
+- Fail-closed: analysis/anonymization errors raise `PiiGuardError`;
+  error messages and logs never contain input text or detected values.
+- Supported anonymization operators: replace (default), mask, redact.
+- Default detected categories: PERSON, EMAIL_ADDRESS, PHONE_NUMBER,
+  US_SSN, CREDIT_CARD, US_PASSPORT, US_DRIVER_LICENSE, US_ITIN,
+  IBAN_CODE, IP_ADDRESS (explicit and testable; dates/locations excluded
+  to preserve useful content).
+- Stateless: no persistence, no HTTP endpoint, no logging of content,
+  no new environment variables.
+
+### Verification
+
+- 64 tests pass (Docker + real PostgreSQL): 42 existing + 22 new.
+- ruff check and format pass on the PII files (repo-wide ruff still
+  fails on documented pre-existing violations in unrelated files).
+- `git diff --check` clean.
+- PRD, TRD, ADR-001, X-10 code, and X-11 code not modified.
 
 ## In Progress
 
