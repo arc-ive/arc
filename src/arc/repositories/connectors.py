@@ -48,9 +48,7 @@ class PostgreSQLConnectorRepository:
             except Exception as e:
                 raise Exception(f"Failed to create connector: {e}") from e
 
-    async def get_by_id(
-        self, connector_id: str, tenant_id: str
-    ) -> ConnectorConfig:
+    async def get_by_id(self, connector_id: str, tenant_id: str) -> ConnectorConfig:
         """Get a connector configuration by ID, scoped to a tenant."""
         async with self.db._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -63,9 +61,7 @@ class PostgreSQLConnectorRepository:
                 tenant_id,
             )
             if not row:
-                raise NotFoundError(
-                    f"Connector {connector_id} not found in tenant {tenant_id}"
-                )
+                raise NotFoundError(f"Connector {connector_id} not found in tenant {tenant_id}")
             return ConnectorConfig(
                 id=row["id"],
                 tenant_id=row["tenant_id"],

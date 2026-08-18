@@ -55,9 +55,7 @@ class Application:
         self.services = ServiceFactory.create_domain_services(tenancy_repos)
 
         # Initialize connector service
-        self.services["connector_service"] = ConnectorService(
-            self.repositories["connector"]
-        )
+        self.services["connector_service"] = ConnectorService(self.repositories["connector"])
 
         # Register services in app context
         from arc.api.controllers import app_context

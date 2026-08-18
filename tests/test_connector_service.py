@@ -39,6 +39,17 @@ def tenant_context():
     )
 
 
+@pytest.fixture
+def other_tenant_context():
+    """Create a second trusted TenantContext for a different tenant."""
+    return TenantContext(
+        tenant_id="tenant-2",
+        tenant_name="Other Tenant",
+        user_id="user-2",
+        role=UserRole.MEMBER,
+    )
+
+
 class TestConnectorServiceCreate:
     """Test create_connector delegation and validation."""
 
@@ -97,9 +108,7 @@ class TestConnectorServiceCreate:
 class TestConnectorServiceGet:
     """Test get_connector delegation."""
 
-    async def test_get_connector_delegates_to_repo(
-        self, service, connector_repo, tenant_context
-    ):
+    async def test_get_connector_delegates_to_repo(self, service, connector_repo, tenant_context):
         """Test that get_connector calls repository get_by_id with tenant_id from context."""
         expected = ConnectorConfig(
             id="c1",
@@ -112,9 +121,7 @@ class TestConnectorServiceGet:
         result = await service.get_connector(tenant_context, "c1")
 
         assert result == expected
-        connector_repo.get_by_id.assert_called_once_with(
-            "c1", tenant_context.tenant_id
-        )
+        connector_repo.get_by_id.assert_called_once_with("c1", tenant_context.tenant_id)
 
     async def test_get_connector_propagates_not_found(
         self, service, connector_repo, tenant_context
@@ -129,9 +136,7 @@ class TestConnectorServiceGet:
 class TestConnectorServiceList:
     """Test list_connectors delegation."""
 
-    async def test_list_connectors_delegates_to_repo(
-        self, service, connector_repo, tenant_context
-    ):
+    async def test_list_connectors_delegates_to_repo(self, service, connector_repo, tenant_context):
         """Test list_connectors calls repository with tenant_id from context."""
         expected = [
             ConnectorConfig(
@@ -146,9 +151,7 @@ class TestConnectorServiceList:
         result = await service.list_connectors(tenant_context)
 
         assert result == expected
-        connector_repo.list_for_tenant.assert_called_once_with(
-            tenant_context.tenant_id
-        )
+        connector_repo.list_for_tenant.assert_called_once_with(tenant_context.tenant_id)
 
 
 class TestConnectorServiceDelete:
@@ -160,6 +163,104 @@ class TestConnectorServiceDelete:
         """Test that delete_connector calls repository delete with tenant_id from context."""
         await service.delete_connector(tenant_context, "c1")
 
-        connector_repo.delete.assert_called_once_with(
-            "c1", tenant_context.tenant_id
+        connector_repo.delete.assert_called_once_with("c1", tenant_context.tenant_id)
+
+
+class TestConnectorServiceTenantIsolation:
+    """Prove that different TenantContext instances produce different
+    tenant_id values in repository calls."""
+
+    async def test_create_uses_context_tenant_id(self, service, connector_repo):
+        """Test create_connector derives tenant_id from context."""
+        ctx_a = TenantContext(
+            tenant_id="tenant-A",
+            tenant_name="Tenant A",
+            user_id="user-a",
+            role=UserRole.MEMBER,
         )
+        ctx_b = TenantContext(
+            tenant_id="tenant-B",
+            tenant_name="Tenant B",
+            user_id="user-b",
+            role=UserRole.MEMBER,
+        )
+        connector_repo.create.return_value = ConnectorConfig(
+            id="id", tenant_id="x", provider=ConnectorProvider.SLACK, name="x"
+        )
+
+        await service.create_connector(ctx_a, ConnectorProvider.SLACK, "A")
+        created_a = connector_repo.create.call_args[0][0]
+        assert created_a.tenant_id == "tenant-A"
+
+        await service.create_connector(ctx_b, ConnectorProvider.SLACK, "B")
+        created_b = connector_repo.create.call_args[0][0]
+        assert created_b.tenant_id == "tenant-B"
+
+        assert created_a.tenant_id != created_b.tenant_id
+
+    async def test_get_uses_context_tenant_id(self, service, connector_repo):
+        """Test get_connector passes context.tenant_id to repository."""
+        ctx_a = TenantContext(
+            tenant_id="tenant-A",
+            tenant_name="Tenant A",
+            user_id="user-a",
+            role=UserRole.MEMBER,
+        )
+        ctx_b = TenantContext(
+            tenant_id="tenant-B",
+            tenant_name="Tenant B",
+            user_id="user-b",
+            role=UserRole.MEMBER,
+        )
+        connector_repo.get_by_id.return_value = ConnectorConfig(
+            id="c1", tenant_id="x", provider=ConnectorProvider.SLACK, name="x"
+        )
+
+        await service.get_connector(ctx_a, "c1")
+        assert connector_repo.get_by_id.call_args[0] == ("c1", "tenant-A")
+
+        await service.get_connector(ctx_b, "c1")
+        assert connector_repo.get_by_id.call_args[0] == ("c1", "tenant-B")
+
+    async def test_list_uses_context_tenant_id(self, service, connector_repo):
+        """Test list_connectors passes context.tenant_id to repository."""
+        ctx_a = TenantContext(
+            tenant_id="tenant-A",
+            tenant_name="Tenant A",
+            user_id="user-a",
+            role=UserRole.MEMBER,
+        )
+        ctx_b = TenantContext(
+            tenant_id="tenant-B",
+            tenant_name="Tenant B",
+            user_id="user-b",
+            role=UserRole.MEMBER,
+        )
+        connector_repo.list_for_tenant.return_value = []
+
+        await service.list_connectors(ctx_a)
+        assert connector_repo.list_for_tenant.call_args[0] == ("tenant-A",)
+
+        await service.list_connectors(ctx_b)
+        assert connector_repo.list_for_tenant.call_args[0] == ("tenant-B",)
+
+    async def test_delete_uses_context_tenant_id(self, service, connector_repo):
+        """Test delete_connector passes context.tenant_id to repository."""
+        ctx_a = TenantContext(
+            tenant_id="tenant-A",
+            tenant_name="Tenant A",
+            user_id="user-a",
+            role=UserRole.MEMBER,
+        )
+        ctx_b = TenantContext(
+            tenant_id="tenant-B",
+            tenant_name="Tenant B",
+            user_id="user-b",
+            role=UserRole.MEMBER,
+        )
+
+        await service.delete_connector(ctx_a, "c1")
+        assert connector_repo.delete.call_args[0] == ("c1", "tenant-A")
+
+        await service.delete_connector(ctx_b, "c1")
+        assert connector_repo.delete.call_args[0] == ("c1", "tenant-B")

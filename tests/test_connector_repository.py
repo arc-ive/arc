@@ -16,9 +16,7 @@ from arc.domain.models import ConnectorConfig, ConnectorProvider, ConnectorStatu
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.tenancy import PostgreSQLTenantRepository
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "arc" / "db" / "schema.sql"
 
 
@@ -63,12 +61,8 @@ async def seeded_tenants(db):
     tenant_repo = PostgreSQLTenantRepository(db)
     tenant_a_id = _unique("tenant-a")
     tenant_b_id = _unique("tenant-b")
-    tenant_a = await tenant_repo.create(
-        Tenant(id=tenant_a_id, name="Tenant A")
-    )
-    tenant_b = await tenant_repo.create(
-        Tenant(id=tenant_b_id, name="Tenant B")
-    )
+    tenant_a = await tenant_repo.create(Tenant(id=tenant_a_id, name="Tenant A"))
+    tenant_b = await tenant_repo.create(Tenant(id=tenant_b_id, name="Tenant B"))
     yield tenant_a, tenant_b
     await tenant_repo.delete(tenant_a.id)
     await tenant_repo.delete(tenant_b.id)
@@ -166,9 +160,7 @@ class TestConnectorRepositoryContract:
         with pytest.raises(NotFoundError):
             await connector_repo.get_by_id("missing-id", seeded_tenant.id)
 
-    async def test_duplicate_name_same_provider(
-        self, connector_repo, seeded_tenant
-    ):
+    async def test_duplicate_name_same_provider(self, connector_repo, seeded_tenant):
         """Test creating two connectors with same tenant/provider/name fails."""
         await connector_repo.create(
             ConnectorConfig(
@@ -187,9 +179,7 @@ class TestConnectorRepositoryContract:
                     name="Duplicate Name",
                 )
             )
-        await connector_repo.delete(
-            _unique("conn-a"), seeded_tenant.id
-        )
+        await connector_repo.delete(_unique("conn-a"), seeded_tenant.id)
         # Cleanup: find and delete the actual connector
         connectors = await connector_repo.list_for_tenant(seeded_tenant.id)
         for c in connectors:
@@ -200,9 +190,7 @@ class TestConnectorRepositoryContract:
 class TestConnectorTenantIsolation:
     """Prove that the SQL WHERE clause enforces tenant isolation."""
 
-    async def test_get_by_id_isolation(
-        self, connector_repo, seeded_tenants
-    ):
+    async def test_get_by_id_isolation(self, connector_repo, seeded_tenants):
         """Tenant A cannot read tenant B's connector by ID."""
         tenant_a, tenant_b = seeded_tenants
         conn_id = _unique("conn")

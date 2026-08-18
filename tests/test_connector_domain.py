@@ -122,3 +122,24 @@ class TestConnectorConfigModel:
                 provider=ConnectorProvider.SLACK,
                 name="",
             )
+
+    def test_config_validation_invalid_provider(self):
+        """Test invalid provider raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid connector provider"):
+            ConnectorConfig(
+                id="c1",
+                tenant_id="t1",
+                provider="invalid_provider",
+                name="Test",
+            )
+
+    def test_config_validation_invalid_status(self):
+        """Test invalid status raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid connector status"):
+            ConnectorConfig(
+                id="c1",
+                tenant_id="t1",
+                provider=ConnectorProvider.SLACK,
+                name="Test",
+                status="invalid_status",
+            )

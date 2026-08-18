@@ -12,12 +12,12 @@ from arc.domain.models import (
 )
 
 __all__ = [
-    'ConnectorConfig',
-    'ConnectorProvider',
-    'ConnectorStatus',
-    'Membership',
-    'Tenant',
-    'TenantContext',
-    'User',
-    'UserRole',
+    "ConnectorConfig",
+    "ConnectorProvider",
+    "ConnectorStatus",
+    "Membership",
+    "Tenant",
+    "TenantContext",
+    "User",
+    "UserRole",
 ]

@@ -51,9 +51,7 @@ class ConnectorService:
         )
         return await self.connector_repo.create(connector)
 
-    async def get_connector(
-        self, context: TenantContext, connector_id: str
-    ) -> ConnectorConfig:
+    async def get_connector(self, context: TenantContext, connector_id: str) -> ConnectorConfig:
         """Get a connector configuration by ID within a tenant."""
         return await self.connector_repo.get_by_id(connector_id, context.tenant_id)
 
@@ -61,8 +59,6 @@ class ConnectorService:
         """List all connector configurations for a tenant."""
         return await self.connector_repo.list_for_tenant(context.tenant_id)
 
-    async def delete_connector(
-        self, context: TenantContext, connector_id: str
-    ) -> None:
+    async def delete_connector(self, context: TenantContext, connector_id: str) -> None:
         """Delete a connector configuration within a tenant."""
         await self.connector_repo.delete(connector_id, context.tenant_id)
