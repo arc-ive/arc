@@ -2,7 +2,7 @@
 
 from typing import List, Protocol
 
-from arc.domain.models import Membership, Tenant, User
+from arc.domain.models import ConnectorConfig, Membership, Tenant, User
 
 
 class TenantRepository(Protocol):
@@ -86,6 +86,30 @@ class MembershipRepository(Protocol):
 
     async def get_memberships_for_tenant(self, tenant_id: str) -> List[Membership]:
         """Get all memberships for a tenant."""
+        ...
+
+
+class ConnectorRepository(Protocol):
+    """Repository for ConnectorConfig entities."""
+
+    async def create(self, connector: ConnectorConfig) -> ConnectorConfig:
+        """Create a new connector configuration."""
+        ...
+
+    async def get_by_id(self, connector_id: str, tenant_id: str) -> ConnectorConfig:
+        """Get a connector configuration by ID, scoped to a tenant."""
+        ...
+
+    async def list_for_tenant(self, tenant_id: str) -> List[ConnectorConfig]:
+        """List all connector configurations for a tenant."""
+        ...
+
+    async def exists(self, connector_id: str, tenant_id: str) -> bool:
+        """Check if a connector configuration exists within a tenant."""
+        ...
+
+    async def delete(self, connector_id: str, tenant_id: str) -> None:
+        """Delete a connector configuration, scoped to a tenant."""
         ...
 
 
