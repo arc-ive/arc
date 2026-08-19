@@ -4,7 +4,7 @@
 
 ## Project Status
 
-**Foundation Phase — X-10 complete, X-11 next**
+**Foundation Phase — engineering foundation established; CI merged and passing**
 
 Arc has completed X-10 (tenant membership boundary enforcement) and is continuing Foundation Phase work. The team is establishing the engineering workflow, development environment, AI development system, documentation, security baseline, architecture decision process, and product roadmap before implementing the product modules.
 

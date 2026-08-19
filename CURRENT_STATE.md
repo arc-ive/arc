@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established (PR under review)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline merged and passing
 
 ## Completed
 
@@ -213,7 +213,7 @@ with the X-10 tenant membership boundary.
 - `.env` (local, gitignored) contains a development-only JWT secret and
   `demo-user` as platform_administrator for the simulated environment.
 
-## CI Baseline (Established — PR under review)
+## CI Baseline (Established — merged and passing)
 
 **Branch:** `chore/ci-github-actions`
 
@@ -228,7 +228,6 @@ with the X-10 tenant membership boundary.
   credentials.
 - The repo-wide lint/format gate passes on current `main`, verified locally
   against a freshly rebuilt application image.
-- Remaining: GitHub-side CI verification after review/merge.
 
 ## In Progress
 
@@ -252,7 +251,7 @@ with the X-10 tenant membership boundary.
 - Docker baseline — established (merged).
 - Dev Container baseline — established (merged).
 - Compose — established (merged).
-- CI environment — established (PR under review).
+- CI environment — established (merged; CI passing).
 - Windows verification.
 - macOS verification.
 
@@ -298,8 +297,8 @@ Bala is responsible for:
 
 ## Next
 
-1. **Review and merge the CI baseline** (chore/ci-github-actions): GitHub Actions workflow + state update; human review, PR, and merge required.
-2. Complete X-6 verification and close the Linear issue.
+1. Complete X-6 verification and close the Linear issue.
+2. Complete team-wide AI development workflow verification (current evidence is machine-scoped to Bala's machine only).
 3. Coordinate the next Bala Foundation issue with Joe and Bharath.
 4. Continue the AI development setup.
 5. Complete Foundation cross-platform verification (Windows/macOS).
@@ -328,9 +327,8 @@ Bharath
 
 ### CI
 
-The CI baseline (`.github/workflows/ci.yml`) has been established on
-`chore/ci-github-actions` and is pending review/merge. Remaining Foundation
-verification is cross-platform (Windows/macOS).
+The CI baseline (`.github/workflows/ci.yml`) is merged and passing. Remaining
+Foundation verification is cross-platform (Windows/macOS).
 
 Owner:
 
