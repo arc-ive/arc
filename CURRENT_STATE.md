@@ -232,6 +232,12 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
   with `__post_init__` validation; `KnowledgeSource` (policy, procedure,
   incident_report, troubleshooting, internal_knowledge, solution — maps to
   TRD 9.2 knowledge categories); `KnowledgeStatus` (active, archived).
+  `version` is stored as document metadata (TRD 9.1): this foundation does
+  NOT implement document revision/update semantics, and no logical document
+  identity or uniqueness relationship between documents and versions is
+  claimed. Future document lifecycle/version-management work (out of scope
+  for this slice) may define the identity and uniqueness model; ADR-001
+  keeps the Company Brain schema open.
 - **Repository** (`src/arc/repositories/knowledge.py`):
   `PostgreSQLKnowledgeRepository` implementing the `KnowledgeRepository`
   Protocol (`src/arc/repositories/__init__.py`). Every query includes a
@@ -251,8 +257,10 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
   (create, sanitized), `GET /tenants/{tenant_id}/knowledge/{document_id}`
   (404 for missing/inaccessible — no existence leakage), and
   `GET /tenants/{tenant_id}/knowledge` (list). All behind
-  `require_tenant_permission`. Only sanitized content is ever persisted or
-  returned.
+  `require_tenant_permission`. The path `tenant_id` is validated for
+  consistency against the trusted `TenantContext` (403 on mismatch) but the
+  tenant boundary is always derived from the trusted context. Only
+  sanitized content is ever persisted or returned.
 - **Composition root** (`src/arc/app.py`): `PostgreSQLKnowledgeRepository`
   and `KnowledgeService` registered alongside existing services.
 - **Tests** (new): `tests/test_knowledge_domain.py`,
@@ -260,7 +268,9 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
   isolation), `tests/test_knowledge_service.py` (PII boundary,
   fail-closed no-persistence, real PiiGuardService integration),
   `tests/test_knowledge_api.py` (401/403, permission matrix, cross-tenant
-  denial, raw PII sanitized before persistence and response).
+  denial, raw PII sanitized before persistence and response, path-tenant
+  consistency 403, explicit nonexistent-document 404, list-endpoint PII
+  sanitization).
   `tests/test_rbac.py` updated for the knowledge permission matrix.
 
 ### What was NOT changed
@@ -272,11 +282,14 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 
 ### Verification
 
-- 194 tests pass (Docker + real PostgreSQL), including the 43 new knowledge
-  tests.
+- 249 tests pass (Docker + real PostgreSQL), 4 warnings, 0 failures — the
+  43 original knowledge tests plus 5 tests added by the PR #26 review
+  fixes.
 - `ruff check` and `ruff format --check` pass on `src` and `tests`.
 - Mandatory `docker compose build arc` completed (arc service has no volume
   mount; image rebuilt with the new code before verification).
+- The branch was reconciled with the merged Skills Engine foundation
+  (`origin/main`) before the final verification.
 
 ### Pending
 

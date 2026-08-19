@@ -63,6 +63,8 @@ class SkillStatus(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     ARCHIVED = "archived"
+
+
 @dataclass
 class Tenant:
     """Tenant domain model."""

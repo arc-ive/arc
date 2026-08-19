@@ -270,6 +270,21 @@ def _knowledge_document_payload(document: KnowledgeDocument) -> Dict[str, Any]:
     }
 
 
+def _require_path_tenant_matches_context(path_tenant_id: str, context: TenantContext) -> None:
+    """Reject a request whose path tenant does not match the trusted context.
+
+    The trusted ``TenantContext`` remains the authoritative tenant boundary:
+    the service derives the tenant exclusively from it. This is a defensive
+    consistency check that makes the invariant explicit and fails closed
+    (403) if the path tenant ever diverges from the established context.
+    """
+    if path_tenant_id != context.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to the requested tenant is denied",
+        )
+
+
 @api_router.post("/tenants/{tenant_id}/knowledge")
 async def create_knowledge_document(
     tenant_id: str,
@@ -281,9 +296,13 @@ async def create_knowledge_document(
 
     Protected: requires a trusted X-10 tenant context and the
     ``knowledge:create`` permission. The tenant boundary is derived from
-    the trusted context, never from the request payload. Raw content is
+    the trusted context, never from the request payload. The path
+    ``tenant_id`` is validated for consistency against the trusted context
+    but is never trusted as the security boundary. Raw content is
     sanitized by the PII Guard before persistence.
     """
+    _require_path_tenant_matches_context(tenant_id, context)
+
     source_value = knowledge_data.get("source")
     try:
         source = KnowledgeSource(source_value)
@@ -327,8 +346,11 @@ async def get_knowledge_document(
     Protected: requires a trusted X-10 tenant context and the
         ``knowledge:read`` permission. Cross-tenant access is denied: a member
         of tenant A can never retrieve tenant B's document, and a missing
-        document is indistinguishable from an inaccessible one (404).
+        document is indistinguishable from an inaccessible one (404). The path
+        ``tenant_id`` is validated for consistency against the trusted context.
     """
+    _require_path_tenant_matches_context(tenant_id, context)
+
     try:
         document = await knowledge_service.get_document(context, document_id)
     except NotFoundError:
@@ -349,7 +371,10 @@ async def list_knowledge_documents(
 
     Protected: requires a trusted X-10 tenant context and the
     ``knowledge:read`` permission. Only the caller's own tenant documents
-    are returned.
+    are returned. The path ``tenant_id`` is validated for consistency
+    against the trusted context.
     """
+    _require_path_tenant_matches_context(tenant_id, context)
+
     documents = await knowledge_service.list_documents(context)
     return [_knowledge_document_payload(document) for document in documents]

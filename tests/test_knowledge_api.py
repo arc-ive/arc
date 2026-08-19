@@ -8,14 +8,20 @@ Security invariants under test:
 - The trusted tenant context (from the JWT principal + persisted
   membership) is authoritative: the client-supplied tenant_id in the path
   is request input only and cross-tenant access is denied.
+- A path tenant that does not match the trusted context is rejected with
+  403; the trusted context is never overridden by the path.
+- Missing and inaccessible documents are indistinguishable: both return
+  404 at the API boundary.
 - Raw content is sanitized by the real PII Guard before persistence, and
-  only sanitized content is ever returned.
+  only sanitized content is ever returned (single-get and list).
 - Invalid knowledge input is rejected with 400.
 """
 
 import uuid
 
-from arc.domain.models import Membership, Tenant, User
+from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
+from arc.main import app
+from arc.security.dependencies import get_trusted_tenant_context
 from arc.security.models import ApplicationRole
 
 
@@ -237,3 +243,158 @@ class TestKnowledgePiiBoundary:
             json=_knowledge_payload(content=""),
         )
         assert response.status_code == 400
+
+
+class TestKnowledgePathTenantConsistency:
+    """The path tenant_id must match the trusted TenantContext.
+
+    The trusted context remains the authoritative tenant boundary; the
+    path parameter is request input only and is validated for consistency.
+    """
+
+    async def test_matching_path_tenant_succeeds_and_boundary_comes_from_context(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(),
+        )
+        assert response.status_code == 200
+        body = response.json()
+        # The persisted document belongs to the trusted context tenant,
+        # which matches the path tenant here.
+        assert body["tenant_id"] == tenant.id
+
+    async def test_mismatched_path_tenant_is_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        # Establish a trusted context for a DIFFERENT tenant than the path.
+        other_tenant_id = _unique("other-tenant")
+        mismatched_context = TenantContext(
+            tenant_id=other_tenant_id,
+            tenant_name="Other Tenant",
+            user_id=user.id,
+            role=UserRole.MEMBER,
+        )
+        app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
+        try:
+            create = client.post(
+                f"/tenants/{tenant.id}/knowledge",
+                headers={"Authorization": f"Bearer {token}"},
+                json=_knowledge_payload(content="Cross-tenant write attempt"),
+            )
+            assert create.status_code == 403
+
+            read = client.get(
+                f"/tenants/{tenant.id}/knowledge/{_unique('doc')}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert read.status_code == 403
+
+            listing = client.get(
+                f"/tenants/{tenant.id}/knowledge",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert listing.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_trusted_tenant_context, None)
+
+    async def test_mismatched_path_tenant_cannot_write(
+        self,
+        client,
+        seeded,
+        db,
+        make_token,
+        authorization_override,
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        other_tenant_id = _unique("other-tenant")
+        mismatched_context = TenantContext(
+            tenant_id=other_tenant_id,
+            tenant_name="Other Tenant",
+            user_id=user.id,
+            role=UserRole.MEMBER,
+        )
+        app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
+        try:
+            create = client.post(
+                f"/tenants/{tenant.id}/knowledge",
+                headers={"Authorization": f"Bearer {token}"},
+                json=_knowledge_payload(content="Cross-tenant write attempt"),
+            )
+            assert create.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_trusted_tenant_context, None)
+
+        # The rejected request must not have persisted anything in either tenant.
+        from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        assert await knowledge_repo.list_for_tenant(tenant.id) == []
+        assert await knowledge_repo.list_for_tenant(other_tenant_id) == []
+
+
+class TestKnowledgeNotFoundBoundary:
+    """A genuinely nonexistent document ID returns 404.
+
+    The 404 must not rely on a cross-tenant document: with a valid
+    membership and the knowledge:read permission, a nonexistent ID in the
+    caller's own tenant is indistinguishable from an inaccessible document.
+    """
+
+    async def test_nonexistent_document_id_returns_404(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/tenants/{tenant.id}/knowledge/{_unique('nonexistent-doc')}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404
+
+
+class TestKnowledgeListPiiBoundary:
+    """The list endpoint returns only sanitized content."""
+
+    async def test_list_endpoint_returns_sanitized_content(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        raw = "Contact bob.jones@example.com for access."
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(content=raw),
+        )
+        assert create.status_code == 200
+        # Sanitized before persistence: the create response must not leak raw PII.
+        assert "bob.jones@example.com" not in create.json()["content"]
+
+        listing = client.get(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert listing.status_code == 200
+        documents = listing.json()
+        assert len(documents) == 1
+        # The list response must not contain raw PII.
+        for document in documents:
+            assert "bob.jones@example.com" not in document["content"]
