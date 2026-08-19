@@ -34,7 +34,7 @@ Current Phase:
 
 
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline merged and passing
+Foundation Phase — X-10 complete, X-11 next
 
 
 
