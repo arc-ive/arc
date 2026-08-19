@@ -1,0 +1,473 @@
+"""Skills Engine HTTP API tests (tenant-scoped, X-11 RBAC).
+
+Covers the approved Skills management endpoints:
+
+- POST /skills                (requires ``skill:create``)
+- GET /skills                 (requires ``skill:read``)
+- GET /skills/{skill_id}      (requires ``skill:read``)
+- DELETE /skills/{skill_id}   (requires ``skill:delete``)
+
+The client-supplied ``tenant_id`` (query) is request input only: the X-10
+trusted tenant context verifies the authenticated principal's persisted
+membership, and the SkillService derives tenant ownership exclusively from
+that context. Cross-tenant access never reveals resource existence.
+"""
+
+import uuid
+
+import pytest
+
+from arc.domain.models import Membership, Tenant, User, UserRole
+from arc.security.models import ApplicationRole
+
+HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+
+
+def _unique(prefix: str) -> str:
+    """Return a unique identifier for test data."""
+    return f"skill-api-{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+def _skill_payload(**overrides) -> dict:
+    """Return a valid Skill creation payload with overridable fields."""
+    values = {
+        "name": "Service Recovery",
+        "purpose": "Recover a degraded service",
+    }
+    values.update(overrides)
+    return values
+
+
+async def _seed_tenant(repositories, name="Skills Tenant"):
+    tenant_repo, _, _ = repositories
+    return await tenant_repo.create(Tenant(id=_unique("tenant"), name=name))
+
+
+async def _seed_user(repositories):
+    _, user_repo, _ = repositories
+    return await user_repo.create(
+        User(id=_unique("user"), email=f"{uuid.uuid4().hex}@example.com", username="skills-user")
+    )
+
+
+async def _seed_membership(repositories, user_id, tenant_id):
+    _, _, membership_repo = repositories
+    return await membership_repo.create(
+        Membership(
+            id=_unique("membership"), user_id=user_id, tenant_id=tenant_id, role=UserRole.MEMBER
+        )
+    )
+
+
+async def _create_skill_via_api(client, tenant_id, token):
+    """Create a Skill through the API and return the created response."""
+    return client.post(
+        f"/skills?tenant_id={tenant_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        json=_skill_payload(),
+    )
+
+
+class TestSkillRolePermissions:
+    """Requirements 1-4: the approved role-to-permission mapping holds at the API."""
+
+    @pytest.mark.parametrize(
+        "role",
+        [
+            ApplicationRole.PLATFORM_ADMINISTRATOR,
+            ApplicationRole.COMPANY_ADMINISTRATOR,
+        ],
+    )
+    async def test_administrator_roles_can_create_read_delete(
+        self, client, repositories, make_token, authorization_override, role
+    ):
+        """PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR may create/read/delete."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: role})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        listed = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+        assert listed.status_code == 200
+        assert any(skill["id"] == skill_id for skill in listed.json())
+
+        fetched = client.get(f"/skills/{skill_id}?tenant_id={tenant.id}", headers=headers)
+        assert fetched.status_code == 200
+        assert fetched.json()["id"] == skill_id
+
+        deleted = client.delete(f"/skills/{skill_id}?tenant_id={tenant.id}", headers=headers)
+        assert deleted.status_code == 204
+
+        gone = client.get(f"/skills/{skill_id}?tenant_id={tenant.id}", headers=headers)
+        assert gone.status_code == 404
+
+    async def test_operations_user_can_read_but_not_create_or_delete(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """OPERATIONS_USER may read; create and delete are denied with 403."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+        assert response.status_code == 200
+
+        response = client.post(
+            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+        )
+        assert response.status_code == 403
+
+        response = client.delete(
+            f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+        )
+        assert response.status_code == 403
+
+    async def test_employee_cannot_create_read_or_delete(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """EMPLOYEE is denied every Skills endpoint with 403."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        assert client.get(f"/skills?tenant_id={tenant.id}", headers=headers).status_code == 403
+        assert (
+            client.get(
+                f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            ).status_code
+            == 403
+        )
+        assert (
+            client.delete(
+                f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+            ).status_code
+            == 403
+        )
+
+
+class TestSkillAuthentication:
+    """Requirement 5: missing/invalid JWT produces the existing 401 behavior."""
+
+    def test_missing_credentials_are_rejected_on_all_skill_endpoints(self, client):
+        """Every Skills endpoint returns 401 without credentials."""
+        assert client.get(f"/skills?tenant_id={_unique('tenant')}").status_code == 401
+        assert (
+            client.get(f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}").status_code
+            == 401
+        )
+        assert (
+            client.delete(f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}").status_code
+            == 401
+        )
+        assert (
+            client.post(f"/skills?tenant_id={_unique('tenant')}", json=_skill_payload()).status_code
+            == 401
+        )
+
+    def test_malformed_credentials_are_rejected(self, client):
+        """A malformed bearer token produces a generic 401."""
+        response = client.get(
+            f"/skills?tenant_id={_unique('tenant')}",
+            headers={"Authorization": "Bearer not-a-jwt"},
+        )
+        assert response.status_code == 401
+
+    def test_invalid_signature_is_rejected(self, client, wrong_secret_token):
+        """A token signed with a different secret produces a generic 401."""
+        token = wrong_secret_token("user-1")
+        response = client.get(
+            f"/skills?tenant_id={_unique('tenant')}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+
+class TestSkillAuthorization:
+    """Requirement 6: authentication never grants permission (fail closed)."""
+
+    async def test_authenticated_user_without_role_is_denied(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A valid JWT with no role assignment is denied with 403."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 403
+
+    async def test_membership_alone_never_grants_skill_permissions(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A valid membership without an application role never authorizes."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_skill_payload(),
+        )
+        assert response.status_code == 403
+
+
+class TestSkillTenantIsolation:
+    """Requirements 7-13: tenant-scoped persistence and cross-tenant non-disclosure."""
+
+    async def test_create_persists_trusted_tenant_id(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Create persists the trusted tenant ID, not any caller-supplied value."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_skill_payload(tenant_id="malicious-tenant"),
+        )
+        assert created.status_code == 200
+        assert created.json()["tenant_id"] == tenant.id
+
+        listed = client.get(
+            f"/skills?tenant_id={tenant.id}", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert listed.status_code == 200
+        assert len(listed.json()) == 1
+        assert listed.json()[0]["tenant_id"] == tenant.id
+
+    async def test_caller_supplied_tenant_id_cannot_override_trusted_context(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A tenant the principal is not a member of is denied with 403."""
+        tenant_a = await _seed_tenant(repositories, "Tenant A")
+        tenant_b = await _seed_tenant(repositories, "Tenant B")
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant_a.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.get(f"/skills?tenant_id={tenant_b.id}", headers=headers)
+        assert response.status_code == 403
+
+        response = client.post(
+            f"/skills?tenant_id={tenant_b.id}", headers=headers, json=_skill_payload()
+        )
+        assert response.status_code == 403
+
+        response = client.delete(
+            f"/skills/{_unique('skill')}?tenant_id={tenant_b.id}", headers=headers
+        )
+        assert response.status_code == 403
+
+    async def test_list_returns_only_current_tenant_skills(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Listing returns only Skills of the trusted tenant."""
+        tenant_a = await _seed_tenant(repositories, "Tenant A")
+        tenant_b = await _seed_tenant(repositories, "Tenant B")
+        user_a = await _seed_user(repositories)
+        user_b = await _seed_user(repositories)
+        await _seed_membership(repositories, user_a.id, tenant_a.id)
+        await _seed_membership(repositories, user_b.id, tenant_b.id)
+
+        authorization_override({user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_a = make_token(user_a.id)
+        created_a = await _create_skill_via_api(client, tenant_a.id, token_a)
+        assert created_a.status_code == 200
+
+        authorization_override({user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_b = make_token(user_b.id)
+        created_b = await _create_skill_via_api(client, tenant_b.id, token_b)
+        assert created_b.status_code == 200
+
+        authorization_override({user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_a = make_token(user_a.id)
+        listed = client.get(
+            f"/skills?tenant_id={tenant_a.id}", headers={"Authorization": f"Bearer {token_a}"}
+        )
+        assert listed.status_code == 200
+        assert [skill["id"] for skill in listed.json()] == [created_a.json()["id"]]
+
+    async def test_get_returns_current_tenant_skill(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Get returns a Skill belonging to the trusted tenant."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+        )
+        assert created.status_code == 200
+
+        fetched = client.get(
+            f"/skills/{created.json()['id']}?tenant_id={tenant.id}", headers=headers
+        )
+        assert fetched.status_code == 200
+        assert fetched.json()["id"] == created.json()["id"]
+        assert fetched.json()["tenant_id"] == tenant.id
+
+    async def test_get_another_tenants_skill_does_not_leak_existence(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A Skill in another tenant is indistinguishable from a missing Skill."""
+        tenant_a = await _seed_tenant(repositories, "Tenant A")
+        tenant_b = await _seed_tenant(repositories, "Tenant B")
+        user_a = await _seed_user(repositories)
+        user_b = await _seed_user(repositories)
+        await _seed_membership(repositories, user_a.id, tenant_a.id)
+        await _seed_membership(repositories, user_b.id, tenant_b.id)
+
+        authorization_override({user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_b = make_token(user_b.id)
+        created_b = await _create_skill_via_api(client, tenant_b.id, token_b)
+        assert created_b.status_code == 200
+
+        authorization_override({user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_a = make_token(user_a.id)
+        response = client.get(
+            f"/skills/{created_b.json()['id']}?tenant_id={tenant_a.id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert response.status_code == 404
+
+        response = client.get(
+            f"/skills/{created_b.json()['id']}?tenant_id={tenant_b.id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert response.status_code == 403
+
+    async def test_delete_removes_current_tenant_skill(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Delete removes a Skill belonging to the trusted tenant."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+        )
+        assert created.status_code == 200
+
+        deleted = client.delete(
+            f"/skills/{created.json()['id']}?tenant_id={tenant.id}", headers=headers
+        )
+        assert deleted.status_code == 204
+
+        gone = client.get(f"/skills/{created.json()['id']}?tenant_id={tenant.id}", headers=headers)
+        assert gone.status_code == 404
+
+    async def test_delete_another_tenants_skill_does_not_leak_existence(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Deleting another tenant's Skill is a no-op that does not reveal existence."""
+        tenant_a = await _seed_tenant(repositories, "Tenant A")
+        tenant_b = await _seed_tenant(repositories, "Tenant B")
+        user_a = await _seed_user(repositories)
+        user_b = await _seed_user(repositories)
+        await _seed_membership(repositories, user_a.id, tenant_a.id)
+        await _seed_membership(repositories, user_b.id, tenant_b.id)
+
+        authorization_override({user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_b = make_token(user_b.id)
+        created_b = await _create_skill_via_api(client, tenant_b.id, token_b)
+        assert created_b.status_code == 200
+
+        authorization_override({user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_a = make_token(user_a.id)
+        deleted = client.delete(
+            f"/skills/{created_b.json()['id']}?tenant_id={tenant_a.id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert deleted.status_code == 204
+
+        authorization_override({user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token_b = make_token(user_b.id)
+        still_there = client.get(
+            f"/skills/{created_b.json()['id']}?tenant_id={tenant_b.id}",
+            headers={"Authorization": f"Bearer {token_b}"},
+        )
+        assert still_there.status_code == 200
+
+
+class TestSkillNotFound:
+    """Requirement 14: missing Skills follow the established 404 behavior."""
+
+    async def test_missing_skill_is_404(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Get of a missing Skill within the trusted tenant returns 404."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404
+
+
+class TestSkillRouteSurface:
+    """Requirement 15: the API surface contains exactly the intended endpoints."""
+
+    def test_skills_route_surface_is_exactly_the_intended_endpoints(self):
+        """Only the four approved Skills management routes are exposed."""
+        from arc.api.controllers import api_router
+
+        paths = {
+            f"{method} {route.path}"
+            for route in api_router.routes
+            if hasattr(route, "methods") and hasattr(route, "path")
+            for method in route.methods
+            if method in HTTP_METHODS
+        }
+        skills_paths = {path for path in paths if "/skills" in path}
+        assert skills_paths == {
+            "POST /skills",
+            "GET /skills",
+            "GET /skills/{skill_id}",
+            "DELETE /skills/{skill_id}",
+        }

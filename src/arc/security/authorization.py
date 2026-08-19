@@ -7,8 +7,10 @@ matrix.
 
 Design decisions (X-11 implementation decisions, NOT defined by X-10):
 
-- The permission matrix below is the smallest set required to demonstrate
-  X-11. It is not a forward-looking model for future product modules.
+- The permission matrix below was the smallest set required to demonstrate
+  X-11; the approved ``skill:create``/``skill:read``/``skill:delete``
+  permissions (Skills Engine API) are the first product-extension
+  permissions.
 - No Connector, Knowledge, or Operations permissions are defined.
 - ``EMPLOYEE`` intentionally has no matrix permissions; it is allowed only
   self-scoped operations (for example listing the authenticated user's own
@@ -31,15 +33,28 @@ TENANT_CREATE = Permission(resource="tenant", action="create")
 USER_CREATE = Permission(resource="user", action="create")
 MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
 TENANT_READ = Permission(resource="tenant", action="read")
+SKILL_CREATE = Permission(resource="skill", action="create")
+SKILL_READ = Permission(resource="skill", action="read")
+SKILL_DELETE = Permission(resource="skill", action="delete")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     # Global provisioning permissions; they intentionally require NO tenant context.
     ApplicationRole.PLATFORM_ADMINISTRATOR: frozenset(
-        {TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE, TENANT_READ}
+        {
+            TENANT_CREATE,
+            USER_CREATE,
+            MEMBERSHIP_CREATE,
+            TENANT_READ,
+            SKILL_CREATE,
+            SKILL_READ,
+            SKILL_DELETE,
+        }
     ),
-    ApplicationRole.COMPANY_ADMINISTRATOR: frozenset({TENANT_READ}),
-    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ}),
+    ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
+        {TENANT_READ, SKILL_CREATE, SKILL_READ, SKILL_DELETE}
+    ),
+    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ, SKILL_READ}),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).
     ApplicationRole.EMPLOYEE: frozenset(),
 }

@@ -7,6 +7,9 @@ application RBAC:
   (PLATFORM_ADMINISTRATOR only).
 - Tenant-scoped reads require a trusted X-10 tenant context and the
   ``tenant:read`` permission.
+- Tenant-scoped Skills management requires a trusted X-10 tenant context
+  and the approved ``skill:create``/``skill:read``/``skill:delete``
+  permissions.
 - Identity-scoped listing is self-only: the requested ``user_id`` must
   equal the authenticated principal's user ID (JWT ``sub``).
 
@@ -18,8 +21,16 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from arc.domain.models import Tenant, TenantContext, User
-from arc.security.authorization import TENANT_CREATE, TENANT_READ, USER_CREATE
+from arc.db.connection import NotFoundError
+from arc.domain.models import Skill, SkillStatus, Tenant, TenantContext, User
+from arc.security.authorization import (
+    SKILL_CREATE,
+    SKILL_DELETE,
+    SKILL_READ,
+    TENANT_CREATE,
+    TENANT_READ,
+    USER_CREATE,
+)
 from arc.security.dependencies import (
     get_authenticated_principal,
     require_permission,
@@ -230,3 +241,121 @@ async def get_tenants_for_user(
         }
         for tenant in tenants
     ]
+
+
+def _skill_response(skill: Skill) -> Dict[str, Any]:
+    """Serialize a Skill for the API response envelope."""
+    return {
+        "id": skill.id,
+        "tenant_id": skill.tenant_id,
+        "name": skill.name,
+        "version": skill.version,
+        "purpose": skill.purpose,
+        "status": skill.status.value,
+        "inputs": skill.inputs,
+        "preconditions": skill.preconditions,
+        "steps": skill.steps,
+        "constraints": skill.constraints,
+        "allowed_tools": skill.allowed_tools,
+        "approval_required": skill.approval_required,
+        "expected_output": skill.expected_output,
+        "failure_behavior": skill.failure_behavior,
+        "provenance": skill.provenance,
+        "created_at": skill.created_at.isoformat(),
+        "updated_at": skill.updated_at.isoformat(),
+    }
+
+
+@api_router.post("/skills")
+async def create_skill(
+    skill_data: Dict[str, Any],
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(SKILL_CREATE)),
+    skill_service: SkillService = Depends(lambda: app_context.skill_service),
+) -> Dict[str, Any]:
+    """Create a new Skill for the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context (the client-supplied
+    ``tenant_id`` is request input only and is verified against the
+    authenticated principal's persisted membership) and the ``skill:create``
+    permission. Tenant ownership is derived exclusively from the trusted
+    context: a caller-supplied tenant override is never trusted and the
+    SkillService generates the Skill ID.
+    """
+    try:
+        status_value = SkillStatus(skill_data.get("status", "active"))
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill status")
+
+    skill = Skill(
+        id="unassigned",
+        tenant_id=context.tenant_id,
+        name=skill_data.get("name"),
+        purpose=skill_data.get("purpose"),
+        version=skill_data.get("version", "1"),
+        inputs=skill_data.get("inputs", []),
+        preconditions=skill_data.get("preconditions", []),
+        steps=skill_data.get("steps", []),
+        constraints=skill_data.get("constraints", []),
+        allowed_tools=skill_data.get("allowed_tools", []),
+        approval_required=skill_data.get("approval_required", False),
+        expected_output=skill_data.get("expected_output"),
+        failure_behavior=skill_data.get("failure_behavior"),
+        provenance=skill_data.get("provenance"),
+        status=status_value,
+    )
+    created_skill = await skill_service.create_skill(context, skill)
+    return _skill_response(created_skill)
+
+
+@api_router.get("/skills")
+async def list_skills(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(SKILL_READ)),
+    skill_service: SkillService = Depends(lambda: app_context.skill_service),
+) -> List[Dict[str, Any]]:
+    """List all Skills belonging to the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the ``skill:read``
+    permission. Only Skills of the trusted tenant are returned.
+    """
+    skills = await skill_service.list_skills(context)
+    return [_skill_response(skill) for skill in skills]
+
+
+@api_router.get("/skills/{skill_id}")
+async def get_skill(
+    skill_id: str,
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(SKILL_READ)),
+    skill_service: SkillService = Depends(lambda: app_context.skill_service),
+) -> Dict[str, Any]:
+    """Get a Skill belonging to the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the ``skill:read``
+    permission. A Skill outside the trusted tenant is indistinguishable from
+    a missing Skill (404): cross-tenant access never reveals existence.
+    """
+    try:
+        skill = await skill_service.get_skill(context, skill_id)
+    except NotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+    return _skill_response(skill)
+
+
+@api_router.delete("/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_skill(
+    skill_id: str,
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(SKILL_DELETE)),
+    skill_service: SkillService = Depends(lambda: app_context.skill_service),
+) -> None:
+    """Delete a Skill belonging to the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``skill:delete`` permission. Deletion is tenant-scoped: a Skill outside
+    the trusted tenant is not deleted and the response is indistinguishable
+    from a successful no-op delete.
+    """
+    await skill_service.delete_skill(context, skill_id)
+    return None
