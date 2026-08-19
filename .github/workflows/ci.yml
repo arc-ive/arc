@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Lint, Format & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build application image
+        run: docker compose build arc
+
+      - name: Run Ruff checks
+        run: docker compose run --rm arc ruff check .
+
+      - name: Check formatting
+        run: docker compose run --rm arc ruff format --check .
+
+      - name: Run tests
+        run: docker compose run --rm arc python -m pytest -q
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
