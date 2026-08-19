@@ -11,10 +11,10 @@ from typing import Dict, List, Optional, Tuple
 
 import pytest
 from presidio_analyzer import RecognizerResult
+from presidio_anonymizer import AnonymizerEngine
 
 from arc.services.pii import (
     DEFAULT_ENABLED_CATEGORIES,
-    MASK_MAX_CHARS,
     PiiDetection,
     PiiGuardConfig,
     PiiGuardError,
@@ -28,7 +28,22 @@ EMAIL_DETECTION = ("EMAIL_ADDRESS", 8, 31, 0.9)
 
 
 def require_model() -> None:
-    pytest.importorskip("en_core_web_lg")
+    """Fail explicitly when the en_core_web_lg model is unavailable.
+
+    en_core_web_lg is a declared project dependency (pyproject.toml), so a
+    missing model is an environment defect, not a reason to silently skip
+    the real-Presidio integration tests.
+    """
+    try:
+        import en_core_web_lg  # noqa: F401
+    except ImportError as exc:
+        raise AssertionError(
+            "The en_core_web_lg spaCy model is required by the Presidio "
+            "integration tests and is a declared project dependency "
+            "(pyproject.toml, en-core-web-lg). Install the project "
+            "dependencies (e.g. `pip install -e .`) and re-run; the "
+            "integration tests do not silently skip."
+        ) from exc
 
 
 class FakeAnalyzer:
@@ -116,7 +131,7 @@ def test_custom_mask_operator_applies_configured_char() -> None:
     mask_config = anonymizer.operators_arg["EMAIL_ADDRESS"]
     assert mask_config.operator_name == "mask"
     assert mask_config.params["masking_char"] == "#"
-    assert mask_config.params["chars_to_mask"] == MASK_MAX_CHARS
+    assert mask_config.params["chars_to_mask"] == 23
     assert mask_config.params["from_end"] is False
 
 
@@ -193,6 +208,101 @@ def test_invalid_operator_config_raises_value_error() -> None:
 def test_invalid_mask_char_raises_value_error() -> None:
     with pytest.raises(ValueError, match="mask_char must be a single character"):
         PiiGuardConfig(mask_char="**")
+
+
+def test_default_categories_are_globally_applicable() -> None:
+    assert DEFAULT_ENABLED_CATEGORIES == {
+        "PERSON",
+        "EMAIL_ADDRESS",
+        "PHONE_NUMBER",
+        "CREDIT_CARD",
+        "IBAN_CODE",
+        "IP_ADDRESS",
+    }
+
+
+def test_regional_identifiers_remain_configurable() -> None:
+    config = PiiGuardConfig(enabled_categories={"US_SSN"})
+    service, analyzer, _ = make_service([("US_SSN", 0, 11, 0.9)], config=config)
+
+    result = service.sanitize("111-22-3333")
+
+    assert analyzer.entities_arg == ["US_SSN"]
+    assert "111-22-3333" not in result.sanitized_text
+    assert "<US_SSN>" in result.sanitized_text
+
+
+def make_real_anonymizer_service(
+    analyzer_results: List[Tuple[str, int, int, float]],
+    config: PiiGuardConfig,
+) -> PiiGuardService:
+    analyzer = FakeAnalyzer(analyzer_results)
+    return PiiGuardService(
+        config=config,
+        analyzer_engine=analyzer,
+        anonymizer_engine=AnonymizerEngine(),
+    )
+
+
+def test_mask_covers_entity_longer_than_64_chars() -> None:
+    long_value = "a" * 70 + "@example.com"
+    assert len(long_value) > 64
+    text = f"Contact {long_value} now."
+    start = text.index(long_value)
+    service = make_real_anonymizer_service(
+        [("EMAIL_ADDRESS", start, start + len(long_value), 0.9)],
+        PiiGuardConfig(operators={"EMAIL_ADDRESS": "mask"}),
+    )
+
+    result = service.sanitize(text)
+
+    assert long_value not in result.sanitized_text
+    assert result.sanitized_text[start : start + len(long_value)] == "*" * len(long_value)
+
+
+def test_mask_covers_multiple_entities_of_different_lengths() -> None:
+    long_value = "a" * 70 + "@example.com"
+    short_value = "bob@example.com"
+    text = f"Contact {long_value} or {short_value}."
+    long_start = text.index(long_value)
+    short_start = text.index(short_value)
+    service = make_real_anonymizer_service(
+        [
+            ("EMAIL_ADDRESS", long_start, long_start + len(long_value), 0.9),
+            ("EMAIL_ADDRESS", short_start, short_start + len(short_value), 0.9),
+        ],
+        PiiGuardConfig(operators={"EMAIL_ADDRESS": "mask"}),
+    )
+
+    result = service.sanitize(text)
+
+    assert long_value not in result.sanitized_text
+    assert short_value not in result.sanitized_text
+    assert result.sanitized_text[long_start : long_start + len(long_value)] == "*" * len(long_value)
+    assert result.sanitized_text[short_start : short_start + len(short_value)] == "*" * len(short_value)
+
+
+def test_mask_covers_space_separated_entities_of_same_type() -> None:
+    text = "Contact alice@example.com bob@example.com now."
+    first_start = text.index("alice@example.com")
+    second_start = text.index("bob@example.com")
+    service = make_real_anonymizer_service(
+        [
+            ("EMAIL_ADDRESS", first_start, first_start + len("alice@example.com"), 0.9),
+            ("EMAIL_ADDRESS", second_start, second_start + len("bob@example.com"), 0.9),
+        ],
+        PiiGuardConfig(operators={"EMAIL_ADDRESS": "mask"}),
+    )
+
+    result = service.sanitize(text)
+
+    assert "alice@example.com" not in result.sanitized_text
+    assert "bob@example.com" not in result.sanitized_text
+    merged_span_start = first_start
+    merged_span_end = second_start + len("bob@example.com")
+    assert result.sanitized_text[merged_span_start:merged_span_end] == "*" * (
+        merged_span_end - merged_span_start
+    )
 
 
 def test_analyzer_failure_raises_sanitized_error() -> None:
@@ -282,8 +392,9 @@ class TestPiiIntegration:
 
     def test_real_us_ssn_detection_and_redaction(self, service) -> None:
         text = "The employee record shows SSN 111-22-3333 on file."
+        config = PiiGuardConfig(enabled_categories={"US_SSN"})
 
-        result = service.sanitize(text)
+        result = PiiGuardService(config=config).sanitize(text)
 
         assert result.detected_count >= 1
         assert "US_SSN" in {d.entity_type for d in result.detections}

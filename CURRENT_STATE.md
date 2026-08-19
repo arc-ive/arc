@@ -153,7 +153,7 @@ Microsoft Presidio-based text sanitization service in
   `spacy==3.8.15`, and the `en-core-web-lg` 3.8.0 model wheel (pinned via
   the official GitHub release URL; spaCy models are no longer published
   to PyPI).
-- **Tests added.** `tests/test_pii.py` — 22 tests (14 unit with injected
+- **Tests added.** `tests/test_pii.py` — 27 tests (19 unit with injected
   fake engines, 8 integration with real Presidio + spaCy covering email,
   phone, person, SSN, credit card, non-sensitive preservation, disabled
   categories, custom operators).
@@ -164,15 +164,16 @@ Microsoft Presidio-based text sanitization service in
   error messages and logs never contain input text or detected values.
 - Supported anonymization operators: replace (default), mask, redact.
 - Default detected categories: PERSON, EMAIL_ADDRESS, PHONE_NUMBER,
-  US_SSN, CREDIT_CARD, US_PASSPORT, US_DRIVER_LICENSE, US_ITIN,
-  IBAN_CODE, IP_ADDRESS (explicit and testable; dates/locations excluded
-  to preserve useful content).
+  CREDIT_CARD, IBAN_CODE, IP_ADDRESS (globally applicable identifiers;
+  explicit and testable; dates/locations excluded to preserve useful
+  content). Regional identifiers such as US_SSN remain configurable via
+  `PiiGuardConfig(enabled_categories=...)`.
 - Stateless: no persistence, no HTTP endpoint, no logging of content,
   no new environment variables.
 
 ### Verification
 
-- 64 tests pass (Docker + real PostgreSQL): 42 existing + 22 new.
+- 69 tests pass (Docker + real PostgreSQL): 42 existing + 27 new.
 - ruff check and format pass on the PII files (repo-wide ruff still
   fails on documented pre-existing violations in unrelated files).
 - `git diff --check` clean.

@@ -19,10 +19,17 @@ Behavior notes (implementation decisions, not product requirements):
 - Error messages never contain the input text or detected values.
 - The default category set and operator behavior are explicit and
   testable via PiiGuardConfig.
+- The default categories are globally applicable (PERSON, EMAIL_ADDRESS,
+  PHONE_NUMBER, CREDIT_CARD, IBAN_CODE, IP_ADDRESS). Regional identifiers
+  such as US_SSN remain configurable through PiiGuardConfig.enabled_categories.
+- Mask sizing is derived from the detected spans: the mask operator is
+  configured to cover the longest merged span per entity type, so the
+  complete detected entity is masked regardless of its length.
 """
 
+import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 SUPPORTED_OPERATORS = frozenset({"replace", "mask", "redact"})
 
@@ -31,17 +38,11 @@ DEFAULT_ENABLED_CATEGORIES = frozenset(
         "PERSON",
         "EMAIL_ADDRESS",
         "PHONE_NUMBER",
-        "US_SSN",
         "CREDIT_CARD",
-        "US_PASSPORT",
-        "US_DRIVER_LICENSE",
-        "US_ITIN",
         "IBAN_CODE",
         "IP_ADDRESS",
     }
 )
-
-MASK_MAX_CHARS = 64
 
 
 class PiiGuardError(Exception):
@@ -201,7 +202,7 @@ class PiiGuardService:
             raise PiiGuardError("PII analysis failed") from exc
 
     def _anonymize(self, text: str, analyzer_results: Any) -> str:
-        operators = self._operators(analyzer_results)
+        operators = self._operators(text, analyzer_results)
         try:
             engine_result = self._anonymizer().anonymize(
                 text=text,
@@ -217,7 +218,7 @@ class PiiGuardService:
             return sorted(DEFAULT_ENABLED_CATEGORIES)
         return sorted(self.config.enabled_categories)
 
-    def _operators(self, analyzer_results: Any) -> Optional[Dict[str, Any]]:
+    def _operators(self, text: str, analyzer_results: Any) -> Optional[Dict[str, Any]]:
         if not self.config.operators:
             return None
 
@@ -237,15 +238,44 @@ class PiiGuardService:
                     "mask",
                     {
                         "masking_char": self.config.mask_char,
-                        # Covers the maximum realistic PII value length
-                        # so the whole value is masked.
-                        "chars_to_mask": MASK_MAX_CHARS,
+                        "chars_to_mask": self._mask_chars(entity_type, analyzer_results, text),
                         "from_end": False,
                     },
                 )
             elif operator_name == "redact":
                 operators[entity_type] = OperatorConfig("redact", None)
         return operators or None
+
+    @staticmethod
+    def _mask_chars(entity_type: str, analyzer_results: Any, text: str) -> int:
+        """Return the mask length covering the longest detected span of a type.
+
+        The Presidio anonymizer merges same-type spans that intersect or are
+        separated only by spaces before operating on them, and its mask
+        operator masks at most ``min(span_length, chars_to_mask)`` characters.
+        Sizing ``chars_to_mask`` to the longest such merged span guarantees
+        every detected span of this entity type is masked completely. Because
+        the operator clamps to the span length, a slight over-estimate is
+        harmless.
+        """
+        spans = sorted(
+            (result.start, result.end)
+            for result in analyzer_results
+            if result.entity_type == entity_type
+        )
+        merged: List[Tuple[int, int]] = []
+        for start, end in spans:
+            if merged and start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        runs: List[Tuple[int, int]] = []
+        for start, end in merged:
+            if runs and re.fullmatch(r" +", text[runs[-1][1] : start]):
+                runs[-1] = (runs[-1][0], end)
+            else:
+                runs.append((start, end))
+        return max(end - start for start, end in runs)
 
     def _analyzer(self) -> Any:
         if self._analyzer_engine is None:
