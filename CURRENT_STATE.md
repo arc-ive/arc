@@ -110,7 +110,9 @@ X-10 enforces that every `TenantContext` is backed by a persisted `Membership` r
 - ruff check and format pass on X-10 files.
 - Security review passed — all invariants confirmed.
 
-### Review fix: API boundary isolation (working tree, not committed)
+### Review fix: API boundary isolation (merged)
+
+Merged to `main` as `fa82369` via PR #15 (merge commit `63b36bf`).
 
 Bharath's X-10 PR review raised two API-boundary concerns; both are
 addressed without implementing authentication or RBAC:
