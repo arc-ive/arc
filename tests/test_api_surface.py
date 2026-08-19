@@ -1,10 +1,18 @@
-"""API-boundary regression tests for the X-10 review fix.
+"""API-boundary regression tests for the X-10 review fix and X-11.
 
 These tests prove that privileged and identity-sensitive endpoints
 (membership provisioning and tenant-context creation/validation) are
-isolated from the public application API surface and exist only as
-development-only scaffolding until X-11 provides authentication and an
-authenticated principal.
+isolated from the public application API surface.
+
+X-11 changes:
+- Membership provisioning is protected by authentication and the global
+  ``membership:create`` permission (PLATFORM_ADMINISTRATOR only) and remains
+  development-only.
+- The tenant-context scaffolding endpoints
+  (``POST /internal/dev/tenant-contexts``,
+  ``GET /internal/dev/tenant-contexts/validate``) accepted a caller-supplied
+  ``user_id`` and are REMOVED. X-11 establishes identity exclusively from
+  the authenticated principal (JWT ``sub``).
 """
 
 import json
@@ -24,28 +32,23 @@ from arc.services.domain import TenantContextService
 
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 
-PUBLIC_PATHS = {
-    "POST /users/{user_id}/tenants/{tenant_id}/memberships",
-    "POST /tenant-contexts",
-    "GET /tenant-contexts/validate",
-}
-
 DEV_PATHS = {
     "POST /internal/dev/users/{user_id}/tenants/{tenant_id}/memberships",
-    "POST /internal/dev/tenant-contexts",
-    "GET /internal/dev/tenant-contexts/validate",
 }
 
 DEV_OPENAPI_PATHS = {
     "/internal/dev/users/{user_id}/tenants/{tenant_id}/memberships",
-    "/internal/dev/tenant-contexts",
-    "/internal/dev/tenant-contexts/validate",
 }
 
 LEGACY_PUBLIC_OPENAPI_PATHS = {
     "/users/{user_id}/tenants/{tenant_id}/memberships",
     "/tenant-contexts",
     "/tenant-contexts/validate",
+}
+
+REMOVED_DEV_OPENAPI_PATHS = {
+    "/internal/dev/tenant-contexts",
+    "/internal/dev/tenant-contexts/validate",
 }
 
 
@@ -74,9 +77,16 @@ def test_public_api_does_not_expose_caller_supplied_identity_context():
 
 
 def test_dev_router_isolates_development_endpoints():
-    """The dev-only router retains the endpoints under an /internal/dev prefix."""
+    """The dev-only router retains membership provisioning under /internal/dev."""
     dev = _route_paths(dev_router.routes)
     assert dev == DEV_PATHS
+
+
+def test_dev_router_has_no_caller_supplied_identity_scaffolding():
+    """X-11 removed the tenant-context scaffolding that trusted a caller-supplied user_id."""
+    dev = _route_paths(dev_router.routes)
+    assert "POST /internal/dev/tenant-contexts" not in dev
+    assert "GET /internal/dev/tenant-contexts/validate" not in dev
 
 
 def _openapi_paths(app_env) -> set:
@@ -131,6 +141,13 @@ def test_legacy_public_paths_absent_in_all_environments():
     for app_env in ("development", "production", None):
         paths = _openapi_paths(app_env)
         assert not LEGACY_PUBLIC_OPENAPI_PATHS.intersection(paths)
+
+
+def test_removed_dev_scaffolding_absent_in_all_environments():
+    """The caller-supplied-identity dev scaffolding must be absent everywhere."""
+    for app_env in ("development", "production", None):
+        paths = _openapi_paths(app_env)
+        assert not REMOVED_DEV_OPENAPI_PATHS.intersection(paths)
 
 
 async def test_context_security_does_not_depend_on_provisioning_endpoint():
