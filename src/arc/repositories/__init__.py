@@ -2,7 +2,7 @@
 
 from typing import List, Protocol
 
-from arc.domain.models import ConnectorConfig, Membership, Tenant, User
+from arc.domain.models import ConnectorConfig, Membership, Skill, Tenant, User
 
 
 class TenantRepository(Protocol):
@@ -110,6 +110,30 @@ class ConnectorRepository(Protocol):
 
     async def delete(self, connector_id: str, tenant_id: str) -> None:
         """Delete a connector configuration, scoped to a tenant."""
+        ...
+
+
+class SkillRepository(Protocol):
+    """Repository for Skill entities."""
+
+    async def create(self, skill: Skill) -> Skill:
+        """Create a new skill."""
+        ...
+
+    async def get_by_id(self, skill_id: str, tenant_id: str) -> Skill:
+        """Get a skill by ID, scoped to a tenant."""
+        ...
+
+    async def list_for_tenant(self, tenant_id: str) -> List[Skill]:
+        """List all skills for a tenant."""
+        ...
+
+    async def exists(self, skill_id: str, tenant_id: str) -> bool:
+        """Check if a skill exists within a tenant."""
+        ...
+
+    async def delete(self, skill_id: str, tenant_id: str) -> None:
+        """Delete a skill, scoped to a tenant."""
         ...
 
 

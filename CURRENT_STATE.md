@@ -2,11 +2,11 @@
 
 Last Updated:
 
-2026-08-18
+2026-08-19
 
 Current Phase:
 
-Foundation Phase — X-11 implemented (working tree), pending review/merge
+Foundation Phase — X-11 and Skills Engine foundation slice implemented (working tree), pending review/merge
 
 ## Completed
 
@@ -212,6 +212,69 @@ with the X-10 tenant membership boundary.
 - `.env` (local, gitignored) contains a development-only JWT secret and
   `demo-user` as platform_administrator for the simulated environment.
 
+## Skills Engine: Foundation Slice (Implemented — working tree)
+
+**Branch:** working tree on `feat/authentication` (not yet committed/merged)
+**Scope:** TRD §13 (Skill definition), §25 skill-level validation only.
+
+Implements the first Skills Engine slice following the existing
+ConnectorConfig/ConnectorRepository/ConnectorService pattern. Persistence uses
+the agreed Option B design: scalar Skill envelope columns plus a JSONB
+`definition` column. The typed `Skill` model is the application contract; the
+JSONB column is a persistence detail and NOT claimed as the final Skill
+serialization format (ADR-001, TRD §37 leave it open).
+
+### What changed
+
+- **Domain:** `SkillStatus` enum + `Skill` dataclass (name, purpose, inputs,
+  preconditions, steps, constraints, allowed_tools, approval_required,
+  expected_output, failure_behavior, provenance, version) with
+  `__post_init__` validation in `src/arc/domain/models.py`; exports in
+  `src/arc/domain/__init__.py`.
+- **Schema:** `skills` table in `src/arc/db/schema.sql` — envelope columns
+  (id PK, tenant_id FK CASCADE, name, version, purpose, status), `definition
+  JSONB NOT NULL`, `UNIQUE(tenant_id, name, version)`, `idx_skills_tenant_id`.
+- **Repository:** `SkillRepository` Protocol (create, get_by_id,
+  list_for_tenant, exists, delete) and `PostgreSQLSkillRepository` in
+  `src/arc/repositories/skills.py`; every query is tenant_id-scoped.
+- **Service:** `SkillService` in `src/arc/services/skills.py` — create/get/
+  list/delete (caller-supplied tenant_id always overridden by trusted context)
+  plus TRD §25 validation helpers `preconditions_met` and `is_tool_allowed`.
+  No execution engine.
+- **Wiring:** repo + service registered in `src/arc/app.py`; `skill_service`
+  property on `ApplicationContext` in `src/arc/api/controllers.py`.
+- **Tests:** `tests/test_skill_domain.py`, `tests/test_skill_service.py`,
+  `tests/test_skill_repository.py` (unit, mock-repo service, real-PostgreSQL
+  incl. tenant-isolation cases).
+- **Bug fixed during verification:** this asyncpg version's default `jsonb`
+  codec expects/returns JSON text, not Python dicts — repository now uses
+  `json.dumps` on insert and `json.loads` on read.
+
+### What was NOT changed
+
+- No AI Agent, Unified Intelligence, Company Brain, RAG, embeddings, AI Tool
+  registry, Human Intervention, or LLM integration.
+- No new API endpoints, no new RBAC permissions.
+- PRD, TRD, ADRs — read-only, not modified.
+- Dockerfiles, dependencies, and application code outside this slice — not
+  modified. No image rebuild performed.
+
+### Verification
+
+- Skills Engine tests: 50 passed (Docker + real PostgreSQL).
+- Full suite excluding `tests/test_pii.py`: 174 passed — no regressions.
+- `ruff check` and `ruff format --check` clean on all changed files;
+  `git diff --check` clean.
+- Tests run via bind-mount + `PYTHONPATH=/app/src` (no image rebuild).
+
+### Pending
+
+- Human review of the diff; commit to `feat/authentication`; PR + merge.
+- `tests/test_pii.py` cannot be collected in the current running image
+  (`presidio_analyzer` missing — image predates the PII dependency merge).
+  A fresh `docker compose build arc` (downloads ~400MB `en_core_web_lg`) is
+  required for full-suite CI parity.
+
 ## In Progress
 
 ### GitHub / Engineering Workflow
@@ -282,15 +345,16 @@ Bala is responsible for:
 ## Next
 
 1. **Review and merge X-11** (feat/authentication): authentication + application RBAC implemented, tests passing; needs human review, PR, and merge.
-2. Complete X-6 verification and close the Linear issue.
-3. Coordinate the next Bala Foundation issue with Joe and Bharath.
-4. Continue the AI development setup.
-5. Coordinate CI and reproducible environment work with Bharath.
-6. Connect GitHub with Linear.
-7. Benchmark candidate AI models.
-8. Complete Foundation cross-platform verification.
-9. Conduct the final Foundation review.
-10. Begin product implementation only after Foundation acceptance.
+2. **Review and merge the Skills Engine foundation slice** (working tree on feat/authentication): 50 skill tests + full suite (minus test_pii.py) pass; needs human review, PR, and merge.
+3. Complete X-6 verification and close the Linear issue.
+4. Coordinate the next Bala Foundation issue with Joe and Bharath.
+5. Continue the AI development setup.
+6. Coordinate CI and reproducible environment work with Bharath.
+7. Connect GitHub with Linear.
+8. Benchmark candidate AI models.
+9. Complete Foundation cross-platform verification.
+10. Conduct the final Foundation review.
+11. Begin product implementation only after Foundation acceptance.
 
 ## Blocked / Waiting
 
