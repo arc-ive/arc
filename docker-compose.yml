@@ -22,6 +22,11 @@ services:
     environment:
       APP_ENV: ${APP_ENV}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      JWT_EXPIRY_SECONDS: ${JWT_EXPIRY_SECONDS}
+      APPLICATION_ROLE_ASSIGNMENTS: ${APPLICATION_ROLE_ASSIGNMENTS}
     ports:
       - "8000:8000"
     depends_on:

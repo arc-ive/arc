@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10 complete, X-11 next
+Foundation Phase — X-11 implemented (working tree), pending review/merge
 
 ## Completed
 
@@ -133,51 +133,84 @@ surface, the development-only isolation, and the intended identity flow.
 
 ### Known gaps (pre-existing, not X-10 defects)
 
-- Membership provisioning is development-only (no public endpoint) and remains unauthenticated at the service layer. Issue #14 will add auth.
+- Membership provisioning is development-only (no public endpoint) and is now protected by X-11 authentication + the `membership:create` permission.
 - `httpx2>=2.0,<3.0` is the original dependency; real `httpx` has no 2.x releases. `tests/test_health.py` uses FastAPI's `TestClient` which requires real `httpx`. Pre-existing separate dependency defect.
 - Repo-wide ruff CI gate will fail due to pre-existing violations in unmodified files.
 
-## PII Guard: Phase 1 Foundation (implemented, not committed)
+## X-11: Authentication and Application RBAC (Implemented — working tree)
 
-**Branch:** `feat/pii-guard`
+**Branch:** `feat/authentication` (not yet committed/merged)
+**Issue:** GitHub #14 — "feat: implement authentication and RBAC foundation"
 
-Implemented the approved PII Guard foundation: an in-process, stateless
-Microsoft Presidio-based text sanitization service in
-`src/arc/services/pii.py` (`PiiGuardService.sanitize(text) -> PiiResult`,
-`PiiGuardConfig`, `PiiGuardError`).
+X-11 adds JWT HS256 bearer authentication and application RBAC, integrated
+with the X-10 tenant membership boundary.
 
 ### What changed
 
-- **Pinned dependencies added** in `pyproject.toml`:
-  `presidio-analyzer==2.2.364`, `presidio-anonymizer==2.2.364`,
-  `spacy==3.8.15`, and the `en-core-web-lg` 3.8.0 model wheel (pinned via
-  the official GitHub release URL; spaCy models are no longer published
-  to PyPI).
-- **Tests added.** `tests/test_pii.py` — 27 tests (19 unit with injected
-  fake engines, 8 integration with real Presidio + spaCy covering email,
-  phone, person, SSN, credit card, non-sensitive preservation, disabled
-  categories, custom operators).
+- **New `src/arc/security/` package:**
+  - `models.py` — `ApplicationRole` (platform_administrator, company_administrator,
+    operations_user, employee), `AuthenticatedPrincipal` (user_id ONLY, from JWT
+    `sub`), `Permission` (resource:action).
+  - `settings.py` — `SecuritySettings` from environment, `JWT_SECRET` (min 16
+    chars, fail closed), `APPLICATION_ROLE_ASSIGNMENTS` JSON (user_id -> role,
+    fail closed on invalid input).
+  - `jwt.py` — `JwtService` HS256 only, required/validated `sub`/`exp`/`iss`/`aud`,
+    tokens never carry roles/permissions/tenant claims.
+  - `authorization.py` — minimal permission matrix (`tenant:create`,
+    `user:create`, `membership:create` = PLATFORM_ADMINISTRATOR only;
+    `tenant:read` = platform/company admin + operations; EMPLOYEE has none).
+    Default DENY. `ApplicationRole` is completely independent of the X-10
+    `UserRole` (no mapping).
+  - `dependencies.py` — `get_authenticated_principal`, `get_trusted_tenant_context`
+    (X-10 boundary, lazy app_context import), `require_permission`,
+    `require_tenant_permission`.
+- **Public endpoints protected** in `src/arc/api/controllers.py`:
+  `POST /tenants` (tenant:create), `POST /users` (user:create),
+  `GET /tenants/{tenant_id}` and `GET /tenants/{tenant_id}/users`
+  (tenant:read + trusted context), `GET /users/{user_id}/tenants`
+  (authenticated + self-scoped: client-supplied user_id differing from the
+  JWT identity is denied 403; identity never silently substituted).
+- **Dev router** (`src/arc/api/dev_controllers.py`): membership provisioning
+  now requires `membership:create` (PLATFORM_ADMINISTRATOR). The two
+  caller-supplied-identity tenant-context scaffolding endpoints
+  (`POST /internal/dev/tenant-contexts`,
+  `GET /internal/dev/tenant-contexts/validate`) were REMOVED.
+- **Config:** `PyJWT>=2.9,<3.0` added; `JWT_*` and `APPLICATION_ROLE_ASSIGNMENTS`
+  documented in `.env.example` (dev placeholder, not a secret) and wired through
+  `docker-compose.yml`.
+- **Tests:** new `tests/conftest.py` (env pinning, TestClient lifecycle,
+  DB/repo/seeded fixtures, `authorization_override`),
+  `tests/test_authentication.py` (401s, expired/wrong-issuer/audience,
+  no-sub, alg allow-list, identity cannot be injected),
+  `tests/test_rbac.py` (permission matrix, fail-closed, endpoint-level 403s),
+  `tests/test_tenant_authorization.py` (real PG: trusted context, cross-tenant
+  denial, missing membership/tenant denial, membership role never grants
+  application permissions, self-scope). `tests/test_api_surface.py` updated:
+  dev surface is membership-only; removed scaffolding absent everywhere.
 
-### Behavior
+### Implementation decisions (not in the issue)
 
-- Fail-closed: analysis/anonymization errors raise `PiiGuardError`;
-  error messages and logs never contain input text or detected values.
-- Supported anonymization operators: replace (default), mask, redact.
-- Default detected categories: PERSON, EMAIL_ADDRESS, PHONE_NUMBER,
-  CREDIT_CARD, IBAN_CODE, IP_ADDRESS (globally applicable identifiers;
-  explicit and testable; dates/locations excluded to preserve useful
-  content). Regional identifiers such as US_SSN remain configurable via
-  `PiiGuardConfig(enabled_categories=...)`.
-- Stateless: no persistence, no HTTP endpoint, no logging of content,
-  no new environment variables.
+- `AuthorizationService` is built lazily in `security/dependencies.py` (not
+  registered in `app.py`) so `/health` works when `JWT_SECRET` is unset.
+- Generic 401 for all credential failures; 403 for permission/tenant denials
+  (fail closed, no existence leakage for missing tenants).
 
 ### Verification
 
-- 69 tests pass (Docker + real PostgreSQL): 42 existing + 27 new.
-- ruff check and format pass on the PII files (repo-wide ruff still
-  fails on documented pre-existing violations in unrelated files).
-- `git diff --check` clean.
-- PRD, TRD, ADR-001, X-10 code, and X-11 code not modified.
+- 87 tests pass (Docker + real PostgreSQL), repeated runs deterministic.
+- `ruff check` passes on all X-11 files; `ruff format --check` clean.
+- Smoke-tested over real HTTP: /health public; protected endpoints 401
+  without token; valid platform-administrator token creates a tenant; tenant
+  read without membership denied 403.
+- Pre-existing ruff violations remain in unmodified X-10 files
+  (`src/arc/db/connection.py`, `src/arc/domain/__init__.py`,
+  `src/arc/setup/init.py`). Not part of X-11 scope.
+
+### Pending
+
+- Human review of the diff; commit to `feat/authentication`; PR + merge.
+- `.env` (local, gitignored) contains a development-only JWT secret and
+  `demo-user` as platform_administrator for the simulated environment.
 
 ## In Progress
 
@@ -248,7 +281,7 @@ Bala is responsible for:
 
 ## Next
 
-1. **X-11: Application RBAC** — introduce Platform Administrator, Company Administrator, Operations User, Employee/End User roles. These are application-level RBAC roles, distinct from tenant membership roles (OWNER/MEMBER/VIEWER). Do NOT implement until X-11 is explicitly requested.
+1. **Review and merge X-11** (feat/authentication): authentication + application RBAC implemented, tests passing; needs human review, PR, and merge.
 2. Complete X-6 verification and close the Linear issue.
 3. Coordinate the next Bala Foundation issue with Joe and Bharath.
 4. Continue the AI development setup.
@@ -295,7 +328,7 @@ Bharath
 - Unclear ownership between team members.
 - Overengineering infrastructure before demonstrating the need.
 - Treating GitHub branch-protection policy as technically enforced when the current plan does not enforce the ruleset.
-- Membership provisioning is development-only (no public endpoint) and remains unauthenticated at the service layer. Issue #14 will add auth.
+- Membership provisioning is development-only (no public endpoint) and is now protected by X-11 authentication + the `membership:create` permission.
 
 ## Foundation Completion Criteria
 
