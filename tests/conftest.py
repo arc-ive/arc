@@ -31,6 +31,27 @@ SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "arc" / "db" / "sche
 
 
 @pytest.fixture(scope="session", autouse=True)
+async def _initialize_schema():
+    """Bootstrap the PostgreSQL schema before any test executes.
+
+    The suite runs against a real PostgreSQL database and must create the
+    schema itself: on a fresh database the first test that touches the
+    database would otherwise fail with an undefined-table error.
+    """
+    database = ArcDatabase(DATABASE_URL)
+    await database.connect()
+
+    async with database._connection_pool.acquire() as conn:
+        schema = SCHEMA_PATH.read_text()
+
+        for statement in schema.split(";"):
+            if statement.strip():
+                await conn.execute(statement)
+
+    await database.disconnect()
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _test_security_environment():
     """Pin the security environment before any application code runs.
 
