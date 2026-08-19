@@ -29,7 +29,10 @@ class NotFoundError(DatabaseError):
 class ArcDatabase:
     """Database manager for Arc domain models."""
 
-    def __init__(self, database_url: str = "postgresql://arc:arc-dev-password@localhost:5432/arc"):
+    def __init__(
+        self,
+        database_url: str = ("postgresql://arc:arc-dev-password@localhost:5432/arc"),
+    ):
         self.database_url = database_url
         self._connection_pool = None
 
@@ -96,7 +99,9 @@ class ArcDatabase:
             try:
                 await conn.execute(
                     """
-                    INSERT INTO users (id, email, username, status, created_at, updated_at)
+                    INSERT INTO users (
+                        id, email, username, status, created_at, updated_at
+                    )
                     VALUES ($1, $2, $3, $4, $5, $6)
                     """,
                     user.id,
@@ -137,7 +142,9 @@ class ArcDatabase:
             try:
                 await conn.execute(
                     """
-                    INSERT INTO memberships (id, user_id, tenant_id, role, created_at, updated_at)
+                    INSERT INTO memberships (
+                        id, user_id, tenant_id, role, created_at, updated_at
+                    )
                     VALUES ($1, $2, $3, $4, $5, $6)
                     """,
                     membership.id,
@@ -208,7 +215,8 @@ class ArcDatabase:
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT u.id, u.email, u.username, u.status, u.created_at, u.updated_at
+                SELECT u.id, u.email, u.username, u.status,
+                       u.created_at, u.updated_at
                 FROM users u
                 JOIN memberships m ON u.id = m.user_id
                 WHERE m.tenant_id = $1
