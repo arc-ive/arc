@@ -45,3 +45,19 @@ CREATE TABLE IF NOT EXISTS connector_configs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_connector_configs_tenant_id ON connector_configs(tenant_id);
+
+CREATE TABLE IF NOT EXISTS skills (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    version VARCHAR(50) NOT NULL DEFAULT '1',
+    purpose TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    definition JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    UNIQUE(tenant_id, name, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_skills_tenant_id ON skills(tenant_id);

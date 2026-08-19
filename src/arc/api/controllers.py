@@ -33,6 +33,7 @@ from arc.services.domain import (
     TenantService,
     UserService,
 )
+from arc.services.skills import SkillService
 
 
 class ServiceRegistry:
@@ -80,6 +81,10 @@ class ApplicationContext:
     @property
     def connector_service(self) -> ConnectorService:
         return self.services.get("connector_service")
+
+    @property
+    def skill_service(self) -> SkillService:
+        return self.services.get("skill_service")
 
 
 # Global application context

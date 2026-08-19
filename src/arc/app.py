@@ -4,6 +4,7 @@ import os
 
 from arc.db.connection import ArcDatabase
 from arc.repositories.connectors import PostgreSQLConnectorRepository
+from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tenancy import (
     PostgreSQLMembershipRepository,
     PostgreSQLTenantRepository,
@@ -11,6 +12,7 @@ from arc.repositories.tenancy import (
 )
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
+from arc.services.skills import SkillService
 
 
 class Application:
@@ -44,6 +46,7 @@ class Application:
             "user": PostgreSQLUserRepository(self.db),
             "membership": PostgreSQLMembershipRepository(self.db),
             "connector": PostgreSQLConnectorRepository(self.db),
+            "skill": PostgreSQLSkillRepository(self.db),
         }
 
         # Initialize services
@@ -56,6 +59,9 @@ class Application:
 
         # Initialize connector service
         self.services["connector_service"] = ConnectorService(self.repositories["connector"])
+
+        # Initialize skill service
+        self.services["skill_service"] = SkillService(self.repositories["skill"])
 
         # Register services in app context
         from arc.api.controllers import app_context
