@@ -48,6 +48,7 @@ from arc.services.domain import (
 )
 from arc.services.knowledge import KnowledgeService
 from arc.services.pii import PiiGuardError
+from arc.services.skills import SkillService
 
 
 class ServiceRegistry:
@@ -99,6 +100,10 @@ class ApplicationContext:
     @property
     def knowledge_service(self) -> KnowledgeService:
         return self.services.get("knowledge_service")
+
+    @property
+    def skill_service(self) -> SkillService:
+        return self.services.get("skill_service")
 
 
 # Global application context

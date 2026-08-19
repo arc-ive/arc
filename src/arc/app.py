@@ -5,6 +5,7 @@ import os
 from arc.db.connection import ArcDatabase
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tenancy import (
     PostgreSQLMembershipRepository,
     PostgreSQLTenantRepository,
@@ -13,6 +14,7 @@ from arc.repositories.tenancy import (
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
 from arc.services.knowledge import KnowledgeService
+from arc.services.skills import SkillService
 
 
 class Application:
@@ -47,6 +49,7 @@ class Application:
             "membership": PostgreSQLMembershipRepository(self.db),
             "connector": PostgreSQLConnectorRepository(self.db),
             "knowledge": PostgreSQLKnowledgeRepository(self.db),
+            "skill": PostgreSQLSkillRepository(self.db),
         }
 
         # Initialize services
@@ -63,6 +66,9 @@ class Application:
         # Initialize knowledge service (Company Brain foundation) with the
         # shared PII Guard boundary applied during ingestion.
         self.services["knowledge_service"] = KnowledgeService(self.repositories["knowledge"])
+
+        # Initialize skill service
+        self.services["skill_service"] = SkillService(self.repositories["skill"])
 
         # Register services in app context
         from arc.api.controllers import app_context
