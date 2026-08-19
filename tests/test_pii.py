@@ -279,7 +279,9 @@ def test_mask_covers_multiple_entities_of_different_lengths() -> None:
     assert long_value not in result.sanitized_text
     assert short_value not in result.sanitized_text
     assert result.sanitized_text[long_start : long_start + len(long_value)] == "*" * len(long_value)
-    assert result.sanitized_text[short_start : short_start + len(short_value)] == "*" * len(short_value)
+    assert result.sanitized_text[short_start : short_start + len(short_value)] == "*" * len(
+        short_value
+    )
 
 
 def test_mask_covers_space_separated_entities_of_same_type() -> None:
