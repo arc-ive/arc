@@ -18,8 +18,21 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from arc.domain.models import Tenant, TenantContext, User
-from arc.security.authorization import TENANT_CREATE, TENANT_READ, USER_CREATE
+from arc.db.connection import NotFoundError
+from arc.domain.models import (
+    KnowledgeDocument,
+    KnowledgeSource,
+    Tenant,
+    TenantContext,
+    User,
+)
+from arc.security.authorization import (
+    KNOWLEDGE_CREATE,
+    KNOWLEDGE_READ,
+    TENANT_CREATE,
+    TENANT_READ,
+    USER_CREATE,
+)
 from arc.security.dependencies import (
     get_authenticated_principal,
     require_permission,
@@ -33,6 +46,8 @@ from arc.services.domain import (
     TenantService,
     UserService,
 )
+from arc.services.knowledge import KnowledgeService
+from arc.services.pii import PiiGuardError
 
 
 class ServiceRegistry:
@@ -80,6 +95,10 @@ class ApplicationContext:
     @property
     def connector_service(self) -> ConnectorService:
         return self.services.get("connector_service")
+
+    @property
+    def knowledge_service(self) -> KnowledgeService:
+        return self.services.get("knowledge_service")
 
 
 # Global application context
@@ -225,3 +244,107 @@ async def get_tenants_for_user(
         }
         for tenant in tenants
     ]
+
+
+def _knowledge_document_payload(document: KnowledgeDocument) -> Dict[str, Any]:
+    """Serialize a knowledge document for API responses.
+
+    Only sanitized content is ever returned; raw content never reaches
+    persistence or a response.
+    """
+    return {
+        "id": document.id,
+        "tenant_id": document.tenant_id,
+        "source": document.source.value,
+        "provenance": document.provenance,
+        "version": document.version,
+        "status": document.status.value,
+        "content": document.content,
+        "created_at": document.created_at.isoformat(),
+        "updated_at": document.updated_at.isoformat(),
+    }
+
+
+@api_router.post("/tenants/{tenant_id}/knowledge")
+async def create_knowledge_document(
+    tenant_id: str,
+    knowledge_data: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_CREATE)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> Dict[str, Any]:
+    """Create a knowledge document for a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``knowledge:create`` permission. The tenant boundary is derived from
+    the trusted context, never from the request payload. Raw content is
+    sanitized by the PII Guard before persistence.
+    """
+    source_value = knowledge_data.get("source")
+    try:
+        source = KnowledgeSource(source_value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid knowledge source"
+        )
+
+    provenance = knowledge_data.get("provenance")
+    content = knowledge_data.get("content")
+    version = knowledge_data.get("version", 1)
+
+    try:
+        document = await knowledge_service.ingest_document(
+            context=context,
+            source=source,
+            provenance=provenance,
+            content=content,
+            version=version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except PiiGuardError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Knowledge ingestion failed",
+        )
+
+    return _knowledge_document_payload(document)
+
+
+@api_router.get("/tenants/{tenant_id}/knowledge/{document_id}")
+async def get_knowledge_document(
+    tenant_id: str,
+    document_id: str,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> Dict[str, Any]:
+    """Get a knowledge document by ID within a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+        ``knowledge:read`` permission. Cross-tenant access is denied: a member
+        of tenant A can never retrieve tenant B's document, and a missing
+        document is indistinguishable from an inaccessible one (404).
+    """
+    try:
+        document = await knowledge_service.get_document(context, document_id)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge document not found",
+        )
+    return _knowledge_document_payload(document)
+
+
+@api_router.get("/tenants/{tenant_id}/knowledge")
+async def list_knowledge_documents(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> List[Dict[str, Any]]:
+    """List knowledge documents for a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``knowledge:read`` permission. Only the caller's own tenant documents
+    are returned.
+    """
+    documents = await knowledge_service.list_documents(context)
+    return [_knowledge_document_payload(document) for document in documents]

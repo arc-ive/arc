@@ -2,11 +2,11 @@
 
 Last Updated:
 
-2026-08-18
+2026-08-19
 
 Current Phase:
 
-Foundation Phase — X-11 implemented (working tree), pending review/merge
+Foundation Phase — X-11 merged; Company Brain — Knowledge Storage & Ingestion Foundation implemented (working tree, pending review/commit)
 
 ## Completed
 
@@ -212,6 +212,75 @@ with the X-10 tenant membership boundary.
 - `.env` (local, gitignored) contains a development-only JWT secret and
   `demo-user` as platform_administrator for the simulated environment.
 
+## Company Brain — Knowledge Storage & Ingestion Foundation (Implemented — working tree)
+
+**Branch:** `feat/company-brain-foundation` (not yet committed/merged)
+**Base:** `origin/main` (`263e0cb`)
+**Scope:** authorized slice of the Company Brain module — tenant-scoped
+knowledge document storage and PII-boundary ingestion. Reuses the merged
+X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
+
+### What changed
+
+- **Schema** (`src/arc/db/schema.sql`): new `knowledge_documents` table
+  (id PK, tenant FK ON DELETE CASCADE, source, provenance, version >= 1,
+  status in active/archived, content, created/updated timestamps) with
+  CHECK constraints and a tenant index. No embedding/vector columns, no
+  chunking tables, no retrieval indexes (out of scope by authorization).
+- **Domain** (`src/arc/domain/models.py`): `KnowledgeDocument` dataclass
+  with `__post_init__` validation; `KnowledgeSource` (policy, procedure,
+  incident_report, troubleshooting, internal_knowledge, solution — maps to
+  TRD 9.2 knowledge categories); `KnowledgeStatus` (active, archived).
+- **Repository** (`src/arc/repositories/knowledge.py`):
+  `PostgreSQLKnowledgeRepository` implementing the `KnowledgeRepository`
+  Protocol (`src/arc/repositories/__init__.py`). Every query includes a
+  `tenant_id` condition — cross-tenant access is impossible at the SQL
+  level. `NotFoundError`/`DuplicateKeyError` on missing/duplicate.
+- **Service** (`src/arc/services/knowledge.py`): `KnowledgeService` with
+  `ingest_document`/`get_document`/`list_documents`. The tenant boundary
+  comes exclusively from a trusted X-10 `TenantContext`. Ingestion runs
+  raw content through the existing `PiiGuardService` (Microsoft Presidio)
+  BEFORE persistence; on `PiiGuardError` nothing is persisted (fail
+  closed). The PII guard is reused, not reimplemented.
+- **Authorization** (`src/arc/security/authorization.py`): new permissions
+  `knowledge:create` and `knowledge:read`. PLATFORM_ADMINISTRATOR and
+  COMPANY_ADMINISTRATOR: both; OPERATIONS_USER: `knowledge:read`;
+  EMPLOYEE: none. Default DENY.
+- **API** (`src/arc/api/controllers.py`): `POST /tenants/{tenant_id}/knowledge`
+  (create, sanitized), `GET /tenants/{tenant_id}/knowledge/{document_id}`
+  (404 for missing/inaccessible — no existence leakage), and
+  `GET /tenants/{tenant_id}/knowledge` (list). All behind
+  `require_tenant_permission`. Only sanitized content is ever persisted or
+  returned.
+- **Composition root** (`src/arc/app.py`): `PostgreSQLKnowledgeRepository`
+  and `KnowledgeService` registered alongside existing services.
+- **Tests** (new): `tests/test_knowledge_domain.py`,
+  `tests/test_knowledge_repository.py` (real PG, SQL-level tenant
+  isolation), `tests/test_knowledge_service.py` (PII boundary,
+  fail-closed no-persistence, real PiiGuardService integration),
+  `tests/test_knowledge_api.py` (401/403, permission matrix, cross-tenant
+  denial, raw PII sanitized before persistence and response).
+  `tests/test_rbac.py` updated for the knowledge permission matrix.
+
+### What was NOT changed
+
+- Embeddings, pgvector extension/columns, chunking, retrieval/RAG, Skills,
+  AI Agent, Unified Intelligence, webhooks, observability, connector
+  ingestion — all explicitly out of scope for this slice.
+- PII Guard implementation (`src/arc/services/pii.py`) — reused, untouched.
+
+### Verification
+
+- 194 tests pass (Docker + real PostgreSQL), including the 43 new knowledge
+  tests.
+- `ruff check` and `ruff format --check` pass on `src` and `tests`.
+- Mandatory `docker compose build arc` completed (arc service has no volume
+  mount; image rebuilt with the new code before verification).
+
+### Pending
+
+- Human review of the diff; commit to `feat/company-brain-foundation`; PR + merge.
+
 ## In Progress
 
 ### GitHub / Engineering Workflow
@@ -281,8 +350,9 @@ Bala is responsible for:
 
 ## Next
 
-1. **Review and merge X-11** (feat/authentication): authentication + application RBAC implemented, tests passing; needs human review, PR, and merge.
-2. Complete X-6 verification and close the Linear issue.
+1. **Review and merge Company Brain — Knowledge Storage & Ingestion Foundation** (feat/company-brain-foundation): implemented on top of main, tests passing; needs human review, commit, PR, and merge.
+2. Review and merge X-11 (feat/authentication): authentication + application RBAC implemented, tests passing; needs human review, PR, and merge.
+3. Complete X-6 verification and close the Linear issue.
 3. Coordinate the next Bala Foundation issue with Joe and Bharath.
 4. Continue the AI development setup.
 5. Coordinate CI and reproducible environment work with Bharath.

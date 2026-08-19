@@ -31,6 +31,29 @@ class ConnectorStatus(str, Enum):
     ERROR = "error"
 
 
+class KnowledgeStatus(str, Enum):
+    """Lifecycle status of a knowledge document."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class KnowledgeSource(str, Enum):
+    """Origin of a knowledge document.
+
+    Source values map to the semantic knowledge categories in TRD 9.2
+    (company policies, support procedures, incident reports,
+    troubleshooting documents, internal knowledge, historical solutions).
+    """
+
+    POLICY = "policy"
+    PROCEDURE = "procedure"
+    INCIDENT_REPORT = "incident_report"
+    TROUBLESHOOTING = "troubleshooting"
+    INTERNAL_KNOWLEDGE = "internal_knowledge"
+    SOLUTION = "solution"
+
+
 @dataclass
 class Tenant:
     """Tenant domain model."""
@@ -138,3 +161,39 @@ class ConnectorConfig:
             raise ValueError(f"Invalid connector provider: {self.provider!r}")
         if not isinstance(self.status, ConnectorStatus):
             raise ValueError(f"Invalid connector status: {self.status!r}")
+
+
+@dataclass
+class KnowledgeDocument:
+    """Tenant-owned knowledge document stored in the Company Brain.
+
+    ``content`` holds the PII-sanitized text. Raw content must never be
+    persisted: the ingestion boundary (KnowledgeService + PiiGuardService)
+    sanitizes content before this model reaches persistence.
+    """
+
+    id: str
+    tenant_id: str
+    source: KnowledgeSource
+    provenance: str
+    content: str
+    status: KnowledgeStatus = KnowledgeStatus.ACTIVE
+    version: int = 1
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Knowledge document ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.source, KnowledgeSource):
+            raise ValueError(f"Invalid knowledge source: {self.source!r}")
+        if not self.provenance:
+            raise ValueError("Knowledge document provenance cannot be empty")
+        if not isinstance(self.status, KnowledgeStatus):
+            raise ValueError(f"Invalid knowledge status: {self.status!r}")
+        if not isinstance(self.version, int) or self.version < 1:
+            raise ValueError("Knowledge document version must be a positive integer")
+        if not self.content:
+            raise ValueError("Knowledge document content cannot be empty")
