@@ -15,11 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      APP_ENV: test
+      APP_ENV: development
       POSTGRES_DB: arc
       POSTGRES_USER: arc
-      POSTGRES_PASSWORD: arc-test-password
-      JWT_SECRET: arc-ci-jwt-secret-32-chars-long
+      POSTGRES_PASSWORD: arc-ci-password
+      JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars
       JWT_ISSUER: arc
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"

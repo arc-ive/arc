@@ -1,5 +1,6 @@
 """Shared fixtures for X-11 authentication and authorization tests."""
 
+import asyncio
 import os
 import uuid
 from pathlib import Path
@@ -22,7 +23,10 @@ from arc.security.settings import SecuritySettings, get_security_settings
 
 TEST_JWT_SECRET = "test-jwt-secret-0123456789-abcdef"
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://arc:arc-dev-password@localhost:5432/arc",
+)
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "arc" / "db" / "schema.sql"
 
 
@@ -87,6 +91,22 @@ def client():
     Requires PostgreSQL, matching the project's Docker-based test
     environment.
     """
+    database = ArcDatabase(DATABASE_URL)
+
+    async def initialize_schema():
+        await database.connect()
+
+        async with database._connection_pool.acquire() as conn:
+            schema = SCHEMA_PATH.read_text()
+
+            for statement in schema.split(";"):
+                if statement.strip():
+                    await conn.execute(statement)
+
+        await database.disconnect()
+
+    asyncio.run(initialize_schema())
+
     with TestClient(app) as test_client:
         yield test_client
 
@@ -114,11 +134,14 @@ async def db():
     """Connect to PostgreSQL and ensure the tenancy schema exists."""
     database = ArcDatabase(DATABASE_URL)
     await database.connect()
+
     async with database._connection_pool.acquire() as conn:
         schema = SCHEMA_PATH.read_text()
+
         for statement in schema.split(";"):
             if statement.strip():
                 await conn.execute(statement)
+
     yield database
     await database.disconnect()
 
@@ -129,6 +152,7 @@ async def repositories(db):
     tenant_repo = PostgreSQLTenantRepository(db)
     user_repo = PostgreSQLUserRepository(db)
     membership_repo = PostgreSQLMembershipRepository(db)
+
     return tenant_repo, user_repo, membership_repo
 
 
@@ -142,10 +166,21 @@ async def seeded(repositories):
     """Create a tenant, a user, and a MEMBER membership; clean up afterwards."""
     tenant_repo, user_repo, membership_repo = repositories
 
-    tenant = await tenant_repo.create(Tenant(id=unique_id("tenant"), name="X11 Tenant"))
-    user = await user_repo.create(
-        User(id=unique_id("user"), email=f"{uuid.uuid4().hex}@example.com", username="x11-user")
+    tenant = await tenant_repo.create(
+        Tenant(
+            id=unique_id("tenant"),
+            name="X11 Tenant",
+        )
     )
+
+    user = await user_repo.create(
+        User(
+            id=unique_id("user"),
+            email=f"{uuid.uuid4().hex}@example.com",
+            username="x11-user",
+        )
+    )
+
     membership = await membership_repo.create(
         Membership(
             id=unique_id("membership"),
