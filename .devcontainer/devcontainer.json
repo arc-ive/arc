@@ -5,6 +5,9 @@
     "context": ".."
   },
   "remoteUser": "vscode",
+  "containerEnv": {
+    "PATH": "/home/vscode/.local/bin:/usr/local/python/current/bin:/usr/local/py-utils/bin:/usr/local/jupyter:/usr/local/share/nvm/current/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/arc,type=bind",
   "workspaceFolder": "/workspace/arc",
   "customizations": {
@@ -15,5 +18,5 @@
       ]
     }
   },
-  "postCreateCommand": "python --version && git --version && curl --version && jq --version"
+  "postCreateCommand": "python --version && git --version && python -m pip install --upgrade pip && python -m pip install -e \".[dev]\""
 }
