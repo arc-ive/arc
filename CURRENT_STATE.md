@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-11 merged; Company Brain — Knowledge Storage & Ingestion Foundation implemented (working tree, pending review/commit)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation implemented (pending review/merge)
 
 ## Completed
 
@@ -135,12 +135,13 @@ surface, the development-only isolation, and the intended identity flow.
 
 - Membership provisioning is development-only (no public endpoint) and is now protected by X-11 authentication + the `membership:create` permission.
 - `httpx2>=2.0,<3.0` is the original dependency; real `httpx` has no 2.x releases. `tests/test_health.py` uses FastAPI's `TestClient` which requires real `httpx`. Pre-existing separate dependency defect.
-- Repo-wide ruff CI gate will fail due to pre-existing violations in unmodified files.
+- The repo-wide lint/format gate passes on current `main`, verified locally against a freshly rebuilt application image.
 
-## X-11: Authentication and Application RBAC (Implemented — working tree)
+## X-11: Authentication and Application RBAC (Merged)
 
-**Branch:** `feat/authentication` (not yet committed/merged)
+**Branch:** `feat/authentication`
 **Issue:** GitHub #14 — "feat: implement authentication and RBAC foundation"
+**Merge:** PR #19 (commit `987ae33`)
 
 X-11 adds JWT HS256 bearer authentication and application RBAC, integrated
 with the X-10 tenant membership boundary.
@@ -206,16 +207,16 @@ with the X-10 tenant membership boundary.
   (`src/arc/db/connection.py`, `src/arc/domain/__init__.py`,
   `src/arc/setup/init.py`). Not part of X-11 scope.
 
-### Pending
+### Status
 
-- Human review of the diff; commit to `feat/authentication`; PR + merge.
+- Merged to `main` via PR #19 (commit `987ae33`).
 - `.env` (local, gitignored) contains a development-only JWT secret and
   `demo-user` as platform_administrator for the simulated environment.
 
-## Company Brain — Knowledge Storage & Ingestion Foundation (Implemented — working tree)
+## Company Brain — Knowledge Storage & Ingestion Foundation (Implemented — pending review)
 
-**Branch:** `feat/company-brain-foundation` (not yet committed/merged)
-**Base:** `origin/main` (`263e0cb`)
+**Branch:** `feat/company-brain-foundation`
+**Base:** `origin/main` (reconciled with current main)
 **Scope:** authorized slice of the Company Brain module — tenant-scoped
 knowledge document storage and PII-boundary ingestion. Reuses the merged
 X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
@@ -279,7 +280,24 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 
 ### Pending
 
-- Human review of the diff; commit to `feat/company-brain-foundation`; PR + merge.
+- Human review of the PR; merge into `main`.
+
+## CI Baseline (Established)
+
+**Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
+
+- Added `.github/workflows/ci.yml` (GitHub Actions, `ubuntu-latest`).
+- Triggers: pushes to `main` and pull requests targeting `main`.
+- Checks use the existing Docker Compose environment:
+  - `docker compose build arc`
+  - `docker compose run --rm arc ruff check .`
+  - `docker compose run --rm arc ruff format --check .`
+  - `docker compose run --rm arc python -m pytest -q`
+- Environment values are development/test placeholders only; no real
+  credentials.
+- The repo-wide lint/format gate passes on current `main`, verified locally
+  against a freshly rebuilt application image.
+- GitHub Actions CI is active on `main`.
 
 ## In Progress
 
@@ -287,7 +305,6 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 
 - Complete verification of Joe and Bharath repository access.
 - Complete X-6 Linear acceptance criteria.
-- Merge and verify the branch-protection documentation change.
 
 ### AI Development Setup
 
@@ -301,10 +318,10 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 
 ### Reproducible Development Environment
 
-- Docker baseline.
-- Dev Container baseline.
-- Compose.
-- CI environment.
+- Docker baseline — established (merged).
+- Dev Container baseline — established (merged).
+- Compose — established (merged).
+- CI environment — established.
 - Windows verification.
 - macOS verification.
 
@@ -350,17 +367,15 @@ Bala is responsible for:
 
 ## Next
 
-1. **Review and merge Company Brain — Knowledge Storage & Ingestion Foundation** (feat/company-brain-foundation): implemented on top of main, tests passing; needs human review, commit, PR, and merge.
-2. Review and merge X-11 (feat/authentication): authentication + application RBAC implemented, tests passing; needs human review, PR, and merge.
-3. Complete X-6 verification and close the Linear issue.
+1. **Review and merge Company Brain — Knowledge Storage & Ingestion Foundation** (feat/company-brain-foundation): implemented, committed, and pushed; human review and merge required.
+2. Complete X-6 verification and close the Linear issue.
 3. Coordinate the next Bala Foundation issue with Joe and Bharath.
 4. Continue the AI development setup.
-5. Coordinate CI and reproducible environment work with Bharath.
+5. Complete Foundation cross-platform verification (Windows/macOS).
 6. Connect GitHub with Linear.
 7. Benchmark candidate AI models.
-8. Complete Foundation cross-platform verification.
-9. Conduct the final Foundation review.
-10. Begin product implementation only after Foundation acceptance.
+8. Conduct the final Foundation review.
+9. Begin product implementation only after Foundation acceptance.
 
 ## Blocked / Waiting
 
@@ -382,7 +397,9 @@ Bharath
 
 ### CI
 
-The project CI implementation is dependent on the platform/environment baseline being established.
+The CI baseline (`.github/workflows/ci.yml`) has been established and
+merged to `main` (PR #23). Remaining Foundation verification is
+cross-platform (Windows/macOS).
 
 Owner:
 
