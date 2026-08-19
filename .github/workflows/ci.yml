@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint, Format & Test
+    runs-on: ubuntu-latest
+
+    env:
+      APP_ENV: development
+      POSTGRES_DB: arc
+      POSTGRES_USER: arc
+      POSTGRES_PASSWORD: arc-ci-password
+      JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars
+      JWT_ISSUER: arc
+      JWT_AUDIENCE: arc-api
+      JWT_EXPIRY_SECONDS: "3600"
+      APPLICATION_ROLE_ASSIGNMENTS: "{}"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build application image
+        run: docker compose build arc
+
+      - name: Run Ruff checks
+        run: docker compose run --rm arc ruff check .
+
+      - name: Check formatting
+        run: docker compose run --rm arc ruff format --check .
+
+      - name: Run tests
+        run: docker compose run --rm arc python -m pytest -q
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
