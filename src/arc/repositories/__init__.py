@@ -2,7 +2,14 @@
 
 from typing import List, Protocol
 
-from arc.domain.models import ConnectorConfig, Membership, Skill, Tenant, User
+from arc.domain.models import (
+    ConnectorConfig,
+    KnowledgeDocument,
+    Membership,
+    Skill,
+    Tenant,
+    User,
+)
 
 
 class TenantRepository(Protocol):
@@ -113,6 +120,27 @@ class ConnectorRepository(Protocol):
         ...
 
 
+class KnowledgeRepository(Protocol):
+    """Repository for KnowledgeDocument entities.
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. A document created by tenant A
+    must never be retrievable or listable by tenant B.
+    """
+
+    async def create(self, document: KnowledgeDocument) -> KnowledgeDocument:
+        """Create a new knowledge document."""
+        ...
+
+    async def get_by_id(self, document_id: str, tenant_id: str) -> KnowledgeDocument:
+        """Get a knowledge document by ID, scoped to a tenant."""
+        ...
+
+    async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
+        """List all knowledge documents for a tenant."""
+        ...
+
+
 class SkillRepository(Protocol):
     """Repository for Skill entities."""
 
@@ -134,6 +162,7 @@ class SkillRepository(Protocol):
 
     async def delete(self, skill_id: str, tenant_id: str) -> None:
         """Delete a skill, scoped to a tenant."""
+        ...
         ...
 
 

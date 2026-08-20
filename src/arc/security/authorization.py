@@ -9,7 +9,11 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
 
 - The permission matrix below is the smallest set required to demonstrate
   X-11. It is not a forward-looking model for future product modules.
-- No Connector, Knowledge, or Operations permissions are defined.
+- No Connector or Operations permissions are defined.
+- Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
+  the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
+  company knowledge; OPERATIONS_USER reads it for operational workflows;
+  PLATFORM_ADMINISTRATOR retains global access; EMPLOYEE has none.
 - ``EMPLOYEE`` intentionally has no matrix permissions; it is allowed only
   self-scoped operations (for example listing the authenticated user's own
   tenants).
@@ -31,15 +35,26 @@ TENANT_CREATE = Permission(resource="tenant", action="create")
 USER_CREATE = Permission(resource="user", action="create")
 MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
 TENANT_READ = Permission(resource="tenant", action="read")
+KNOWLEDGE_CREATE = Permission(resource="knowledge", action="create")
+KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     # Global provisioning permissions; they intentionally require NO tenant context.
     ApplicationRole.PLATFORM_ADMINISTRATOR: frozenset(
-        {TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE, TENANT_READ}
+        {
+            TENANT_CREATE,
+            USER_CREATE,
+            MEMBERSHIP_CREATE,
+            TENANT_READ,
+            KNOWLEDGE_CREATE,
+            KNOWLEDGE_READ,
+        }
     ),
-    ApplicationRole.COMPANY_ADMINISTRATOR: frozenset({TENANT_READ}),
-    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ}),
+    ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
+        {TENANT_READ, KNOWLEDGE_CREATE, KNOWLEDGE_READ}
+    ),
+    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ, KNOWLEDGE_READ}),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).
     ApplicationRole.EMPLOYEE: frozenset(),
 }
