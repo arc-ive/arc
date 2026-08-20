@@ -21,6 +21,11 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   exist for the Skills Engine management API: PLATFORM_ADMINISTRATOR and
   COMPANY_ADMINISTRATOR create, read, and delete Skills; OPERATIONS_USER
   reads them; EMPLOYEE has none.
+- Tool permissions (``tool:read``, ``tool:execute``) exist for the AI
+  Tools foundation (PRD 15, TRD 14): PLATFORM_ADMINISTRATOR and
+  COMPANY_ADMINISTRATOR read the platform tool catalog and execute
+  approved tools; OPERATIONS_USER reads and executes permitted
+  operational tools (TRD 7); EMPLOYEE has none.
 - ``EMPLOYEE`` intentionally has no matrix permissions; it is allowed only
   self-scoped operations (for example listing the authenticated user's own
   tenants).
@@ -47,6 +52,8 @@ KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
 SKILL_CREATE = Permission(resource="skill", action="create")
 SKILL_READ = Permission(resource="skill", action="read")
 SKILL_DELETE = Permission(resource="skill", action="delete")
+TOOL_READ = Permission(resource="tool", action="read")
+TOOL_EXECUTE = Permission(resource="tool", action="execute")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -62,6 +69,8 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             SKILL_CREATE,
             SKILL_READ,
             SKILL_DELETE,
+            TOOL_READ,
+            TOOL_EXECUTE,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
@@ -72,9 +81,13 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             SKILL_CREATE,
             SKILL_READ,
             SKILL_DELETE,
+            TOOL_READ,
+            TOOL_EXECUTE,
         }
     ),
-    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ, KNOWLEDGE_READ, SKILL_READ}),
+    ApplicationRole.OPERATIONS_USER: frozenset(
+        {TENANT_READ, KNOWLEDGE_READ, SKILL_READ, TOOL_READ, TOOL_EXECUTE}
+    ),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).
     ApplicationRole.EMPLOYEE: frozenset(),
 }

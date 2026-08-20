@@ -39,6 +39,8 @@ from arc.security.authorization import (
     SKILL_READ,
     TENANT_CREATE,
     TENANT_READ,
+    TOOL_EXECUTE,
+    TOOL_READ,
     USER_CREATE,
 )
 from arc.security.dependencies import (
@@ -57,6 +59,14 @@ from arc.services.domain import (
 from arc.services.knowledge import KnowledgeService
 from arc.services.pii import PiiGuardError
 from arc.services.skills import SkillService
+from arc.services.tools import (
+    ToolDefinition,
+    ToolDeniedError,
+    ToolExecutionError,
+    ToolExecutionService,
+    ToolNotFoundError,
+    ToolValidationError,
+)
 
 
 class ServiceRegistry:
@@ -112,6 +122,10 @@ class ApplicationContext:
     @property
     def skill_service(self) -> SkillService:
         return self.services.get("skill_service")
+
+    @property
+    def tool_service(self) -> ToolExecutionService:
+        return self.services.get("tool_service")
 
 
 # Global application context
@@ -519,3 +533,84 @@ async def list_knowledge_documents(
 
     documents = await knowledge_service.list_documents(context)
     return [_knowledge_document_payload(document) for document in documents]
+
+
+def _tool_definition_payload(tool: ToolDefinition) -> Dict[str, Any]:
+    """Serialize an approved tool definition for the catalog API response.
+
+    Only safe metadata is exposed: never the handler or any execution
+    detail.
+    """
+    return {
+        "name": tool.name,
+        "version": tool.version,
+        "description": tool.description,
+        "risk_level": tool.risk_level.value,
+        "required_permission": tool.required_permission.value,
+        "input_schema": tool.input_schema,
+        "output_schema": tool.output_schema,
+    }
+
+
+@api_router.get("/tenants/{tenant_id}/tools")
+async def list_tools(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(TOOL_READ)),
+    tool_service: ToolExecutionService = Depends(lambda: app_context.tool_service),
+) -> List[Dict[str, Any]]:
+    """List the platform-approved AI Tool catalog for the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the ``tool:read``
+    permission. The path ``tenant_id`` is validated for consistency against
+    the trusted context (403 on mismatch). The catalog is platform-owned
+    and identical for every tenant; it contains only safe metadata.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    tools = tool_service.list_tools(context)
+    return [_tool_definition_payload(tool) for tool in tools]
+
+
+@api_router.post("/tenants/{tenant_id}/tools/{name}/execute")
+async def execute_tool(
+    tenant_id: str,
+    name: str,
+    body: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(TOOL_EXECUTE)),
+    tool_service: ToolExecutionService = Depends(lambda: app_context.tool_service),
+) -> Dict[str, Any]:
+    """Execute an approved AI Tool within the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the ``tool:execute``
+    permission (enforced before the execution flow starts). The path
+    ``tenant_id`` is validated for consistency against the trusted context
+    (403 on mismatch). Only platform-approved tools are executable; the
+    tenant boundary is derived exclusively from the trusted context.
+    Errors are generic and safe: no internal details are exposed.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    raw_input = body.get("input", {})
+
+    try:
+        result = await tool_service.execute_tool(context, name, raw_input)
+    except ToolNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
+    except ToolValidationError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tool input")
+    except ToolDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tool execution is not permitted",
+        )
+    except ToolExecutionError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Tool execution failed",
+        )
+
+    return {
+        "tool": result.tool_name,
+        "version": result.tool_version,
+        "output": result.output,
+    }

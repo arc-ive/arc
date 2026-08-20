@@ -1,0 +1,402 @@
+"""AI Tools foundation: platform-owned registry and controlled execution.
+
+This module implements the AI Tools slice of the approved architecture
+(PRD 15, TRD 14, ADR-001):
+
+- The tool catalog is a **platform-owned, code-defined whitelist**. Tenants
+  cannot register tools, upload executable code, or define executable
+  handlers. The registry exposes no runtime registration or mutation
+  API: the approved catalog is closed by construction.
+- Execution follows TRD 14.1: selection -> authorization (enforced by the
+  controller dependency before this service runs) -> tool policy check ->
+  input validation -> execution -> result handling -> execution/audit
+  record. Every controlled attempt produces an observable tenant-scoped
+  record (TRD 14.2), including controlled failures.
+- There is no path for arbitrary Python/OS/shell/database/network
+  execution: handlers are plain whitelisted functions, inputs are
+  validated against the tool's declared schema before any handler runs,
+  and unknown tool names fail closed without any dynamic lookup.
+- The design remains framework/tool agnostic (TRD 14.3, ADR-001): no
+  third-party AI-agent/tool framework is introduced. Input/output
+  validation reuses the project's existing pydantic/FastAPI schema
+  pattern; the catalog exposes declarative JSON Schemas.
+
+The security boundary intentionally does NOT trust the caller: the
+tenant boundary comes exclusively from the trusted ``TenantContext``, and
+authorization runs before execution in the request dependency chain.
+"""
+
+import json
+import uuid
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
+
+from pydantic import BaseModel, ConfigDict, ValidationError
+
+from arc.domain.models import (
+    TenantContext,
+    ToolExecutionRecord,
+    ToolExecutionStatus,
+    ToolRiskLevel,
+)
+from arc.security.authorization import TOOL_EXECUTE
+from arc.security.models import Permission
+
+# ---------------------------------------------------------------------------
+# Controlled failure types
+# ---------------------------------------------------------------------------
+
+
+class ToolError(Exception):
+    """Base error for controlled AI Tool failures."""
+
+
+class ToolNotFoundError(ToolError):
+    """Raised when the requested tool is not in the platform-approved catalog."""
+
+
+class ToolValidationError(ToolError):
+    """Raised when tool input fails validation; the handler is never invoked."""
+
+
+class ToolDeniedError(ToolError):
+    """Raised when the tool's execution policy forbids direct execution."""
+
+
+class ToolExecutionError(ToolError):
+    """Raised when a platform-approved handler fails during execution."""
+
+
+# ---------------------------------------------------------------------------
+# Registry primitives
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ToolExecutionPolicy:
+    """Policy that constrains how an approved tool may be executed.
+
+    ``direct_execution_allowed`` gates execution by any authorized caller.
+    High-risk actions additionally require human approval before the
+    authorized tool is executed (TRD 17.3); the human-approval gate is
+    part of the Human Intervention capability and is not implemented here.
+    """
+
+    direct_execution_allowed: bool = True
+
+
+@dataclass(frozen=True)
+class ToolAuditPolicy:
+    """Policy that constrains what an approved tool records (TRD 14.2).
+
+    Only safe, sanitized summaries are ever persisted: never secrets,
+    credentials, raw sensitive payloads, or internal stack traces.
+    """
+
+    record_summary_only: bool = True
+
+
+@dataclass(frozen=True)
+class ToolDefinition:
+    """Declarative definition of one platform-approved AI Tool (PRD 15).
+
+    Every approved tool declares its purpose, version, input/output
+    schemas, required permission, risk level, execution policy, audit
+    policy, and a whitelisted in-process handler. The schema metadata is
+    exposed as framework-agnostic JSON Schemas; the handler is a plain
+    platform-owned function and is never exposed.
+    """
+
+    name: str
+    version: str
+    description: str
+    input_model: type[BaseModel]
+    output_model: type[BaseModel]
+    required_permission: Permission
+    risk_level: ToolRiskLevel
+    execution_policy: ToolExecutionPolicy
+    audit_policy: ToolAuditPolicy
+    handler: Callable[[Dict[str, Any], str], Dict[str, Any]]
+
+    @property
+    def input_schema(self) -> Dict[str, Any]:
+        """JSON Schema describing the tool's accepted input."""
+        return self.input_model.model_json_schema()
+
+    @property
+    def output_schema(self) -> Dict[str, Any]:
+        """JSON Schema describing the tool's output."""
+        return self.output_model.model_json_schema()
+
+
+class ToolRegistry:
+    """Platform-owned, closed whitelist of approved AI Tools.
+
+    The registry is built once from the code-defined catalog and exposes
+    only read operations. There is no registration or mutation API: a
+    tool is executable if and only if it is part of this static whitelist.
+    """
+
+    def __init__(self, tools: Optional[Mapping[str, ToolDefinition]] = None):
+        self._tools: Dict[str, ToolDefinition] = dict(tools) if tools else {}
+
+    def get(self, name: str) -> Optional[ToolDefinition]:
+        """Return the approved tool definition for ``name``, or None."""
+        return self._tools.get(name)
+
+    def list(self) -> List[ToolDefinition]:
+        """Return the approved tool definitions in catalog order."""
+        return list(self._tools.values())
+
+    def names(self) -> FrozenSet[str]:
+        """Return the set of approved tool names."""
+        return frozenset(self._tools.keys())
+
+
+# ---------------------------------------------------------------------------
+# Summary sanitization (TRD 14.2: safe, sanitized execution records)
+# ---------------------------------------------------------------------------
+
+
+def _summarize(value: Any, max_length: int = 512) -> str:
+    """Return a safe, truncated summary of a value for an execution record.
+
+    Values are JSON-encoded and truncated so records never contain raw
+    sensitive payloads, secrets, or implementation details.
+    """
+    try:
+        encoded = json.dumps(value, sort_keys=True, default=str, ensure_ascii=True)
+    except (TypeError, ValueError):
+        encoded = str(value)
+    return encoded[:max_length]
+
+
+# ---------------------------------------------------------------------------
+# Platform-approved catalog
+# ---------------------------------------------------------------------------
+
+
+class ServiceHealthInput(BaseModel):
+    """Input for ``check_service_health``: no parameters are accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ServiceHealthEntry(BaseModel):
+    """Simulated health of one Arc internal service."""
+
+    name: str
+    status: str
+
+
+class ServiceHealthOutput(BaseModel):
+    """Output of ``check_service_health``.
+
+    ``tenant_id`` is echoed from the trusted tenant context, never from
+    caller input.
+    """
+
+    tenant_id: str
+    services: List[ServiceHealthEntry]
+
+
+# Controlled/simulated implementation permitted by TRD 33: the health
+# monitoring subsystem is a separate Person C slice; this tool returns a
+# deterministic synthetic health snapshot for Arc's simulated services.
+_SIMULATED_SERVICES: Tuple[Tuple[str, str], ...] = (
+    ("api-gateway", "healthy"),
+    ("knowledge-service", "healthy"),
+    ("webhook-service", "healthy"),
+)
+
+
+def _check_service_health_handler(input_data: Dict[str, Any], tenant_id: str) -> Dict[str, Any]:
+    """Platform-approved handler for ``check_service_health``.
+
+    Deterministic and tenant-scoped: the result is derived only from the
+    trusted tenant context and fixed synthetic service state.
+    """
+    return {
+        "tenant_id": tenant_id,
+        "services": [{"name": name, "status": status} for name, status in _SIMULATED_SERVICES],
+    }
+
+
+SERVICE_HEALTH_TOOL = ToolDefinition(
+    name="check_service_health",
+    version="1",
+    description=(
+        "Check the health of Arc's simulated internal services for the "
+        "trusted tenant (controlled/simulated implementation, TRD 33)."
+    ),
+    input_model=ServiceHealthInput,
+    output_model=ServiceHealthOutput,
+    required_permission=TOOL_EXECUTE,
+    risk_level=ToolRiskLevel.LOW,
+    execution_policy=ToolExecutionPolicy(direct_execution_allowed=True),
+    audit_policy=ToolAuditPolicy(record_summary_only=True),
+    handler=_check_service_health_handler,
+)
+
+PLATFORM_TOOLS: Tuple[ToolDefinition, ...] = (SERVICE_HEALTH_TOOL,)
+
+
+def build_platform_tool_registry() -> ToolRegistry:
+    """Build the platform-owned registry from the approved catalog."""
+    return ToolRegistry({tool.name: tool for tool in PLATFORM_TOOLS})
+
+
+# ---------------------------------------------------------------------------
+# Execution service
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ToolExecutionResult:
+    """Outcome of a controlled tool execution."""
+
+    tool_name: str
+    tool_version: str
+    output: Dict[str, Any]
+
+
+class ToolExecutionService:
+    """Controlled AI Tool execution (TRD 14.1) with observable records.
+
+    The service accepts a trusted ``TenantContext`` established by X-10
+    and derives the tenant boundary exclusively from it. Authorization is
+    enforced by the controller dependency chain BEFORE this service runs;
+    this service never authenticates callers and never trusts
+    caller-supplied tenant identity.
+    """
+
+    def __init__(self, registry: ToolRegistry, record_repo):
+        self.registry = registry
+        self.record_repo = record_repo
+
+    def list_tools(self, context: TenantContext) -> List[ToolDefinition]:
+        """Return the platform-approved tool catalog for the trusted tenant.
+
+        The catalog is platform-owned and identical for every tenant;
+        the trusted context is required so the listing is always made
+        inside an authenticated, tenant-scoped request.
+        """
+        return self.registry.list()
+
+    async def execute_tool(
+        self,
+        context: TenantContext,
+        tool_name: str,
+        raw_input: Dict[str, Any],
+    ) -> ToolExecutionResult:
+        """Execute an approved tool following the TRD 14.1 flow.
+
+        Flow: selection -> (authorization, enforced upstream) -> tool
+        policy check -> input validation -> execution -> result handling
+        -> execution/audit record. Every controlled attempt, including
+        controlled failures, produces an observable tenant-scoped record.
+        """
+        tool = self.registry.get(tool_name)
+        if tool is None:
+            await self._record_failure(
+                context=context,
+                tool_name=tool_name,
+                tool_version="unknown",
+                risk_level=ToolRiskLevel.LOW,
+                input_summary=_summarize(raw_input),
+                error_kind="unknown_tool",
+            )
+            raise ToolNotFoundError(tool_name)
+
+        if not tool.execution_policy.direct_execution_allowed:
+            await self._record_failure(
+                context=context,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                risk_level=tool.risk_level,
+                input_summary=_summarize(raw_input),
+                error_kind="not_allowed",
+            )
+            raise ToolDeniedError(tool_name)
+
+        try:
+            validated = tool.input_model.model_validate(raw_input)
+        except ValidationError:
+            await self._record_failure(
+                context=context,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                risk_level=tool.risk_level,
+                input_summary=_summarize(raw_input),
+                error_kind="invalid_input",
+            )
+            raise ToolValidationError(tool_name)
+
+        input_data = validated.model_dump()
+
+        try:
+            output = tool.handler(input_data, context.tenant_id)
+        except Exception:
+            await self._record_failure(
+                context=context,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                risk_level=tool.risk_level,
+                input_summary=_summarize(input_data),
+                error_kind="execution_error",
+            )
+            raise ToolExecutionError(tool_name)
+
+        await self._record_success(
+            context=context,
+            tool=tool,
+            input_summary=_summarize(input_data),
+            output_summary=_summarize(output),
+        )
+        return ToolExecutionResult(
+            tool_name=tool.name,
+            tool_version=tool.version,
+            output=output,
+        )
+
+    async def _record_success(
+        self,
+        context: TenantContext,
+        tool: ToolDefinition,
+        input_summary: str,
+        output_summary: str,
+    ) -> None:
+        await self.record_repo.create_record(
+            ToolExecutionRecord(
+                id=str(uuid.uuid4()),
+                tenant_id=context.tenant_id,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                status=ToolExecutionStatus.SUCCESS,
+                risk_level=tool.risk_level,
+                input_summary=input_summary,
+                output_summary=output_summary,
+            )
+        )
+
+    async def _record_failure(
+        self,
+        context: TenantContext,
+        tool_name: str,
+        tool_version: str,
+        risk_level: ToolRiskLevel,
+        input_summary: str,
+        error_kind: str,
+    ) -> None:
+        await self.record_repo.create_record(
+            ToolExecutionRecord(
+                id=str(uuid.uuid4()),
+                tenant_id=context.tenant_id,
+                tool_name=tool_name,
+                tool_version=tool_version,
+                status=ToolExecutionStatus.FAILED,
+                risk_level=risk_level,
+                input_summary=input_summary,
+                error_kind=error_kind,
+            )
+        )

@@ -11,10 +11,12 @@ from arc.repositories.tenancy import (
     PostgreSQLTenantRepository,
     PostgreSQLUserRepository,
 )
+from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
 from arc.services.knowledge import KnowledgeService
 from arc.services.skills import SkillService
+from arc.services.tools import ToolExecutionService, build_platform_tool_registry
 
 
 class Application:
@@ -50,6 +52,7 @@ class Application:
             "connector": PostgreSQLConnectorRepository(self.db),
             "knowledge": PostgreSQLKnowledgeRepository(self.db),
             "skill": PostgreSQLSkillRepository(self.db),
+            "tool_execution": PostgreSQLToolExecutionRepository(self.db),
         }
 
         # Initialize services
@@ -69,6 +72,12 @@ class Application:
 
         # Initialize skill service
         self.services["skill_service"] = SkillService(self.repositories["skill"])
+
+        # Initialize AI Tool execution service (platform-owned catalog).
+        self.services["tool_service"] = ToolExecutionService(
+            build_platform_tool_registry(),
+            self.repositories["tool_execution"],
+        )
 
         # Register services in app context
         from arc.api.controllers import app_context

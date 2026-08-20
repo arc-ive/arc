@@ -76,6 +76,20 @@ def test_public_api_does_not_expose_caller_supplied_identity_context():
     assert "GET /tenant-contexts/validate" not in public
 
 
+def test_ai_tools_routes_are_public_api_surface():
+    """The AI Tools catalog and execution endpoints are public application routes."""
+    public = _route_paths(api_router.routes)
+    assert "GET /tenants/{tenant_id}/tools" in public
+    assert "POST /tenants/{tenant_id}/tools/{name}/execute" in public
+
+
+def test_ai_tools_routes_present_in_production_openapi():
+    """AI Tools endpoints are production application routes (not dev-only)."""
+    paths = _openapi_paths("production")
+    assert "/tenants/{tenant_id}/tools" in paths
+    assert "/tenants/{tenant_id}/tools/{name}/execute" in paths
+
+
 def test_dev_router_isolates_development_endpoints():
     """The dev-only router retains membership provisioning under /internal/dev."""
     dev = _route_paths(dev_router.routes)
