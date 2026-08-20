@@ -4,6 +4,7 @@ from typing import List, Protocol
 
 from arc.domain.models import (
     ConnectorConfig,
+    ConnectorSyncRecord,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeMatch,
@@ -119,6 +120,23 @@ class ConnectorRepository(Protocol):
 
     async def delete(self, connector_id: str, tenant_id: str) -> None:
         """Delete a connector configuration, scoped to a tenant."""
+        ...
+
+
+class ConnectorSyncRepository(Protocol):
+    """Repository for ConnectorSyncRecord audit entities.
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. Records never contain provider
+    credentials or raw external payloads.
+    """
+
+    async def create_record(self, record: ConnectorSyncRecord) -> ConnectorSyncRecord:
+        """Persist a connector synchronization record."""
+        ...
+
+    async def list_for_tenant(self, tenant_id: str) -> List[ConnectorSyncRecord]:
+        """List all connector synchronization records for a tenant."""
         ...
 
 

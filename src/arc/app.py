@@ -3,6 +3,7 @@
 import os
 
 from arc.db.connection import ArcDatabase
+from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
 from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
@@ -13,6 +14,12 @@ from arc.repositories.tenancy import (
     PostgreSQLUserRepository,
 )
 from arc.services.chunking import KnowledgeChunker
+from arc.services.connector_providers import (
+    ConnectorCredentialStore,
+    build_provider_registry,
+    get_connector_settings,
+)
+from arc.services.connector_sync import ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
 from arc.services.embeddings import DeterministicEmbeddingProvider
@@ -52,6 +59,7 @@ class Application:
             "user": PostgreSQLUserRepository(self.db),
             "membership": PostgreSQLMembershipRepository(self.db),
             "connector": PostgreSQLConnectorRepository(self.db),
+            "connector_sync": PostgreSQLConnectorSyncRepository(self.db),
             "knowledge": PostgreSQLKnowledgeRepository(self.db),
             "knowledge_chunk": PostgreSQLKnowledgeChunkRepository(self.db),
             "skill": PostgreSQLSkillRepository(self.db),
@@ -88,6 +96,22 @@ class Application:
 
         # Initialize skill service
         self.services["skill_service"] = SkillService(self.repositories["skill"])
+
+        # Initialize connector synchronization (provider integrations):
+        # the provider catalog is code-defined (GitHub, Slack, Linear per
+        # ADR-002); simulated mode uses the deterministic controlled/fake
+        # clients, live mode uses the httpx adapters. Credentials are read
+        # lazily from the environment and never logged or returned.
+        connector_settings = get_connector_settings()
+        self.services["connector_sync_service"] = ConnectorSyncService(
+            connector_repo=self.repositories["connector"],
+            sync_repo=self.repositories["connector_sync"],
+            registry=build_provider_registry(connector_settings),
+            credential_store=ConnectorCredentialStore(),
+            knowledge_service=KnowledgeService(
+                self.repositories["knowledge"], indexer=retrieval_service
+            ),
+        )
 
         # Register services in app context
         from arc.api.controllers import app_context

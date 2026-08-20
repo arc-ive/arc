@@ -2,11 +2,11 @@
 
 Last Updated:
 
-2026-08-19
+2026-08-20
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation implemented (pending review/merge)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation implemented; Connector Provider Integrations implemented (pending review)
 
 ## Completed
 
@@ -294,6 +294,108 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 ### Pending
 
 - Human review of the PR; merge into `main`.
+
+## Connector Provider Integrations (Implemented — pending review)
+
+**Branch:** `feat/connector-provider-integrations`
+**Base:** `origin/main` @ `a5b892b`
+**Scope:** Person C — Connectors. GitHub, Slack, and Linear provider
+integrations (PRD §22, TRD §33, ADR-002) on top of the X-13 connector
+foundation already on `main` (code-defined `ConnectorProvider` catalog,
+`connector_configs`, `ConnectorService`, 38 tests).
+
+### What changed
+
+- **Schema** (`src/arc/db/schema.sql`): `connector_sync_records` audit
+  table (id PK, tenant FK ON DELETE CASCADE, connector FK ON DELETE
+  CASCADE, provider, status CHECK success/failed, items_fetched >= 0,
+  error_kind, created_at) with a tenant index.
+- **Domain** (`src/arc/domain/models.py`): `ConnectorSyncStatus`
+  (success, failed) and `ConnectorSyncRecord` with validation (success
+  records cannot carry an error_kind; failed records cannot report
+  fetched items).
+- **Repository** (`src/arc/repositories/connector_sync.py`):
+  `PostgreSQLConnectorSyncRepository` implementing the
+  `ConnectorSyncRepository` Protocol; every query is tenant-scoped at the
+  SQL level.
+- **Provider package** (`src/arc/services/connector_providers/`):
+  - `base.py` — controlled `ProviderError` hierarchy (validation / auth /
+    rate-limit / transport / response), `ProviderCredential` (repr masks
+    the token), validated `ProviderRecord`/`ProviderFetchResult`,
+    `ProviderAdapter` Protocol.
+  - `settings.py` — `CONNECTOR_CREDENTIALS` JSON (tenant -> provider ->
+    token) and `CONNECTOR_PROVIDER_MODE` (simulated | live); invalid
+    configuration fails closed; credentials read lazily from the
+    environment.
+  - `github.py`, `slack.py`, `linear.py` — httpx adapters with
+    code-defined endpoints only; the tenant-supplied target is validated
+    before any request; responses are validated into typed records.
+  - `fake.py` — deterministic controlled/fake clients (TRD §33) with
+    failure injection for testing.
+  - `registry.py` — static code-defined catalog; no runtime registration.
+- **Service** (`src/arc/services/connector_sync.py`):
+  `ConnectorSyncService` — tenant-scoped connector lookup -> adapter ->
+  credential -> fetch -> Company Brain ingestion
+  (`KnowledgeService.ingest_document`, INTERNAL_KNOWLEDGE, provenance
+  `connector:{provider}:{source_id}`, through the existing PII boundary)
+  -> success/failed audit record. Provider failures map to generic error
+  kinds (`invalid_target`, `auth_failed`, `rate_limited`,
+  `transport_error`, `invalid_provider_response`, `missing_credential`,
+  `unsupported_provider`, `pii_guard_failed`); the API surfaces a single
+  controlled error.
+- **Authorization** (`src/arc/security/authorization.py`):
+  `connector:create`, `connector:read`, `connector:sync` —
+  PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR: all three;
+  OPERATIONS_USER: read + sync; EMPLOYEE: none. Default DENY.
+- **API** (`src/arc/api/controllers.py`):
+  `GET /tenants/{tenant_id}/connectors` (list),
+  `POST /tenants/{tenant_id}/connectors` (400 invalid provider/name,
+  409 duplicate), and
+  `POST /tenants/{tenant_id}/connectors/{connector_id}/sync` (404 not
+  found, 400 generic failure). The path tenant is validated against the
+  trusted `TenantContext` (403 on mismatch); no credential material is
+  ever accepted or returned.
+- **Config**: composition-root wiring in `src/arc/app.py` (simulated mode
+  default); `CONNECTOR_CREDENTIALS` and `CONNECTOR_PROVIDER_MODE`
+  documented with safe placeholders in `.env.example` and passed through
+  `docker-compose.yml`. `httpx>=0.28,<1.0` added as a runtime dependency
+  (required by the live adapters); the broken `httpx2>=2.0,<3.0` dev
+  entry removed.
+- **Tests** (+99, total 434): `tests/test_connector_providers.py`
+  (credential repr secrecy, fail-closed settings parsing, fake clients,
+  real adapters via httpx MockTransport),
+  `tests/test_connector_sync_domain.py`,
+  `tests/test_connector_sync_repository.py` (real PG, cascade, SQL-level
+  isolation), `tests/test_connector_sync_service.py` (failure kinds,
+  no-secret invariants, real-PG PII sanitization before persistence),
+  `tests/test_connector_api.py` (401/403, permission matrix,
+  cross-tenant 404, path mismatch 403 with no-persistence proof, generic
+  failures, sanitized knowledge ingestion). `tests/test_rbac.py` and
+  `tests/test_api_surface.py` updated.
+
+### Deferred (NOT part of this slice; no decisions changed)
+
+- Production credential storage: only environment-based development
+  placeholders exist; ADR-002 defers credential management.
+- Live provider mode enablement: `CONNECTOR_PROVIDER_MODE=live` exists
+  behind the same adapter interface but is NOT authorized by ADR-002;
+  the default is the deterministic simulated mode.
+- Sync deduplication: a re-sync currently creates additional knowledge
+  documents (documented v1 decision).
+- Additional providers (e.g. Google Drive, conditional per ADR-002),
+  webhooks, observability, and the remaining Person C modules are future
+  work.
+
+### Verification
+
+- 434 tests pass (Docker + real PostgreSQL), fresh and warm, 0 failures.
+- `ruff check .`, `ruff format --check .`, `compileall -q src`,
+  `docker compose config --quiet`, `git diff --check`, the conflict-marker
+  scan, and the secret scan are all clean.
+
+### Pending
+
+- Commit, push, human review of the PR; merge into `main`.
 
 ## CI Baseline (Established)
 

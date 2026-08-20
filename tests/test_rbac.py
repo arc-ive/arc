@@ -12,6 +12,9 @@ import pytest
 
 from arc.domain.models import UserRole
 from arc.security.authorization import (
+    CONNECTOR_CREATE,
+    CONNECTOR_READ,
+    CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
     MEMBERSHIP_CREATE,
@@ -63,6 +66,9 @@ def test_exactly_four_application_roles_exist():
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
             ],
             [],
         ),
@@ -75,12 +81,15 @@ def test_exactly_four_application_roles_exist():
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
             ],
             [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE],
         ),
         (
             ApplicationRole.OPERATIONS_USER,
-            [TENANT_READ, KNOWLEDGE_READ, SKILL_READ],
+            [TENANT_READ, KNOWLEDGE_READ, SKILL_READ, CONNECTOR_READ, CONNECTOR_SYNC],
             [
                 TENANT_CREATE,
                 USER_CREATE,
@@ -88,6 +97,7 @@ def test_exactly_four_application_roles_exist():
                 KNOWLEDGE_CREATE,
                 SKILL_CREATE,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
             ],
         ),
         (
@@ -103,6 +113,9 @@ def test_exactly_four_application_roles_exist():
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
             ],
         ),
     ],
