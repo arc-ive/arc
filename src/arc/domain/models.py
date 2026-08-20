@@ -217,6 +217,68 @@ class KnowledgeDocument:
 
 
 @dataclass
+class KnowledgeChunk:
+    """A deterministic segment of a sanitized knowledge document.
+
+    Chunks are derived exclusively from already-sanitized knowledge
+    content (Secure RAG foundation). The ``embedding`` vector is a
+    storage/retrieval concern and is never part of this domain model: the
+    repository receives embedding vectors alongside chunks.
+
+    ``tenant_id`` and ``document_id`` preserve the ownership required for
+    tenant isolation at the SQL boundary.
+    """
+
+    id: str
+    document_id: str
+    tenant_id: str
+    content: str
+    sequence: int
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Knowledge chunk ID cannot be empty")
+        if not self.document_id:
+            raise ValueError("Knowledge chunk document ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not self.content:
+            raise ValueError("Knowledge chunk content cannot be empty")
+        if not isinstance(self.sequence, int) or self.sequence < 0:
+            raise ValueError("Knowledge chunk sequence must be a non-negative integer")
+
+
+@dataclass
+class KnowledgeMatch:
+    """A retrieved knowledge chunk with its owning document context.
+
+    Secure RAG retrieval returns chunks with their document provenance so
+    results are explainable. ``content`` is always already-sanitized
+    content: raw content never reaches persistence or retrieval.
+    """
+
+    chunk_id: str
+    document_id: str
+    tenant_id: str
+    content: str
+    source: KnowledgeSource
+    provenance: str
+    document_version: int
+    similarity: float
+
+    def __post_init__(self):
+        if not self.chunk_id:
+            raise ValueError("Knowledge match chunk ID cannot be empty")
+        if not self.document_id:
+            raise ValueError("Knowledge match document ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.source, KnowledgeSource):
+            raise ValueError(f"Invalid knowledge source: {self.source!r}")
+
+
+@dataclass
 class Skill:
     """Tenant-owned Skill domain model.
 

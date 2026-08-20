@@ -20,6 +20,7 @@ from presidio_analyzer import RecognizerResult
 
 from arc.db.connection import NotFoundError
 from arc.domain.models import KnowledgeDocument, KnowledgeSource, TenantContext, UserRole
+from arc.services.embeddings import EmbeddingError
 from arc.services.knowledge import KnowledgeService
 from arc.services.pii import PiiGuardConfig, PiiGuardError, PiiGuardService
 
@@ -57,15 +58,31 @@ class ExplodingPiiGuard:
 
 
 class FakeKnowledgeRepository:
-    """In-memory KnowledgeRepository capturing persisted documents."""
+    """In-memory KnowledgeRepository capturing persisted documents and chunks.
+
+    ``fail_atomic_chunks`` simulates a failure inside the atomic
+    document+chunks transaction (e.g. a chunk insert failing after the
+    document insert): the fake mirrors the real repository's contract in
+    which a raised error means NOTHING was persisted (the real
+    implementation rolls the transaction back).
+    """
 
     def __init__(self):
         self.created: List[KnowledgeDocument] = []
         self.by_id = {}
+        self.chunks: List = []
+        self.fail_atomic_chunks = False
 
     async def create(self, document: KnowledgeDocument) -> KnowledgeDocument:
         self.created.append(document)
         self.by_id[document.id] = document
+        return document
+
+    async def create_document_with_chunks(self, document, chunks, embeddings) -> KnowledgeDocument:
+        if self.fail_atomic_chunks:
+            raise RuntimeError("chunk persistence failed")
+        await self.create(document)
+        self.chunks.extend(chunks)
         return document
 
     async def get_by_id(self, document_id: str, tenant_id: str) -> KnowledgeDocument:
@@ -76,6 +93,40 @@ class FakeKnowledgeRepository:
 
     async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
         return [d for d in self.created if d.tenant_id == tenant_id]
+
+
+class FakeIndexer:
+    """Fake RetrievalService indexer capturing the prepare phase.
+
+    Records how many documents were persisted by the knowledge repository
+    at the moment of ``prepare_index`` so tests can prove the fail-closed
+    order: sanitize -> prepare_index (0 persisted) -> atomic create
+    (document + chunks together).
+    """
+
+    def __init__(self, repo: FakeKnowledgeRepository, prepare_result="prepared"):
+        self.repo = repo
+        self.prepare_result = prepare_result
+        self.fail_prepare = False
+        self.prepared_documents = []
+        self.persisted_documents_at_prepare = []
+
+    def raising(self, error: Exception):
+        self.fail_prepare = True
+        self._error = error
+        return self
+
+    async def prepare_index(self, context, document):
+        self.prepared_documents.append((context, document))
+        self.persisted_documents_at_prepare.append(len(self.repo.created))
+        if self.fail_prepare:
+            raise self._error
+        if self.prepare_result is None:
+            return None
+        return SimpleNamespace(
+            chunks=[SimpleNamespace(document_id=document.id)],
+            embeddings=[],
+        )
 
 
 class TestKnowledgeServiceIngest:
@@ -190,6 +241,100 @@ class TestKnowledgeServiceIngest:
         assert "alice@example.com" not in document.content
         assert repo.created[0].content == document.content
         assert document.content != raw
+
+
+class TestKnowledgeServiceIndexing:
+    """Secure RAG indexing: sanitize -> prepare (in memory) -> atomic create.
+
+    The fail-closed ordering under test:
+
+        RAW CONTENT -> PII GUARD -> SANITIZED -> prepare_index
+        (embedding computed BEFORE any database write)
+        -> create document + all chunks in ONE transaction
+
+    An embedding failure aborts before ANY persistence. A persistence
+    failure rolls back the whole transaction: there is never a document
+    without its complete index, nor a partial chunk set.
+    """
+
+    async def test_ingest_creates_document_and_chunks_atomically(self):
+        repo = FakeKnowledgeRepository()
+        indexer = FakeIndexer(repo)
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard("<SANITIZED>"), indexer=indexer)
+
+        await service.ingest_document(
+            _context(),
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            content="Raw content with alice@example.com",
+        )
+
+        # prepare_index runs entirely before any persistence; the
+        # document and its chunks are then created together.
+        assert indexer.persisted_documents_at_prepare == [0]
+        assert len(repo.created) == 1
+        assert len(repo.chunks) == 1
+        assert repo.chunks[0].document_id == repo.created[0].id
+
+        # The indexer receives only sanitized content, owned by the
+        # trusted context tenant.
+        _, prepared_document = indexer.prepared_documents[0]
+        assert prepared_document.content == "<SANITIZED>"
+        assert prepared_document.tenant_id == "tenant-1"
+        assert repo.created[0].content == "<SANITIZED>"
+
+    async def test_ingest_without_prepared_chunks_creates_document_only(self):
+        repo = FakeKnowledgeRepository()
+        indexer = FakeIndexer(repo, prepare_result=None)
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard(), indexer=indexer)
+
+        await service.ingest_document(
+            _context(),
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            content="Some content",
+        )
+
+        assert len(repo.created) == 1
+        assert repo.chunks == []
+
+    async def test_embedding_failure_prevents_any_persistence(self):
+        repo = FakeKnowledgeRepository()
+        indexer = FakeIndexer(repo).raising(EmbeddingError("embedding unavailable"))
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard(), indexer=indexer)
+
+        with pytest.raises(EmbeddingError):
+            await service.ingest_document(
+                _context(),
+                source=KnowledgeSource.POLICY,
+                provenance="Policy handbook",
+                content="Some content",
+            )
+
+        # Fail closed: no document and no chunks were persisted.
+        assert repo.created == []
+        assert repo.chunks == []
+
+    async def test_chunk_persistence_failure_rolls_back_document_and_chunks(self):
+        repo = FakeKnowledgeRepository()
+        repo.fail_atomic_chunks = True
+        indexer = FakeIndexer(repo)
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard(), indexer=indexer)
+
+        with pytest.raises(RuntimeError):
+            await service.ingest_document(
+                _context(),
+                source=KnowledgeSource.POLICY,
+                provenance="Policy handbook",
+                content="Some content",
+            )
+
+        # The atomic contract: a failure during chunk persistence leaves
+        # NO document and NO chunks (the real repository rolls back the
+        # single transaction; proven against PostgreSQL in
+        # test_knowledge_repository.py).
+        assert repo.created == []
+        assert repo.chunks == []
 
 
 class TestKnowledgeServiceRead:

@@ -4,7 +4,9 @@ from typing import List, Protocol
 
 from arc.domain.models import (
     ConnectorConfig,
+    KnowledgeChunk,
     KnowledgeDocument,
+    KnowledgeMatch,
     Membership,
     Skill,
     Tenant,
@@ -132,12 +134,52 @@ class KnowledgeRepository(Protocol):
         """Create a new knowledge document."""
         ...
 
+    async def create_document_with_chunks(
+        self,
+        document: KnowledgeDocument,
+        chunks: List[KnowledgeChunk],
+        embeddings: List[List[float]],
+    ) -> KnowledgeDocument:
+        """Create a knowledge document and all its chunks atomically.
+
+        The document row and every chunk row are inserted in ONE
+        transaction: if the document insert or any chunk insert fails,
+        the entire operation rolls back. There is never a document
+        without its complete retrieval index, nor a partial chunk set.
+        """
+        ...
+
     async def get_by_id(self, document_id: str, tenant_id: str) -> KnowledgeDocument:
         """Get a knowledge document by ID, scoped to a tenant."""
         ...
 
     async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
         """List all knowledge documents for a tenant."""
+        ...
+
+
+class KnowledgeChunkRepository(Protocol):
+    """Repository for KnowledgeChunk entities and vector retrieval.
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. Chunks created for tenant A
+    must never be retrievable or searchable by tenant B.
+
+    Embedding vectors are passed alongside chunks as opaque
+    ``List[float]`` values; the repository is agnostic to the embedding
+    provider (Secure RAG foundation).
+    """
+
+    async def create_many(
+        self, chunks: List[KnowledgeChunk], embeddings: List[List[float]]
+    ) -> List[KnowledgeChunk]:
+        """Persist chunks atomically with their embedding vectors."""
+        ...
+
+    async def search(
+        self, tenant_id: str, query_embedding: List[float], limit: int = 5
+    ) -> List[KnowledgeMatch]:
+        """Return tenant-scoped chunk matches ordered by similarity."""
         ...
 
 

@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from arc.db.connection import NotFoundError
 from arc.domain.models import (
     KnowledgeDocument,
+    KnowledgeMatch,
     KnowledgeSource,
     Skill,
     SkillStatus,
@@ -54,8 +55,10 @@ from arc.services.domain import (
     TenantService,
     UserService,
 )
+from arc.services.embeddings import EmbeddingError
 from arc.services.knowledge import KnowledgeService
 from arc.services.pii import PiiGuardError
+from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
 
 
@@ -108,6 +111,10 @@ class ApplicationContext:
     @property
     def knowledge_service(self) -> KnowledgeService:
         return self.services.get("knowledge_service")
+
+    @property
+    def retrieval_service(self) -> RetrievalService:
+        return self.services.get("retrieval_service")
 
     @property
     def skill_service(self) -> SkillService:
@@ -426,6 +433,68 @@ def _require_path_tenant_matches_context(path_tenant_id: str, context: TenantCon
         )
 
 
+def _knowledge_match_response(match: KnowledgeMatch) -> Dict[str, Any]:
+    """Serialize a retrieval match for API responses.
+
+    Only sanitized content is ever returned; raw content never reaches
+    persistence or a response.
+    """
+    return {
+        "chunk_id": match.chunk_id,
+        "document_id": match.document_id,
+        "tenant_id": match.tenant_id,
+        "content": match.content,
+        "source": match.source.value,
+        "provenance": match.provenance,
+        "document_version": match.document_version,
+        "similarity": match.similarity,
+    }
+
+
+@api_router.get("/tenants/{tenant_id}/knowledge/search")
+async def search_knowledge(
+    tenant_id: str,
+    query: str,
+    limit: int = 5,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    retrieval_service: RetrievalService = Depends(lambda: app_context.retrieval_service),
+):
+    """Search sanitized knowledge chunks within a tenant (Secure RAG).
+
+    Requires the same ``knowledge:read`` permission as document reads:
+    retrieval is a read of the tenant's own knowledge, not a new
+    capability. The trusted X-10 tenant context is the only tenant
+    boundary; the path tenant is defensively required to match it (403
+    otherwise). Chunks are never exposed across tenants, and only
+    already-sanitized content is ever returned.
+
+    The production embedding provider is a deferred decision; the current
+    deterministic provider returns results that are correct for
+    development and test suites but are NOT semantically meaningful.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    if not query or not query.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Search query cannot be empty",
+        )
+    if limit < 1 or limit > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Search limit must be between 1 and 50",
+        )
+
+    try:
+        matches = await retrieval_service.search(context, query, limit=limit)
+    except EmbeddingError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Knowledge search failed",
+        )
+    return [_knowledge_match_response(match) for match in matches]
+
+
 @api_router.post("/tenants/{tenant_id}/knowledge")
 async def create_knowledge_document(
     tenant_id: str,
@@ -467,6 +536,11 @@ async def create_knowledge_document(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except PiiGuardError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Knowledge ingestion failed",
+        )
+    except EmbeddingError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Knowledge ingestion failed",
