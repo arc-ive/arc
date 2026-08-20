@@ -5,6 +5,7 @@ import os
 from arc.db.connection import ArcDatabase
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
 from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tenancy import (
     PostgreSQLMembershipRepository,
@@ -12,9 +13,12 @@ from arc.repositories.tenancy import (
     PostgreSQLUserRepository,
 )
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
+from arc.services.chunking import KnowledgeChunker
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
+from arc.services.embeddings import DeterministicEmbeddingProvider
 from arc.services.knowledge import KnowledgeService
+from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
 from arc.services.tools import ToolExecutionService, build_platform_tool_registry
 
@@ -51,6 +55,7 @@ class Application:
             "membership": PostgreSQLMembershipRepository(self.db),
             "connector": PostgreSQLConnectorRepository(self.db),
             "knowledge": PostgreSQLKnowledgeRepository(self.db),
+            "knowledge_chunk": PostgreSQLKnowledgeChunkRepository(self.db),
             "skill": PostgreSQLSkillRepository(self.db),
             "tool_execution": PostgreSQLToolExecutionRepository(self.db),
         }
@@ -67,8 +72,22 @@ class Application:
         self.services["connector_service"] = ConnectorService(self.repositories["connector"])
 
         # Initialize knowledge service (Company Brain foundation) with the
-        # shared PII Guard boundary applied during ingestion.
-        self.services["knowledge_service"] = KnowledgeService(self.repositories["knowledge"])
+        # shared PII Guard boundary applied during ingestion. The Secure
+        # RAG foundation indexes sanitized content through the same
+        # KnowledgeService: the retrieval service is injected as the
+        # indexer so ingestion and retrieval always agree on the source of
+        # truth (sanitized content only). The embedding provider is the
+        # deterministic local provider; production provider selection is a
+        # deferred decision.
+        retrieval_service = RetrievalService(
+            chunk_repo=self.repositories["knowledge_chunk"],
+            chunker=KnowledgeChunker(),
+            embedding_provider=DeterministicEmbeddingProvider(),
+        )
+        self.services["retrieval_service"] = retrieval_service
+        self.services["knowledge_service"] = KnowledgeService(
+            self.repositories["knowledge"], indexer=retrieval_service
+        )
 
         # Initialize skill service
         self.services["skill_service"] = SkillService(self.repositories["skill"])

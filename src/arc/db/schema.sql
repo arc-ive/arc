@@ -96,3 +96,23 @@ CREATE TABLE IF NOT EXISTS tool_execution_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tool_execution_records_tenant_id ON tool_execution_records(tenant_id);
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+    id VARCHAR(255) PRIMARY KEY,
+    document_id VARCHAR(255) NOT NULL,
+    tenant_id VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    embedding vector(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_knowledge_chunks_sequence CHECK (sequence >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tenant_id ON knowledge_chunks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document_id ON knowledge_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
+    ON knowledge_chunks USING hnsw (embedding vector_cosine_ops);

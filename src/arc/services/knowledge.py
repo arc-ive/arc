@@ -32,6 +32,7 @@ from arc.domain.models import (
 )
 from arc.repositories import KnowledgeRepository
 from arc.services.pii import PiiGuardService
+from arc.services.retrieval import RetrievalService
 
 
 class KnowledgeService:
@@ -41,9 +42,11 @@ class KnowledgeService:
         self,
         knowledge_repo: KnowledgeRepository,
         pii_guard: Optional[PiiGuardService] = None,
+        indexer: Optional[RetrievalService] = None,
     ):
         self.knowledge_repo = knowledge_repo
         self.pii_guard = pii_guard if pii_guard is not None else PiiGuardService()
+        self.indexer = indexer
 
     async def ingest_document(
         self,
@@ -63,6 +66,18 @@ class KnowledgeService:
         Raw content is passed through ``PiiGuardService`` before any
         persistence. If sanitization fails (PiiGuardError), nothing is
         persisted and the exception propagates (fail closed).
+
+        When an ``indexer`` (Secure RAG foundation) is configured, chunks
+        and embeddings are prepared entirely in memory from the sanitized
+        content, and the knowledge document is then created together with
+        ALL of its chunks inside ONE database transaction
+        (``create_document_with_chunks``). The ordering is fail closed:
+
+        - an embedding failure aborts before any database write, so
+          nothing is persisted;
+        - a failure while inserting the document or any chunk rolls back
+          the whole transaction, so there is never a document without its
+          complete index, nor a partial chunk set.
         """
         if not isinstance(source, KnowledgeSource):
             raise ValueError(f"Invalid knowledge source: {source!r}")
@@ -86,6 +101,15 @@ class KnowledgeService:
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
+
+        prepared = None
+        if self.indexer is not None:
+            prepared = await self.indexer.prepare_index(context, document)
+
+        if self.indexer is not None and prepared is not None:
+            return await self.knowledge_repo.create_document_with_chunks(
+                document, prepared.chunks, prepared.embeddings
+            )
         return await self.knowledge_repo.create(document)
 
     async def get_document(self, context: TenantContext, document_id: str) -> KnowledgeDocument:
