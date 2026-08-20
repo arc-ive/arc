@@ -368,6 +368,44 @@ framework-agnostic boundaries.
 - No new ADR: ADR-001 already keeps the tool layer framework/agent
   agnostic, and this slice implements only platform-owned definitions.
 
+### Review response (security review round 2)
+
+- **Legacy audit migration** (`src/arc/db/schema.sql`): the idempotent
+  bootstrap columns `user_id` and `authorization_outcome` are added
+  NULLABLE so pre-audit-contract databases are upgraded without
+  fabricating audit facts: historical rows keep NULL `user_id` (no
+  invented identity) and NULL `authorization_outcome` (no invented
+  GRANTED). New records still require a real trusted `user_id` and a
+  real GRANTED/DENIED outcome through `ToolExecutionService`; fresh
+  installs additionally keep NOT NULL columns at table creation. Proven
+  by `tests/test_tool_audit_migration.py` (real PostgreSQL: old schema +
+  historical rows -> current bootstrap -> history preserved -> new
+  records strict).
+- **Audit ownership boundary**: central authentication/RBAC failure
+  (403 from the FastAPI security dependencies before the service runs,
+  e.g. missing `tool:execute`) is owned by the central security/audit
+  boundary: `ToolExecutionService` is NOT invoked and no
+  `tool_execution_records` row is written. Per-tool authorization
+  failure (holds `tool:execute`, lacks a tool-declared permission) is
+  owned by the service and recorded with `authorization_outcome=DENIED`.
+  Documented in `src/arc/services/tools.py`; proven by
+  `test_user_without_tool_execute_never_invokes_service_or_handler`
+  (403, handler never runs, zero records) alongside the existing DENIED-
+  record test.
+- **Audit redaction**: sensitive key variants now include
+  `access_token`, `refresh_token`, `client_secret`; redaction applies at
+  every nesting depth (objects, arrays, deep nesting). Free-form text is
+  intentionally retained (documented policy: only keyed values are
+  redacted; summaries are bounded by platform-owned handlers and
+  validated input models). Oversized summaries are truncated to the
+  configured maximum (512) end-to-end. Handler exceptions never leak:
+  `error_kind` stays a safe classification (`execution_error`, etc.) and
+  raw messages/secrets never reach records or API responses.
+- **`_summarize` fallback hardening**: an unserializable payload (e.g.
+  non-string dict keys or a self-referential structure) now produces a
+  fixed safe marker (`[unserializable <type> payload redacted]`) instead
+  of a raw `str()` that could bypass keyed redaction.
+
 ### Verification
 
 - 427 tests pass (Docker + real PostgreSQL) on both a fresh and a warm

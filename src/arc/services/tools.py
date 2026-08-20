@@ -31,6 +31,19 @@ tenant boundary comes exclusively from the trusted ``TenantContext``,
 and per-tool authorization is enforced fail-closed inside the service
 using the application's existing ``AuthorizationService`` before any
 handler can run.
+
+Audit ownership boundary:
+
+- Central authentication/RBAC failure (401/403 raised by the FastAPI
+  security dependencies before this service runs, for example a caller
+  without ``tool:execute``) is owned by the central security boundary:
+  ``ToolExecutionService`` is NOT invoked and no
+  ``tool_execution_records`` row is written, because there is no
+  controlled tool attempt to attribute.
+- Per-tool authorization failure (the caller holds ``tool:execute`` but
+  lacks a permission declared by the tool) is owned by this service:
+  the attempt is refused fail-closed inside ``execute_tool`` and the
+  denial is recorded with ``authorization_outcome=DENIED``.
 """
 
 import json
@@ -231,7 +244,10 @@ _SENSITIVE_KEYS: FrozenSet[str] = frozenset(
         "api_key",
         "apikey",
         "access_key",
+        "access_token",
+        "refresh_token",
         "private_key",
+        "client_secret",
         "authorization",
         "credential",
         "credentials",
@@ -243,8 +259,19 @@ def _redact(value: Any) -> Any:
     """Replace the values of sensitive-keyed entries with a safe marker.
 
     Data minimization for execution records (TRD 14.2): values under
-    keys such as ``password``, ``token``, ``api_key``, ``secret``, or
-    ``authorization`` are never persisted, only a ``[REDACTED]`` marker.
+    keys such as ``password``, ``token``, ``api_key``, ``secret``,
+    ``access_token``, ``client_secret``, or ``authorization`` are never
+    persisted, only a ``[REDACTED]`` marker. Key matching is
+    case-insensitive and applied at every nesting depth (objects,
+    arrays, and deeply nested structures).
+
+    Redaction policy for free-form text: only keyed values are redacted.
+    Arbitrary free-form strings inside values (for example a sentence
+    containing the word ``secret``) are intentionally retained, because
+    heuristic secret scanning is unreliable; the summaries that reach
+    this function are bounded by platform-owned handlers and validated
+    input models, and any secret that arrives under a sensitive key is
+    always removed.
     """
     if isinstance(value, dict):
         return {
@@ -263,14 +290,20 @@ def _redact(value: Any) -> Any:
 def _summarize(value: Any, max_length: int = 512) -> str:
     """Return a safe, truncated summary of a value for an execution record.
 
-    Values are redacted (sensitive keys), JSON-encoded, and truncated so
-    records never contain raw sensitive payloads, secrets, or
-    implementation details.
+    Values are redacted (sensitive keys, at any nesting depth),
+    JSON-encoded, and truncated so records never contain raw sensitive
+    payloads, secrets, or implementation details.
+
+    If the redacted value cannot be JSON-encoded (for example a
+    self-referential structure or a dict with non-string keys), the
+    fallback is a fixed safe classification marker instead of a raw
+    ``str()``: ``str()`` of an unserializable structure can contain
+    sensitive values and would bypass the keyed redaction policy.
     """
     try:
         encoded = json.dumps(_redact(value), sort_keys=True, default=str, ensure_ascii=True)
-    except (TypeError, ValueError):
-        encoded = str(value)
+    except (TypeError, ValueError, RecursionError):
+        encoded = f"[unserializable {type(value).__name__} payload redacted]"
     return encoded[:max_length]
 
 

@@ -100,9 +100,16 @@ CREATE TABLE IF NOT EXISTS tool_execution_records (
 );
 
 -- Idempotent audit-contract columns: schema bootstrap also runs against
--- databases created before the audit contract was extended.
-ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS user_id VARCHAR(255) NOT NULL DEFAULT '';
-ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS authorization_outcome VARCHAR(50) NOT NULL DEFAULT 'granted';
+-- databases created before the audit contract was extended. Historical
+-- records predate that contract: their user identity and authorization
+-- decision were never recorded, so the migrated columns are NULLABLE and
+-- the migration NEVER fabricates a user identity or a GRANTED
+-- authorization for them. New records always carry a real trusted
+-- user_id and a real authorization outcome (GRANTED or DENIED), enforced
+-- by ToolExecutionService (fresh installs additionally keep NOT NULL
+-- columns at table creation)
+ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS user_id VARCHAR(255);
+ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS authorization_outcome VARCHAR(50);
 
 CREATE INDEX IF NOT EXISTS idx_tool_execution_records_tenant_id ON tool_execution_records(tenant_id);
 

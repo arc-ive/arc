@@ -482,6 +482,87 @@ class TestToolExecution:
         assert await repo.list_for_tenant(tenant.id) == []
         assert await repo.list_for_tenant(other_tenant.id) == []
 
+    async def test_user_without_tool_execute_never_invokes_service_or_handler(
+        self, client, db, repositories, make_token, authorization_override
+    ):
+        """Audit ownership boundary: a caller WITHOUT tool:execute is
+        refused by the central RBAC dependency (403) BEFORE the tool
+        service runs; no handler executes and no tool_execution_records
+        row is written. Central security failures are owned by the
+        central security/audit boundary, not by ToolExecutionService."""
+        calls = []
+
+        def spy(input_data, tenant_id):
+            calls.append((input_data, tenant_id))
+            return {"tenant_id": tenant_id, "services": []}
+
+        tenant, user = await _seed_member(repositories)
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+
+        spy_service = ToolExecutionService(
+            ToolRegistry({SERVICE_HEALTH_TOOL.name: replace(SERVICE_HEALTH_TOOL, handler=spy)}),
+            PostgreSQLToolExecutionRepository(arc_app.db),
+        )
+        app = client.app
+        app.dependency_overrides[get_tool_service] = lambda: spy_service
+        try:
+            response = client.post(
+                f"/tenants/{tenant.id}/tools/check_service_health/execute",
+                headers=_auth_headers(token),
+                json={"input": {}},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 403
+        assert calls == []
+
+        repo = PostgreSQLToolExecutionRepository(db)
+        assert await repo.list_for_tenant(tenant.id) == []
+
+    async def test_handler_crash_leaks_nothing_to_audit_or_response(
+        self, client, db, repositories, make_token, authorization_override
+    ):
+        """Error safety: a handler exception carrying sensitive material
+        never reaches the API response or the audit record; error_kind
+        stays a safe classification and the raw message is never stored."""
+        tenant, user = await _seed_member(repositories)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        def boom(input_data, tenant_id):
+            raise RuntimeError("Authorization token is SUPER_SECRET-9f8e7d6c5b")
+
+        crashing_service = ToolExecutionService(
+            ToolRegistry({SERVICE_HEALTH_TOOL.name: replace(SERVICE_HEALTH_TOOL, handler=boom)}),
+            PostgreSQLToolExecutionRepository(arc_app.db),
+        )
+        app = client.app
+        app.dependency_overrides[get_tool_service] = lambda: crashing_service
+        try:
+            response = client.post(
+                f"/tenants/{tenant.id}/tools/check_service_health/execute",
+                headers=_auth_headers(token),
+                json={"input": {}},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Tool execution failed"
+        assert "SUPER_SECRET-9f8e7d6c5b" not in response.text
+        assert "Traceback" not in response.text
+
+        repo = PostgreSQLToolExecutionRepository(db)
+        records = await repo.list_for_tenant(tenant.id)
+        assert len(records) == 1
+        assert records[0].status == ToolExecutionStatus.FAILED
+        assert records[0].error_kind == "execution_error"
+        assert "SUPER_SECRET-9f8e7d6c5b" not in records[0].input_summary
+        assert "SUPER_SECRET-9f8e7d6c5b" not in (records[0].output_summary or "")
+        assert "SUPER_SECRET-9f8e7d6c5b" not in (records[0].error_kind or "")
+
     async def test_safe_error_responses_contain_no_internal_details(
         self, client, repositories, make_token, authorization_override
     ):

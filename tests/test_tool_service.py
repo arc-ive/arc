@@ -226,7 +226,7 @@ async def test_valid_input_reaches_handler_with_trusted_tenant(repositories, db)
 
 async def test_handler_failure_records_controlled_failure(repositories, db):
     def boom(input_data, tenant_id):
-        raise RuntimeError("secret internal detail")
+        raise RuntimeError("Authorization token is SUPER_SECRET-9f8e7d6c5b")
 
     service = ToolExecutionService(
         _registry_with_handler(boom), PostgreSQLToolExecutionRepository(db)
@@ -245,9 +245,9 @@ async def test_handler_failure_records_controlled_failure(repositories, db):
     record = records[0]
     assert record.status == ToolExecutionStatus.FAILED
     assert record.error_kind == "execution_error"
-    assert "secret internal detail" not in record.input_summary
-    assert "secret internal detail" not in (record.output_summary or "")
-    assert "secret internal detail" not in (record.error_kind or "")
+    assert "SUPER_SECRET-9f8e7d6c5b" not in record.input_summary
+    assert "SUPER_SECRET-9f8e7d6c5b" not in (record.output_summary or "")
+    assert "SUPER_SECRET-9f8e7d6c5b" not in (record.error_kind or "")
 
 
 async def test_policy_denial_records_failure(repositories, db):
@@ -600,6 +600,119 @@ def test_summary_redacts_sensitive_keys():
     assert "sk-live" not in summary
     assert '"keep": "ok"' in summary
     assert "[REDACTED]" in summary
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "password",
+        "Password",
+        "PASSWORD",
+        "token",
+        "secret",
+        "api_key",
+        "apiKey",
+        "API_KEY",
+        "authorization",
+        "access_token",
+        "refresh_token",
+        "credential",
+        "private_key",
+        "client_secret",
+    ],
+)
+def test_summary_redacts_sensitive_key_variants(key):
+    """Every sensitive key variant/casing in the policy is redacted."""
+    summary = _summarize({key: "SUPER_SECRET"})
+    assert "SUPER_SECRET" not in summary
+    assert "[REDACTED]" in summary
+
+
+def test_summary_redacts_nested_object():
+    value = {"user": {"credentials": {"token": "SUPER_SECRET"}}}
+    summary = _summarize(value)
+    assert "SUPER_SECRET" not in summary
+    assert "[REDACTED]" in summary
+
+
+def test_summary_redacts_nested_array():
+    value = {"items": [{"api_key": "SUPER_SECRET"}, {"name": "keep-me"}]}
+    summary = _summarize(value)
+    assert "SUPER_SECRET" not in summary
+    assert "[REDACTED]" in summary
+    assert "keep-me" in summary
+
+
+def test_summary_redacts_deep_nesting():
+    value = {"a": {"b": {"c": {"secret": "SUPER_SECRET"}}}}
+    summary = _summarize(value)
+    assert "SUPER_SECRET" not in summary
+    assert "[REDACTED]" in summary
+
+
+def test_summary_free_form_text_policy_is_retained_by_design():
+    """Redaction policy: only keyed values are redacted.
+
+    Arbitrary free-form strings (for example a sentence containing the
+    word ``secret``) are intentionally retained; heuristic secret
+    scanning is unreliable. Summaries are bounded by platform-owned
+    handlers and validated input models, and any secret arriving under a
+    sensitive key is always removed. This test documents that policy.
+    """
+    summary = _summarize("Authorization token is SUPER_SECRET")
+    assert "Authorization token is SUPER_SECRET" in summary
+
+
+def test_summary_fallback_never_leaks_unserializable_payload():
+    """A value json.dumps cannot encode (non-string dict keys) must not
+    fall back to raw ``str()``: that would bypass keyed redaction."""
+    value = {(1, 2): {"password": "SUPER_SECRET"}}
+    summary = _summarize(value)
+    assert "SUPER_SECRET" not in summary
+    assert "[unserializable dict payload redacted]" in summary
+
+
+def test_summary_fallback_handles_circular_structures_safely():
+    """A self-referential structure must never crash or leak raw content."""
+    value = {"name": "keep-me"}
+    value["self"] = value
+    summary = _summarize(value)
+    assert "SUPER_SECRET" not in summary
+    assert "[unserializable dict payload redacted]" in summary
+
+
+async def test_nested_sensitive_input_never_reaches_audit_records(repositories, db):
+    """End-to-end data minimization for nested structures and oversized
+    payloads: secrets are removed and summaries are bounded to the
+    configured maximum (512)."""
+    tenant_repo, _, _ = repositories
+    record_repo = PostgreSQLToolExecutionRepository(db)
+    tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Tool Service Tenant"))
+    context = _context(tenant.id)
+
+    def echo(input_data, tenant_id):
+        return {"echoed": input_data}
+
+    spy_tool = replace(SERVICE_HEALTH_TOOL, name="echo_tool", input_model=EchoInput, handler=echo)
+    service = ToolExecutionService(ToolRegistry({spy_tool.name: spy_tool}), record_repo)
+
+    nested_payload = {
+        "user": {"credentials": {"token": "NESTED-SUPER-SECRET"}},
+        "items": [{"api_key": "ARRAY-SUPER-SECRET"}],
+        "deep": {"a": {"b": {"c": {"secret": "DEEP-SUPER-SECRET"}}}},
+        "blob": "x" * 2000,
+    }
+    await service.execute_tool(context, _principal(), "echo_tool", nested_payload, _authorization())
+
+    records = await record_repo.list_for_tenant(tenant.id)
+    assert len(records) == 1
+    record = records[0]
+    for sensitive in ("NESTED-SUPER-SECRET", "ARRAY-SUPER-SECRET", "DEEP-SUPER-SECRET"):
+        assert sensitive not in record.input_summary
+        assert sensitive not in (record.output_summary or "")
+        assert sensitive not in (record.error_kind or "")
+    assert len(record.input_summary) <= 512
+    assert len(record.output_summary or "") <= 512
 
 
 async def test_high_risk_tool_never_executes_with_allow_mode(repositories, db):
