@@ -8,13 +8,20 @@ be retrievable or listable by tenant B.
 
 import os
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
-from arc.domain.models import KnowledgeDocument, KnowledgeSource, Tenant
+from arc.domain.models import (
+    KnowledgeChunk,
+    KnowledgeDocument,
+    KnowledgeSource,
+    Tenant,
+)
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
 from arc.repositories.tenancy import PostgreSQLTenantRepository
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
@@ -36,6 +43,25 @@ def _document(tenant_id: str, **overrides):
     )
     values.update(overrides)
     return KnowledgeDocument(**values)
+
+
+def _chunks(document: KnowledgeDocument, count: int = 2, **overrides):
+    return [
+        KnowledgeChunk(
+            id=overrides.get("id", _unique(f"chunk-{index}")),
+            document_id=document.id,
+            tenant_id=document.tenant_id,
+            content=f"chunk content number {index}",
+            sequence=index,
+            created_at=datetime.now(),
+        )
+        for index in range(count)
+    ]
+
+
+def _embeddings(count: int, dimension: int = 64):
+    """Non-zero collinear embeddings: safe for presence assertions."""
+    return [[float(index) + 1.0] * dimension for index in range(count)]
 
 
 @pytest.fixture
@@ -165,3 +191,68 @@ class TestKnowledgeTenantIsolation:
         list_b = await knowledge_repo.list_for_tenant(tenant_b.id)
         assert len(list_b) == 1
         assert list_b[0].id == doc_b.id
+
+
+class TestKnowledgeDocumentWithChunks:
+    """Atomicity of create_document_with_chunks (one transaction).
+
+    The document row and every chunk row are inserted in ONE PostgreSQL
+    transaction: a failure while inserting a chunk rolls back the
+    document insert too. There must never be a knowledge document without
+    its complete retrieval index, nor a partial chunk set.
+    """
+
+    async def test_document_and_all_chunks_persist_atomically(
+        self, db, knowledge_repo, seeded_tenant
+    ):
+        chunk_repo = PostgreSQLKnowledgeChunkRepository(db)
+        document = _document(seeded_tenant.id)
+        chunks = _chunks(document, count=3)
+
+        created = await knowledge_repo.create_document_with_chunks(document, chunks, _embeddings(3))
+
+        assert created.id == document.id
+        fetched = await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
+        assert fetched.id == document.id
+
+        matches = await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=10)
+        assert {match.chunk_id for match in matches} == {chunk.id for chunk in chunks}
+        assert all(match.document_id == document.id for match in matches)
+
+    async def test_chunk_insertion_failure_rolls_back_document_and_chunks(
+        self, db, knowledge_repo, seeded_tenant
+    ):
+        chunk_repo = PostgreSQLKnowledgeChunkRepository(db)
+        document = _document(seeded_tenant.id)
+        # Both chunks share one ID: the first chunk insert succeeds, the
+        # second violates the primary key INSIDE the transaction.
+        chunks = _chunks(document, count=2, id=_unique("duplicate-chunk"))
+
+        with pytest.raises(DuplicateKeyError):
+            await knowledge_repo.create_document_with_chunks(document, chunks, _embeddings(2))
+
+        # The document insert was rolled back: no row, no chunks.
+        with pytest.raises(NotFoundError):
+            await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
+        assert await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=10) == []
+
+    async def test_length_mismatch_is_rejected_before_any_write(
+        self, knowledge_repo, seeded_tenant
+    ):
+        document = _document(seeded_tenant.id)
+        chunks = _chunks(document, count=2)
+
+        with pytest.raises(ValueError):
+            await knowledge_repo.create_document_with_chunks(document, chunks, _embeddings(1))
+
+        with pytest.raises(NotFoundError):
+            await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
+
+    async def test_document_duplicate_is_rejected(self, knowledge_repo, seeded_tenant):
+        document = _document(seeded_tenant.id)
+        await knowledge_repo.create(document)
+
+        with pytest.raises(DuplicateKeyError):
+            await knowledge_repo.create_document_with_chunks(
+                document, _chunks(document, count=1), _embeddings(1)
+            )
