@@ -173,7 +173,28 @@ class TestKnowledgeChunkRepositoryContract:
         assert match.source == KnowledgeSource.POLICY
         assert match.provenance == "Policy handbook 2026 edition"
         assert match.document_version == 1
+        assert match.sequence == chunks[0].sequence
         assert match.similarity >= 0.0
+
+    async def test_search_preserves_chunk_sequence(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=3)
+        await chunk_repo.create_many(chunks, _embeddings(3))
+
+        matches = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=10)
+        assert {match.chunk_id: match.sequence for match in matches} == {
+            chunk.id: chunk.sequence for chunk in chunks
+        }
+
+    async def test_create_many_rejects_mixed_tenant_chunks_atomically(
+        self, chunk_repo, seeded_document
+    ):
+        chunks = _chunks(seeded_document, count=2)
+        chunks[1].tenant_id = f"{seeded_document.tenant_id}-other"
+
+        with pytest.raises(ValueError):
+            await chunk_repo.create_many(chunks, _embeddings(2))
+
+        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=10) == []
 
     async def test_chunks_are_removed_with_their_document(self, db, chunk_repo, seeded_document):
         chunks = _chunks(seeded_document, count=1)

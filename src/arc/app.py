@@ -22,8 +22,10 @@ from arc.services.connector_providers import (
 from arc.services.connector_sync import ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
-from arc.services.embeddings import DeterministicEmbeddingProvider
+from arc.services.embeddings import build_embedding_provider, get_embedding_settings
+from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
+from arc.services.llm import build_llm_provider, get_llm_settings
 from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
 
@@ -81,17 +83,32 @@ class Application:
         # RAG foundation indexes sanitized content through the same
         # KnowledgeService: the retrieval service is injected as the
         # indexer so ingestion and retrieval always agree on the source of
-        # truth (sanitized content only). The embedding provider is the
-        # deterministic local provider; production provider selection is a
-        # deferred decision.
+        # truth (sanitized content only). The embedding provider is
+        # selected from environment configuration (EMBEDDING_PROVIDER /
+        # EMBEDDING_MODEL); only the deterministic local provider is
+        # currently supported, and unknown providers fail closed at
+        # startup. Production provider selection is a deferred decision.
         retrieval_service = RetrievalService(
             chunk_repo=self.repositories["knowledge_chunk"],
             chunker=KnowledgeChunker(),
-            embedding_provider=DeterministicEmbeddingProvider(),
+            embedding_provider=build_embedding_provider(get_embedding_settings()),
         )
         self.services["retrieval_service"] = retrieval_service
         self.services["knowledge_service"] = KnowledgeService(
             self.repositories["knowledge"], indexer=retrieval_service
+        )
+
+        # Initialize Unified Intelligence service (first slice: reasoning
+        # over the Approved Context Contract). The ONLY retrieval path is
+        # the retrieval service's approved_search; the LLM provider is
+        # selected from environment configuration (LLM_PROVIDER /
+        # LLM_MODEL). Only the deterministic local provider is currently
+        # supported; unknown providers fail closed at startup. Production
+        # LLM provider/model selection (OpenRouter primary per TRD 34) is
+        # a deferred decision.
+        self.services["intelligence_service"] = UnifiedIntelligenceService(
+            retrieval=retrieval_service,
+            llm_provider=build_llm_provider(get_llm_settings()),
         )
 
         # Initialize skill service

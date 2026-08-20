@@ -49,6 +49,8 @@ class PostgreSQLKnowledgeChunkRepository:
         """
         if len(chunks) != len(embeddings):
             raise ValueError("chunks and embeddings must have the same length")
+        if chunks and any(chunk.tenant_id != chunks[0].tenant_id for chunk in chunks):
+            raise ValueError("All chunks in a batch must belong to the same tenant")
 
         async with self.db.transaction() as conn:
             for chunk, embedding in zip(chunks, embeddings):
@@ -89,6 +91,7 @@ class PostgreSQLKnowledgeChunkRepository:
                        c.document_id,
                        c.tenant_id,
                        c.content,
+                       c.sequence,
                        d.source,
                        d.provenance,
                        d.version,
@@ -113,6 +116,7 @@ class PostgreSQLKnowledgeChunkRepository:
                     source=KnowledgeSource(row["source"]),
                     provenance=row["provenance"],
                     document_version=row["version"],
+                    sequence=row["sequence"],
                     similarity=float(row["similarity"]),
                 )
                 for row in rows
