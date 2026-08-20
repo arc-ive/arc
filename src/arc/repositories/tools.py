@@ -14,7 +14,12 @@ payloads, and internal stack traces must never reach this table.
 from typing import List
 
 from arc.db.connection import ArcDatabase
-from arc.domain.models import ToolExecutionRecord, ToolExecutionStatus, ToolRiskLevel
+from arc.domain.models import (
+    ToolAuthorizationOutcome,
+    ToolExecutionRecord,
+    ToolExecutionStatus,
+    ToolRiskLevel,
+)
 
 
 class PostgreSQLToolExecutionRepository:
@@ -29,9 +34,11 @@ class PostgreSQLToolExecutionRepository:
         return ToolExecutionRecord(
             id=row["id"],
             tenant_id=row["tenant_id"],
+            user_id=row["user_id"],
             tool_name=row["tool_name"],
             tool_version=row["tool_version"],
             status=ToolExecutionStatus(row["status"]),
+            authorization_outcome=ToolAuthorizationOutcome(row["authorization_outcome"]),
             risk_level=ToolRiskLevel(row["risk_level"]),
             input_summary=row["input_summary"],
             output_summary=row["output_summary"],
@@ -45,16 +52,18 @@ class PostgreSQLToolExecutionRepository:
             await conn.execute(
                 """
                 INSERT INTO tool_execution_records
-                    (id, tenant_id, tool_name, tool_version, status,
-                     risk_level, input_summary, output_summary, error_kind,
-                     created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    (id, tenant_id, user_id, tool_name, tool_version, status,
+                     authorization_outcome, risk_level, input_summary,
+                     output_summary, error_kind, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 """,
                 record.id,
                 record.tenant_id,
+                record.user_id,
                 record.tool_name,
                 record.tool_version,
                 record.status.value,
+                record.authorization_outcome.value,
                 record.risk_level.value,
                 record.input_summary,
                 record.output_summary,
@@ -68,9 +77,9 @@ class PostgreSQLToolExecutionRepository:
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, tenant_id, tool_name, tool_version, status,
-                       risk_level, input_summary, output_summary, error_kind,
-                       created_at
+                SELECT id, tenant_id, user_id, tool_name, tool_version, status,
+                       authorization_outcome, risk_level, input_summary,
+                       output_summary, error_kind, created_at
                 FROM tool_execution_records
                 WHERE tenant_id = $1
                 ORDER BY created_at DESC

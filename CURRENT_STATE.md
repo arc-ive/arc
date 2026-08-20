@@ -2,7 +2,7 @@
 
 Last Updated:
 
-2026-08-19
+2026-08-20
 
 Current Phase:
 
@@ -294,6 +294,105 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 ### Pending
 
 - Human review of the PR; merge into `main`.
+
+## AI Tools — AI Tools Foundation (Implemented — pending review)
+
+**Branch:** `feat/ai-tools-foundation`
+**Base:** `origin/main` (reconciled with current main)
+**Scope:** authorized slice of the AI Tools module (PRD 15, TRD 14) —
+platform-owned, code-defined AI Tool catalog and controlled execution,
+integrated with the merged X-10 (tenancy), X-11 (auth/RBAC), and ADR-001
+framework-agnostic boundaries.
+
+### Platform-owned catalog statement (recorded per review)
+
+- Tenants cannot register arbitrary tools, upload executable code, or
+  execute arbitrary Python/JS/shell.
+- Tenants gain tenant-scoped access to the platform-owned AI Tool catalog
+  exclusively through the existing authorization model
+  (`tool:read`, `tool:execute`, and each tool's declared required
+  permissions).
+- Tenant-level enable/disable configuration may come later.
+- Dynamic tenant-defined tools are explicitly deferred.
+
+### What changed
+
+- **Catalog** (`src/arc/services/tools.py`): static, versioned,
+  platform-owned whitelist (`check_service_health` v1). The registry
+  exposes only read operations; no runtime registration or mutation API.
+  `ToolDefinition` fails closed at construction: non-empty
+  `required_permissions` of `Permission` objects, and high-risk tools
+  must declare `REQUIRE_HUMAN_APPROVAL` or `DENY` (never `ALLOW`).
+- **Execution policy** (`ToolExecutionPolicyMode`): ALLOW / DENY /
+  REQUIRE_HUMAN_APPROVAL are explicitly represented. REQUIRE_HUMAN_APPROVAL
+  and DENY fail closed with a controlled, audited denial; the Human
+  Intervention approval gate itself is not implemented in this slice.
+- **Per-tool authorization**: execution requires `tool:execute` AND every
+  permission declared by the tool, enforced fail-closed inside
+  `ToolExecutionService` using the existing `AuthorizationService`
+  (defense in depth under the controller's `tool:execute` dependency).
+  Unknown tool, missing/invalid permission metadata, and insufficient
+  permissions are denied before any handler runs and are audited.
+- **Tenant isolation**: the tenant boundary comes exclusively from the
+  trusted X-10 `TenantContext`; the path `tenant_id` is request input
+  only and is validated for consistency (403 on mismatch). An invalid
+  context fails closed with no audit record.
+- **Audit contract** (`tool_execution_records`): now explicitly records
+  who (user_id), tenant, tool name/version, authorization outcome
+  (granted/denied), risk level, status, error kind, execution id, and
+  timestamp. Data minimization: summaries are redacted for sensitive
+  keys (password/token/secret/api_key/...) and truncated; secrets,
+  credentials, raw sensitive payloads, and stack traces never reach
+  records.
+- **API** (`src/arc/api/controllers.py`): `GET /tenants/{tenant_id}/tools`
+  (`tool:read`) and `POST /tenants/{tenant_id}/tools/{name}/execute`
+  (`tool:execute` + per-tool permissions). Catalog responses expose only
+  safe metadata (`required_permissions`, schemas, risk level) and never
+  handlers. No registration/modification/upload surface exists.
+- **Schema** (`src/arc/db/schema.sql`): `tool_execution_records` extended
+  with `user_id` and `authorization_outcome` (idempotent bootstrap via
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
+- **Tests**: `tests/test_tool_api.py`, `test_tool_domain.py`,
+  `test_tool_registry.py`, `test_tool_repository.py`,
+  `test_tool_service.py` — per-tool authorization matrix, tenant
+  isolation (A→A, A→B 403, mismatch no side effects, missing context),
+  read-only registry API (405/404 on mutation attempts), code-execution
+  guards, audit minimization (secrets absent from records), and the
+  fail-closed metadata/policy cases (real PostgreSQL).
+
+### What was NOT changed
+
+- Agent/LLM calling, Skills execution, Webhooks, Connectors, Secure RAG,
+  Human Intervention, production/external integrations — explicitly out
+  of scope for this slice.
+- No new ADR: ADR-001 already keeps the tool layer framework/agent
+  agnostic, and this slice implements only platform-owned definitions.
+
+### Verification
+
+- 427 tests pass (Docker + real PostgreSQL) on both a fresh and a warm
+  database.
+- `ruff check .` and `ruff format --check .` pass.
+- `docker compose config --quiet` passes; `compileall` clean.
+
+### Pending
+
+- Human review of PR #31; merge into `main`.
+
+**Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
+
+- Added `.github/workflows/ci.yml` (GitHub Actions, `ubuntu-latest`).
+- Triggers: pushes to `main` and pull requests targeting `main`.
+- Checks use the existing Docker Compose environment:
+  - `docker compose build arc`
+  - `docker compose run --rm arc ruff check .`
+  - `docker compose run --rm arc ruff format --check .`
+  - `docker compose run --rm arc python -m pytest -q`
+- Environment values are development/test placeholders only; no real
+  credentials.
+- The repo-wide lint/format gate passes on current `main`, verified locally
+  against a freshly rebuilt application image.
+- GitHub Actions CI is active on `main`.
 
 ## CI Baseline (Established)
 

@@ -6,17 +6,25 @@ The registry is a static, code-defined, platform-approved whitelist
 - the approved catalog and its PRD 15 metadata are complete;
 - ``check_service_health`` is the one approved foundation tool;
 - the registry exposes no runtime registration or mutation API;
+- definitions fail closed on missing/invalid permission metadata and
+  on high-risk tools that would bypass the approval policy;
 - the tool layer contains no arbitrary/dynamic execution mechanism.
 """
 
 import inspect
 import uuid
 
+import pytest
+
 from arc.domain.models import ToolRiskLevel
 from arc.security.authorization import TOOL_EXECUTE
+from arc.security.models import Permission
 from arc.services.tools import (
     PLATFORM_TOOLS,
     SERVICE_HEALTH_TOOL,
+    ToolDefinition,
+    ToolExecutionPolicy,
+    ToolExecutionPolicyMode,
     ToolRegistry,
     build_platform_tool_registry,
 )
@@ -43,7 +51,7 @@ def test_platform_registry_names():
 
 
 def test_definition_metadata_complete():
-    """PRD 15: every approved tool declares purpose, schemas, permission,
+    """PRD 15: every approved tool declares purpose, schemas, permissions,
     risk level, execution policy, audit policy, and a handler."""
     for tool in PLATFORM_TOOLS:
         assert tool.name
@@ -51,15 +59,16 @@ def test_definition_metadata_complete():
         assert tool.description
         assert tool.input_schema.get("type") == "object"
         assert tool.output_schema.get("type") == "object"
-        assert isinstance(tool.required_permission.value, str)
+        assert tool.required_permissions
+        assert all(isinstance(p, Permission) for p in tool.required_permissions)
         assert tool.risk_level in ToolRiskLevel
-        assert tool.execution_policy.direct_execution_allowed is not None
+        assert tool.execution_policy.mode in ToolExecutionPolicyMode
         assert tool.audit_policy.record_summary_only is True
         assert callable(tool.handler)
 
 
 def test_check_service_health_requires_tool_execute_permission():
-    assert SERVICE_HEALTH_TOOL.required_permission == TOOL_EXECUTE
+    assert SERVICE_HEALTH_TOOL.required_permissions == frozenset({TOOL_EXECUTE})
 
 
 def test_check_service_health_is_low_risk():
@@ -100,6 +109,77 @@ def test_empty_registry_approves_nothing():
     assert registry.get("check_service_health") is None
 
 
+def test_definition_without_required_permissions_fails_closed():
+    """Missing permission metadata must never construct (fail closed)."""
+    with pytest.raises(ValueError):
+        ToolDefinition(
+            name="no_permissions",
+            version="1",
+            description="should be rejected",
+            input_model=SERVICE_HEALTH_TOOL.input_model,
+            output_model=SERVICE_HEALTH_TOOL.output_model,
+            required_permissions=frozenset(),
+            risk_level=ToolRiskLevel.LOW,
+            execution_policy=ToolExecutionPolicy(),
+            audit_policy=SERVICE_HEALTH_TOOL.audit_policy,
+            handler=SERVICE_HEALTH_TOOL.handler,
+        )
+
+
+def test_definition_with_invalid_permission_metadata_fails_closed():
+    """Invalid permission metadata (non-Permission entries) must never
+    construct (fail closed)."""
+    with pytest.raises(ValueError):
+        ToolDefinition(
+            name="bad_permission",
+            version="1",
+            description="should be rejected",
+            input_model=SERVICE_HEALTH_TOOL.input_model,
+            output_model=SERVICE_HEALTH_TOOL.output_model,
+            required_permissions=frozenset({"tool:execute"}),  # not a Permission
+            risk_level=ToolRiskLevel.LOW,
+            execution_policy=ToolExecutionPolicy(),
+            audit_policy=SERVICE_HEALTH_TOOL.audit_policy,
+            handler=SERVICE_HEALTH_TOOL.handler,
+        )
+
+
+def test_high_risk_tool_with_allow_policy_is_rejected():
+    """A high-risk tool must never silently bypass the approval policy."""
+    with pytest.raises(ValueError):
+        ToolDefinition(
+            name="restart_service",
+            version="1",
+            description="high-risk tool that must require human approval",
+            input_model=SERVICE_HEALTH_TOOL.input_model,
+            output_model=SERVICE_HEALTH_TOOL.output_model,
+            required_permissions=frozenset({TOOL_EXECUTE}),
+            risk_level=ToolRiskLevel.HIGH,
+            execution_policy=ToolExecutionPolicy(mode=ToolExecutionPolicyMode.ALLOW),
+            audit_policy=SERVICE_HEALTH_TOOL.audit_policy,
+            handler=SERVICE_HEALTH_TOOL.handler,
+        )
+
+
+def test_high_risk_tool_may_reserve_human_approval():
+    """HIGH risk with REQUIRE_HUMAN_APPROVAL (or DENY) is representable
+    as an explicit future/fail-closed state; the approval gate itself is
+    not implemented in this slice."""
+    tool = ToolDefinition(
+        name="restart_service",
+        version="1",
+        description="high-risk tool reserving the approval gate",
+        input_model=SERVICE_HEALTH_TOOL.input_model,
+        output_model=SERVICE_HEALTH_TOOL.output_model,
+        required_permissions=frozenset({TOOL_EXECUTE}),
+        risk_level=ToolRiskLevel.HIGH,
+        execution_policy=ToolExecutionPolicy(mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL),
+        audit_policy=SERVICE_HEALTH_TOOL.audit_policy,
+        handler=SERVICE_HEALTH_TOOL.handler,
+    )
+    assert tool.execution_policy.mode == ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+
+
 def test_handlers_are_plain_platform_owned_functions():
     """Approved handlers are module-level functions owned by the platform,
     never closures over user input or dynamically generated code."""
@@ -124,3 +204,13 @@ def test_tool_layer_has_no_arbitrary_execution_mechanism():
     ]
     for token in forbidden:
         assert token not in source, f"forbidden dynamic-execution token found: {token}"
+
+
+def test_handlers_cannot_reach_external_systems():
+    """Security guard: approved handlers are plain functions that cannot
+    open network, database, or filesystem channels from user input."""
+
+    for tool in PLATFORM_TOOLS:
+        source = inspect.getsource(tool.handler)
+        for token in ("import ", "requests", "httpx", "asyncpg", "open(", "socket"):
+            assert token not in source, f"forbidden channel token found in handler: {token}"

@@ -82,9 +82,11 @@ CREATE INDEX IF NOT EXISTS idx_skills_tenant_id ON skills(tenant_id);
 CREATE TABLE IF NOT EXISTS tool_execution_records (
     id VARCHAR(255) PRIMARY KEY,
     tenant_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
     tool_name VARCHAR(255) NOT NULL,
     tool_version VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL,
+    authorization_outcome VARCHAR(50) NOT NULL,
     risk_level VARCHAR(50) NOT NULL,
     input_summary TEXT NOT NULL,
     output_summary TEXT,
@@ -92,8 +94,15 @@ CREATE TABLE IF NOT EXISTS tool_execution_records (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT ck_tool_execution_records_status CHECK (status IN ('success', 'failed')),
+    CONSTRAINT ck_tool_execution_records_authorization_outcome
+        CHECK (authorization_outcome IN ('granted', 'denied')),
     CONSTRAINT ck_tool_execution_records_risk_level CHECK (risk_level IN ('low', 'medium', 'high'))
 );
+
+-- Idempotent audit-contract columns: schema bootstrap also runs against
+-- databases created before the audit contract was extended.
+ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS user_id VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS authorization_outcome VARCHAR(50) NOT NULL DEFAULT 'granted';
 
 CREATE INDEX IF NOT EXISTS idx_tool_execution_records_tenant_id ON tool_execution_records(tenant_id);
 

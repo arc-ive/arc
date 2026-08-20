@@ -1,14 +1,22 @@
 """AI Tools domain model tests.
 
 Covers the tenant-scoped ``ToolExecutionRecord`` audit model and the
-``ToolRiskLevel`` / ``ToolExecutionStatus`` enums (PRD 15, TRD 14.2).
+``ToolRiskLevel`` / ``ToolExecutionStatus`` / ``ToolAuthorizationOutcome``
+enums (PRD 15, TRD 14.2). The audit contract is explicit: who
+(``user_id``), which tenant, which tool and version, the authorization
+decision, the risk level, the status, and the execution identifier.
 """
 
 import uuid
 
 import pytest
 
-from arc.domain.models import ToolExecutionRecord, ToolExecutionStatus, ToolRiskLevel
+from arc.domain.models import (
+    ToolAuthorizationOutcome,
+    ToolExecutionRecord,
+    ToolExecutionStatus,
+    ToolRiskLevel,
+)
 
 
 def _unique(prefix: str) -> str:
@@ -21,6 +29,7 @@ def _record(**overrides) -> ToolExecutionRecord:
     values = {
         "id": _unique("record"),
         "tenant_id": _unique("tenant"),
+        "user_id": _unique("user"),
         "tool_name": "check_service_health",
         "tool_version": "1",
         "status": ToolExecutionStatus.SUCCESS,
@@ -41,12 +50,29 @@ def test_execution_status_values():
     assert {status.value for status in ToolExecutionStatus} == {"success", "failed"}
 
 
+def test_authorization_outcome_values():
+    """The audit contract records the fail-closed authorization decision."""
+    assert {outcome.value for outcome in ToolAuthorizationOutcome} == {"granted", "denied"}
+
+
 def test_valid_success_record():
     record = _record()
     assert record.status == ToolExecutionStatus.SUCCESS
     assert record.risk_level == ToolRiskLevel.LOW
+    assert record.authorization_outcome == ToolAuthorizationOutcome.GRANTED
     assert record.output_summary is None
     assert record.error_kind is None
+
+
+def test_denied_record():
+    record = _record(
+        status=ToolExecutionStatus.FAILED,
+        authorization_outcome=ToolAuthorizationOutcome.DENIED,
+        error_kind="authorization_denied",
+    )
+    assert record.status == ToolExecutionStatus.FAILED
+    assert record.authorization_outcome == ToolAuthorizationOutcome.DENIED
+    assert record.error_kind == "authorization_denied"
 
 
 def test_valid_failed_record_with_error_kind():
@@ -63,6 +89,11 @@ def test_requires_id():
 def test_requires_tenant_id():
     with pytest.raises(ValueError):
         _record(tenant_id="")
+
+
+def test_requires_user_id():
+    with pytest.raises(ValueError):
+        _record(user_id="")
 
 
 def test_requires_tool_name():
@@ -83,6 +114,11 @@ def test_requires_input_summary():
 def test_rejects_invalid_status():
     with pytest.raises(ValueError):
         _record(status="pending")
+
+
+def test_rejects_invalid_authorization_outcome():
+    with pytest.raises(ValueError):
+        _record(authorization_outcome="maybe")
 
 
 def test_rejects_invalid_risk_level():

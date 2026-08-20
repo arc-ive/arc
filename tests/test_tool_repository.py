@@ -2,13 +2,15 @@
 
 Follows the existing repository test conventions: tenant-scoped SQL,
 cross-tenant impossibility at the SQL level, and FK cascade behavior
-(PRD 15, TRD 14.2).
+(PRD 15, TRD 14.2). The audit contract (who/tenant/tool/version/
+authorization outcome/status/timestamp/execution id) round-trips.
 """
 
 import uuid
 
 from arc.domain.models import (
     Tenant,
+    ToolAuthorizationOutcome,
     ToolExecutionRecord,
     ToolExecutionStatus,
     ToolRiskLevel,
@@ -26,6 +28,7 @@ def _record(tenant_id: str, **overrides) -> ToolExecutionRecord:
     values = {
         "id": _unique("record"),
         "tenant_id": tenant_id,
+        "user_id": _unique("user"),
         "tool_name": "check_service_health",
         "tool_version": "1",
         "status": ToolExecutionStatus.SUCCESS,
@@ -55,13 +58,38 @@ async def test_create_record_round_trip(db, repositories):
     persisted = records[0]
     assert persisted.id == record.id
     assert persisted.tenant_id == tenant.id
+    assert persisted.user_id == record.user_id
     assert persisted.tool_name == "check_service_health"
     assert persisted.tool_version == "1"
     assert persisted.status == ToolExecutionStatus.SUCCESS
+    assert persisted.authorization_outcome == ToolAuthorizationOutcome.GRANTED
     assert persisted.risk_level == ToolRiskLevel.LOW
     assert persisted.input_summary == "{}"
     assert persisted.output_summary == '{"services": []}'
     assert persisted.error_kind is None
+
+
+async def test_denied_record_round_trip(db, repositories):
+    repo = PostgreSQLToolExecutionRepository(db)
+    tenant_repo, _, _ = repositories
+    tenant = await _seed_tenant(tenant_repo)
+
+    await repo.create_record(
+        _record(
+            tenant.id,
+            status=ToolExecutionStatus.FAILED,
+            authorization_outcome=ToolAuthorizationOutcome.DENIED,
+            output_summary=None,
+            error_kind="authorization_denied",
+        )
+    )
+
+    records = await repo.list_for_tenant(tenant.id)
+    assert len(records) == 1
+    assert records[0].status == ToolExecutionStatus.FAILED
+    assert records[0].authorization_outcome == ToolAuthorizationOutcome.DENIED
+    assert records[0].error_kind == "authorization_denied"
+    assert records[0].output_summary is None
 
 
 async def test_failed_record_round_trip(db, repositories):

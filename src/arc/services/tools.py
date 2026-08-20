@@ -6,12 +6,17 @@ This module implements the AI Tools slice of the approved architecture
 - The tool catalog is a **platform-owned, code-defined whitelist**. Tenants
   cannot register tools, upload executable code, or define executable
   handlers. The registry exposes no runtime registration or mutation
-  API: the approved catalog is closed by construction.
-- Execution follows TRD 14.1: selection -> authorization (enforced by the
-  controller dependency before this service runs) -> tool policy check ->
-  input validation -> execution -> result handling -> execution/audit
-  record. Every controlled attempt produces an observable tenant-scoped
-  record (TRD 14.2), including controlled failures.
+  API: the approved catalog is closed by construction. Tenants gain
+  tenant-scoped access to the platform-owned AI Tool catalog exclusively
+  through the existing authorization model (``tool:read``,
+  ``tool:execute``, and each tool's declared required permissions).
+- Execution follows TRD 14.1: selection -> authorization (``tool:execute``
+  AND every permission declared by the tool, enforced fail-closed inside
+  this service using the existing permission machinery) -> tool policy
+  check -> input validation -> execution -> result handling ->
+  execution/audit record. Every controlled attempt produces an observable
+  tenant-scoped record (TRD 14.2), including controlled failures and
+  authorization denials.
 - There is no path for arbitrary Python/OS/shell/database/network
   execution: handlers are plain whitelisted functions, inputs are
   validated against the tool's declared schema before any handler runs,
@@ -22,25 +27,29 @@ This module implements the AI Tools slice of the approved architecture
   pattern; the catalog exposes declarative JSON Schemas.
 
 The security boundary intentionally does NOT trust the caller: the
-tenant boundary comes exclusively from the trusted ``TenantContext``, and
-authorization runs before execution in the request dependency chain.
+tenant boundary comes exclusively from the trusted ``TenantContext``,
+and per-tool authorization is enforced fail-closed inside the service
+using the application's existing ``AuthorizationService`` before any
+handler can run.
 """
 
 import json
 import uuid
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from arc.domain.models import (
     TenantContext,
+    ToolAuthorizationOutcome,
     ToolExecutionRecord,
     ToolExecutionStatus,
     ToolRiskLevel,
 )
-from arc.security.authorization import TOOL_EXECUTE
-from arc.security.models import Permission
+from arc.security.authorization import TOOL_EXECUTE, AuthorizationService
+from arc.security.models import AuthenticatedPrincipal, Permission
 
 # ---------------------------------------------------------------------------
 # Controlled failure types
@@ -60,7 +69,12 @@ class ToolValidationError(ToolError):
 
 
 class ToolDeniedError(ToolError):
-    """Raised when the tool's execution policy forbids direct execution."""
+    """Raised when the attempt is denied by authorization or policy.
+
+    Denial is fail-closed and happens before any handler can run:
+    insufficient or invalid permission metadata, missing required
+    permissions, or an execution policy that forbids direct execution.
+    """
 
 
 class ToolExecutionError(ToolError):
@@ -72,17 +86,39 @@ class ToolExecutionError(ToolError):
 # ---------------------------------------------------------------------------
 
 
+class ToolExecutionPolicyMode(str, Enum):
+    """Execution policy of an approved tool (TRD 17.3 boundary).
+
+    The policy explicitly represents three states so that a high-risk
+    tool can never silently bypass the approval policy:
+
+    - ``ALLOW``: an authorized caller may execute the tool directly.
+    - ``DENY``: direct execution is refused (fail closed).
+    - ``REQUIRE_HUMAN_APPROVAL``: execution is refused until a human
+      approval gate exists; the Human Intervention capability is NOT
+      implemented in this slice, so this mode always fails closed with
+      a controlled denial instead of executing.
+    """
+
+    ALLOW = "allow"
+    DENY = "deny"
+    REQUIRE_HUMAN_APPROVAL = "require_human_approval"
+
+
 @dataclass(frozen=True)
 class ToolExecutionPolicy:
     """Policy that constrains how an approved tool may be executed.
 
-    ``direct_execution_allowed`` gates execution by any authorized caller.
-    High-risk actions additionally require human approval before the
-    authorized tool is executed (TRD 17.3); the human-approval gate is
-    part of the Human Intervention capability and is not implemented here.
+    ``mode`` gates execution by any authorized caller. High-risk tools
+    (``ToolRiskLevel.HIGH``) must declare ``REQUIRE_HUMAN_APPROVAL`` or
+    ``DENY``: the catalog build rejects a high-risk tool with ``ALLOW``
+    so the approval policy can never be silently bypassed. The
+    human-approval gate itself is part of the Human Intervention
+    capability and is not implemented here; until it exists, that mode
+    fails closed.
     """
 
-    direct_execution_allowed: bool = True
+    mode: ToolExecutionPolicyMode = ToolExecutionPolicyMode.ALLOW
 
 
 @dataclass(frozen=True)
@@ -101,10 +137,17 @@ class ToolDefinition:
     """Declarative definition of one platform-approved AI Tool (PRD 15).
 
     Every approved tool declares its purpose, version, input/output
-    schemas, required permission, risk level, execution policy, audit
+    schemas, required permissions, risk level, execution policy, audit
     policy, and a whitelisted in-process handler. The schema metadata is
     exposed as framework-agnostic JSON Schemas; the handler is a plain
     platform-owned function and is never exposed.
+
+    The definition fails closed at construction:
+
+    - ``required_permissions`` must be a non-empty set of ``Permission``
+      objects (missing, empty, or invalid metadata is rejected);
+    - a high-risk tool must declare ``REQUIRE_HUMAN_APPROVAL`` or ``DENY``
+      as its execution policy, never ``ALLOW``.
     """
 
     name: str
@@ -112,11 +155,32 @@ class ToolDefinition:
     description: str
     input_model: type[BaseModel]
     output_model: type[BaseModel]
-    required_permission: Permission
+    required_permissions: FrozenSet[Permission]
     risk_level: ToolRiskLevel
     execution_policy: ToolExecutionPolicy
     audit_policy: ToolAuditPolicy
     handler: Callable[[Dict[str, Any], str], Dict[str, Any]]
+
+    def __post_init__(self):
+        if not self.name:
+            raise ValueError("Tool name cannot be empty")
+        if not self.version:
+            raise ValueError("Tool version cannot be empty")
+        if not self.required_permissions:
+            raise ValueError(f"Tool {self.name!r} must declare at least one required permission")
+        if not all(isinstance(p, Permission) for p in self.required_permissions):
+            raise ValueError(
+                f"Tool {self.name!r} declares invalid permission metadata "
+                "(all required_permissions entries must be Permission objects)"
+            )
+        if (
+            self.risk_level == ToolRiskLevel.HIGH
+            and self.execution_policy.mode == ToolExecutionPolicyMode.ALLOW
+        ):
+            raise ValueError(
+                f"Tool {self.name!r} is high-risk and must not be directly "
+                "executable without a human approval gate"
+            )
 
     @property
     def input_schema(self) -> Dict[str, Any]:
@@ -158,14 +222,53 @@ class ToolRegistry:
 # ---------------------------------------------------------------------------
 
 
+_SENSITIVE_KEYS: FrozenSet[str] = frozenset(
+    {
+        "password",
+        "passwd",
+        "token",
+        "secret",
+        "api_key",
+        "apikey",
+        "access_key",
+        "private_key",
+        "authorization",
+        "credential",
+        "credentials",
+    }
+)
+
+
+def _redact(value: Any) -> Any:
+    """Replace the values of sensitive-keyed entries with a safe marker.
+
+    Data minimization for execution records (TRD 14.2): values under
+    keys such as ``password``, ``token``, ``api_key``, ``secret``, or
+    ``authorization`` are never persisted, only a ``[REDACTED]`` marker.
+    """
+    if isinstance(value, dict):
+        return {
+            key: (
+                "[REDACTED]"
+                if isinstance(key, str) and key.lower() in _SENSITIVE_KEYS
+                else _redact(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
+
+
 def _summarize(value: Any, max_length: int = 512) -> str:
     """Return a safe, truncated summary of a value for an execution record.
 
-    Values are JSON-encoded and truncated so records never contain raw
-    sensitive payloads, secrets, or implementation details.
+    Values are redacted (sensitive keys), JSON-encoded, and truncated so
+    records never contain raw sensitive payloads, secrets, or
+    implementation details.
     """
     try:
-        encoded = json.dumps(value, sort_keys=True, default=str, ensure_ascii=True)
+        encoded = json.dumps(_redact(value), sort_keys=True, default=str, ensure_ascii=True)
     except (TypeError, ValueError):
         encoded = str(value)
     return encoded[:max_length]
@@ -231,9 +334,9 @@ SERVICE_HEALTH_TOOL = ToolDefinition(
     ),
     input_model=ServiceHealthInput,
     output_model=ServiceHealthOutput,
-    required_permission=TOOL_EXECUTE,
+    required_permissions=frozenset({TOOL_EXECUTE}),
     risk_level=ToolRiskLevel.LOW,
-    execution_policy=ToolExecutionPolicy(direct_execution_allowed=True),
+    execution_policy=ToolExecutionPolicy(),
     audit_policy=ToolAuditPolicy(record_summary_only=True),
     handler=_check_service_health_handler,
 )
@@ -264,10 +367,13 @@ class ToolExecutionService:
     """Controlled AI Tool execution (TRD 14.1) with observable records.
 
     The service accepts a trusted ``TenantContext`` established by X-10
-    and derives the tenant boundary exclusively from it. Authorization is
-    enforced by the controller dependency chain BEFORE this service runs;
-    this service never authenticates callers and never trusts
-    caller-supplied tenant identity.
+    and derives the tenant boundary exclusively from it; the caller-
+    supplied path ``tenant_id`` is never an authority here. Per-tool
+    authorization is enforced fail-closed INSIDE this service using the
+    application's existing ``AuthorizationService`` and the authenticated
+    principal: the caller must hold ``tool:execute`` AND every permission
+    declared by the tool, otherwise the attempt is denied before any
+    handler can run.
     """
 
     def __init__(self, registry: ToolRegistry, record_repo):
@@ -275,31 +381,44 @@ class ToolExecutionService:
         self.record_repo = record_repo
 
     def list_tools(self, context: TenantContext) -> List[ToolDefinition]:
-        """Return the platform-approved tool catalog for the trusted tenant.
+        """Return the platform-owned AI Tool catalog for the trusted tenant.
 
-        The catalog is platform-owned and identical for every tenant;
-        the trusted context is required so the listing is always made
-        inside an authenticated, tenant-scoped request.
+        The catalog is platform-owned, versioned, and identical for every
+        tenant; tenants gain tenant-scoped access to it exclusively
+        through the existing authorization model. The trusted context is
+        required so the listing is always made inside an authenticated,
+        tenant-scoped request.
         """
         return self.registry.list()
 
     async def execute_tool(
         self,
         context: TenantContext,
+        principal: AuthenticatedPrincipal,
         tool_name: str,
         raw_input: Dict[str, Any],
+        authorization: AuthorizationService,
     ) -> ToolExecutionResult:
         """Execute an approved tool following the TRD 14.1 flow.
 
-        Flow: selection -> (authorization, enforced upstream) -> tool
-        policy check -> input validation -> execution -> result handling
-        -> execution/audit record. Every controlled attempt, including
-        controlled failures, produces an observable tenant-scoped record.
+        Flow: selection -> authorization (``tool:execute`` AND every
+        declared required permission, fail closed) -> tool policy check ->
+        input validation -> execution -> result handling -> execution/
+        audit record. Every controlled attempt, including controlled
+        failures and authorization denials, produces an observable
+        tenant-scoped record.
         """
+        if context is None or not context.is_valid:
+            # Fail closed with no record: there is no trusted tenant to
+            # attribute an audit record to.
+            raise ToolDeniedError(tool_name)
+
         tool = self.registry.get(tool_name)
         if tool is None:
             await self._record_failure(
                 context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.DENIED,
                 tool_name=tool_name,
                 tool_version="unknown",
                 risk_level=ToolRiskLevel.LOW,
@@ -308,14 +427,68 @@ class ToolExecutionService:
             )
             raise ToolNotFoundError(tool_name)
 
-        if not tool.execution_policy.direct_execution_allowed:
+        if not self._authorized(tool, principal, authorization):
+            if not tool.required_permissions or not all(
+                isinstance(p, Permission) for p in tool.required_permissions
+            ):
+                error_kind = "invalid_permission_metadata"
+            else:
+                error_kind = "authorization_denied"
             await self._record_failure(
                 context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.DENIED,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                risk_level=tool.risk_level,
+                input_summary=_summarize(raw_input),
+                error_kind=error_kind,
+            )
+            raise ToolDeniedError(tool_name)
+
+        policy_outcome = tool.execution_policy.mode
+        if (
+            tool.risk_level == ToolRiskLevel.HIGH
+            and policy_outcome == ToolExecutionPolicyMode.ALLOW
+        ):
+            # Defense in depth: a high-risk tool must never silently
+            # bypass the approval policy, even if a malformed definition
+            # somehow bypassed catalog validation.
+            await self._record_failure(
+                context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                risk_level=tool.risk_level,
+                input_summary=_summarize(raw_input),
+                error_kind="invalid_policy_metadata",
+            )
+            raise ToolDeniedError(tool_name)
+        if policy_outcome == ToolExecutionPolicyMode.DENY:
+            await self._record_failure(
+                context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
                 tool_name=tool.name,
                 tool_version=tool.version,
                 risk_level=tool.risk_level,
                 input_summary=_summarize(raw_input),
                 error_kind="not_allowed",
+            )
+            raise ToolDeniedError(tool_name)
+        if policy_outcome == ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL:
+            # Human Intervention is not implemented: fail closed rather
+            # than silently bypassing the approval policy.
+            await self._record_failure(
+                context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                risk_level=tool.risk_level,
+                input_summary=_summarize(raw_input),
+                error_kind="requires_human_approval",
             )
             raise ToolDeniedError(tool_name)
 
@@ -324,6 +497,8 @@ class ToolExecutionService:
         except ValidationError:
             await self._record_failure(
                 context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
                 tool_name=tool.name,
                 tool_version=tool.version,
                 risk_level=tool.risk_level,
@@ -339,6 +514,8 @@ class ToolExecutionService:
         except Exception:
             await self._record_failure(
                 context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
                 tool_name=tool.name,
                 tool_version=tool.version,
                 risk_level=tool.risk_level,
@@ -349,6 +526,7 @@ class ToolExecutionService:
 
         await self._record_success(
             context=context,
+            user_id=principal.user_id,
             tool=tool,
             input_summary=_summarize(input_data),
             output_summary=_summarize(output),
@@ -359,9 +537,33 @@ class ToolExecutionService:
             output=output,
         )
 
+    def _authorized(
+        self,
+        tool: ToolDefinition,
+        principal: AuthenticatedPrincipal,
+        authorization: AuthorizationService,
+    ) -> bool:
+        """Fail-closed per-tool authorization check.
+
+        Grants execution only when the caller holds ``tool:execute`` AND
+        every permission declared by the tool. Missing, empty, or
+        invalid permission metadata denies the attempt.
+        """
+        if not tool.required_permissions:
+            return False
+        if not all(isinstance(p, Permission) for p in tool.required_permissions):
+            return False
+        if not authorization.has_permission(principal, TOOL_EXECUTE):
+            return False
+        return all(
+            authorization.has_permission(principal, permission)
+            for permission in tool.required_permissions
+        )
+
     async def _record_success(
         self,
         context: TenantContext,
+        user_id: str,
         tool: ToolDefinition,
         input_summary: str,
         output_summary: str,
@@ -370,9 +572,11 @@ class ToolExecutionService:
             ToolExecutionRecord(
                 id=str(uuid.uuid4()),
                 tenant_id=context.tenant_id,
+                user_id=user_id,
                 tool_name=tool.name,
                 tool_version=tool.version,
                 status=ToolExecutionStatus.SUCCESS,
+                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
                 risk_level=tool.risk_level,
                 input_summary=input_summary,
                 output_summary=output_summary,
@@ -382,6 +586,8 @@ class ToolExecutionService:
     async def _record_failure(
         self,
         context: TenantContext,
+        user_id: str,
+        authorization_outcome: ToolAuthorizationOutcome,
         tool_name: str,
         tool_version: str,
         risk_level: ToolRiskLevel,
@@ -392,9 +598,11 @@ class ToolExecutionService:
             ToolExecutionRecord(
                 id=str(uuid.uuid4()),
                 tenant_id=context.tenant_id,
+                user_id=user_id,
                 tool_name=tool_name,
                 tool_version=tool_version,
                 status=ToolExecutionStatus.FAILED,
+                authorization_outcome=authorization_outcome,
                 risk_level=risk_level,
                 input_summary=input_summary,
                 error_kind=error_kind,
