@@ -186,6 +186,50 @@ class ConnectorConfig:
             raise ValueError(f"Invalid connector status: {self.status!r}")
 
 
+class ConnectorSyncStatus(str, Enum):
+    """Lifecycle status of a connector synchronization attempt."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+@dataclass
+class ConnectorSyncRecord:
+    """Tenant-scoped audit record of one connector synchronization attempt.
+
+    Records contain only safe summaries: item counts and a generic
+    ``error_kind``. Provider credentials and raw external payloads are
+    never stored here.
+    """
+
+    id: str
+    tenant_id: str
+    connector_id: str
+    provider: ConnectorProvider
+    status: ConnectorSyncStatus
+    items_fetched: int = 0
+    error_kind: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Connector sync record ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not self.connector_id:
+            raise ValueError("Connector ID cannot be empty")
+        if not isinstance(self.provider, ConnectorProvider):
+            raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if not isinstance(self.status, ConnectorSyncStatus):
+            raise ValueError(f"Invalid connector sync status: {self.status!r}")
+        if not isinstance(self.items_fetched, int) or self.items_fetched < 0:
+            raise ValueError("Items fetched must be a non-negative integer")
+        if self.status is ConnectorSyncStatus.SUCCESS and self.error_kind:
+            raise ValueError("Successful sync records cannot have an error kind")
+        if self.status is ConnectorSyncStatus.FAILED and self.items_fetched > 0:
+            raise ValueError("Failed sync records cannot report fetched items")
+
+
 @dataclass
 class KnowledgeDocument:
     """Tenant-owned knowledge document stored in the Company Brain.

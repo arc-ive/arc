@@ -12,7 +12,28 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   review: ``knowledge:create``/``knowledge:read`` (Company Brain
   foundation) and ``skill:create``/``skill:read``/``skill:delete``
   (Skills Engine management API).
-- No Connector or Operations permissions are defined.
+- Connector permissions (``connector:create``, ``connector:read``,
+  ``connector:sync``) exist for the connector provider integrations
+  (PRD 22, TRD 33, ADR-002): PLATFORM_ADMINISTRATOR and
+  COMPANY_ADMINISTRATOR configure, read, and synchronize connectors;
+  OPERATIONS_USER reads and synchronizes connectors for operational
+  workflows; EMPLOYEE has none.
+
+  Connector role mapping (explicit matrix):
+
+  - ``connector:read`` (list connector configuration, read connector
+    state): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR,
+    OPERATIONS_USER; tenant-scoped; denied by default.
+  - ``connector:create`` (create connector configuration):
+    PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR; tenant-scoped;
+    denied by default.
+  - ``connector:sync`` (trigger connector synchronization):
+    PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, OPERATIONS_USER;
+    tenant-scoped; denied by default.
+
+  There is no connector-specific authorization system: the connector
+  layer consumes this centralized matrix via ``AuthorizationService``.
+  An unknown permission is never granted (default DENY).
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;
@@ -47,6 +68,9 @@ KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
 SKILL_CREATE = Permission(resource="skill", action="create")
 SKILL_READ = Permission(resource="skill", action="read")
 SKILL_DELETE = Permission(resource="skill", action="delete")
+CONNECTOR_CREATE = Permission(resource="connector", action="create")
+CONNECTOR_READ = Permission(resource="connector", action="read")
+CONNECTOR_SYNC = Permission(resource="connector", action="sync")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -62,6 +86,9 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             SKILL_CREATE,
             SKILL_READ,
             SKILL_DELETE,
+            CONNECTOR_CREATE,
+            CONNECTOR_READ,
+            CONNECTOR_SYNC,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
@@ -72,9 +99,14 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             SKILL_CREATE,
             SKILL_READ,
             SKILL_DELETE,
+            CONNECTOR_CREATE,
+            CONNECTOR_READ,
+            CONNECTOR_SYNC,
         }
     ),
-    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ, KNOWLEDGE_READ, SKILL_READ}),
+    ApplicationRole.OPERATIONS_USER: frozenset(
+        {TENANT_READ, KNOWLEDGE_READ, SKILL_READ, CONNECTOR_READ, CONNECTOR_SYNC}
+    ),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).
     ApplicationRole.EMPLOYEE: frozenset(),
 }

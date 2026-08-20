@@ -21,8 +21,9 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
-from arc.db.connection import NotFoundError
+from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import (
+    ConnectorProvider,
     IntelligenceAnswer,
     KnowledgeDocument,
     KnowledgeMatch,
@@ -34,6 +35,9 @@ from arc.domain.models import (
     User,
 )
 from arc.security.authorization import (
+    CONNECTOR_CREATE,
+    CONNECTOR_READ,
+    CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
     SKILL_CREATE,
@@ -49,6 +53,7 @@ from arc.security.dependencies import (
     require_tenant_permission,
 )
 from arc.security.models import AuthenticatedPrincipal
+from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import (
     MembershipService,
@@ -110,6 +115,10 @@ class ApplicationContext:
     @property
     def connector_service(self) -> ConnectorService:
         return self.services.get("connector_service")
+
+    @property
+    def connector_sync_service(self) -> ConnectorSyncService:
+        return self.services.get("connector_sync_service")
 
     @property
     def knowledge_service(self) -> KnowledgeService:
@@ -685,3 +694,124 @@ async def list_knowledge_documents(
 
     documents = await knowledge_service.list_documents(context)
     return [_knowledge_document_payload(document) for document in documents]
+
+
+def _connector_payload(config) -> Dict[str, Any]:
+    """Serialize a ConnectorConfig without exposing any credential material."""
+    return {
+        "id": config.id,
+        "tenant_id": config.tenant_id,
+        "provider": config.provider.value,
+        "name": config.name,
+        "status": config.status.value,
+        "created_at": config.created_at.isoformat(),
+        "updated_at": config.updated_at.isoformat(),
+    }
+
+
+@api_router.get("/tenants/{tenant_id}/connectors")
+async def list_connectors(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_READ)),
+    connector_service: ConnectorService = Depends(lambda: app_context.connector_service),
+) -> List[Dict[str, Any]]:
+    """List the caller's tenant connector configurations.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``connector:read`` permission. The path ``tenant_id`` is validated for
+    consistency against the trusted context (403 on mismatch); the trusted
+    context remains authoritative for ownership. No credential material is
+    ever returned.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    connectors = await connector_service.list_connectors(context)
+    return [_connector_payload(connector) for connector in connectors]
+
+
+@api_router.post("/tenants/{tenant_id}/connectors")
+async def create_connector(
+    connector_data: Dict[str, Any],
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_CREATE)),
+    connector_service: ConnectorService = Depends(lambda: app_context.connector_service),
+) -> Dict[str, Any]:
+    """Create a connector configuration for the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``connector:create`` permission. The provider must be one of the
+    code-defined approved providers (GitHub, Slack, Linear per ADR-002).
+    The path ``tenant_id`` is validated for consistency against the trusted
+    context (403 on mismatch). Credentials are never accepted or returned.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        provider = ConnectorProvider(connector_data.get("provider"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid connector provider",
+        )
+
+    name = connector_data.get("name")
+    if not isinstance(name, str) or not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connector name cannot be empty",
+        )
+
+    try:
+        created = await connector_service.create_connector(context, provider, name)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Connector already exists",
+        )
+    return _connector_payload(created)
+
+
+@api_router.post("/tenants/{tenant_id}/connectors/{connector_id}/sync")
+async def sync_connector(
+    connector_id: str,
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_SYNC)),
+    connector_sync_service: ConnectorSyncService = Depends(
+        lambda: app_context.connector_sync_service
+    ),
+) -> Dict[str, Any]:
+    """Synchronize one tenant-owned connector into Company Brain.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``connector:sync`` permission. The path ``tenant_id`` is validated for
+    consistency against the trusted context (403 on mismatch). Fetching
+    uses code-defined provider endpoints only; external data passes
+    through the PII guard before ingestion. Failures are controlled and
+    generic: no provider details, credentials, or internal information are
+    exposed, and every attempt produces a tenant-scoped audit record.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        result = await connector_sync_service.sync(context, connector_id)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Connector not found",
+        )
+    except ConnectorSyncError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connector synchronization failed",
+        )
+
+    return {
+        "connector_id": result.connector_id,
+        "provider": result.provider.value,
+        "status": "success",
+        "items_fetched": result.items_fetched,
+        "items": [
+            {"source_id": item.source_id, "title": item.title, "url": item.url}
+            for item in result.items
+        ],
+    }

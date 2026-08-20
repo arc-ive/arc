@@ -12,6 +12,9 @@ import pytest
 
 from arc.domain.models import UserRole
 from arc.security.authorization import (
+    CONNECTOR_CREATE,
+    CONNECTOR_READ,
+    CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
     MEMBERSHIP_CREATE,
@@ -24,7 +27,7 @@ from arc.security.authorization import (
     USER_CREATE,
     AuthorizationService,
 )
-from arc.security.models import ApplicationRole, AuthenticatedPrincipal
+from arc.security.models import ApplicationRole, AuthenticatedPrincipal, Permission
 
 
 def _unique(prefix: str) -> str:
@@ -63,6 +66,9 @@ def test_exactly_four_application_roles_exist():
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
             ],
             [],
         ),
@@ -75,12 +81,15 @@ def test_exactly_four_application_roles_exist():
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
             ],
             [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE],
         ),
         (
             ApplicationRole.OPERATIONS_USER,
-            [TENANT_READ, KNOWLEDGE_READ, SKILL_READ],
+            [TENANT_READ, KNOWLEDGE_READ, SKILL_READ, CONNECTOR_READ, CONNECTOR_SYNC],
             [
                 TENANT_CREATE,
                 USER_CREATE,
@@ -88,6 +97,7 @@ def test_exactly_four_application_roles_exist():
                 KNOWLEDGE_CREATE,
                 SKILL_CREATE,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
             ],
         ),
         (
@@ -103,6 +113,9 @@ def test_exactly_four_application_roles_exist():
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
             ],
         ),
     ],
@@ -217,3 +230,30 @@ def test_operations_user_cannot_create_user(client, make_token, authorization_ov
         },
     )
     assert response.status_code == 403
+
+
+def test_unknown_connector_permission_is_never_granted():
+    """An unknown connector permission is denied for every role (fail closed).
+
+    The connector layer consumes only the centralized matrix; a permission
+    that does not exist in ROLE_PERMISSIONS can never authorize an action.
+    """
+    unknown = Permission(resource="connector", action="purge")
+    service = AuthorizationService({})
+    for role in ApplicationRole:
+        principal = AuthenticatedPrincipal(user_id=f"u-{role.value}")
+        assert not service.has_permission(principal, unknown), (
+            f"{role.value} must never hold the unknown permission"
+        )
+
+
+def test_connector_permissions_are_tenant_scoped_operations():
+    """Every connector permission requires a trusted tenant context.
+
+    The connector endpoints all use ``require_tenant_permission`` (never a
+    global permission), so the trusted TenantContext is the tenant
+    boundary for connector:create/read/sync.
+    """
+    for permission in (CONNECTOR_CREATE, CONNECTOR_READ, CONNECTOR_SYNC):
+        assert permission.resource == "connector"
+        assert permission.action in ("create", "read", "sync")

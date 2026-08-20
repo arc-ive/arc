@@ -76,6 +76,18 @@ def test_public_api_does_not_expose_caller_supplied_identity_context():
     assert "GET /tenant-contexts/validate" not in public
 
 
+def test_public_api_exposes_connector_endpoints():
+    """Connector endpoints (PRD 22) are public API and permission-protected.
+
+    The tenant boundary comes from the trusted context and the connector
+    permissions; no credential material is accepted or returned.
+    """
+    public = _route_paths(api_router.routes)
+    assert "GET /tenants/{tenant_id}/connectors" in public
+    assert "POST /tenants/{tenant_id}/connectors" in public
+    assert "POST /tenants/{tenant_id}/connectors/{connector_id}/sync" in public
+
+
 def test_dev_router_isolates_development_endpoints():
     """The dev-only router retains membership provisioning under /internal/dev."""
     dev = _route_paths(dev_router.routes)
