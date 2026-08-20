@@ -17,12 +17,13 @@ Privileged and identity-sensitive development endpoints (membership
 provisioning) are isolated in ``arc.api.dev_controllers``.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from arc.db.connection import NotFoundError
 from arc.domain.models import (
+    IntelligenceAnswer,
     KnowledgeDocument,
     KnowledgeMatch,
     KnowledgeSource,
@@ -56,7 +57,9 @@ from arc.services.domain import (
     UserService,
 )
 from arc.services.embeddings import EmbeddingError
+from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
+from arc.services.llm import LlmError
 from arc.services.pii import PiiGuardError
 from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
@@ -115,6 +118,10 @@ class ApplicationContext:
     @property
     def retrieval_service(self) -> RetrievalService:
         return self.services.get("retrieval_service")
+
+    @property
+    def intelligence_service(self) -> UnifiedIntelligenceService:
+        return self.services.get("intelligence_service")
 
     @property
     def skill_service(self) -> SkillService:
@@ -447,6 +454,7 @@ def _knowledge_match_response(match: KnowledgeMatch) -> Dict[str, Any]:
         "source": match.source.value,
         "provenance": match.provenance,
         "document_version": match.document_version,
+        "sequence": match.sequence,
         "similarity": match.similarity,
     }
 
@@ -493,6 +501,77 @@ async def search_knowledge(
             detail="Knowledge search failed",
         )
     return [_knowledge_match_response(match) for match in matches]
+
+
+def _intelligence_answer_response(answer: IntelligenceAnswer) -> Dict[str, Any]:
+    """Serialize an IntelligenceAnswer for API responses.
+
+    Only the answer text, citation references, and retrieval metadata are
+    exposed. The LLM's raw prompt is never exposed, and no security
+    internals (prompt construction, provider identity, error details) are
+    included.
+    """
+    return {
+        "request_id": answer.request_id,
+        "tenant_id": answer.tenant_id,
+        "principal_id": answer.principal_id,
+        "query": answer.query,
+        "answer": answer.answer,
+        "citations": answer.citations,
+        "retrieval_method": answer.retrieval_method.value,
+        "context_used": answer.context_used,
+    }
+
+
+@api_router.post("/tenants/{tenant_id}/intelligence/query")
+async def query_unified_intelligence(
+    tenant_id: str,
+    body: Optional[Dict[str, Any]] = None,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    intelligence_service: UnifiedIntelligenceService = Depends(
+        lambda: app_context.intelligence_service
+    ),
+) -> Dict[str, Any]:
+    """Reason over the tenant's approved knowledge (Unified Intelligence).
+
+    The first Unified Intelligence slice (PRD 12/26, TRD 8/10/39): a
+    tenant-scoped request is authenticated, the tenant boundary comes
+    from the trusted X-10 context, retrieval produces an Approved Context
+    Contract (``knowledge:read`` is reused: reasoning is a read-class
+    operation over the tenant's own knowledge, not a new capability), and
+    the LLM provider reasons over ONLY that approved context.
+
+    The LLM never receives raw documents, vectors, authorization state, or
+    cross-tenant content. When no approved context matches, the answer is
+    ``None`` (the LLM is not invoked and nothing is invented). Fail closed:
+    embedding or LLM failures map to a generic 500 with no internals
+    leaked.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    query = (body or {}).get("query")
+    limit = (body or {}).get("limit", 5)
+    if not query or not query.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query cannot be empty",
+        )
+    if not isinstance(limit, int) or limit < 1 or limit > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be an integer between 1 and 50",
+        )
+
+    try:
+        answer = await intelligence_service.answer_query(context, query, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except (EmbeddingError, LlmError):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Intelligence query failed",
+        )
+    return _intelligence_answer_response(answer)
 
 
 @api_router.post("/tenants/{tenant_id}/knowledge")

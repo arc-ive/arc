@@ -12,7 +12,10 @@ import pytest
 from arc.services.embeddings import (
     EMBEDDING_DIMENSIONS,
     DeterministicEmbeddingProvider,
+    EmbeddingConfigurationError,
     EmbeddingProvider,
+    build_embedding_provider,
+    get_embedding_settings,
 )
 
 
@@ -77,3 +80,62 @@ class TestEmbeddingProviderContract:
     def test_deterministic_provider_satisfies_the_contract(self):
         provider = DeterministicEmbeddingProvider()
         assert isinstance(provider, EmbeddingProvider)
+
+
+class TestEmbeddingSettings:
+    def test_defaults_are_the_deterministic_provider(self, monkeypatch):
+        monkeypatch.delenv("EMBEDDING_PROVIDER", raising=False)
+        monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+        monkeypatch.delenv("EMBEDDING_DIMENSION", raising=False)
+
+        settings = get_embedding_settings()
+
+        assert settings.provider == "deterministic"
+        assert settings.model is None
+        assert settings.dimensions == EMBEDDING_DIMENSIONS
+
+    def test_environment_values_are_read(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "deterministic")
+        monkeypatch.setenv("EMBEDDING_MODEL", "local-test")
+        monkeypatch.setenv("EMBEDDING_DIMENSION", "64")
+
+        settings = get_embedding_settings()
+
+        assert settings.provider == "deterministic"
+        assert settings.model == "local-test"
+        assert settings.dimensions == EMBEDDING_DIMENSIONS
+
+    def test_non_integer_dimension_fails_closed(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_DIMENSION", "not-a-number")
+
+        with pytest.raises(EmbeddingConfigurationError):
+            get_embedding_settings()
+
+    def test_dimension_disagreeing_with_storage_fails_closed(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_DIMENSION", "128")
+
+        with pytest.raises(EmbeddingConfigurationError):
+            get_embedding_settings()
+
+    def test_empty_provider_fails_closed(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "  ")
+
+        with pytest.raises(EmbeddingConfigurationError):
+            get_embedding_settings()
+
+
+class TestEmbeddingProviderFactory:
+    def test_deterministic_provider_is_built_from_settings(self, monkeypatch):
+        monkeypatch.delenv("EMBEDDING_PROVIDER", raising=False)
+        monkeypatch.delenv("EMBEDDING_DIMENSION", raising=False)
+
+        provider = build_embedding_provider(get_embedding_settings())
+
+        assert isinstance(provider, DeterministicEmbeddingProvider)
+        assert len(provider.embed("policy handbook")) == EMBEDDING_DIMENSIONS
+
+    def test_unknown_provider_fails_closed(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
+
+        with pytest.raises(EmbeddingConfigurationError):
+            build_embedding_provider(get_embedding_settings())

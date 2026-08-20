@@ -81,6 +81,8 @@ class PostgreSQLKnowledgeRepository:
         """
         if len(chunks) != len(embeddings):
             raise ValueError("chunks and embeddings must have the same length")
+        if any(chunk.tenant_id != document.tenant_id for chunk in chunks):
+            raise ValueError("All chunks must belong to the document's tenant")
 
         async with self.db.transaction() as conn:
             try:

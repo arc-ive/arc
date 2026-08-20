@@ -54,6 +54,18 @@ class KnowledgeSource(str, Enum):
     SOLUTION = "solution"
 
 
+class RetrievalMethod(str, Enum):
+    """Retrieval strategies available to the Secure RAG layer.
+
+    Only ``DENSE_SEMANTIC`` is implemented in this slice. Lexical,
+    hybrid/fusion, reranked, and modular routing are later maturity
+    layers (proposal §10): they must be added as new enum values behind
+    the same security boundary without changing the contract shape.
+    """
+
+    DENSE_SEMANTIC = "dense_semantic"
+
+
 class SkillStatus(str, Enum):
     """Lifecycle status of a Skill.
 
@@ -256,6 +268,8 @@ class KnowledgeMatch:
     Secure RAG retrieval returns chunks with their document provenance so
     results are explainable. ``content`` is always already-sanitized
     content: raw content never reaches persistence or retrieval.
+    ``sequence`` is the chunk position within the owning document and is
+    required for citation in the Approved Context Contract.
     """
 
     chunk_id: str
@@ -265,6 +279,7 @@ class KnowledgeMatch:
     source: KnowledgeSource
     provenance: str
     document_version: int
+    sequence: int
     similarity: float
 
     def __post_init__(self):
@@ -276,6 +291,171 @@ class KnowledgeMatch:
             raise ValueError("Tenant ID cannot be empty")
         if not isinstance(self.source, KnowledgeSource):
             raise ValueError(f"Invalid knowledge source: {self.source!r}")
+        if not isinstance(self.sequence, int) or self.sequence < 0:
+            raise ValueError("Knowledge match sequence must be a non-negative integer")
+
+
+@dataclass
+class ApprovedContextItem:
+    """A single approved context unit for the future Unified Intelligence layer.
+
+    The future LLM/Unified Intelligence layer consumes ONLY these items:
+    never raw chunk rows, vectors, or the repository. Each item carries
+    already-sanitized content plus the provenance required for citation.
+
+    ``citation_reference`` is a stable, deterministic reference
+    (``{document_id}#c{sequence}``) the downstream layer can cite;
+    human-readable provenance is carried separately.
+    """
+
+    document_id: str
+    chunk_id: str
+    content: str
+    source: KnowledgeSource
+    provenance: str
+    document_version: int
+    sequence: int
+    relevance_score: float
+    citation_reference: str
+
+    def __post_init__(self):
+        if not self.document_id:
+            raise ValueError("Approved context item document ID cannot be empty")
+        if not self.chunk_id:
+            raise ValueError("Approved context item chunk ID cannot be empty")
+        if not self.content:
+            raise ValueError("Approved context item content cannot be empty")
+        if not isinstance(self.source, KnowledgeSource):
+            raise ValueError(f"Invalid knowledge source: {self.source!r}")
+        if not self.provenance:
+            raise ValueError("Approved context item provenance cannot be empty")
+        if not isinstance(self.document_version, int) or self.document_version < 1:
+            raise ValueError("Approved context item document version must be a positive integer")
+        if not isinstance(self.sequence, int) or self.sequence < 0:
+            raise ValueError("Approved context item sequence must be a non-negative integer")
+        if not isinstance(self.relevance_score, float):
+            raise ValueError("Approved context item relevance score must be a float")
+        if not self.citation_reference:
+            raise ValueError("Approved context item citation reference cannot be empty")
+
+
+@dataclass(frozen=True)
+class ApprovedContextSecurityMetadata:
+    """Security assertions recorded on an ApprovedContext.
+
+    This is metadata about the retrieval operation, never an
+    authorization mechanism in itself: authorization is enforced by the
+    application boundary (trusted TenantContext + permission), and the
+    PII Guard runs before content is ever stored or embedded.
+
+    ``authorization_status`` is ``"approved"`` when the caller passed the
+    required permission and tenant checks. ``pii_status`` is
+    ``"sanitized"`` because only sanitized content is stored and
+    embedded; no downstream consumer may assume anything stronger.
+    """
+
+    tenant_id: str
+    authorization_status: str = "approved"
+    pii_status: str = "sanitized"
+
+    def __post_init__(self):
+        if not self.tenant_id:
+            raise ValueError("Approved context security tenant ID cannot be empty")
+        if not self.authorization_status:
+            raise ValueError("Approved context authorization status cannot be empty")
+        if not self.pii_status:
+            raise ValueError("Approved context PII status cannot be empty")
+
+
+@dataclass
+class ApprovedContext:
+    """The secure, authorization-validated retrieval contract.
+
+    Produced by ``RetrievalService.approved_search`` from the trusted
+    ``TenantContext`` and tenant-scoped retrieval results. A future
+    LLM/Unified Intelligence layer receives only this contract — never
+    direct access to PostgreSQL, pgvector, raw documents, or
+    authorization state.
+
+    ``tenant_id`` is the trusted tenant boundary and ``principal_id`` is
+    the authenticated user from the trusted context; both are recorded so
+    downstream consumers can attribute and audit the context. Items carry
+    sanitized content and provenance only.
+    """
+
+    request_id: str
+    tenant_id: str
+    principal_id: str
+    query: str
+    retrieval_method: RetrievalMethod
+    items: List[ApprovedContextItem] = field(default_factory=list)
+    security_metadata: ApprovedContextSecurityMetadata = None
+
+    def __post_init__(self):
+        if not self.request_id:
+            raise ValueError("Approved context request ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Approved context tenant ID cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Approved context principal ID cannot be empty")
+        if not self.query or not self.query.strip():
+            raise ValueError("Approved context query cannot be empty")
+        if not isinstance(self.retrieval_method, RetrievalMethod):
+            raise ValueError(f"Invalid retrieval method: {self.retrieval_method!r}")
+        if not isinstance(self.items, list):
+            raise ValueError("Approved context items must be a list")
+        if not isinstance(self.security_metadata, ApprovedContextSecurityMetadata):
+            raise ValueError("Approved context security metadata is required")
+        if self.security_metadata.tenant_id != self.tenant_id:
+            raise ValueError(
+                "Approved context security metadata tenant must match the context tenant"
+            )
+
+
+@dataclass
+class IntelligenceAnswer:
+    """The structured result of a Unified Intelligence reasoning step.
+
+    Produced by ``UnifiedIntelligenceService.answer_query`` from the
+    trusted ``TenantContext`` and an ``ApprovedContext``. ``answer`` is
+    the LLM-generated text or ``None`` when no approved context was
+    available (no context means the LLM is never invoked and no answer is
+    invented). ``citations`` are the citation references of the approved
+    context items that were supplied to the LLM, so every answer is
+    attributable. ``context_used`` records whether approved context was
+    supplied to the LLM.
+    """
+
+    request_id: str
+    tenant_id: str
+    principal_id: str
+    query: str
+    answer: Optional[str]
+    citations: List[str] = field(default_factory=list)
+    retrieval_method: RetrievalMethod = RetrievalMethod.DENSE_SEMANTIC
+    context_used: bool = False
+
+    def __post_init__(self):
+        if not self.request_id:
+            raise ValueError("Intelligence answer request ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Intelligence answer tenant ID cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Intelligence answer principal ID cannot be empty")
+        if not self.query or not self.query.strip():
+            raise ValueError("Intelligence answer query cannot be empty")
+        if not isinstance(self.answer, str) and self.answer is not None:
+            raise ValueError("Intelligence answer must be a string or None")
+        if not isinstance(self.citations, list) or not all(
+            isinstance(citation, str) for citation in self.citations
+        ):
+            raise ValueError("Intelligence answer citations must be a list of strings")
+        if not isinstance(self.retrieval_method, RetrievalMethod):
+            raise ValueError(f"Invalid retrieval method: {self.retrieval_method!r}")
+        if not isinstance(self.context_used, bool):
+            raise ValueError("Intelligence answer context_used must be a boolean")
+        if self.context_used and not self.answer:
+            raise ValueError("An answer is required when context was used")
 
 
 @dataclass
