@@ -19,7 +19,7 @@ provisioning) are isolated in ``arc.api.dev_controllers``.
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from arc.db.connection import NotFoundError
 from arc.domain.models import (
@@ -526,7 +526,7 @@ def _intelligence_answer_response(answer: IntelligenceAnswer) -> Dict[str, Any]:
 @api_router.post("/tenants/{tenant_id}/intelligence/query")
 async def query_unified_intelligence(
     tenant_id: str,
-    body: Optional[Dict[str, Any]] = None,
+    body: Optional[Any] = Body(default=None),
     context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
     intelligence_service: UnifiedIntelligenceService = Depends(
         lambda: app_context.intelligence_service
@@ -546,17 +546,30 @@ async def query_unified_intelligence(
     ``None`` (the LLM is not invoked and nothing is invented). Fail closed:
     embedding or LLM failures map to a generic 500 with no internals
     leaked.
+
+    The request body is explicitly validated as a JSON object before any
+    field access, ``query`` as a string before ``strip()``, and ``limit``
+    as a non-boolean integer. Malformed inputs return 400, never 500.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    query = (body or {}).get("query")
-    limit = (body or {}).get("limit", 5)
-    if not query or not query.strip():
+    if body is None or not isinstance(body, dict):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Query cannot be empty",
+            detail="Request body must be a JSON object",
         )
-    if not isinstance(limit, int) or limit < 1 or limit > 50:
+
+    query = body.get("query")
+    limit = body.get("limit", 5)
+
+    if not isinstance(query, str) or not query.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query must be a non-empty string",
+        )
+    # bool is a subclass of int: a boolean limit must be rejected
+    # explicitly, never accepted as an integer.
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 50:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Limit must be an integer between 1 and 50",

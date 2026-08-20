@@ -262,6 +262,71 @@ class TestIntelligenceValidation:
             )
             assert response.status_code == 400, bad_limit
 
+    async def test_non_string_query_is_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        for bad_query in (123, [], {}, True, None):
+            response = client.post(
+                f"/tenants/{tenant.id}/intelligence/query",
+                headers={"Authorization": f"Bearer {token}"},
+                json=_query_payload(query=bad_query),
+            )
+            assert response.status_code == 400, bad_query
+            assert response.json()["detail"] == "Query must be a non-empty string"
+
+    async def test_boolean_limit_is_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        # bool is a subclass of int: True/False must never be accepted as
+        # an integer limit.
+        for bad_limit in (True, False):
+            response = client.post(
+                f"/tenants/{tenant.id}/intelligence/query",
+                headers={"Authorization": f"Bearer {token}"},
+                json=_query_payload(limit=bad_limit),
+            )
+            assert response.status_code == 400, bad_limit
+            assert response.json()["detail"] == "Limit must be an integer between 1 and 50"
+
+    async def test_valid_integer_limit_is_accepted(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/intelligence/query",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_query_payload(limit=5),
+        )
+        assert response.status_code == 200
+        assert response.json()["context_used"] is False
+
+    async def test_non_object_body_is_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        for bad_body in ([], "hello", 123, True, None):
+            response = client.post(
+                f"/tenants/{tenant.id}/intelligence/query",
+                headers={"Authorization": f"Bearer {token}"},
+                json=bad_body,
+            )
+            assert response.status_code == 400, bad_body
+            assert response.json()["detail"] == "Request body must be a JSON object"
+
 
 class TestIntelligencePiiBoundary:
     async def test_raw_pii_never_reaches_the_response(
