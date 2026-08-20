@@ -117,7 +117,7 @@ class Application:
         # Initialize skill service
         self.services["skill_service"] = SkillService(self.repositories["skill"])
 
-# Initialize AI Tool execution service (platform-owned catalog).
+        # Initialize AI Tool execution service (platform-owned catalog).
         self.services["tool_service"] = ToolExecutionService(
             build_platform_tool_registry(),
             self.repositories["tool_execution"],
