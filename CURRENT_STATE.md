@@ -2,11 +2,26 @@
 
 Last Updated:
 
-2026-08-19
+2026-08-20
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation implemented (pending review/merge)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation implemented (pending review/merge); Frontend — full product surface implemented (uncommitted, tests pending)
+
+## Completed
+
+### Frontend — Product Surface (uncommitted, `frontend/`)
+
+React 19 + Vite + Tailwind v4, JavaScript only, no TypeScript/Redux. Axios API layer against the real backend contracts; JWT session foundation (dev-only paste-a-JWT login page); dev-only Demo Mode (local navigation only, no fake JWTs/data); tenant context with backend-verified membership. Implemented surfaces:
+
+- **Entry & identity**: `/login` (real auth: paste JWT; dev-only Demo Mode), `/app` → `WorkspaceDispatch` (platform administrator → platform console; others → tenant workspaces), `/session` redirects to `/login`, legacy `/app/dashboard`, `/app/tenants`, `/app/users`, `/app/connectors`, `/app/agents`, `/app/observability` redirect to `/platform/*`, legacy `company-brain*` redirects to `knowledge*`
+- **Platform console** (`/platform/*`, platform administrator): Dashboard (real stats), Tenants (list/create + tenant detail incl. users and honest 403 for non-members), Users (provisioning), Connectors (ADR-002: GitHub/Slack/Linear committed; Google Drive conditional), Agents, Observability — all shells marked "not yet available" where no backend contract exists
+- **Tenant workspaces** (`/app/t/:tenantId/*`): Home (employee landing — Ask Arc, Knowledge, Procedures, Activity), Overview (real tenant/users/knowledge stats), Company (org + knowledge-by-source summary), Knowledge (Company Brain: list/search/source-tabbed IA/create/detail, capability-gated), Skills (metadata-structured shell, no backend API yet), Operations (pipeline Health→…→Escalation shell), Incidents, Usage, Settings, Activity (PendingContract shells), Users (real, 403-honest), Ask Arc (composer + pipeline, no fake responses)
+- **Persona-differentiated shell**: navigation, sidebar, breadcrumbs, command palette, tenant switcher, and landing redirects are role-aware via `GET /auth/me` (application role + permission matrix + tenant memberships). Capability layer (`can()`, `hasRole`, …) is UX-only — the backend remains the authorization authority and 403s are rendered truthfully
+- **Skills Engine**: route shells marked "not yet available" — the backend has the Skills domain/service/repository but NO HTTP endpoints or `skill:*` permissions yet
+- **Operations / Incidents / Usage / Settings / Activity / Connectors / Agents / Observability / Ask Arc**: product surfaces with real page architecture; "Backend contract pending" markers where the backend has no endpoints
+- **Backend addition (user-approved, smallest contract)**: read-only `GET /auth/me` in `src/arc/api/controllers.py` returning `{user_id, role, permissions, memberships}` + `tests/test_auth_me.py` (5 tests). No other backend behavior changed — auth, JWT, RBAC untouched. Verified in Docker: 5/5 pass, full suite 254 passed, ruff clean on changed files.
+- `npm run lint` and `npm run build` pass; dev server verified
 
 ## Completed
 
@@ -389,6 +404,7 @@ Bala is responsible for:
 7. Benchmark candidate AI models.
 8. Conduct the final Foundation review.
 9. Begin product implementation only after Foundation acceptance.
+10. Review, branch, and PR the frontend product surface + the `GET /auth/me` contract (nothing committed yet).
 
 ## Blocked / Waiting
 

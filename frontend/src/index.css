@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    "Cascadia Mono", "Segoe UI Mono", monospace;
+
+  --color-base: #09090b;
+  --color-raised: #0d0d10;
+  --color-panel: #121215;
+  --color-elevated: #17171b;
+
+  --color-intel: #22d3ee;
+  --color-intel-dim: #0891b2;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.2);
+  --shadow-overlay: 0 8px 40px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.4);
+
+  --animate-fade-in: fade-in 0.15s ease-out;
+  --animate-scale-in: scale-in 0.12s ease-out;
+  --animate-slide-up: slide-up 0.18s ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-base text-zinc-200 font-sans antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: rgb(99 102 241 / 0.35);
+}
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(63 63 70 / 0.7) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(63 63 70 / 0.7);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Focus visibility is enforced per-component with ring utilities. */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid rgb(129 140 248 / 0.8);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
