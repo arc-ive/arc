@@ -8,12 +8,19 @@ matrix.
 Design decisions (X-11 implementation decisions, NOT defined by X-10):
 
 - The permission matrix below is the smallest set required to demonstrate
-  X-11. It is not a forward-looking model for future product modules.
+  X-11. Approved product-extension permissions are added through PR
+  review: ``knowledge:create``/``knowledge:read`` (Company Brain
+  foundation) and ``skill:create``/``skill:read``/``skill:delete``
+  (Skills Engine management API).
 - No Connector or Operations permissions are defined.
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;
   PLATFORM_ADMINISTRATOR retains global access; EMPLOYEE has none.
+- Skill permissions (``skill:create``, ``skill:read``, ``skill:delete``)
+  exist for the Skills Engine management API: PLATFORM_ADMINISTRATOR and
+  COMPANY_ADMINISTRATOR create, read, and delete Skills; OPERATIONS_USER
+  reads them; EMPLOYEE has none.
 - ``EMPLOYEE`` intentionally has no matrix permissions; it is allowed only
   self-scoped operations (for example listing the authenticated user's own
   tenants).
@@ -37,6 +44,9 @@ MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
 TENANT_READ = Permission(resource="tenant", action="read")
 KNOWLEDGE_CREATE = Permission(resource="knowledge", action="create")
 KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
+SKILL_CREATE = Permission(resource="skill", action="create")
+SKILL_READ = Permission(resource="skill", action="read")
+SKILL_DELETE = Permission(resource="skill", action="delete")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -49,12 +59,22 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
+            SKILL_CREATE,
+            SKILL_READ,
+            SKILL_DELETE,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
-        {TENANT_READ, KNOWLEDGE_CREATE, KNOWLEDGE_READ}
+        {
+            TENANT_READ,
+            KNOWLEDGE_CREATE,
+            KNOWLEDGE_READ,
+            SKILL_CREATE,
+            SKILL_READ,
+            SKILL_DELETE,
+        }
     ),
-    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ, KNOWLEDGE_READ}),
+    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ, KNOWLEDGE_READ, SKILL_READ}),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).
     ApplicationRole.EMPLOYEE: frozenset(),
 }
