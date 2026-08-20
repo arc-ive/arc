@@ -181,6 +181,7 @@ class TestRetrievalServiceSearch:
             source=KnowledgeSource.POLICY,
             provenance="Policy handbook",
             document_version=1,
+            sequence=0,
             similarity=0.9,
         )
         repo.search_results = [match]

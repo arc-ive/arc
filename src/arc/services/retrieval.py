@@ -22,9 +22,13 @@ from datetime import datetime
 from typing import List, Optional
 
 from arc.domain.models import (
+    ApprovedContext,
+    ApprovedContextItem,
+    ApprovedContextSecurityMetadata,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeMatch,
+    RetrievalMethod,
     TenantContext,
 )
 from arc.repositories import KnowledgeChunkRepository
@@ -134,3 +138,64 @@ class RetrievalService:
             )
 
         return await self.chunk_repo.search(context.tenant_id, query_embedding, limit)
+
+    async def approved_search(
+        self, context: TenantContext, query: str, limit: int = 5
+    ) -> ApprovedContext:
+        """Return retrieval results as the Approved Context Contract.
+
+        This is the ONLY representation a future Unified
+        Intelligence/LLM layer may consume: it carries already-sanitized
+        content with provenance/citation metadata and never exposes the
+        repository, vectors, or authorization state. This slice
+        implements dense semantic retrieval only
+        (``RetrievalMethod.DENSE_SEMANTIC``); lexical, fusion, reranking,
+        and modular routing are later maturity layers behind the same
+        boundary.
+
+        The tenant boundary comes exclusively from the trusted context,
+        the SQL similarity search is tenant-scoped, and every returned
+        match is defensively re-validated against the trusted tenant
+        (an invariant violation fails closed instead of leaking context).
+
+        Raises:
+            ValueError: for an empty query or a non-positive limit.
+            EmbeddingError: when the embedding provider fails; no
+                contract is produced (fail closed).
+            RuntimeError: when the repository returns a match outside the
+                trusted tenant (invariant violation; fail closed).
+        """
+        matches = await self.search(context, query, limit=limit)
+
+        for match in matches:
+            if match.tenant_id != context.tenant_id:
+                raise RuntimeError("Retrieval returned a match outside the trusted tenant")
+
+        items = [
+            ApprovedContextItem(
+                document_id=match.document_id,
+                chunk_id=match.chunk_id,
+                content=match.content,
+                source=match.source,
+                provenance=match.provenance,
+                document_version=match.document_version,
+                sequence=match.sequence,
+                relevance_score=float(match.similarity),
+                citation_reference=f"{match.document_id}#c{match.sequence}",
+            )
+            for match in matches
+        ]
+
+        return ApprovedContext(
+            request_id=str(uuid.uuid4()),
+            tenant_id=context.tenant_id,
+            principal_id=context.user_id,
+            query=query,
+            retrieval_method=RetrievalMethod.DENSE_SEMANTIC,
+            items=items,
+            security_metadata=ApprovedContextSecurityMetadata(
+                tenant_id=context.tenant_id,
+                authorization_status="approved",
+                pii_status="sanitized",
+            ),
+        )

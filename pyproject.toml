@@ -17,6 +17,7 @@ dependencies = [
     "presidio-anonymizer==2.2.364",
     "spacy==3.8.15",
     "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
+    "httpx>=0.28,<1.0",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +25,6 @@ dev = [
     "pytest>=8.4,<9.0",
     "pytest-asyncio>=0.23,<1.0",
     "ruff>=0.12,<1.0",
-    "httpx2>=2.0,<3.0",
 ]
 
 [tool.setuptools.packages.find]

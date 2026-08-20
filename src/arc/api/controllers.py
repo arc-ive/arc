@@ -21,12 +21,14 @@ Privileged and identity-sensitive development endpoints (membership
 provisioning) are isolated in ``arc.api.dev_controllers``.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 
-from arc.db.connection import NotFoundError
+from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import (
+    ConnectorProvider,
+    IntelligenceAnswer,
     KnowledgeDocument,
     KnowledgeMatch,
     KnowledgeSource,
@@ -37,6 +39,9 @@ from arc.domain.models import (
     User,
 )
 from arc.security.authorization import (
+    CONNECTOR_CREATE,
+    CONNECTOR_READ,
+    CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
     SKILL_CREATE,
@@ -56,6 +61,7 @@ from arc.security.dependencies import (
     require_tenant_permission,
 )
 from arc.security.models import AuthenticatedPrincipal
+from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import (
     MembershipService,
@@ -64,7 +70,9 @@ from arc.services.domain import (
     UserService,
 )
 from arc.services.embeddings import EmbeddingError
+from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
+from arc.services.llm import LlmError
 from arc.services.pii import PiiGuardError
 from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
@@ -125,12 +133,20 @@ class ApplicationContext:
         return self.services.get("connector_service")
 
     @property
+    def connector_sync_service(self) -> ConnectorSyncService:
+        return self.services.get("connector_sync_service")
+
+    @property
     def knowledge_service(self) -> KnowledgeService:
         return self.services.get("knowledge_service")
 
     @property
     def retrieval_service(self) -> RetrievalService:
         return self.services.get("retrieval_service")
+
+    @property
+    def intelligence_service(self) -> UnifiedIntelligenceService:
+        return self.services.get("intelligence_service")
 
     @property
     def skill_service(self) -> SkillService:
@@ -467,6 +483,7 @@ def _knowledge_match_response(match: KnowledgeMatch) -> Dict[str, Any]:
         "source": match.source.value,
         "provenance": match.provenance,
         "document_version": match.document_version,
+        "sequence": match.sequence,
         "similarity": match.similarity,
     }
 
@@ -513,6 +530,90 @@ async def search_knowledge(
             detail="Knowledge search failed",
         )
     return [_knowledge_match_response(match) for match in matches]
+
+
+def _intelligence_answer_response(answer: IntelligenceAnswer) -> Dict[str, Any]:
+    """Serialize an IntelligenceAnswer for API responses.
+
+    Only the answer text, citation references, and retrieval metadata are
+    exposed. The LLM's raw prompt is never exposed, and no security
+    internals (prompt construction, provider identity, error details) are
+    included.
+    """
+    return {
+        "request_id": answer.request_id,
+        "tenant_id": answer.tenant_id,
+        "principal_id": answer.principal_id,
+        "query": answer.query,
+        "answer": answer.answer,
+        "citations": answer.citations,
+        "retrieval_method": answer.retrieval_method.value,
+        "context_used": answer.context_used,
+    }
+
+
+@api_router.post("/tenants/{tenant_id}/intelligence/query")
+async def query_unified_intelligence(
+    tenant_id: str,
+    body: Optional[Any] = Body(default=None),
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    intelligence_service: UnifiedIntelligenceService = Depends(
+        lambda: app_context.intelligence_service
+    ),
+) -> Dict[str, Any]:
+    """Reason over the tenant's approved knowledge (Unified Intelligence).
+
+    The first Unified Intelligence slice (PRD 12/26, TRD 8/10/39): a
+    tenant-scoped request is authenticated, the tenant boundary comes
+    from the trusted X-10 context, retrieval produces an Approved Context
+    Contract (``knowledge:read`` is reused: reasoning is a read-class
+    operation over the tenant's own knowledge, not a new capability), and
+    the LLM provider reasons over ONLY that approved context.
+
+    The LLM never receives raw documents, vectors, authorization state, or
+    cross-tenant content. When no approved context matches, the answer is
+    ``None`` (the LLM is not invoked and nothing is invented). Fail closed:
+    embedding or LLM failures map to a generic 500 with no internals
+    leaked.
+
+    The request body is explicitly validated as a JSON object before any
+    field access, ``query`` as a string before ``strip()``, and ``limit``
+    as a non-boolean integer. Malformed inputs return 400, never 500.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    if body is None or not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Request body must be a JSON object",
+        )
+
+    query = body.get("query")
+    limit = body.get("limit", 5)
+
+    if not isinstance(query, str) or not query.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query must be a non-empty string",
+        )
+    # bool is a subclass of int: a boolean limit must be rejected
+    # explicitly, never accepted as an integer.
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be an integer between 1 and 50",
+        )
+
+    try:
+        answer = await intelligence_service.answer_query(context, query, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except (EmbeddingError, LlmError):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Intelligence query failed",
+        )
+    return _intelligence_answer_response(answer)
 
 
 @api_router.post("/tenants/{tenant_id}/knowledge")
@@ -712,4 +813,125 @@ async def execute_tool(
         "tool": result.tool_name,
         "version": result.tool_version,
         "output": result.output,
+    }
+
+
+def _connector_payload(config) -> Dict[str, Any]:
+    """Serialize a ConnectorConfig without exposing any credential material."""
+    return {
+        "id": config.id,
+        "tenant_id": config.tenant_id,
+        "provider": config.provider.value,
+        "name": config.name,
+        "status": config.status.value,
+        "created_at": config.created_at.isoformat(),
+        "updated_at": config.updated_at.isoformat(),
+    }
+
+
+@api_router.get("/tenants/{tenant_id}/connectors")
+async def list_connectors(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_READ)),
+    connector_service: ConnectorService = Depends(lambda: app_context.connector_service),
+) -> List[Dict[str, Any]]:
+    """List the caller's tenant connector configurations.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``connector:read`` permission. The path ``tenant_id`` is validated for
+    consistency against the trusted context (403 on mismatch); the trusted
+    context remains authoritative for ownership. No credential material is
+    ever returned.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    connectors = await connector_service.list_connectors(context)
+    return [_connector_payload(connector) for connector in connectors]
+
+
+@api_router.post("/tenants/{tenant_id}/connectors")
+async def create_connector(
+    connector_data: Dict[str, Any],
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_CREATE)),
+    connector_service: ConnectorService = Depends(lambda: app_context.connector_service),
+) -> Dict[str, Any]:
+    """Create a connector configuration for the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``connector:create`` permission. The provider must be one of the
+    code-defined approved providers (GitHub, Slack, Linear per ADR-002).
+    The path ``tenant_id`` is validated for consistency against the trusted
+    context (403 on mismatch). Credentials are never accepted or returned.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        provider = ConnectorProvider(connector_data.get("provider"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid connector provider",
+        )
+
+    name = connector_data.get("name")
+    if not isinstance(name, str) or not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connector name cannot be empty",
+        )
+
+    try:
+        created = await connector_service.create_connector(context, provider, name)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Connector already exists",
+        )
+    return _connector_payload(created)
+
+
+@api_router.post("/tenants/{tenant_id}/connectors/{connector_id}/sync")
+async def sync_connector(
+    connector_id: str,
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_SYNC)),
+    connector_sync_service: ConnectorSyncService = Depends(
+        lambda: app_context.connector_sync_service
+    ),
+) -> Dict[str, Any]:
+    """Synchronize one tenant-owned connector into Company Brain.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``connector:sync`` permission. The path ``tenant_id`` is validated for
+    consistency against the trusted context (403 on mismatch). Fetching
+    uses code-defined provider endpoints only; external data passes
+    through the PII guard before ingestion. Failures are controlled and
+    generic: no provider details, credentials, or internal information are
+    exposed, and every attempt produces a tenant-scoped audit record.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        result = await connector_sync_service.sync(context, connector_id)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Connector not found",
+        )
+    except ConnectorSyncError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Connector synchronization failed",
+        )
+
+    return {
+        "connector_id": result.connector_id,
+        "provider": result.provider.value,
+        "status": "success",
+        "items_fetched": result.items_fetched,
+        "items": [
+            {"source_id": item.source_id, "title": item.title, "url": item.url}
+            for item in result.items
+        ],
     }

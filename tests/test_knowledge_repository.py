@@ -248,6 +248,19 @@ class TestKnowledgeDocumentWithChunks:
         with pytest.raises(NotFoundError):
             await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
 
+    async def test_tenant_mismatch_between_document_and_chunks_is_rejected(
+        self, knowledge_repo, seeded_tenant
+    ):
+        document = _document(seeded_tenant.id)
+        chunks = _chunks(document, count=2)
+        chunks[0].tenant_id = f"{seeded_tenant.id}-other"
+
+        with pytest.raises(ValueError):
+            await knowledge_repo.create_document_with_chunks(document, chunks, _embeddings(2))
+
+        with pytest.raises(NotFoundError):
+            await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
+
     async def test_document_duplicate_is_rejected(self, knowledge_repo, seeded_tenant):
         document = _document(seeded_tenant.id)
         await knowledge_repo.create(document)

@@ -132,3 +132,20 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tenant_id ON knowledge_chunks(te
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document_id ON knowledge_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
     ON knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS connector_sync_records (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    connector_id VARCHAR(255) NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    items_fetched INTEGER NOT NULL DEFAULT 0,
+    error_kind VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (connector_id) REFERENCES connector_configs(id) ON DELETE CASCADE,
+    CONSTRAINT ck_connector_sync_records_status CHECK (status IN ('success', 'failed')),
+    CONSTRAINT ck_connector_sync_records_items_fetched CHECK (items_fetched >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_connector_sync_records_tenant_id ON connector_sync_records(tenant_id);
