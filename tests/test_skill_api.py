@@ -11,13 +11,25 @@ The client-supplied ``tenant_id`` (query) is request input only: the X-10
 trusted tenant context verifies the authenticated principal's persisted
 membership, and the SkillService derives tenant ownership exclusively from
 that context. Cross-tenant access never reveals resource existence.
+
+Consistency invariant: a client-supplied ``tenant_id`` that does not match
+the trusted ``TenantContext`` is rejected with 403 on every Skills
+endpoint (the trusted context is never overridden by the query parameter).
 """
 
 import uuid
 
 import pytest
 
-from arc.domain.models import Membership, Tenant, User, UserRole
+from arc.domain.models import (
+    Membership,
+    Tenant,
+    TenantContext,
+    User,
+    UserRole,
+)
+from arc.main import app
+from arc.security.dependencies import get_trusted_tenant_context
 from arc.security.models import ApplicationRole
 
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
@@ -428,6 +440,106 @@ class TestSkillTenantIsolation:
             headers={"Authorization": f"Bearer {token_b}"},
         )
         assert still_there.status_code == 200
+
+
+class TestSkillTenantIdConsistency:
+    """The query tenant_id must match the trusted TenantContext.
+
+    The trusted context remains the authoritative tenant boundary; the
+    client-supplied ``tenant_id`` is request input only and is explicitly
+    validated for consistency against the context (403 on mismatch).
+    """
+
+    async def test_matching_query_tenant_succeeds(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """With a matching query tenant_id the trusted boundary is used."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_skill_payload(),
+        )
+        assert created.status_code == 200
+        assert created.json()["tenant_id"] == tenant.id
+
+    async def test_mismatched_query_tenant_is_rejected(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Every Skills endpoint rejects a tenant_id diverging from the context."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Establish a trusted context for a DIFFERENT tenant than the query.
+        mismatched_context = TenantContext(
+            tenant_id=_unique("other-tenant"),
+            tenant_name="Other Tenant",
+            user_id=user.id,
+            role=UserRole.MEMBER,
+        )
+        app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
+        try:
+            create = client.post(
+                f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            )
+            assert create.status_code == 403
+
+            listing = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+            assert listing.status_code == 403
+
+            fetch = client.get(f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers)
+            assert fetch.status_code == 403
+
+            delete = client.delete(
+                f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+            )
+            assert delete.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_trusted_tenant_context, None)
+
+    async def test_mismatched_query_tenant_cannot_write(
+        self, client, repositories, db, make_token, authorization_override
+    ):
+        """A rejected request persists nothing in either tenant."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        other_tenant_id = _unique("other-tenant")
+        mismatched_context = TenantContext(
+            tenant_id=other_tenant_id,
+            tenant_name="Other Tenant",
+            user_id=user.id,
+            role=UserRole.MEMBER,
+        )
+        app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
+        try:
+            create = client.post(
+                f"/skills?tenant_id={tenant.id}",
+                headers={"Authorization": f"Bearer {token}"},
+                json=_skill_payload(),
+            )
+            assert create.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_trusted_tenant_context, None)
+
+        # The rejected request must not have persisted anything in either tenant.
+        from arc.repositories.skills import PostgreSQLSkillRepository
+
+        skill_repo = PostgreSQLSkillRepository(db)
+        assert await skill_repo.list_for_tenant(tenant.id) == []
+        assert await skill_repo.list_for_tenant(other_tenant_id) == []
 
 
 class TestSkillNotFound:

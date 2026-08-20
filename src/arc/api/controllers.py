@@ -22,8 +22,18 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from arc.db.connection import NotFoundError
-from arc.domain.models import Skill, SkillStatus, Tenant, TenantContext, User
+from arc.domain.models import (
+    KnowledgeDocument,
+    KnowledgeSource,
+    Skill,
+    SkillStatus,
+    Tenant,
+    TenantContext,
+    User,
+)
 from arc.security.authorization import (
+    KNOWLEDGE_CREATE,
+    KNOWLEDGE_READ,
     SKILL_CREATE,
     SKILL_DELETE,
     SKILL_READ,
@@ -44,6 +54,8 @@ from arc.services.domain import (
     TenantService,
     UserService,
 )
+from arc.services.knowledge import KnowledgeService
+from arc.services.pii import PiiGuardError
 from arc.services.skills import SkillService
 
 
@@ -92,6 +104,10 @@ class ApplicationContext:
     @property
     def connector_service(self) -> ConnectorService:
         return self.services.get("connector_service")
+
+    @property
+    def knowledge_service(self) -> KnowledgeService:
+        return self.services.get("knowledge_service")
 
     @property
     def skill_service(self) -> SkillService:
@@ -278,10 +294,13 @@ async def create_skill(
     Protected: requires a trusted X-10 tenant context (the client-supplied
     ``tenant_id`` is request input only and is verified against the
     authenticated principal's persisted membership) and the ``skill:create``
-    permission. Tenant ownership is derived exclusively from the trusted
-    context: a caller-supplied tenant override is never trusted and the
+    permission. The supplied ``tenant_id`` is explicitly validated for
+    consistency against the trusted context (403 on mismatch); the trusted
+    context remains authoritative for ownership and persistence. The
     SkillService generates the Skill ID.
     """
+    _require_path_tenant_matches_context(tenant_id, context)
+
     try:
         status_value = SkillStatus(skill_data.get("status", "active"))
     except ValueError:
@@ -317,8 +336,12 @@ async def list_skills(
     """List all Skills belonging to the trusted tenant.
 
     Protected: requires a trusted X-10 tenant context and the ``skill:read``
-    permission. Only Skills of the trusted tenant are returned.
+    permission. The supplied ``tenant_id`` is explicitly validated for
+    consistency against the trusted context (403 on mismatch). Only Skills
+    of the trusted tenant are returned.
     """
+    _require_path_tenant_matches_context(tenant_id, context)
+
     skills = await skill_service.list_skills(context)
     return [_skill_response(skill) for skill in skills]
 
@@ -333,9 +356,13 @@ async def get_skill(
     """Get a Skill belonging to the trusted tenant.
 
     Protected: requires a trusted X-10 tenant context and the ``skill:read``
-    permission. A Skill outside the trusted tenant is indistinguishable from
-    a missing Skill (404): cross-tenant access never reveals existence.
+    permission. The supplied ``tenant_id`` is explicitly validated for
+    consistency against the trusted context (403 on mismatch). A Skill
+    outside the trusted tenant is indistinguishable from a missing Skill
+    (404): cross-tenant access never reveals existence.
     """
+    _require_path_tenant_matches_context(tenant_id, context)
+
     try:
         skill = await skill_service.get_skill(context, skill_id)
     except NotFoundError:
@@ -353,9 +380,142 @@ async def delete_skill(
     """Delete a Skill belonging to the trusted tenant.
 
     Protected: requires a trusted X-10 tenant context and the
-    ``skill:delete`` permission. Deletion is tenant-scoped: a Skill outside
-    the trusted tenant is not deleted and the response is indistinguishable
-    from a successful no-op delete.
+    ``skill:delete`` permission. The supplied ``tenant_id`` is explicitly
+    validated for consistency against the trusted context (403 on mismatch).
+    Deletion is tenant-scoped: a Skill outside the trusted tenant is not
+    deleted and the response is indistinguishable from a successful no-op
+    delete.
     """
+    _require_path_tenant_matches_context(tenant_id, context)
+
     await skill_service.delete_skill(context, skill_id)
     return None
+
+
+def _knowledge_document_payload(document: KnowledgeDocument) -> Dict[str, Any]:
+    """Serialize a knowledge document for API responses.
+
+    Only sanitized content is ever returned; raw content never reaches
+    persistence or a response.
+    """
+    return {
+        "id": document.id,
+        "tenant_id": document.tenant_id,
+        "source": document.source.value,
+        "provenance": document.provenance,
+        "version": document.version,
+        "status": document.status.value,
+        "content": document.content,
+        "created_at": document.created_at.isoformat(),
+        "updated_at": document.updated_at.isoformat(),
+    }
+
+
+def _require_path_tenant_matches_context(path_tenant_id: str, context: TenantContext) -> None:
+    """Reject a request whose path tenant does not match the trusted context.
+
+    The trusted ``TenantContext`` remains the authoritative tenant boundary:
+    the service derives the tenant exclusively from it. This is a defensive
+    consistency check that makes the invariant explicit and fails closed
+    (403) if the path tenant ever diverges from the established context.
+    """
+    if path_tenant_id != context.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to the requested tenant is denied",
+        )
+
+
+@api_router.post("/tenants/{tenant_id}/knowledge")
+async def create_knowledge_document(
+    tenant_id: str,
+    knowledge_data: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_CREATE)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> Dict[str, Any]:
+    """Create a knowledge document for a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``knowledge:create`` permission. The tenant boundary is derived from
+    the trusted context, never from the request payload. The path
+    ``tenant_id`` is validated for consistency against the trusted context
+    but is never trusted as the security boundary. Raw content is
+    sanitized by the PII Guard before persistence.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    source_value = knowledge_data.get("source")
+    try:
+        source = KnowledgeSource(source_value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid knowledge source"
+        )
+
+    provenance = knowledge_data.get("provenance")
+    content = knowledge_data.get("content")
+    version = knowledge_data.get("version", 1)
+
+    try:
+        document = await knowledge_service.ingest_document(
+            context=context,
+            source=source,
+            provenance=provenance,
+            content=content,
+            version=version,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except PiiGuardError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Knowledge ingestion failed",
+        )
+
+    return _knowledge_document_payload(document)
+
+
+@api_router.get("/tenants/{tenant_id}/knowledge/{document_id}")
+async def get_knowledge_document(
+    tenant_id: str,
+    document_id: str,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> Dict[str, Any]:
+    """Get a knowledge document by ID within a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+        ``knowledge:read`` permission. Cross-tenant access is denied: a member
+        of tenant A can never retrieve tenant B's document, and a missing
+        document is indistinguishable from an inaccessible one (404). The path
+        ``tenant_id`` is validated for consistency against the trusted context.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        document = await knowledge_service.get_document(context, document_id)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge document not found",
+        )
+    return _knowledge_document_payload(document)
+
+
+@api_router.get("/tenants/{tenant_id}/knowledge")
+async def list_knowledge_documents(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> List[Dict[str, Any]]:
+    """List knowledge documents for a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``knowledge:read`` permission. Only the caller's own tenant documents
+    are returned. The path ``tenant_id`` is validated for consistency
+    against the trusted context.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    documents = await knowledge_service.list_documents(context)
+    return [_knowledge_document_payload(document) for document in documents]

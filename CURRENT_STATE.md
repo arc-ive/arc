@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established (PR under review)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation implemented (pending review/merge)
 
 ## Completed
 
@@ -213,9 +213,91 @@ with the X-10 tenant membership boundary.
 - `.env` (local, gitignored) contains a development-only JWT secret and
   `demo-user` as platform_administrator for the simulated environment.
 
-## CI Baseline (Established — PR under review)
+## Company Brain — Knowledge Storage & Ingestion Foundation (Implemented — pending review)
 
-**Branch:** `chore/ci-github-actions`
+**Branch:** `feat/company-brain-foundation`
+**Base:** `origin/main` (reconciled with current main)
+**Scope:** authorized slice of the Company Brain module — tenant-scoped
+knowledge document storage and PII-boundary ingestion. Reuses the merged
+X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
+
+### What changed
+
+- **Schema** (`src/arc/db/schema.sql`): new `knowledge_documents` table
+  (id PK, tenant FK ON DELETE CASCADE, source, provenance, version >= 1,
+  status in active/archived, content, created/updated timestamps) with
+  CHECK constraints and a tenant index. No embedding/vector columns, no
+  chunking tables, no retrieval indexes (out of scope by authorization).
+- **Domain** (`src/arc/domain/models.py`): `KnowledgeDocument` dataclass
+  with `__post_init__` validation; `KnowledgeSource` (policy, procedure,
+  incident_report, troubleshooting, internal_knowledge, solution — maps to
+  TRD 9.2 knowledge categories); `KnowledgeStatus` (active, archived).
+  `version` is stored as document metadata (TRD 9.1): this foundation does
+  NOT implement document revision/update semantics, and no logical document
+  identity or uniqueness relationship between documents and versions is
+  claimed. Future document lifecycle/version-management work (out of scope
+  for this slice) may define the identity and uniqueness model; ADR-001
+  keeps the Company Brain schema open.
+- **Repository** (`src/arc/repositories/knowledge.py`):
+  `PostgreSQLKnowledgeRepository` implementing the `KnowledgeRepository`
+  Protocol (`src/arc/repositories/__init__.py`). Every query includes a
+  `tenant_id` condition — cross-tenant access is impossible at the SQL
+  level. `NotFoundError`/`DuplicateKeyError` on missing/duplicate.
+- **Service** (`src/arc/services/knowledge.py`): `KnowledgeService` with
+  `ingest_document`/`get_document`/`list_documents`. The tenant boundary
+  comes exclusively from a trusted X-10 `TenantContext`. Ingestion runs
+  raw content through the existing `PiiGuardService` (Microsoft Presidio)
+  BEFORE persistence; on `PiiGuardError` nothing is persisted (fail
+  closed). The PII guard is reused, not reimplemented.
+- **Authorization** (`src/arc/security/authorization.py`): new permissions
+  `knowledge:create` and `knowledge:read`. PLATFORM_ADMINISTRATOR and
+  COMPANY_ADMINISTRATOR: both; OPERATIONS_USER: `knowledge:read`;
+  EMPLOYEE: none. Default DENY.
+- **API** (`src/arc/api/controllers.py`): `POST /tenants/{tenant_id}/knowledge`
+  (create, sanitized), `GET /tenants/{tenant_id}/knowledge/{document_id}`
+  (404 for missing/inaccessible — no existence leakage), and
+  `GET /tenants/{tenant_id}/knowledge` (list). All behind
+  `require_tenant_permission`. The path `tenant_id` is validated for
+  consistency against the trusted `TenantContext` (403 on mismatch) but the
+  tenant boundary is always derived from the trusted context. Only
+  sanitized content is ever persisted or returned.
+- **Composition root** (`src/arc/app.py`): `PostgreSQLKnowledgeRepository`
+  and `KnowledgeService` registered alongside existing services.
+- **Tests** (new): `tests/test_knowledge_domain.py`,
+  `tests/test_knowledge_repository.py` (real PG, SQL-level tenant
+  isolation), `tests/test_knowledge_service.py` (PII boundary,
+  fail-closed no-persistence, real PiiGuardService integration),
+  `tests/test_knowledge_api.py` (401/403, permission matrix, cross-tenant
+  denial, raw PII sanitized before persistence and response, path-tenant
+  consistency 403, explicit nonexistent-document 404, list-endpoint PII
+  sanitization).
+  `tests/test_rbac.py` updated for the knowledge permission matrix.
+
+### What was NOT changed
+
+- Embeddings, pgvector extension/columns, chunking, retrieval/RAG, Skills,
+  AI Agent, Unified Intelligence, webhooks, observability, connector
+  ingestion — all explicitly out of scope for this slice.
+- PII Guard implementation (`src/arc/services/pii.py`) — reused, untouched.
+
+### Verification
+
+- 249 tests pass (Docker + real PostgreSQL), 4 warnings, 0 failures — the
+  43 original knowledge tests plus 5 tests added by the PR #26 review
+  fixes.
+- `ruff check` and `ruff format --check` pass on `src` and `tests`.
+- Mandatory `docker compose build arc` completed (arc service has no volume
+  mount; image rebuilt with the new code before verification).
+- The branch was reconciled with the merged Skills Engine foundation
+  (`origin/main`) before the final verification.
+
+### Pending
+
+- Human review of the PR; merge into `main`.
+
+## CI Baseline (Established)
+
+**Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
 
 - Added `.github/workflows/ci.yml` (GitHub Actions, `ubuntu-latest`).
 - Triggers: pushes to `main` and pull requests targeting `main`.
@@ -228,7 +310,7 @@ with the X-10 tenant membership boundary.
   credentials.
 - The repo-wide lint/format gate passes on current `main`, verified locally
   against a freshly rebuilt application image.
-- Remaining: GitHub-side CI verification after review/merge.
+- GitHub Actions CI is active on `main`.
 
 ## In Progress
 
@@ -252,7 +334,7 @@ with the X-10 tenant membership boundary.
 - Docker baseline — established (merged).
 - Dev Container baseline — established (merged).
 - Compose — established (merged).
-- CI environment — established (PR under review).
+- CI environment — established.
 - Windows verification.
 - macOS verification.
 
@@ -298,7 +380,7 @@ Bala is responsible for:
 
 ## Next
 
-1. **Review and merge the CI baseline** (chore/ci-github-actions): GitHub Actions workflow + state update; human review, PR, and merge required.
+1. **Review and merge Company Brain — Knowledge Storage & Ingestion Foundation** (feat/company-brain-foundation): implemented, committed, and pushed; human review and merge required.
 2. Complete X-6 verification and close the Linear issue.
 3. Coordinate the next Bala Foundation issue with Joe and Bharath.
 4. Continue the AI development setup.
@@ -328,9 +410,9 @@ Bharath
 
 ### CI
 
-The CI baseline (`.github/workflows/ci.yml`) has been established on
-`chore/ci-github-actions` and is pending review/merge. Remaining Foundation
-verification is cross-platform (Windows/macOS).
+The CI baseline (`.github/workflows/ci.yml`) has been established and
+merged to `main` (PR #23). Remaining Foundation verification is
+cross-platform (Windows/macOS).
 
 Owner:
 

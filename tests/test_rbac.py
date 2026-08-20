@@ -12,6 +12,8 @@ import pytest
 
 from arc.domain.models import UserRole
 from arc.security.authorization import (
+    KNOWLEDGE_CREATE,
+    KNOWLEDGE_READ,
     MEMBERSHIP_CREATE,
     ROLE_PERMISSIONS,
     SKILL_CREATE,
@@ -56,6 +58,8 @@ def test_exactly_four_application_roles_exist():
                 USER_CREATE,
                 MEMBERSHIP_CREATE,
                 TENANT_READ,
+                KNOWLEDGE_CREATE,
+                KNOWLEDGE_READ,
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
@@ -64,13 +68,27 @@ def test_exactly_four_application_roles_exist():
         ),
         (
             ApplicationRole.COMPANY_ADMINISTRATOR,
-            [TENANT_READ, SKILL_CREATE, SKILL_READ, SKILL_DELETE],
+            [
+                TENANT_READ,
+                KNOWLEDGE_CREATE,
+                KNOWLEDGE_READ,
+                SKILL_CREATE,
+                SKILL_READ,
+                SKILL_DELETE,
+            ],
             [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE],
         ),
         (
             ApplicationRole.OPERATIONS_USER,
-            [TENANT_READ, SKILL_READ],
-            [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE, SKILL_CREATE, SKILL_DELETE],
+            [TENANT_READ, KNOWLEDGE_READ, SKILL_READ],
+            [
+                TENANT_CREATE,
+                USER_CREATE,
+                MEMBERSHIP_CREATE,
+                KNOWLEDGE_CREATE,
+                SKILL_CREATE,
+                SKILL_DELETE,
+            ],
         ),
         (
             ApplicationRole.EMPLOYEE,
@@ -80,6 +98,8 @@ def test_exactly_four_application_roles_exist():
                 USER_CREATE,
                 MEMBERSHIP_CREATE,
                 TENANT_READ,
+                KNOWLEDGE_CREATE,
+                KNOWLEDGE_READ,
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_DELETE,
