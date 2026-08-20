@@ -18,6 +18,22 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   COMPANY_ADMINISTRATOR configure, read, and synchronize connectors;
   OPERATIONS_USER reads and synchronizes connectors for operational
   workflows; EMPLOYEE has none.
+
+  Connector role mapping (explicit matrix):
+
+  - ``connector:read`` (list connector configuration, read connector
+    state): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR,
+    OPERATIONS_USER; tenant-scoped; denied by default.
+  - ``connector:create`` (create connector configuration):
+    PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR; tenant-scoped;
+    denied by default.
+  - ``connector:sync`` (trigger connector synchronization):
+    PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, OPERATIONS_USER;
+    tenant-scoped; denied by default.
+
+  There is no connector-specific authorization system: the connector
+  layer consumes this centralized matrix via ``AuthorizationService``.
+  An unknown permission is never granted (default DENY).
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;

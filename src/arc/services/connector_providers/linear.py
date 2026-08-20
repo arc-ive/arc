@@ -22,6 +22,7 @@ from arc.services.connector_providers.base import (
     ProviderTransportError,
     ProviderValidationError,
 )
+from arc.services.connector_providers.targets import assert_approved_provider_url
 
 LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 
@@ -82,11 +83,12 @@ class LinearProviderAdapter:
         return ProviderFetchResult(provider=self.provider, records=_parse_linear_issues(payload))
 
     async def _request(self, method: str, url: str, **kwargs):
+        assert_approved_provider_url(self.provider, url)
         owns_client = self._client is None
         client = (
             self._client
             if self._client is not None
-            else httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT)
+            else httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT, follow_redirects=False)
         )
         try:
             try:

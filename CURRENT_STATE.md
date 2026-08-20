@@ -560,6 +560,44 @@ foundation already on `main` (code-defined `ConnectorProvider` catalog,
   failures, sanitized knowledge ingestion). `tests/test_rbac.py` and
   `tests/test_api_surface.py` updated.
 
+### Review response (security review)
+
+- **Centralized RBAC**: `connector:create`/`connector:read`/`connector:sync`
+  are integrated into the centralized permission matrix in
+  `src/arc/security/authorization.py` with the explicit role mapping
+  (PLATFORM_ADMIN/COMPANY_ADMIN: all three; OPERATIONS: read + sync;
+  EMPLOYEE: none; default DENY). There is no connector-specific
+  authorization system; the connector layer consumes the centralized
+  `AuthorizationService` decision.
+- **Credential boundary**: credentials are environment-injected
+  (`CONNECTOR_CREDENTIALS`) and are never tenant-supplied, persisted,
+  returned, logged, audited, or exposed through `repr`. Missing/invalid
+  credentials fail closed before any provider request. Production OAuth,
+  secret storage, rotation, and per-tenant provider identity are
+  explicitly deferred.
+- **Provider target allowlist (SSRF)**: every outbound request URL is
+  validated against the approved endpoint allowlist
+  (`connector_providers/targets.py`) before it is sent: `https` only,
+  exact approved provider hosts (GitHub/Slack/Linear), no IP literals,
+  no localhost, no private ranges, no cloud-metadata address, no
+  userinfo. Redirects are not followed (`follow_redirects=False`).
+- **PII boundary**: provider content passes through the existing
+  `KnowledgeService` PII Guard before any knowledge persistence; PII
+  Guard failure fails closed (no raw fallback, no persistence of that
+  record, controlled failure, safe audit event).
+- **Sync vs Company Brain boundary**: this PR is the upstream ingestion
+  source (Option A). It does not establish the final knowledge identity,
+  RAG indexing, or deduplication model; final deduplication/document
+  identity is owned by the future Company Brain ingestion layer.
+- **Audit minimization**: `connector_sync_records` store safe metadata
+  only (tenant, connector, provider, status, item count, generic error
+  kind); raw provider payloads, PII, and secrets never reach audit
+  records.
+- **Live-mode gate**: simulated mode is the default; live adapters are
+  constructed only under an explicit `CONNECTOR_PROVIDER_MODE=live` and
+  still require a credential and allowlisted target before any external
+  request. A normal environment never makes unexpected external calls.
+
 ### Deferred (NOT part of this slice; no decisions changed)
 
 - Production credential storage: only environment-based development

@@ -1,18 +1,46 @@
 """Environment-driven connector integration settings.
 
-Credentials follow the established X-11 configuration pattern
-(``APPLICATION_ROLE_ASSIGNMENTS``): a JSON environment value holding
-development-only placeholders, never committed to the repository.
-Production secret management remains a separate decision.
+Credential boundary (recorded per review)
+-----------------------------------------
 
-- ``CONNECTOR_CREDENTIALS``: JSON object mapping tenant IDs to provider
-  tokens, for example::
+Provider credentials are injected through the runtime environment only,
+as a JSON object mapping tenant IDs to provider tokens. This is a
+**current-phase, development/demo mechanism**: the platform holds one
+environment-provided credential set per tenant/provider. It does not
+implement tenant-owned OAuth (``Tenant A owns GitHub credential A``);
+all tenants share the platform-provided runtime credential store.
 
-      {"tenant-a": {"github": "dev-placeholder-token", "linear": "..."}}
+Credentials are NOT:
 
-- ``CONNECTOR_PROVIDER_MODE``: ``simulated`` (default) or ``live``.
-  Simulated mode uses the deterministic controlled/fake provider clients
-  (TRD 33); live mode uses the httpx adapters against real provider APIs.
+- accepted from tenant request payloads
+- stored in ``ConnectorConfig``
+- stored in normal database tables
+- returned through API responses
+- included in exceptions
+- written to application logs
+- written to audit records
+- returned by connector read endpoints
+- exposed through ``repr`` or debug output
+
+Missing or invalid credential configuration fails closed: the caller
+receives ``None`` from the store and the sync attempt is denied with a
+generic, audited failure before any provider request.
+
+Deferred (not part of this PR): tenant-specific OAuth authorization,
+secure secret storage, credential rotation, token refresh lifecycle,
+per-tenant provider identity, and provider account revocation.
+
+Provider mode boundary
+----------------------
+
+``CONNECTOR_PROVIDER_MODE`` selects the adapter set: ``simulated``
+(default) uses the deterministic controlled/fake clients (TRD 33);
+``live`` uses the httpx adapters against real provider APIs. Simulated is
+the default for a reason: a normal development environment must never
+unexpectedly call GitHub, Slack, or Linear. Live mode is enabled only by
+an explicit configuration value and still requires a credential and a
+provider target validated against the approved endpoint allowlist before
+any external request.
 
 All settings fail closed: invalid JSON or an unknown provider name raises
 a configuration error.

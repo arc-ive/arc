@@ -22,6 +22,7 @@ from arc.services.connector_providers.base import (
     ProviderTransportError,
     ProviderValidationError,
 )
+from arc.services.connector_providers.targets import assert_approved_provider_url
 
 SLACK_CONVERSATIONS_LIST_URL = "https://slack.com/api/conversations.list"
 SLACK_CONVERSATIONS_HISTORY_URL = "https://slack.com/api/conversations.history"
@@ -89,11 +90,12 @@ class SlackProviderAdapter:
         raise ProviderValidationError(f"Slack channel '{target}' was not found")
 
     async def _request(self, method: str, url: str, **kwargs):
+        assert_approved_provider_url(self.provider, url)
         owns_client = self._client is None
         client = (
             self._client
             if self._client is not None
-            else httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT)
+            else httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT, follow_redirects=False)
         )
         try:
             try:

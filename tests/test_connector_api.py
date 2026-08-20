@@ -116,6 +116,37 @@ class TestConnectorAuthorization:
         )
         assert listing.status_code == 200
 
+    async def test_operations_user_can_sync_a_connector(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override(
+            {
+                user.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+        token = make_token(user.id)
+
+        created = client.post(
+            f"/tenants/{tenant.id}/connectors",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_connector_payload(),
+        )
+        connector_id = created.json()["id"]
+
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        os.environ["CONNECTOR_CREDENTIALS"] = json.dumps({tenant.id: {"github": "dev-token"}})
+        try:
+            sync = client.post(
+                f"/tenants/{tenant.id}/connectors/{connector_id}/sync",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            os.environ.pop("CONNECTOR_CREDENTIALS", None)
+
+        assert sync.status_code == 200
+        assert sync.json()["status"] == "success"
+
 
 class TestConnectorCreate:
     async def test_company_administrator_can_create(
@@ -366,6 +397,93 @@ class TestConnectorSync:
         await membership_repo.delete(membership_b.id)
         await user_repo.delete(user_b.id)
         await tenant_repo.delete(tenant_b.id)
+
+    async def test_foreign_connector_indistinguishable_from_missing(
+        self, client, db, repositories, seeded, make_token, authorization_override
+    ):
+        """Cross-tenant non-disclosure: tenant A requesting tenant B's
+        existing connector must receive the exact same 404 response as a
+        nonexistent connector, so resource existence is not disclosed."""
+        tenant_a, user_a, _ = seeded
+        tenant_repo, user_repo, membership_repo = repositories
+
+        user_b = await user_repo.create(
+            User(id=_unique("user-b"), email=f"{uuid.uuid4().hex}@example.com", username="b")
+        )
+        tenant_b = await tenant_repo.create(Tenant(id=_unique("tenant-b"), name="Tenant B"))
+        membership_b = await membership_repo.create(
+            Membership(id=_unique("membership"), user_id=user_b.id, tenant_id=tenant_b.id)
+        )
+
+        authorization_override(
+            {
+                user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        token_b = make_token(user_b.id)
+        created_b = client.post(
+            f"/tenants/{tenant_b.id}/connectors",
+            headers={"Authorization": f"Bearer {token_b}"},
+            json=_connector_payload(name="other/repo"),
+        )
+        assert created_b.status_code == 200
+        foreign_connector_id = created_b.json()["id"]
+
+        token_a = make_token(user_a.id)
+        foreign = client.post(
+            f"/tenants/{tenant_a.id}/connectors/{foreign_connector_id}/sync",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        missing = client.post(
+            f"/tenants/{tenant_a.id}/connectors/{_unique('missing')}/sync",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+
+        assert foreign.status_code == 404
+        assert missing.status_code == 404
+        assert foreign.json() == missing.json()
+
+        from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
+
+        sync_repo = PostgreSQLConnectorSyncRepository(db)
+        assert await sync_repo.list_for_tenant(tenant_a.id) == []
+
+        await membership_repo.delete(membership_b.id)
+        await user_repo.delete(user_b.id)
+        await tenant_repo.delete(tenant_b.id)
+
+    async def test_audit_records_contain_no_credential_material(
+        self, client, db, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = client.post(
+            f"/tenants/{tenant.id}/connectors",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_connector_payload(),
+        )
+        connector_id = created.json()["id"]
+
+        os.environ["CONNECTOR_CREDENTIALS"] = json.dumps({tenant.id: {"github": "dev-token"}})
+        try:
+            sync = client.post(
+                f"/tenants/{tenant.id}/connectors/{connector_id}/sync",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            os.environ.pop("CONNECTOR_CREDENTIALS", None)
+        assert sync.status_code == 200
+
+        from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
+
+        records = await PostgreSQLConnectorSyncRepository(db).list_for_tenant(tenant.id)
+        assert len(records) == 1
+        assert "dev-token" not in str(records[0])
+        assert "dev-token" not in json.dumps(sync.json())
 
 
 class TestConnectorPathTenantConsistency:

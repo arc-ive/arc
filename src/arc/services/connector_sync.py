@@ -1,16 +1,32 @@
 """Connector synchronization service (Person C connector slice).
 
-Sync follows the ADR-001 ingestion boundary:
+Sync follows the ADR-001 ingestion boundary (Option A):
 
     Connector (GitHub/Slack/Linear)
         -> provider adapter (validated, typed records)
         -> Company Brain ingestion (KnowledgeService + PII Guard boundary)
         -> tenant-scoped sync audit record
 
+This PR establishes provider integration and synchronization only. It
+does NOT establish the final Company Brain knowledge identity model, RAG
+indexing/chunking/embedding/retrieval model, permission-aware retrieval
+model, or final knowledge deduplication model. Connector output is
+consumed by the existing Company Brain ingestion pipeline (through the
+KnowledgeService PII Guard boundary) and is available to the future
+ingestion layer as an upstream source.
+
+Sync deduplication is explicitly deferred: connector synchronization may
+observe the same provider record multiple times, and final knowledge
+deduplication/document identity are owned by the future Company Brain
+ingestion layer. This PR does not define a provider-record-id-to-document
+identity contract.
+
 The tenant boundary comes exclusively from the trusted ``TenantContext``.
 Provider credentials are never returned or logged; every attempt produces
-an observable tenant-scoped record with a generic error kind. All
-failures surface to the API as a single controlled error type.
+an observable tenant-scoped audit record containing safe metadata only
+(tenant, connector, provider, status, item count, generic error kind) and
+never raw provider content, PII, or secrets. All failures surface to the
+API as a single controlled error type.
 """
 
 import uuid

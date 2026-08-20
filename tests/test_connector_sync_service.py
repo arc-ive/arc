@@ -52,6 +52,7 @@ from arc.services.connector_providers.registry import ProviderRegistry
 from arc.services.connector_providers.settings import ConnectorCredentialStore
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.knowledge import KnowledgeService
+from arc.services.pii import PiiGuardError
 
 
 def _unique(prefix: str) -> str:
@@ -350,6 +351,134 @@ class TestConnectorSyncPiiIntegration:
         assert len(records) == 1
         assert records[0].status is ConnectorSyncStatus.SUCCESS
         assert records[0].items_fetched == 1
+
+        await connector_repo.delete(connector.id, tenant.id)
+        await tenant_repo.delete(tenant.id)
+
+    async def test_pii_guard_failure_fails_closed_without_raw_persistence(self, db):
+        """A PII Guard failure must block persistence entirely: no raw
+        content is written, the sync is a controlled failure, and the
+        audit event is safe."""
+        tenant_repo = PostgreSQLTenantRepository(db)
+        connector_repo = PostgreSQLConnectorRepository(db)
+        sync_repo = PostgreSQLConnectorSyncRepository(db)
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="PII Fail Tenant"))
+        connector = await connector_repo.create(
+            ConnectorConfig(
+                id=_unique("connector"),
+                tenant_id=tenant.id,
+                provider=ConnectorProvider.GITHUB,
+                name="example/acme",
+            )
+        )
+
+        class PiiProvider:
+            provider = ConnectorProvider.GITHUB
+
+            async def fetch(self, credential, target, limit=25):
+                return ProviderFetchResult(
+                    provider=self.provider,
+                    records=[
+                        ProviderRecord(
+                            source_id="pii-issue-1",
+                            title="Sensitive",
+                            content="Call +91-9876543210 for the customer.",
+                        )
+                    ],
+                )
+
+        class BrokenGuard:
+            def sanitize(self, text):
+                raise PiiGuardError("PII analysis unavailable")
+
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: PiiProvider()}),
+            credential_store=ConnectorCredentialStore(
+                raw=f'{{"{tenant.id}": {{"github": "dev-token"}}}}'
+            ),
+            knowledge_service=KnowledgeService(knowledge_repo, pii_guard=BrokenGuard()),
+        )
+
+        context = _context(tenant_id=tenant.id)
+        with pytest.raises(ConnectorSyncError, match="PII guard"):
+            await service.sync(context, connector.id)
+
+        documents = await knowledge_repo.list_for_tenant(tenant.id)
+        assert documents == []
+
+        records = await sync_repo.list_for_tenant(tenant.id)
+        assert len(records) == 1
+        assert records[0].status is ConnectorSyncStatus.FAILED
+        assert records[0].error_kind == "pii_guard_failed"
+        assert "+91-9876543210" not in records[0].error_kind
+
+        await connector_repo.delete(connector.id, tenant.id)
+        await tenant_repo.delete(tenant.id)
+
+    async def test_audit_records_never_store_raw_provider_content(self, db):
+        """Even when provider content contains PII or secret-like values,
+        the audit record stores metadata only (counts and error kinds)."""
+        tenant_repo = PostgreSQLTenantRepository(db)
+        connector_repo = PostgreSQLConnectorRepository(db)
+        sync_repo = PostgreSQLConnectorSyncRepository(db)
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Audit Tenant"))
+        connector = await connector_repo.create(
+            ConnectorConfig(
+                id=_unique("connector"),
+                tenant_id=tenant.id,
+                provider=ConnectorProvider.GITHUB,
+                name="example/acme",
+            )
+        )
+
+        class SecretProvider:
+            provider = ConnectorProvider.GITHUB
+
+            async def fetch(self, credential, target, limit=25):
+                return ProviderFetchResult(
+                    provider=self.provider,
+                    records=[
+                        ProviderRecord(
+                            source_id="secret-issue-1",
+                            title="Contains secret",
+                            content="Contact ops-secret-abc@example.com for the account.",
+                        ),
+                        ProviderRecord(
+                            source_id="secret-issue-2",
+                            title="Contains token",
+                            content="Rotate the token abc123secret before Friday.",
+                        ),
+                    ],
+                )
+
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: SecretProvider()}),
+            credential_store=ConnectorCredentialStore(
+                raw=f'{{"{tenant.id}": {{"github": "dev-token"}}}}'
+            ),
+            knowledge_service=KnowledgeService(knowledge_repo),
+        )
+
+        context = _context(tenant_id=tenant.id)
+        result = await service.sync(context, connector.id)
+        assert result.items_fetched == 2
+
+        records = await sync_repo.list_for_tenant(tenant.id)
+        assert len(records) == 1
+        record = records[0]
+        for raw in ("ops-secret-abc", "abc123secret", "dev-token", "example.com"):
+            assert raw not in (record.error_kind or "")
+            assert raw not in str(record.status)
+            assert raw not in str(record.provider)
+            assert raw not in str(record.items_fetched)
 
         await connector_repo.delete(connector.id, tenant.id)
         await tenant_repo.delete(tenant.id)

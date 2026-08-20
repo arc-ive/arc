@@ -25,6 +25,10 @@ from arc.services.connector_providers.settings import (
     ConnectorSettings,
     get_connector_settings,
 )
+from arc.services.connector_providers.targets import (
+    approved_provider_hosts,
+    assert_approved_provider_url,
+)
 
 __all__ = [
     "ConnectorConfigurationError",
@@ -41,6 +45,8 @@ __all__ = [
     "ProviderResponseError",
     "ProviderTransportError",
     "ProviderValidationError",
+    "approved_provider_hosts",
+    "assert_approved_provider_url",
     "build_provider_registry",
     "get_connector_settings",
 ]

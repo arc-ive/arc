@@ -50,6 +50,7 @@ from arc.services.connector_providers.settings import (
     get_connector_settings,
 )
 from arc.services.connector_providers.slack import SlackProviderAdapter
+from arc.services.connector_providers.targets import assert_approved_provider_url
 
 ALL_PROVIDERS = {
     ConnectorProvider.GITHUB,
@@ -487,3 +488,189 @@ class TestLinearAdapter:
                 ProviderCredential(provider=ConnectorProvider.LINEAR, token="t"),
                 "bad target",
             )
+
+
+class TestProviderTargetAllowlist:
+    """Strict SSRF protection: only approved provider endpoints may be
+    requested, before any external request is made."""
+
+    @pytest.mark.parametrize(
+        "provider,url",
+        [
+            (ConnectorProvider.GITHUB, "https://api.github.com/repos/a/b/issues"),
+            (ConnectorProvider.SLACK, "https://slack.com/api/conversations.list"),
+            (ConnectorProvider.LINEAR, "https://api.linear.app/graphql"),
+        ],
+    )
+    def test_approved_provider_urls_are_allowed(self, provider, url):
+        assert assert_approved_provider_url(provider, url) == url
+
+    @pytest.mark.parametrize(
+        "provider,url",
+        [
+            (ConnectorProvider.GITHUB, "http://api.github.com/repos/a/b/issues"),
+            (ConnectorProvider.GITHUB, "https://api.github.com@evil.com/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://localhost/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://127.0.0.1/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://0.0.0.0/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://[::1]/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://10.0.0.5/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://172.16.0.5/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://192.168.1.5/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://[fc00::1]/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://169.254.169.254/latest/meta-data/"),
+            (ConnectorProvider.GITHUB, "https://api.github.com.evil.com/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://github.internal/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://example.com/repos/a/b"),
+            (ConnectorProvider.GITHUB, "https://slack.com/api/conversations.list"),
+            (ConnectorProvider.SLACK, "https://api.github.com/repos/a/b/issues"),
+            (ConnectorProvider.LINEAR, "https://api.github.com/graphql"),
+            (ConnectorProvider.GITHUB, ""),
+            (ConnectorProvider.GITHUB, "not-a-url"),
+        ],
+    )
+    def test_disallowed_provider_urls_fail_closed(self, provider, url):
+        with pytest.raises(ProviderValidationError):
+            assert_approved_provider_url(provider, url)
+
+    async def test_redirect_to_unapproved_host_is_not_followed(self):
+        """A 302 from the approved host must not trigger a second request
+        to a redirect destination (follow_redirects=False)."""
+        requested = []
+
+        def handler(request):
+            requested.append(str(request.url))
+            return httpx.Response(302, headers={"Location": "https://127.0.0.1/steal"})
+
+        adapter = GitHubProviderAdapter(
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        )
+        with pytest.raises(ProviderTransportError):
+            await adapter.fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="t"),
+                "example/acme",
+            )
+        assert len(requested) == 1
+        assert requested[0].startswith("https://api.github.com/repos/example/acme/issues")
+
+    async def test_allowlist_guard_runs_before_any_request(self, monkeypatch):
+        """Even if a bad URL somehow reaches the adapter, the allowlist
+        rejects it before a request is issued."""
+        called = False
+
+        def handler(request):
+            nonlocal called
+            called = True
+            return httpx.Response(200, json=[])
+
+        transport = httpx.MockTransport(handler)
+        adapter = GitHubProviderAdapter(client=httpx.AsyncClient(transport=transport))
+        monkeypatch.setattr(
+            "arc.services.connector_providers.github.GITHUB_ISSUES_URL",
+            "https://127.0.0.1/repos/{target}/issues",
+        )
+        with pytest.raises(ProviderValidationError):
+            await adapter.fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="t"),
+                "example/acme",
+            )
+        assert not called
+
+
+class TestProviderErrorMapping:
+    """Provider failures normalize into controlled errors (no raw
+    provider responses, bodies, or secrets reach callers)."""
+
+    @pytest.mark.parametrize("status", [404, 409, 502, 503])
+    async def test_github_unexpected_statuses_map_to_transport_error(self, status):
+        def handler(request):
+            return httpx.Response(status, json={"message": "raw provider body"})
+
+        with pytest.raises(ProviderTransportError):
+            await GitHubProviderAdapter(
+                client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ).fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="t"),
+                "example/acme",
+            )
+
+    async def test_github_timeout_maps_to_transport_error(self):
+        def handler(request):
+            raise httpx.ReadTimeout("timed out")
+
+        with pytest.raises(ProviderTransportError):
+            await GitHubProviderAdapter(
+                client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ).fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="t"),
+                "example/acme",
+            )
+
+    async def test_slack_unexpected_status_maps_to_transport_error(self):
+        def handler(request):
+            if request.url.path == "/api/conversations.list":
+                return httpx.Response(502, json={"ok": False})
+            return httpx.Response(502, json={"ok": False})
+
+        with pytest.raises(ProviderTransportError):
+            await SlackProviderAdapter(
+                client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ).fetch(
+                ProviderCredential(provider=ConnectorProvider.SLACK, token="t"),
+                "general",
+            )
+
+    async def test_linear_unexpected_status_maps_to_transport_error(self):
+        def handler(request):
+            return httpx.Response(503, json={"errors": []})
+
+        with pytest.raises(ProviderTransportError):
+            await LinearProviderAdapter(
+                client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ).fetch(
+                ProviderCredential(provider=ConnectorProvider.LINEAR, token="t"),
+                "abc",
+            )
+
+    async def test_errors_never_contain_credential_material(self):
+        def handler(request):
+            return httpx.Response(401, json={"message": "token=t-secret"})
+
+        with pytest.raises(ProviderAuthError) as exc_info:
+            await GitHubProviderAdapter(
+                client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            ).fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="t-secret"),
+                "example/acme",
+            )
+        assert "t-secret" not in str(exc_info.value)
+        assert "t-secret" not in str(exc_info.value.__cause__)
+
+
+class TestProviderModeGate:
+    """Live mode must never become implicitly authorized by existence."""
+
+    def test_simulated_mode_builds_fake_adapters_only(self):
+        registry = build_provider_registry(ConnectorSettings(provider_mode="simulated"))
+        assert isinstance(registry.get(ConnectorProvider.GITHUB), FakeGitHubProvider)
+        assert isinstance(registry.get(ConnectorProvider.SLACK), FakeSlackProvider)
+        assert isinstance(registry.get(ConnectorProvider.LINEAR), FakeLinearProvider)
+
+    def test_live_mode_requires_explicit_configuration(self):
+        registry = build_provider_registry(ConnectorSettings(provider_mode="live"))
+        assert isinstance(registry.get(ConnectorProvider.GITHUB), GitHubProviderAdapter)
+        assert isinstance(registry.get(ConnectorProvider.SLACK), SlackProviderAdapter)
+        assert isinstance(registry.get(ConnectorProvider.LINEAR), LinearProviderAdapter)
+
+    def test_default_settings_never_enable_live_adapters(self, monkeypatch):
+        monkeypatch.delenv("CONNECTOR_PROVIDER_MODE", raising=False)
+        settings = get_connector_settings()
+        assert settings.provider_mode == "simulated"
+        registry = build_provider_registry(settings)
+        assert all(
+            not isinstance(
+                registry.get(p),
+                (GitHubProviderAdapter, SlackProviderAdapter, LinearProviderAdapter),
+            )
+            for p in (ConnectorProvider.GITHUB, ConnectorProvider.SLACK, ConnectorProvider.LINEAR)
+        )
