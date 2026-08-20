@@ -172,6 +172,7 @@ class TestSearchAuthorization:
             "source",
             "provenance",
             "document_version",
+            "sequence",
             "similarity",
         }
 
