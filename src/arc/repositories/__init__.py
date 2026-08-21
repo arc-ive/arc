@@ -11,6 +11,7 @@ from arc.domain.models import (
     Membership,
     Skill,
     Tenant,
+    ToolExecutionRecord,
     User,
 )
 
@@ -223,6 +224,23 @@ class SkillRepository(Protocol):
     async def delete(self, skill_id: str, tenant_id: str) -> None:
         """Delete a skill, scoped to a tenant."""
         ...
+        ...
+
+
+class ToolExecutionRepository(Protocol):
+    """Repository for ToolExecutionRecord entities.
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. A record created for tenant A
+    must never be retrievable or listable by tenant B.
+    """
+
+    async def create_record(self, record: ToolExecutionRecord) -> ToolExecutionRecord:
+        """Persist a tool execution record."""
+        ...
+
+    async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[ToolExecutionRecord]:
+        """List the most recent tool execution records for a tenant."""
         ...
 
 

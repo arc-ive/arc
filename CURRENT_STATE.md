@@ -412,6 +412,142 @@ LLM/Agent/Unified Intelligence/Skills/tooling/PageIndex integration.
 
 - Human review of the PR; merge into `main`.
 
+## AI Tools — AI Tools Foundation (Implemented — pending review)
+
+**Branch:** `feat/ai-tools-foundation`
+**Base:** `origin/main` (reconciled with current main)
+**Scope:** authorized slice of the AI Tools module (PRD 15, TRD 14) —
+platform-owned, code-defined AI Tool catalog and controlled execution,
+integrated with the merged X-10 (tenancy), X-11 (auth/RBAC), and ADR-001
+framework-agnostic boundaries.
+
+### Platform-owned catalog statement (recorded per review)
+
+- Tenants cannot register arbitrary tools, upload executable code, or
+  execute arbitrary Python/JS/shell.
+- Tenants gain tenant-scoped access to the platform-owned AI Tool catalog
+  exclusively through the existing authorization model
+  (`tool:read`, `tool:execute`, and each tool's declared required
+  permissions).
+- Tenant-level enable/disable configuration may come later.
+- Dynamic tenant-defined tools are explicitly deferred.
+
+### What changed
+
+- **Catalog** (`src/arc/services/tools.py`): static, versioned,
+  platform-owned whitelist (`check_service_health` v1). The registry
+  exposes only read operations; no runtime registration or mutation API.
+  `ToolDefinition` fails closed at construction: non-empty
+  `required_permissions` of `Permission` objects, and high-risk tools
+  must declare `REQUIRE_HUMAN_APPROVAL` or `DENY` (never `ALLOW`).
+- **Execution policy** (`ToolExecutionPolicyMode`): ALLOW / DENY /
+  REQUIRE_HUMAN_APPROVAL are explicitly represented. REQUIRE_HUMAN_APPROVAL
+  and DENY fail closed with a controlled, audited denial; the Human
+  Intervention approval gate itself is not implemented in this slice.
+- **Per-tool authorization**: execution requires `tool:execute` AND every
+  permission declared by the tool, enforced fail-closed inside
+  `ToolExecutionService` using the existing `AuthorizationService`
+  (defense in depth under the controller's `tool:execute` dependency).
+  Unknown tool, missing/invalid permission metadata, and insufficient
+  permissions are denied before any handler runs and are audited.
+- **Tenant isolation**: the tenant boundary comes exclusively from the
+  trusted X-10 `TenantContext`; the path `tenant_id` is request input
+  only and is validated for consistency (403 on mismatch). An invalid
+  context fails closed with no audit record.
+- **Audit contract** (`tool_execution_records`): now explicitly records
+  who (user_id), tenant, tool name/version, authorization outcome
+  (granted/denied), risk level, status, error kind, execution id, and
+  timestamp. Data minimization: summaries are redacted for sensitive
+  keys (password/token/secret/api_key/...) and truncated; secrets,
+  credentials, raw sensitive payloads, and stack traces never reach
+  records.
+- **API** (`src/arc/api/controllers.py`): `GET /tenants/{tenant_id}/tools`
+  (`tool:read`) and `POST /tenants/{tenant_id}/tools/{name}/execute`
+  (`tool:execute` + per-tool permissions). Catalog responses expose only
+  safe metadata (`required_permissions`, schemas, risk level) and never
+  handlers. No registration/modification/upload surface exists.
+- **Schema** (`src/arc/db/schema.sql`): `tool_execution_records` extended
+  with `user_id` and `authorization_outcome` (idempotent bootstrap via
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
+- **Tests**: `tests/test_tool_api.py`, `test_tool_domain.py`,
+  `test_tool_registry.py`, `test_tool_repository.py`,
+  `test_tool_service.py` — per-tool authorization matrix, tenant
+  isolation (A→A, A→B 403, mismatch no side effects, missing context),
+  read-only registry API (405/404 on mutation attempts), code-execution
+  guards, audit minimization (secrets absent from records), and the
+  fail-closed metadata/policy cases (real PostgreSQL).
+
+### What was NOT changed
+
+- Agent/LLM calling, Skills execution, Webhooks, Connectors, Secure RAG,
+  Human Intervention, production/external integrations — explicitly out
+  of scope for this slice.
+- No new ADR: ADR-001 already keeps the tool layer framework/agent
+  agnostic, and this slice implements only platform-owned definitions.
+
+### Review response (security review round 2)
+
+- **Legacy audit migration** (`src/arc/db/schema.sql`): the idempotent
+  bootstrap columns `user_id` and `authorization_outcome` are added
+  NULLABLE so pre-audit-contract databases are upgraded without
+  fabricating audit facts: historical rows keep NULL `user_id` (no
+  invented identity) and NULL `authorization_outcome` (no invented
+  GRANTED). New records still require a real trusted `user_id` and a
+  real GRANTED/DENIED outcome through `ToolExecutionService`; fresh
+  installs additionally keep NOT NULL columns at table creation. Proven
+  by `tests/test_tool_audit_migration.py` (real PostgreSQL: old schema +
+  historical rows -> current bootstrap -> history preserved -> new
+  records strict).
+- **Audit ownership boundary**: central authentication/RBAC failure
+  (403 from the FastAPI security dependencies before the service runs,
+  e.g. missing `tool:execute`) is owned by the central security/audit
+  boundary: `ToolExecutionService` is NOT invoked and no
+  `tool_execution_records` row is written. Per-tool authorization
+  failure (holds `tool:execute`, lacks a tool-declared permission) is
+  owned by the service and recorded with `authorization_outcome=DENIED`.
+  Documented in `src/arc/services/tools.py`; proven by
+  `test_user_without_tool_execute_never_invokes_service_or_handler`
+  (403, handler never runs, zero records) alongside the existing DENIED-
+  record test.
+- **Audit redaction**: sensitive key variants now include
+  `access_token`, `refresh_token`, `client_secret`; redaction applies at
+  every nesting depth (objects, arrays, deep nesting). Free-form text is
+  intentionally retained (documented policy: only keyed values are
+  redacted; summaries are bounded by platform-owned handlers and
+  validated input models). Oversized summaries are truncated to the
+  configured maximum (512) end-to-end. Handler exceptions never leak:
+  `error_kind` stays a safe classification (`execution_error`, etc.) and
+  raw messages/secrets never reach records or API responses.
+- **`_summarize` fallback hardening**: an unserializable payload (e.g.
+  non-string dict keys or a self-referential structure) now produces a
+  fixed safe marker (`[unserializable <type> payload redacted]`) instead
+  of a raw `str()` that could bypass keyed redaction.
+
+### Verification
+
+- 427 tests pass (Docker + real PostgreSQL) on both a fresh and a warm
+  database.
+- `ruff check .` and `ruff format --check .` pass.
+- `docker compose config --quiet` passes; `compileall` clean.
+
+### Pending
+
+- Human review of PR #31; merge into `main`.
+
+**Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
+
+- Added `.github/workflows/ci.yml` (GitHub Actions, `ubuntu-latest`).
+- Triggers: pushes to `main` and pull requests targeting `main`.
+- Checks use the existing Docker Compose environment:
+  - `docker compose build arc`
+  - `docker compose run --rm arc ruff check .`
+  - `docker compose run --rm arc ruff format --check .`
+  - `docker compose run --rm arc python -m pytest -q`
+- Environment values are development/test placeholders only; no real
+  credentials.
+- The repo-wide lint/format gate passes on current `main`, verified locally
+  against a freshly rebuilt application image.
+- GitHub Actions CI is active on `main`.
 ## Unified Intelligence — Secure Knowledge Reasoning Foundation (Implemented — pending review)
 
 **Branch:** `feat/approved-context-contract`

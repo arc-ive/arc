@@ -10,6 +10,10 @@ application RBAC:
 - Tenant-scoped Skills management requires a trusted X-10 tenant context
   and the approved ``skill:create``/``skill:read``/``skill:delete``
   permissions.
+- Tenant-scoped access to the platform-owned AI Tool catalog requires a
+  trusted X-10 tenant context and the approved ``tool:read`` /
+  ``tool:execute`` permissions; per-tool authorization additionally
+  requires every permission declared by the tool.
 - Identity-scoped listing is self-only: the requested ``user_id`` must
   equal the authenticated principal's user ID (JWT ``sub``).
 
@@ -45,10 +49,14 @@ from arc.security.authorization import (
     SKILL_READ,
     TENANT_CREATE,
     TENANT_READ,
+    TOOL_EXECUTE,
+    TOOL_READ,
     USER_CREATE,
+    AuthorizationService,
 )
 from arc.security.dependencies import (
     get_authenticated_principal,
+    get_authorization_service,
     require_permission,
     require_tenant_permission,
 )
@@ -68,6 +76,14 @@ from arc.services.llm import LlmError
 from arc.services.pii import PiiGuardError
 from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
+from arc.services.tools import (
+    ToolDefinition,
+    ToolDeniedError,
+    ToolExecutionError,
+    ToolExecutionService,
+    ToolNotFoundError,
+    ToolValidationError,
+)
 
 
 class ServiceRegistry:
@@ -135,6 +151,10 @@ class ApplicationContext:
     @property
     def skill_service(self) -> SkillService:
         return self.services.get("skill_service")
+
+    @property
+    def tool_service(self) -> ToolExecutionService:
+        return self.services.get("tool_service")
 
 
 # Global application context
@@ -694,6 +714,106 @@ async def list_knowledge_documents(
 
     documents = await knowledge_service.list_documents(context)
     return [_knowledge_document_payload(document) for document in documents]
+
+
+def _tool_definition_payload(tool: ToolDefinition) -> Dict[str, Any]:
+    """Serialize an approved tool definition for the catalog API response.
+
+    Only safe metadata is exposed: never the handler or any execution
+    detail. The catalog is platform-owned: tenants can read it but can
+    never register, modify, or upload tools through it.
+    """
+    return {
+        "name": tool.name,
+        "version": tool.version,
+        "description": tool.description,
+        "risk_level": tool.risk_level.value,
+        "required_permissions": sorted(
+            permission.value for permission in tool.required_permissions
+        ),
+        "input_schema": tool.input_schema,
+        "output_schema": tool.output_schema,
+    }
+
+
+def get_tool_service() -> ToolExecutionService:
+    """Return the shared AI Tool execution service (platform-owned catalog).
+
+    Exposed as a named dependency so tests can override the catalog
+    service; the catalog itself is always platform-owned and code-defined.
+    """
+    return app_context.tool_service
+
+
+@api_router.get("/tenants/{tenant_id}/tools")
+async def list_tools(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(TOOL_READ)),
+    tool_service: ToolExecutionService = Depends(get_tool_service),
+) -> List[Dict[str, Any]]:
+    """List the platform-owned AI Tool catalog for the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the ``tool:read``
+    permission. The path ``tenant_id`` is validated for consistency against
+    the trusted context (403 on mismatch). Tenants gain tenant-scoped
+    access to the platform-owned catalog; the catalog is identical for
+    every tenant and contains only safe metadata. Tenants cannot register,
+    upload, or modify tools.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    tools = tool_service.list_tools(context)
+    return [_tool_definition_payload(tool) for tool in tools]
+
+
+@api_router.post("/tenants/{tenant_id}/tools/{name}/execute")
+async def execute_tool(
+    tenant_id: str,
+    name: str,
+    body: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(TOOL_EXECUTE)),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization: AuthorizationService = Depends(get_authorization_service),
+    tool_service: ToolExecutionService = Depends(get_tool_service),
+) -> Dict[str, Any]:
+    """Execute an approved AI Tool within the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``tool:execute`` permission. The path ``tenant_id`` is validated for
+    consistency against the trusted context (403 on mismatch) but is
+    request input only; the tenant boundary is derived exclusively from
+    the trusted context. Per-tool authorization is enforced fail-closed
+    inside the service: the caller must also hold every permission
+    declared by the tool, otherwise execution is denied (403). Only
+    platform-owned, code-defined tools are executable. Errors are generic
+    and safe: no internal details are exposed.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    raw_input = body.get("input", {})
+
+    try:
+        result = await tool_service.execute_tool(context, principal, name, raw_input, authorization)
+    except ToolNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
+    except ToolValidationError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tool input")
+    except ToolDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tool execution is not permitted",
+        )
+    except ToolExecutionError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Tool execution failed",
+        )
+
+    return {
+        "tool": result.tool_name,
+        "version": result.tool_version,
+        "output": result.output,
+    }
 
 
 def _connector_payload(config) -> Dict[str, Any]:

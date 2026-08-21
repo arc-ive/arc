@@ -77,6 +77,46 @@ class SkillStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+class ToolRiskLevel(str, Enum):
+    """Risk classification of a platform-approved AI Tool (PRD 15).
+
+    High-risk tool execution requires human approval before the tool is
+    executed (TRD 17.3); the human-approval gate is part of the Human
+    Intervention capability and is not implemented here.
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ToolExecutionStatus(str, Enum):
+    """Final status of a controlled tool execution attempt (TRD 14.2).
+
+    Every controlled execution attempt produces an observable record;
+    a record therefore has exactly one terminal status. The outcome is
+    represented safely: details live in ``error_kind`` only for failures
+    and never contain secrets, stack traces, or sensitive payloads.
+    """
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class ToolAuthorizationOutcome(str, Enum):
+    """Authorization decision for a controlled tool execution attempt.
+
+    Records the fail-closed per-tool authorization outcome (TRD 14.2):
+    ``GRANTED`` means the caller held ``tool:execute`` and every
+    permission required by the tool; ``DENIED`` means the attempt was
+    refused before any handler could run (unknown tool, missing/invalid
+    permission metadata, or insufficient permissions).
+    """
+
+    GRANTED = "granted"
+    DENIED = "denied"
+
+
 @dataclass
 class Tenant:
     """Tenant domain model."""
@@ -558,3 +598,60 @@ class Skill:
                 isinstance(item, str) for item in list_value
             ):
                 raise ValueError(f"{list_field_name} must be a list of strings")
+
+
+@dataclass
+class ToolExecutionRecord:
+    """Tenant-scoped audit record for one controlled AI Tool invocation.
+
+    Produced for every controlled execution attempt (TRD 14.1/14.2),
+    including controlled failures. The audit contract is explicit:
+
+    - who requested the invocation (``user_id``, the trusted JWT subject);
+    - which tenant the attempt was scoped to (``tenant_id``);
+    - which platform-approved tool and version (``tool_name``,
+      ``tool_version``);
+    - the authorization decision (``authorization_outcome``);
+    - the policy/risk outcome (``risk_level``, plus ``error_kind`` when a
+      policy or execution refusal occurred);
+    - the terminal execution status and the execution identifier (``id``)
+      with the record timestamp (``created_at``).
+
+    Records contain only safe, sanitized summaries: never secrets,
+    credentials, raw sensitive payloads, or internal stack traces. The
+    tenant boundary comes exclusively from the trusted ``TenantContext``
+    established by X-10; the repository enforces it in SQL.
+    """
+
+    id: str
+    tenant_id: str
+    user_id: str
+    tool_name: str
+    tool_version: str
+    status: ToolExecutionStatus
+    risk_level: ToolRiskLevel
+    input_summary: str
+    authorization_outcome: ToolAuthorizationOutcome = ToolAuthorizationOutcome.GRANTED
+    output_summary: Optional[str] = None
+    error_kind: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Tool execution record ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not self.user_id:
+            raise ValueError("User ID cannot be empty")
+        if not self.tool_name:
+            raise ValueError("Tool name cannot be empty")
+        if not self.tool_version:
+            raise ValueError("Tool version cannot be empty")
+        if not isinstance(self.status, ToolExecutionStatus):
+            raise ValueError(f"Invalid tool execution status: {self.status!r}")
+        if not isinstance(self.authorization_outcome, ToolAuthorizationOutcome):
+            raise ValueError(f"Invalid tool authorization outcome: {self.authorization_outcome!r}")
+        if not isinstance(self.risk_level, ToolRiskLevel):
+            raise ValueError(f"Invalid tool risk level: {self.risk_level!r}")
+        if not isinstance(self.input_summary, str) or not self.input_summary:
+            raise ValueError("Tool input summary must be a non-empty string")
