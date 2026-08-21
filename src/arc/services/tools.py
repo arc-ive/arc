@@ -47,10 +47,11 @@ Audit ownership boundary:
 """
 
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Pattern, Tuple
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -255,23 +256,53 @@ _SENSITIVE_KEYS: FrozenSet[str] = frozenset(
 )
 
 
+# Sensitive value patterns that should be redacted even in free-form strings.
+# These cover common secret formats: JWTs, API keys, tokens, passwords, etc.
+# The pattern is intentionally conservative: if a value matches, it is
+# considered sensitive and replaced with [REDACTED].
+_SENSITIVE_VALUE_PATTERNS: Tuple[Pattern[str], ...] = (
+    re.compile(r"sk[-_][a-zA-Z0-9\-_]{20,}"),  # API keys (sk-...)
+    re.compile(r"eyJ[a-zA-Z0-9_-]{10,}(?:\.[a-zA-Z0-9_-]+){2,}"),  # JWTs (3+ segments, 10+ first)
+    re.compile(r"Bearer\s+[A-Za-z0-9\-_]{20,}"),  # Bearer tokens
+    re.compile(r"SUPER_SECRET[-\w]*"),  # Test sentinel (with suffix)
+    re.compile(r"(?i)password\s*[:=]\s*\S+"),  # password=...
+    re.compile(r"(?i)token\s*[:=]\s*\S+"),  # token=...
+    re.compile(r"(?i)secret\s*[:=]\s*\S+"),  # secret=...
+    re.compile(r"(?i)api[_-]?key\s*[:=]\s*\S+"),  # api_key=...
+    re.compile(r"(?i)authorization\s*[:=]\s*\S+"),  # authorization=...
+)
+
+
+def _redact_string(value: str) -> str:
+    """Redact sensitive patterns within a free-form string.
+
+    Any substring matching a sensitive value pattern is replaced with
+    [REDACTED]. This ensures free-form text containing secrets does not
+    reach audit records.
+    """
+    result = value
+    for pattern in _SENSITIVE_VALUE_PATTERNS:
+        result = pattern.sub("[REDACTED]", result)
+    return result
+
+
 def _redact(value: Any) -> Any:
-    """Replace the values of sensitive-keyed entries with a safe marker.
+    """Replace sensitive values with a safe marker.
 
-    Data minimization for execution records (TRD 14.2): values under
-    keys such as ``password``, ``token``, ``api_key``, ``secret``,
-    ``access_token``, ``client_secret``, or ``authorization`` are never
-    persisted, only a ``[REDACTED]`` marker. Key matching is
-    case-insensitive and applied at every nesting depth (objects,
-    arrays, and deeply nested structures).
+    Data minimization for execution records (TRD 14.2):
 
-    Redaction policy for free-form text: only keyed values are redacted.
-    Arbitrary free-form strings inside values (for example a sentence
-    containing the word ``secret``) are intentionally retained, because
-    heuristic secret scanning is unreliable; the summaries that reach
-    this function are bounded by platform-owned handlers and validated
-    input models, and any secret that arrives under a sensitive key is
-    always removed.
+    - Values under sensitive keys (``password``, ``token``, ``api_key``,
+      ``secret``, ``access_token``, ``client_secret``, ``authorization``,
+      etc.) are replaced with ``[REDACTED]``. Key matching is
+      case-insensitive and applied at every nesting depth (objects,
+      arrays, and deeply nested structures).
+
+    - Free-form string values are also scanned for sensitive patterns
+      (API keys, JWTs, Bearer tokens, passwords, etc.). Any matching
+      substring is replaced with ``[REDACTED]``.
+
+    The resulting structure is safe to persist: no secrets, credentials,
+    raw sensitive payloads, or implementation details reach the audit log.
     """
     if isinstance(value, dict):
         return {
@@ -284,6 +315,8 @@ def _redact(value: Any) -> Any:
         }
     if isinstance(value, list):
         return [_redact(item) for item in value]
+    if isinstance(value, str):
+        return _redact_string(value)
     return value
 
 

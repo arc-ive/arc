@@ -650,17 +650,18 @@ def test_summary_redacts_deep_nesting():
     assert "[REDACTED]" in summary
 
 
-def test_summary_free_form_text_policy_is_retained_by_design():
-    """Redaction policy: only keyed values are redacted.
+def test_summary_redacts_free_form_sensitive_content():
+    """Free-form strings containing sensitive patterns are redacted.
 
-    Arbitrary free-form strings (for example a sentence containing the
-    word ``secret``) are intentionally retained; heuristic secret
-    scanning is unreliable. Summaries are bounded by platform-owned
-    handlers and validated input models, and any secret arriving under a
-    sensitive key is always removed. This test documents that policy.
+    The audit contract forbids persisting secrets in any form: keyed values
+    AND free-form text are both scanned. A string like
+    "Authorization token is SUPER_SECRET" must not reach the audit record.
     """
     summary = _summarize("Authorization token is SUPER_SECRET")
-    assert "Authorization token is SUPER_SECRET" in summary
+    assert "SUPER_SECRET" not in summary
+    assert "[REDACTED]" in summary
+    # Non-sensitive text is preserved
+    assert "Authorization token is" in summary
 
 
 def test_summary_fallback_never_leaks_unserializable_payload():
@@ -711,6 +712,50 @@ async def test_nested_sensitive_input_never_reaches_audit_records(repositories, 
         assert sensitive not in record.input_summary
         assert sensitive not in (record.output_summary or "")
         assert sensitive not in (record.error_kind or "")
+    assert len(record.input_summary) <= 512
+    assert len(record.output_summary or "") <= 512
+
+
+async def test_free_form_sensitive_input_never_reaches_audit_records(repositories, db):
+    """End-to-end: free-form strings containing sensitive patterns are
+    redacted from both input and output summaries. For example,
+    "Authorization token is SUPER_SECRET" must not appear in the record."""
+    tenant_repo, _, _ = repositories
+    record_repo = PostgreSQLToolExecutionRepository(db)
+    tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Tool Service Tenant"))
+    context = _context(tenant.id)
+
+    def echo(input_data, tenant_id):
+        return {"echoed": input_data}
+
+    spy_tool = replace(SERVICE_HEALTH_TOOL, name="echo_tool", input_model=EchoInput, handler=echo)
+    service = ToolExecutionService(ToolRegistry({spy_tool.name: spy_tool}), record_repo)
+
+    free_form_payload = {
+        "message": "Authorization token is SUPER_SECRET-9f8e7d6c5b",
+        "note": (
+            "The API key is sk-live-1234567890abcdef and the JWT is "
+            "eyJhbGciOiJIUzI1NiJ9.payload.signature"
+        ),
+        "safe_field": "plain-value",
+    }
+    await service.execute_tool(
+        context, _principal(), "echo_tool", free_form_payload, _authorization()
+    )
+
+    records = await record_repo.list_for_tenant(tenant.id)
+    assert len(records) == 1
+    record = records[0]
+    for sensitive in (
+        "SUPER_SECRET-9f8e7d6c5b",
+        "sk-live-1234567890abcdef",
+        "eyJhbGciOiJIUzI1NiJ9.payload.signature",
+    ):
+        assert sensitive not in record.input_summary
+        assert sensitive not in (record.output_summary or "")
+        assert sensitive not in (record.error_kind or "")
+    assert "[REDACTED]" in record.input_summary
+    assert "plain-value" in record.input_summary
     assert len(record.input_summary) <= 512
     assert len(record.output_summary or "") <= 512
 
