@@ -22,6 +22,7 @@ from arc.security.authorization import (
     SKILL_CREATE,
     SKILL_DELETE,
     SKILL_READ,
+    SKILL_UPDATE,
     TENANT_CREATE,
     TENANT_READ,
     TOOL_EXECUTE,

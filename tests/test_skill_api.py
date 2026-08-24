@@ -575,7 +575,9 @@ class TestSkillNegativeCases:
         tenant_id = _unique("tenant")
         assert client.get(f"/skills?tenant_id={tenant_id}").status_code == 401
         assert client.get(f"/skills/{_unique('skill')}?tenant_id={tenant_id}").status_code == 401
-        assert client.post(f"/skills?tenant_id={tenant_id}", json=_skill_payload()).status_code == 401
+        assert (
+            client.post(f"/skills?tenant_id={tenant_id}", json=_skill_payload()).status_code == 401
+        )
         assert client.delete(f"/skills/{_unique('skill')}?tenant_id={tenant_id}").status_code == 401
 
     async def test_malformed_credentials_rejected(self, client, repositories):
@@ -630,7 +632,9 @@ class TestSkillNegativeCases:
     async def test_missing_subject_rejected(self, client, repositories):
         """A token without a subject claim must be rejected."""
         import jwt as pyjwt
+
         from arc.security.settings import get_security_settings
+
         settings = get_security_settings()
         unsigned = pyjwt.encode({}, settings.jwt_secret, algorithm="HS256")
         tenant = await _seed_tenant(repositories)
@@ -640,12 +644,15 @@ class TestSkillNegativeCases:
         )
         assert response.status_code == 401
 
-    @pytest.mark.parametrize("endpoint", [
-        "/skills?tenant_id={tenant_id}",
-        "/skills/{skill_id}?tenant_id={tenant_id}",
-        "/skills?tenant_id={tenant_id}",  # POST
-        "/skills/{skill_id}?tenant_id={tenant_id}",  # DELETE
-    ])
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            "/skills?tenant_id={tenant_id}",
+            "/skills/{skill_id}?tenant_id={tenant_id}",
+            "/skills?tenant_id={tenant_id}",  # POST
+            "/skills/{skill_id}?tenant_id={tenant_id}",  # DELETE
+        ],
+    )
     async def test_employee_role_denied_on_all_endpoints(
         self, client, repositories, make_token, authorization_override, endpoint
     ):
@@ -784,3 +791,23 @@ class TestSkillNegativeCases:
 
 
 class TestSkillRouteSurface:
+    """Requirement 15: the API surface contains exactly the intended endpoints."""
+
+    def test_skills_route_surface_is_exactly_the_intended_endpoints(self):
+        """Only the four approved Skills management routes are exposed."""
+        from arc.api.controllers import api_router
+
+        paths = {
+            f"{method} {route.path}"
+            for route in api_router.routes
+            if hasattr(route, "methods") and hasattr(route, "path")
+            for method in route.methods
+            if method in HTTP_METHODS
+        }
+        skills_paths = {path for path in paths if "/skills" in path}
+        assert skills_paths == {
+            "POST /skills",
+            "GET /skills",
+            "GET /skills/{skill_id}",
+            "DELETE /skills/{skill_id}",
+        }
