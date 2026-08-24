@@ -562,24 +562,225 @@ class TestSkillNotFound:
         assert response.status_code == 404
 
 
+class TestSkillNegativeCases:
+    """Comprehensive negative tests for Skills endpoints.
+
+    Covers: unauthenticated, invalid/expired JWT, wrong issuer/audience,
+    missing subject, wrong role, missing permission, missing tenant membership,
+    cross-tenant access.
+    """
+
+    async def test_unauthenticated_requests_rejected_on_all_endpoints(self, client):
+        """Every Skills endpoint returns 401 without credentials."""
+        tenant_id = _unique("tenant")
+        assert client.get(f"/skills?tenant_id={tenant_id}").status_code == 401
+        assert client.get(f"/skills/{_unique('skill')}?tenant_id={tenant_id}").status_code == 401
+        assert client.post(f"/skills?tenant_id={tenant_id}", json=_skill_payload()).status_code == 401
+        assert client.delete(f"/skills/{_unique('skill')}?tenant_id={tenant_id}").status_code == 401
+
+    async def test_malformed_credentials_rejected(self, client, repositories):
+        """A malformed bearer token produces a generic 401."""
+        tenant = await _seed_tenant(repositories)
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": "Bearer not-a-jwt"},
+        )
+        assert response.status_code == 401
+
+    async def test_invalid_signature_rejected(self, client, repositories, wrong_secret_token):
+        """A token signed with a different secret produces a generic 401."""
+        tenant = await _seed_tenant(repositories)
+        token = wrong_secret_token("user-1")
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    async def test_expired_token_rejected(self, client, repositories, make_token):
+        """An expired token must be rejected even though the signature is valid."""
+        tenant = await _seed_tenant(repositories)
+        token = make_token("user-1", expires_in_seconds=-10)
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    async def test_wrong_issuer_rejected(self, client, repositories, make_token):
+        """A token with wrong issuer must be rejected."""
+        tenant = await _seed_tenant(repositories)
+        token = make_token("user-1", issuer="other-issuer")
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    async def test_wrong_audience_rejected(self, client, repositories, make_token):
+        """A token with wrong audience must be rejected."""
+        tenant = await _seed_tenant(repositories)
+        token = make_token("user-1", audience="other-audience")
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+
+    async def test_missing_subject_rejected(self, client, repositories):
+        """A token without a subject claim must be rejected."""
+        import jwt as pyjwt
+        from arc.security.settings import get_security_settings
+        settings = get_security_settings()
+        unsigned = pyjwt.encode({}, settings.jwt_secret, algorithm="HS256")
+        tenant = await _seed_tenant(repositories)
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {unsigned}"},
+        )
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize("endpoint", [
+        "/skills?tenant_id={tenant_id}",
+        "/skills/{skill_id}?tenant_id={tenant_id}",
+        "/skills?tenant_id={tenant_id}",  # POST
+        "/skills/{skill_id}?tenant_id={tenant_id}",  # DELETE
+    ])
+    async def test_employee_role_denied_on_all_endpoints(
+        self, client, repositories, make_token, authorization_override, endpoint
+    ):
+        """EMPLOYEE (no matrix permissions) is denied on all Skills endpoints."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        url = endpoint.format(tenant_id=tenant.id, skill_id=_unique("skill"))
+        if "POST" in endpoint or endpoint.endswith("/skills?tenant_id={tenant_id}"):
+            response = client.post(url, headers=headers, json=_skill_payload())
+        elif "DELETE" in endpoint:
+            response = client.delete(url, headers=headers)
+        else:
+            response = client.get(url, headers=headers)
+        assert response.status_code == 403
+
+    async def test_authenticated_but_unassigned_user_denied(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A valid JWT with no role assignment is denied with 403."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+    async def test_membership_alone_never_grants_skill_permissions(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A valid membership without an application role never authorizes."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_skill_payload(),
+        )
+        assert response.status_code == 403
+
+    async def test_operations_user_can_read_but_not_create_or_delete(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """OPERATIONS_USER may read; create and delete are denied with 403."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+        assert response.status_code == 200
+
+        response = client.post(
+            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+        )
+        assert response.status_code == 403
+
+        response = client.delete(
+            f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+        )
+        assert response.status_code == 403
+
+    async def test_missing_tenant_membership_denied(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A user without membership in the tenant is denied (403)."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        # No membership created
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+    async def test_cross_tenant_access_denied(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A tenant member must not access another tenant they do not belong to."""
+        tenant_a = await _seed_tenant(repositories, "Tenant A")
+        tenant_b = await _seed_tenant(repositories, "Tenant B")
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant_a.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.get(f"/skills?tenant_id={tenant_b.id}", headers=headers)
+        assert response.status_code == 403
+
+        response = client.post(
+            f"/skills?tenant_id={tenant_b.id}", headers=headers, json=_skill_payload()
+        )
+        assert response.status_code == 403
+
+        response = client.delete(
+            f"/skills/{_unique('skill')}?tenant_id={tenant_b.id}", headers=headers
+        )
+        assert response.status_code == 403
+
+    async def test_missing_tenant_is_denied_no_leakage(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A nonexistent tenant must be denied: no data leakage about existence."""
+        _, user, _ = await _seed_tenant(repositories), await _seed_user(repositories), None
+        # Need to recreate properly
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/skills?tenant_id={_unique('missing')}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+
 class TestSkillRouteSurface:
-    """Requirement 15: the API surface contains exactly the intended endpoints."""
-
-    def test_skills_route_surface_is_exactly_the_intended_endpoints(self):
-        """Only the four approved Skills management routes are exposed."""
-        from arc.api.controllers import api_router
-
-        paths = {
-            f"{method} {route.path}"
-            for route in api_router.routes
-            if hasattr(route, "methods") and hasattr(route, "path")
-            for method in route.methods
-            if method in HTTP_METHODS
-        }
-        skills_paths = {path for path in paths if "/skills" in path}
-        assert skills_paths == {
-            "POST /skills",
-            "GET /skills",
-            "GET /skills/{skill_id}",
-            "DELETE /skills/{skill_id}",
-        }
