@@ -38,10 +38,10 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;
   PLATFORM_ADMINISTRATOR retains global access; EMPLOYEE has none.
-- Skill permissions (``skill:create``, ``skill:read``, ``skill:delete``)
-  exist for the Skills Engine management API: PLATFORM_ADMINISTRATOR and
-  COMPANY_ADMINISTRATOR create, read, and delete Skills; OPERATIONS_USER
-  reads them; EMPLOYEE has none.
+- Skill permissions (``skill:create``, ``skill:read``, ``skill:update``,
+  ``skill:delete``) exist for the Skills Engine management API:
+  PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR create, update, read, and
+  delete Skills; OPERATIONS_USER reads them; EMPLOYEE has none.
 - Tool permissions (``tool:read``, ``tool:execute``) exist for the AI
   Tools foundation (PRD 15, TRD 14): PLATFORM_ADMINISTRATOR and
   COMPANY_ADMINISTRATOR read the platform tool catalog and execute
@@ -72,6 +72,7 @@ KNOWLEDGE_CREATE = Permission(resource="knowledge", action="create")
 KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
 SKILL_CREATE = Permission(resource="skill", action="create")
 SKILL_READ = Permission(resource="skill", action="read")
+SKILL_UPDATE = Permission(resource="skill", action="update")
 SKILL_DELETE = Permission(resource="skill", action="delete")
 TOOL_READ = Permission(resource="tool", action="read")
 TOOL_EXECUTE = Permission(resource="tool", action="execute")
@@ -92,6 +93,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             KNOWLEDGE_READ,
             SKILL_CREATE,
             SKILL_READ,
+            SKILL_UPDATE,
             SKILL_DELETE,
             TOOL_READ,
             TOOL_EXECUTE,
@@ -107,6 +109,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             KNOWLEDGE_READ,
             SKILL_CREATE,
             SKILL_READ,
+            SKILL_UPDATE,
             SKILL_DELETE,
             TOOL_READ,
             TOOL_EXECUTE,
