@@ -13,6 +13,7 @@ from arc.domain.models import (
     Tenant,
     ToolExecutionRecord,
     User,
+    WebhookEvent,
 )
 
 
@@ -241,6 +242,35 @@ class ToolExecutionRepository(Protocol):
 
     async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[ToolExecutionRecord]:
         """List the most recent tool execution records for a tenant."""
+        ...
+
+
+class WebhookEventRepository(Protocol):
+    """Repository for WebhookEvent entities (Webhooks foundation).
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. An event ingested for tenant A
+    must never be retrievable or listable by tenant B. Records never
+    contain raw external payloads.
+    """
+
+    async def create(self, event: WebhookEvent) -> WebhookEvent:
+        """Persist a webhook event.
+
+        Raises ``DuplicateKeyError`` when the same ``(tenant_id,
+        event_id)`` pair already exists (duplicate handling, PRD 16).
+        """
+        ...
+
+    async def get_by_event_id(self, event_id: str, tenant_id: str) -> WebhookEvent:
+        """Get an event by its sender-supplied identifier, scoped to a tenant.
+
+        Raises ``NotFoundError`` when no such event exists for the tenant.
+        """
+        ...
+
+    async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[WebhookEvent]:
+        """List the most recent webhook events for a tenant."""
         ...
 
 

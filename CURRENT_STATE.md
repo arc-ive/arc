@@ -758,6 +758,98 @@ foundation already on `main` (code-defined `ConnectorProvider` catalog,
 
 - Commit, push, human review of the PR; merge into `main`.
 
+## Webhooks — Inbound Event Ingestion Foundation (Implemented — pending review)
+
+**Branch:** `feat/webhooks-foundation`
+**Base:** `origin/main` @ `95b36e6`
+**Scope:** Person C — Webhooks. First TRD-ordered slice after AI Tools
+(TRD §38): inbound-only webhook ingestion per PRD §16, TRD §16, ADR-001
+webhook security boundary. Scope decisions confirmed with the module
+owner before implementation: (1) INBOUND ONLY — no outbound delivery;
+(2) machine senders authenticate via per-endpoint HMAC-SHA256 signatures
+over `{timestamp}.{raw_body}` with a ±300s timestamp window; (3) slice-1
+"processing" = validate → store → record (no Unified Intelligence
+triggering yet).
+
+### What changed
+
+- **Domain** (`src/arc/domain/models.py`): `WebhookEventStatus` (single
+  terminal state `received`; new states require approved decisions) and
+  `WebhookEvent` — metadata-only record (id, tenant_id, endpoint_id,
+  event_id, event_type, status, payload_size_bytes, created_at) with
+  fail-closed validation. Raw external payloads are NEVER persisted
+  (untrusted input, possible PII; no approved payload-storage decision).
+- **Schema** (`src/arc/db/schema.sql`): idempotent `webhook_events`
+  table (tenant FK ON DELETE CASCADE, status CHECK, payload size CHECK,
+  UNIQUE `(tenant_id, event_id)` duplicate-handling pair, tenant index).
+- **Configuration** (`src/arc/services/webhook_config.py`):
+  `WEBHOOK_INGESTION_ENDPOINTS` JSON (endpoint id -> {tenant_id,
+  secret}); secrets >= 16 chars; malformed config fails closed; secrets
+  masked in repr/str; lazy env reads (same contract class as
+  `CONNECTOR_CREDENTIALS`). Documented in `.env.example`, passed through
+  `docker-compose.yml`.
+- **Repository** (`src/arc/repositories/webhook_events.py` +
+  Protocol in `src/arc/repositories/__init__.py`):
+  `PostgreSQLWebhookEventRepository` — create / get_by_event_id /
+  list_for_tenant; EVERY query tenant-scoped at SQL level;
+  `DuplicateKeyError` on uniqueness-pair conflict.
+- **Service** (`src/arc/services/webhook_ingestion.py`):
+  `WebhookIngestionService` — endpoint resolution (tenant binding from
+  trusted config only), constant-time HMAC verification
+  (`compute_signature`), timestamp-window replay resistance, body-size +
+  JSON-envelope validation AFTER authentication, idempotent duplicates
+  (re-delivery resolves to original record, `duplicate=true`). Uniform
+  `WebhookAuthenticationError` for all auth failures (senders cannot
+  enumerate endpoints); controlled `WebhookValidationError` (400);
+  secrets/payload content never logged, returned, or persisted.
+- **Authorization** (`src/arc/security/authorization.py`): `webhook:read`
+  — PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, OPERATIONS_USER;
+  EMPLOYEE none; default DENY. The ingestion endpoint is deliberately
+  NOT RBAC-gated (machine senders hold no Arc identity); documented in
+  the matrix docstring.
+- **API** (`src/arc/api/controllers.py`): `POST /webhooks/{endpoint_id}/events`
+  (uniform 401 on all auth failures; idempotent 200 with `duplicate`
+  flag; 400 validation) and
+  `GET /tenants/{tenant_id}/webhooks/events` behind
+  `require_tenant_permission(WEBHOOK_READ)` + path-consistency 403.
+  Responses expose envelope metadata only.
+- **Wiring** (`src/arc/app.py`): repository + service registered at the
+  composition root.
+- **Tests** (+71, total 730): `tests/test_webhook_domain_config.py`,
+  `tests/test_webhook_ingestion_service.py` (fake doubles),
+  `tests/test_webhook_repository.py` (real PostgreSQL),
+  `tests/test_webhook_api.py` (indistinguishable-401 proofs,
+  RBAC matrix, cross-tenant isolation, idempotent duplicates,
+  secret/payload-leak absence). `tests/test_rbac.py` and
+  `tests/test_api_surface.py` updated additively.
+
+### Deferred (NOT part of this slice)
+
+- Triggering downstream processing (Unified Intelligence entry point is
+  another owner's contract).
+- Outbound webhook delivery, retry strategy finalization (TRD §37),
+  replay nonce storage, per-endpoint CRUD APIs, secret rotation, secure
+  secret storage, multiple endpoints per tenant.
+
+### Verification
+
+- 730 tests pass (Docker + real PostgreSQL), fresh AND warm database,
+  0 failures; verified against a throwaway database so the shared dev
+  volume was untouched.
+- `ruff check .` and `ruff format --check .` clean.
+- Local environment note: this developer's persistent compose volume
+  contains an ORPHANED `webhook_events` table from an earlier
+  uncommitted experiment (80 rows; columns `payload jsonb`, `signature`,
+  `attempts` — not present anywhere in the repository). `CREATE TABLE IF
+  NOT EXISTS` skips recreation, so tests hitting THAT volume fail until
+  the table is dropped by its owner. CI is unaffected (fresh DB every
+  run). Dropping requires the data owner's decision (destructive op).
+
+### Pending
+
+- Human decision on dropping the orphaned local `webhook_events` table.
+- Commit, push, human review of the PR; merge into `main`.
+
 ## CI Baseline (Established)
 
 **Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)

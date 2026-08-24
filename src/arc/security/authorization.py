@@ -34,6 +34,16 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   There is no connector-specific authorization system: the connector
   layer consumes this centralized matrix via ``AuthorizationService``.
   An unknown permission is never granted (default DENY).
+- Webhook permission (``webhook:read``) exists for the Webhooks
+  foundation (PRD 16, TRD 16): PLATFORM_ADMINISTRATOR,
+  COMPANY_ADMINISTRATOR, and OPERATIONS_USER read the tenant's ingested
+  webhook event records for observability; EMPLOYEE has none. The
+  machine-facing INGESTION endpoint is NOT RBAC-gated: external senders
+  hold no Arc identity and authenticate exclusively through per-endpoint
+  HMAC signatures bound to a configured tenant (ADR-001 webhook
+  security boundary). There is deliberately no ``webhook:create``
+  permission in this slice: ingestion endpoints are provisioned through
+  environment configuration, not API requests.
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;
@@ -78,6 +88,7 @@ TOOL_EXECUTE = Permission(resource="tool", action="execute")
 CONNECTOR_CREATE = Permission(resource="connector", action="create")
 CONNECTOR_READ = Permission(resource="connector", action="read")
 CONNECTOR_SYNC = Permission(resource="connector", action="sync")
+WEBHOOK_READ = Permission(resource="webhook", action="read")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -98,6 +109,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_CREATE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            WEBHOOK_READ,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
@@ -113,6 +125,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_CREATE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            WEBHOOK_READ,
         }
     ),
     ApplicationRole.OPERATIONS_USER: frozenset(
@@ -124,6 +137,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TOOL_EXECUTE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            WEBHOOK_READ,
         }
     ),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).
