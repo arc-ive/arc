@@ -1,18 +1,23 @@
 """Repository interfaces for Arc domain."""
 
-from typing import List, Protocol
+from typing import List, Optional, Protocol
 
 from arc.domain.models import (
+    ApiRequestRecord,
     ConnectorConfig,
+    ConnectorSyncActivityMetrics,
     ConnectorSyncRecord,
+    HttpUsageMetrics,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeMatch,
     Membership,
     Skill,
     Tenant,
+    ToolExecutionActivityMetrics,
     ToolExecutionRecord,
     User,
+    WebhookEventActivityMetrics,
 )
 
 
@@ -241,6 +246,56 @@ class ToolExecutionRepository(Protocol):
 
     async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[ToolExecutionRecord]:
         """List the most recent tool execution records for a tenant."""
+        ...
+
+
+class ObservabilityRepository(Protocol):
+    """Repository for Observability aggregates (PRD 17, TRD 17/28/31).
+
+    One write path only: HTTP telemetry records this layer owns. All
+    other methods are READ-SIDE aggregations issued against the
+    authoritative subsystem tables (tool executions, connector syncs,
+    webhook events) which are never duplicated.
+
+    Scope contract: ``tenant_id=None`` selects the PLATFORM view —
+    strictly tenant-agnostic operational totals; no method returns
+    per-tenant breakdowns or raw rows. Every tenant-scoped query
+    enforces ``tenant_id`` at the SQL level.
+    """
+
+    async def create_api_request_record(self, record: ApiRequestRecord) -> ApiRequestRecord:
+        """Persist one HTTP telemetry record (metadata-only)."""
+        ...
+
+    async def api_request_summary(self, tenant_id: Optional[str], hours: int) -> HttpUsageMetrics:
+        """Aggregate HTTP usage for a tenant, or platform-wide when None."""
+        ...
+
+    async def tool_execution_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> ToolExecutionActivityMetrics:
+        """Aggregate authoritative AI Tool execution records in place."""
+        ...
+
+    async def connector_sync_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> ConnectorSyncActivityMetrics:
+        """Aggregate authoritative connector sync records in place."""
+        ...
+
+    async def webhook_event_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> WebhookEventActivityMetrics:
+        """Aggregate webhook events when the source table exists.
+
+        While the Webhooks foundation (PR #34) is unmerged the source is
+        legitimately absent on main: implementations must report it as
+        unavailable (never fabricate or duplicate it).
+        """
+        ...
+
+    async def database_reachable(self) -> bool:
+        """Component health probe for the database."""
         ...
 
 

@@ -6,6 +6,7 @@ from arc.db.connection import ArcDatabase
 from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+from arc.repositories.observability import PostgreSQLObservabilityRepository
 from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
 from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tenancy import (
@@ -27,6 +28,7 @@ from arc.services.embeddings import build_embedding_provider, get_embedding_sett
 from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
 from arc.services.llm import build_llm_provider, get_llm_settings
+from arc.services.observability import ObservabilityService
 from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
 from arc.services.tools import ToolExecutionService, build_platform_tool_registry
@@ -68,6 +70,7 @@ class Application:
             "knowledge_chunk": PostgreSQLKnowledgeChunkRepository(self.db),
             "skill": PostgreSQLSkillRepository(self.db),
             "tool_execution": PostgreSQLToolExecutionRepository(self.db),
+            "observability": PostgreSQLObservabilityRepository(self.db),
         }
 
         # Initialize services
@@ -121,6 +124,14 @@ class Application:
         self.services["tool_service"] = ToolExecutionService(
             build_platform_tool_registry(),
             self.repositories["tool_execution"],
+        )
+
+        # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
+        # read layer over AUTHORITATIVE subsystem records plus the HTTP
+        # telemetry table this layer owns. Telemetry writes are best
+        # effort and never fail a business operation; reads fail closed.
+        self.services["observability_service"] = ObservabilityService(
+            repository=self.repositories["observability"],
         )
 
         # Initialize connector synchronization (provider integrations):

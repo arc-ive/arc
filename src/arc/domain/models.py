@@ -655,3 +655,161 @@ class ToolExecutionRecord:
             raise ValueError(f"Invalid tool risk level: {self.risk_level!r}")
         if not isinstance(self.input_summary, str) or not self.input_summary:
             raise ValueError("Tool input summary must be a non-empty string")
+
+
+class ApiRequestMethod:
+    """Allowed HTTP methods for telemetry records.
+
+    A fixed allowlist (not free-form input): the middleware labels requests
+    itself, and bounding the vocabulary keeps the stored column and every
+    aggregate grouping within known, safe values.
+    """
+
+    ALLOWED = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
+
+
+@dataclass
+class ApiRequestRecord:
+    """Metadata-only telemetry record for one HTTP request (TRD 17/28/31).
+
+    Owned by the Observability/API layer. This is NOT a subsystem audit
+    record: tool, connector, and webhook facts stay in their authoritative
+    tables and are aggregated in place. This record stores ONLY:
+
+    - the correlation ID minted by the request-telemetry middleware
+      (``request_id``; distinct from future Agent execution IDs);
+    - the tenant label applied by SUCCESS-GATED PATH-PARAM attribution:
+      a request is labelled with a tenant ONLY when it resolved through
+      an authenticated tenant route AND completed with status < 400.
+      Attribution is telemetry bookkeeping and NEVER establishes tenant
+      identity or authorization; unattributable/public requests store
+      NULL;
+    - the normalized route TEMPLATE (e.g. ``/tenants/{tenant_id}/tools``),
+      never raw paths or query strings;
+    - method, status code, monotonic-clock duration, coarse error class.
+
+    NEVER persisted: request bodies, query strings, prompts, answers,
+    credentials, tokens, secrets, PII, or arbitrary payload content
+    (PRD 9/10, TRD 20/28).
+    """
+
+    id: str
+    request_id: str
+    method: str
+    route_template: str
+    status_code: int
+    duration_ms: int
+    tenant_id: Optional[str] = None
+    error_kind: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("API request record ID cannot be empty")
+        if len(self.id) > 255:
+            raise ValueError("API request record ID cannot exceed 255 characters")
+        if not isinstance(self.request_id, str) or not self.request_id:
+            raise ValueError("Correlation request ID cannot be empty")
+        if len(self.request_id) > 64:
+            raise ValueError("Correlation request ID cannot exceed 64 characters")
+        if not isinstance(self.method, str) or self.method not in ApiRequestMethod.ALLOWED:
+            raise ValueError(f"Invalid HTTP method for telemetry record: {self.method!r}")
+        if not isinstance(self.route_template, str) or not self.route_template:
+            raise ValueError("Route template cannot be empty")
+        if len(self.route_template) > 255:
+            raise ValueError("Route template cannot exceed 255 characters")
+        if "{" not in self.route_template and "?" in self.route_template:
+            raise ValueError("Route template must not contain a query string")
+        if not isinstance(self.status_code, int) or isinstance(self.status_code, bool):
+            raise ValueError(f"Invalid HTTP status code: {self.status_code!r}")
+        if not 100 <= self.status_code <= 599:
+            raise ValueError(f"HTTP status code out of range: {self.status_code}")
+        if not isinstance(self.duration_ms, int) or isinstance(self.duration_ms, bool):
+            raise ValueError(f"Invalid request duration: {self.duration_ms!r}")
+        if self.duration_ms < 0:
+            raise ValueError("Request duration cannot be negative")
+        if self.tenant_id is not None and (
+            not isinstance(self.tenant_id, str) or not self.tenant_id
+        ):
+            raise ValueError("Attributed tenant ID must be a non-empty string when present")
+        if self.error_kind is not None and (
+            not isinstance(self.error_kind, str) or not self.error_kind
+        ):
+            raise ValueError("Error kind must be a non-empty string when present")
+
+
+@dataclass
+class HttpUsageMetrics:
+    """Aggregate HTTP usage read-model (tenant-scoped or platform-wide).
+
+    Numeric operational aggregates only: never per-tenant breakdowns,
+    paths, or payload data.
+    """
+
+    total_requests: int
+    error_count: int
+    error_rate: float
+    avg_duration_ms: float
+    p95_duration_ms: float
+
+    def __post_init__(self):
+        if self.total_requests < 0 or self.error_count < 0:
+            raise ValueError("HTTP metric counts cannot be negative")
+        if self.error_count > self.total_requests:
+            raise ValueError("HTTP error count cannot exceed total requests")
+        if not 0.0 <= self.error_rate <= 1.0:
+            raise ValueError("HTTP error rate must be between 0 and 1")
+        if self.avg_duration_ms < 0 or self.p95_duration_ms < 0:
+            raise ValueError("HTTP latency metrics cannot be negative")
+
+
+@dataclass
+class ToolExecutionActivityMetrics:
+    """Aggregate AI Tool activity read-model over one source table."""
+
+    total_executions: int
+    successful: int
+    failed: int
+    denied: int
+
+    def __post_init__(self):
+        if min(self.total_executions, self.successful, self.failed, self.denied) < 0:
+            raise ValueError("Tool activity counts cannot be negative")
+        if self.successful + self.failed > self.total_executions:
+            raise ValueError("Status breakdown cannot exceed total executions")
+
+
+@dataclass
+class ConnectorSyncActivityMetrics:
+    """Aggregate connector sync activity read-model over one source table."""
+
+    total_syncs: int
+    successful: int
+    failed: int
+    items_fetched: int
+
+    def __post_init__(self):
+        if min(self.total_syncs, self.successful, self.failed, self.items_fetched) < 0:
+            raise ValueError("Connector activity counts cannot be negative")
+        if self.successful + self.failed > self.total_syncs:
+            raise ValueError("Status breakdown cannot exceed total syncs")
+
+
+@dataclass
+class WebhookEventActivityMetrics:
+    """Aggregate webhook event read-model.
+
+    ``available`` reports whether the authoritative webhook_events table
+    exists in this database. While the Webhooks foundation (PR #34) is
+    unmerged, the table may legitimately be absent on main: Observability
+    then reports zeros WITHOUT fabricating or duplicating the source.
+    """
+
+    available: bool
+    total_events: int = 0
+    distinct_event_types: int = 0
+    total_payload_bytes: int = 0
+
+    def __post_init__(self):
+        if min(self.total_events, self.distinct_event_types, self.total_payload_bytes) < 0:
+            raise ValueError("Webhook activity counts cannot be negative")

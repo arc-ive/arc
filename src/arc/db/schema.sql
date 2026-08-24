@@ -149,3 +149,32 @@ CREATE TABLE IF NOT EXISTS connector_sync_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_connector_sync_records_tenant_id ON connector_sync_records(tenant_id);
+
+-- Observability foundation (PRD 17, TRD 17/28/31): metadata-only HTTP
+-- telemetry owned by the Observability/API layer. This is NOT a generic
+-- event table and never duplicates subsystem records - tool executions,
+-- connector syncs, and webhook events remain in their authoritative
+-- tables and are aggregated there at read time.
+-- tenant_id is NULL for public/unauthenticated or unattributable requests:
+-- attribution uses SUCCESS-GATED PATH-PARAM labeling only (status < 400 on
+-- an authenticated tenant route) and NEVER establishes identity or
+-- authorization. route_template stores the normalized route template,
+-- never raw paths or query strings. No bodies, prompts, answers, tokens,
+-- secrets, or PII are ever persisted here (TRD 20/28).
+CREATE TABLE IF NOT EXISTS api_request_records (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255),
+    request_id VARCHAR(64) NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    route_template VARCHAR(255) NOT NULL,
+    status_code INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    error_kind VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_api_request_records_status_code CHECK (status_code BETWEEN 100 AND 599),
+    CONSTRAINT ck_api_request_records_duration CHECK (duration_ms >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_request_records_tenant_id ON api_request_records(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_api_request_records_created_at ON api_request_records(created_at);

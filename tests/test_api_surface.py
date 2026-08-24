@@ -102,6 +102,19 @@ def test_public_api_exposes_connector_endpoints():
     assert "POST /tenants/{tenant_id}/connectors/{connector_id}/sync" in public
 
 
+def test_public_api_exposes_observability_endpoints():
+    """Observability endpoints (PRD 17) are public API, RBAC-protected.
+
+    Tenant usage summaries are tenant-scoped behind ``observability:read``;
+    the platform summary and component health are strictly tenant-agnostic
+    and restricted to ``observability:platform_read`` (platform admin).
+    """
+    public = _route_paths(api_router.routes)
+    assert "GET /tenants/{tenant_id}/observability/usage-summary" in public
+    assert "GET /platform/observability/summary" in public
+    assert "GET /observability/health" in public
+
+
 def test_dev_router_isolates_development_endpoints():
     """The dev-only router retains membership provisioning under /internal/dev."""
     dev = _route_paths(dev_router.routes)

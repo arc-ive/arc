@@ -34,6 +34,12 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   There is no connector-specific authorization system: the connector
   layer consumes this centralized matrix via ``AuthorizationService``.
   An unknown permission is never granted (default DENY).
+- Observability permissions (PRD 17, TRD 17) follow the approved split:
+  ``observability:read`` grants tenant-scoped usage summaries to
+  PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and OPERATIONS_USER;
+  ``observability:platform_read`` grants the STRICTLY TENANT-AGNOSTIC
+  platform operational summary to PLATFORM_ADMINISTRATOR only. Platform
+  visibility never exposes per-tenant business data. EMPLOYEE has none.
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;
@@ -78,6 +84,8 @@ TOOL_EXECUTE = Permission(resource="tool", action="execute")
 CONNECTOR_CREATE = Permission(resource="connector", action="create")
 CONNECTOR_READ = Permission(resource="connector", action="read")
 CONNECTOR_SYNC = Permission(resource="connector", action="sync")
+OBSERVABILITY_READ = Permission(resource="observability", action="read")
+OBSERVABILITY_PLATFORM_READ = Permission(resource="observability", action="platform_read")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -98,6 +106,8 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_CREATE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            OBSERVABILITY_READ,
+            OBSERVABILITY_PLATFORM_READ,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
@@ -113,6 +123,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_CREATE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            OBSERVABILITY_READ,
         }
     ),
     ApplicationRole.OPERATIONS_USER: frozenset(
@@ -124,6 +135,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TOOL_EXECUTE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            OBSERVABILITY_READ,
         }
     ),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).

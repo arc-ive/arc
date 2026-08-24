@@ -758,6 +758,124 @@ foundation already on `main` (code-defined `ConnectorProvider` catalog,
 
 - Commit, push, human review of the PR; merge into `main`.
 
+## Observability — Foundation Slice (Implemented — pending review)
+
+**Branch:** `feat/observability-foundation`
+**Base:** `origin/main` @ `95b36e6`
+**Scope:** Person C — Observability. First TRD-ordered slice after
+Webhooks (TRD §38): usage-based and operational observability per PRD
+§17, TRD §17/§28/§31, ADR-001 Operational Considerations. Architecture
+decisions confirmed with Bala/Joe before implementation: observability
+is an AGGREGATION/READ layer, never a second source of truth; stdlib
+logging + PostgreSQL aggregation only (no OpenTelemetry/Prometheus);
+success-gated path-param tenant attribution; best-effort telemetry
+writes; strictly tenant-agnostic platform summary; `/health` unchanged.
+Deferred: agent executions, LLM token usage, retrieval/embedding
+instrumentation, incident lifecycle, human-intervention and automated-
+action counters (producers not implemented / other owners).
+
+### What changed
+
+- **Domain** (`src/arc/domain/models.py`): `ApiRequestRecord` — metadata-
+  only HTTP telemetry owned by this layer (id, nullable tenant_id,
+  request_id correlation ID, method allowlist, route TEMPLATE, status
+  code bounds, non-negative duration_ms, coarse error_kind) with
+  fail-closed validation; query strings/raw paths/bodies/prompts/
+  secrets are structurally excluded. Typed read-models:
+  `HttpUsageMetrics`, `ToolExecutionActivityMetrics`,
+  `ConnectorSyncActivityMetrics`, `WebhookEventActivityMetrics`.
+- **Schema** (`src/arc/db/schema.sql`): idempotent `api_request_records`
+  table (nullable tenant FK ON DELETE CASCADE, status/duration CHECKs,
+  tenant + created_at indexes). NO generic event/usage table: tool,
+  connector, and webhook records remain authoritative in their own
+  tables and are aggregated IN PLACE at read time.
+- **Repository** (`src/arc/repositories/observability.py` + Protocol in
+  `src/arc/repositories/__init__.py`): one write path plus SQL-level
+  aggregates (`COUNT/FILTER/AVG/percentile_cont`) against the
+  authoritative tables; every tenant-scoped query enforces tenant_id in
+  SQL; `tenant_id=NULL` selects the PLATFORM view (no GROUP BY tenant
+  ever leaves the module); webhook source detected via `to_regclass` —
+  while PR #34 is unmerged the source reports `available=false` WITHOUT
+  duplication or fabrication (temporary sequencing behavior;
+  aggregation consumes the real table automatically once it exists).
+- **Service** (`src/arc/services/observability.py`):
+  `ObservabilityService` — BEST-EFFORT telemetry writes (persistence
+  failure is logged safely and dropped; never fails a business request),
+  windowed (1–168h) tenant usage summary assembly, tenant-agnostic
+  platform summary, component health via EXISTING public factories only
+  (database SELECT 1, LLM provider constructibility, embeddings
+  constructibility) reporting status labels without configuration
+  leakage. Webhook-config component joins when PR #34 merges.
+- **Correlation middleware**
+  (`src/arc/api/middleware.py`, `src/arc/api/correlation.py`): pure-ASGI;
+  mints a UUID4 canonical HTTP correlation ID per request (ContextVar
+  for logging), returns it as `X-Request-ID` (including handled errors),
+  measures monotonic duration, records AFTER response completion with
+  SUCCESS-GATED PATH-PARAM attribution: tenant label applied ONLY when an
+  authenticated tenant route completed <400; failed/unauthorized/public
+  requests store NULL. Attribution is telemetry bookkeeping and NEVER
+  establishes identity or authorization. Route templates stored, never
+  raw paths/query strings.
+- **Structured logging** (`src/arc/observability_logging.py`): stdlib
+  logging configured once at startup (`LOG_LEVEL`, default INFO);
+  correlation-ID filter stamps every record (`request_id=...`);
+  emission points carry safe metadata only (method/route/status/
+  duration/coarse error class) per TRD §28 forbidden-content list.
+- **RBAC** (`src/arc/security/authorization.py`, additive):
+  `observability:read` → PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR,
+  OPERATIONS_USER (tenant-scoped summaries);
+  `observability:platform_read` → PLATFORM_ADMINISTRATOR only
+  (tenant-agnostic platform summary + component health). EMPLOYEE none;
+  default DENY; no second RBAC system.
+- **API** (`src/arc/api/controllers.py`):
+  `GET /tenants/{tenant_id}/observability/usage-summary` behind
+  `require_tenant_permission(OBSERVABILITY_READ)` + path-consistency 403;
+  `GET /platform/observability/summary` and `GET /observability/health`
+  behind `require_permission(OBSERVABILITY_PLATFORM_READ)`. Responses
+  contain numeric aggregates only — never raw rows, input/output
+  summaries, prompts, answers, payloads, credentials, or per-tenant
+  breakdowns at platform scope.
+- **Wiring** (`src/arc/app.py`, `src/arc/main.py`): repository+service at
+  composition root; middleware mounted with lazy service resolution so
+  requests stay correlated (X-Request-ID) even before startup completes.
+- **Config**: `LOG_LEVEL` documented in `.env.example`, passed through
+  `docker-compose.yml`.
+- **Tests** (+66 net): `tests/test_observability_domain.py`,
+  `_repository.py` (real PostgreSQL: round-trip, NULL-tenant rows,
+  SQL isolation across all aggregates, cascade, aggregation math incl.
+  p95/error-rate, time windows, webhook absent-vs-present), `_service.py`
+  (best-effort write semantics, assembly, health probes without detail
+  leakage), `_api.py` (401/403 matrix, cross-tenant leak-proofing,
+  platform payload contains no tenant identifiers/lists, correlation IDs
+  unique and present on 401/404, success-only attribution proofs,
+  query-string exclusion, telemetry-failure business-continuity).
+  `tests/test_rbac.py` and `tests/test_api_surface.py` updated additively.
+
+### What was NOT changed
+
+- Owner-controlled implementations untouched: intelligence, LLM,
+  embeddings, retrieval, tools, connector providers/sync, webhook
+  ingestion/config (not on main), JWT/security models/settings, PII,
+  skills, knowledge. `IntelligenceAnswer.request_id` semantics preserved
+  (middleware correlation ID documented as distinct from future Agent
+  execution IDs).
+- No incident domain, no agent-execution producers, no fabricated token
+  usage, no new telemetry dependencies, no duplicate webhook source.
+
+### Verification
+
+- Fresh throwaway database: **734 tests passed**, 0 failures.
+- Warm persistent database: **733 passed, 1 skipped** (the
+  webhook-source-absent test self-skips only where a local
+  `webhook_events` table exists; CI/fresh runs exercise it).
+- `ruff check .`, `ruff format --check .`, `compileall -q src tests`,
+  `docker compose config --quiet`, `git diff --check`, conflict-marker
+  scan, secret scan: all clean. Image rebuilt before verification runs.
+
+### Pending
+
+- Commit, push, human review of the PR; merge into `main`.
+
 ## CI Baseline (Established)
 
 **Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
