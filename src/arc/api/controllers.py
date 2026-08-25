@@ -23,7 +23,7 @@ provisioning) are isolated in ``arc.api.dev_controllers``.
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
 from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import (
@@ -45,6 +45,8 @@ from arc.security.authorization import (
     CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
+    OBSERVABILITY_PLATFORM_READ,
+    OBSERVABILITY_READ,
     SKILL_CREATE,
     SKILL_DELETE,
     SKILL_READ,
@@ -75,6 +77,7 @@ from arc.services.embeddings import EmbeddingError
 from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
 from arc.services.llm import LlmError
+from arc.services.observability import ObservabilityService
 from arc.services.pii import PiiGuardError
 from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
@@ -167,6 +170,10 @@ class ApplicationContext:
     @property
     def webhook_ingestion_service(self) -> WebhookIngestionService:
         return self.services.get("webhook_ingestion_service")
+
+    @property
+    def observability_service(self):
+        return self.services.get("observability_service")
 
 
 # Global application context
@@ -1031,3 +1038,60 @@ async def list_webhook_events(
 
     events = await webhook_ingestion_service.list_events(context)
     return [_webhook_event_payload(event, False) for event in events]
+
+
+@api_router.get("/tenants/{tenant_id}/observability/usage-summary")
+async def get_tenant_usage_summary(
+    tenant_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+    context: TenantContext = Depends(require_tenant_permission(OBSERVABILITY_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Tenant-scoped usage summary (PRD 17, TRD 17): aggregates ONLY.
+
+    Requires authentication, the trusted tenant context, and
+    ``observability:read``; the path tenant must match the trusted
+    context (403 otherwise). Responses contain numeric operational
+    aggregates from authoritative subsystem records and HTTP telemetry —
+    never raw rows, summaries, prompts, answers, payloads, or secrets.
+    """
+    if tenant_id != context.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return await observability_service.get_tenant_usage_summary(context.tenant_id, hours)
+
+
+@api_router.get("/platform/observability/summary")
+async def get_platform_observability_summary(
+    hours: int = Query(default=24, ge=1, le=168),
+    _: AuthenticatedPrincipal = Depends(require_permission(OBSERVABILITY_PLATFORM_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Platform operational summary — STRICTLY TENANT-AGNOSTIC.
+
+    PLATFORM_ADMINISTRATOR only. Answers "is the ARC platform operating
+    correctly?": cross-tenant operational totals without any tenant
+    identifiers, per-tenant usage/rankings, or tenant business data.
+    Tenant-specific investigation uses the tenant-scoped endpoint.
+    """
+    return await observability_service.get_platform_summary(hours)
+
+
+@api_router.get("/observability/health")
+async def get_component_health(
+    _: AuthenticatedPrincipal = Depends(require_permission(OBSERVABILITY_PLATFORM_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Protected component-health surface.
+
+    ``GET /health`` remains the public liveness probe with its exact
+    body. This surface reports real component checks (database, LLM
+    provider, embeddings) as status labels only — never settings values
+    or configuration material.
+    """
+    return await observability_service.get_component_health()
