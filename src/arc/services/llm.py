@@ -22,7 +22,7 @@ documents, or authorization state.
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional, Protocol, runtime_checkable
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
 
 class LlmError(Exception):
@@ -56,6 +56,24 @@ class LlmProvider(Protocol):
         ...
 
 
+@runtime_checkable
+class ToolProposingLlm(Protocol):
+    """Optional ADR-004 capability: emit ONE raw tool proposal.
+
+    Implementations return untrusted raw output (a mapping that must still
+    pass strict ``ToolProposal.parse`` validation in the domain layer) or
+    ``None`` when no tool is proposed. Returning a proposal is NOT
+    authorization: the application alone resolves, authorizes, validates,
+    and executes through ``ToolExecutionService``.
+    """
+
+    def propose_tool(
+        self, query: str, context_references: Sequence[str]
+    ) -> Optional[Mapping[str, Any]]:
+        """Return raw untrusted proposal output, or ``None``."""
+        ...
+
+
 class DeterministicLlmProvider:
     """Local, deterministic LLM provider for development and tests.
 
@@ -64,10 +82,29 @@ class DeterministicLlmProvider:
     <reference>`` lines), which makes the retrieval-to-reasoning contract
     verifiable: the completion always reflects exactly the approved
     context that was supplied, nothing more.
+
+    ADR-004 V1: an OPTIONAL ``tool_proposal_script`` callable may be
+    injected (tests/demo wiring only) to make :meth:`propose_tool`
+    return a deterministic raw proposal for a given query. When not
+    armed — the production default — no proposal is ever emitted.
+    The script receives the user query; its output remains UNTRUSTED and
+    must pass strict domain validation before anything executes.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        tool_proposal_script: Optional[Callable[[str], Optional[Mapping[str, Any]]]] = None,
+    ):
         self._citation_pattern = re.compile(r"^\[\d+\] citation:\s+(\S+)")
+        self._tool_proposal_script = tool_proposal_script
+
+    def propose_tool(
+        self, query: str, context_references: Sequence[str] = ()
+    ) -> Optional[Mapping[str, Any]]:
+        """Return the scripted raw proposal for ``query``, or ``None``."""
+        if self._tool_proposal_script is None:
+            return None
+        return self._tool_proposal_script(query)
 
     def complete(self, prompt: str) -> str:
         """Return a deterministic completion derived from the prompt."""

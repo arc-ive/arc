@@ -116,19 +116,22 @@ class Application:
         # supported; unknown providers fail closed at startup. Production
         # LLM provider/model selection (OpenRouter primary per TRD 34) is
         # a deferred decision.
-        self.services["intelligence_service"] = UnifiedIntelligenceService(
-            retrieval=retrieval_service,
-            llm_provider=build_llm_provider(get_llm_settings()),
-        )
-
-        # Initialize skill service
-        self.services["skill_service"] = SkillService(self.repositories["skill"])
-
-        # Initialize AI Tool execution service (platform-owned catalog).
+        # Initialize AI Tool execution service (platform-owned catalog)
+        # BEFORE Unified Intelligence so the ADR-004 V1 contract can reuse
+        # it as the single authorization/execution/audit choke point.
         self.services["tool_service"] = ToolExecutionService(
             build_platform_tool_registry(),
             self.repositories["tool_execution"],
         )
+
+        self.services["intelligence_service"] = UnifiedIntelligenceService(
+            retrieval=retrieval_service,
+            llm_provider=build_llm_provider(get_llm_settings()),
+            tool_service=self.services["tool_service"],
+        )
+
+        # Initialize skill service
+        self.services["skill_service"] = SkillService(self.repositories["skill"])
 
         # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
         # read layer over AUTHORITATIVE subsystem records plus the HTTP
