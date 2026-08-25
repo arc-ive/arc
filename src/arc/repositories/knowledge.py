@@ -24,6 +24,13 @@ from arc.domain.models import (
 )
 from arc.repositories.retrieval import _vector_to_text
 
+# Single source of truth for every knowledge_documents SELECT projection so
+# column additions (e.g. ADR-003 external_id) cannot drift between queries.
+_DOCUMENT_COLUMNS = (
+    "id, tenant_id, source, provenance, version, "
+    "status, content, external_id, created_at, updated_at"
+)
+
 
 class PostgreSQLKnowledgeRepository:
     """PostgreSQL implementation of the KnowledgeRepository contract."""
@@ -146,9 +153,8 @@ class PostgreSQLKnowledgeRepository:
         """Get a knowledge document by ID, scoped to a tenant."""
         async with self.db._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
-                """
-                SELECT id, tenant_id, source, provenance, version,
-                       status, content, external_id, created_at, updated_at
+                f"""
+                SELECT {_DOCUMENT_COLUMNS}
                 FROM knowledge_documents
                 WHERE id = $1 AND tenant_id = $2
                 """,
@@ -171,9 +177,8 @@ class PostgreSQLKnowledgeRepository:
         """
         async with self.db._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
-                """
-                SELECT id, tenant_id, source, provenance, version,
-                       status, content, external_id, created_at, updated_at
+                f"""
+                SELECT {_DOCUMENT_COLUMNS}
                 FROM knowledge_documents
                 WHERE external_id = $1 AND source = $2 AND tenant_id = $3
                 """,
@@ -249,9 +254,8 @@ class PostgreSQLKnowledgeRepository:
         """List all knowledge documents for a tenant."""
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                SELECT id, tenant_id, source, provenance, version,
-                       status, content, external_id, created_at, updated_at
+                f"""
+                SELECT {_DOCUMENT_COLUMNS}
                 FROM knowledge_documents
                 WHERE tenant_id = $1
                 ORDER BY created_at DESC

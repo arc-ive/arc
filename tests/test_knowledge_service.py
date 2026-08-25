@@ -485,7 +485,11 @@ class TestKnowledgeIdentityAndReingestion:
         assert second.created_at == first.created_at
         assert second.provenance == first.provenance
         assert len(repo.updated) == 1
-        # The update path prepared the index for the SAME logical document id.
+        assert repo.updated[0].version == 2
+        # The update path prepared the index for the SAME logical document id,
+        # inside _reingest_existing (review thread: prepared must be defined
+        # and exercised exactly here before update_document_with_chunks).
+        assert len(indexer.prepared_documents) == 2
         assert indexer.prepared_documents[-1][1].id == first.id
 
     async def test_embedding_failure_on_changed_content_aborts_before_write(self):
@@ -694,3 +698,75 @@ class TestIdentityRaceRecovery:
         assert result.version == 1
         assert len(repo.created) == 1
         assert repo.updated == []
+
+
+class ScriptedCountingGuard:
+    """PII guard with scripted outputs that counts every sanitize call."""
+
+    def __init__(self, texts):
+        self._texts = list(texts)
+        self.calls = 0
+
+    def sanitize(self, text: str) -> SimpleNamespace:
+        self.calls += 1
+        index = min(self.calls, len(self._texts)) - 1
+        return SimpleNamespace(sanitized_text=self._texts[index])
+
+
+class TestSanitizationExactlyOnce:
+    """Review contract: sanitization is invoked EXACTLY ONCE per ingestion
+    invocation on every ADR-003 path (create, identical redelivery,
+    changed-content update). There is no duplicated or stale second call,
+    and the race-recovery path reuses the already-sanitized text."""
+
+    async def test_exactly_one_sanitize_call_per_ingestion_path(self):
+        repo = FakeKnowledgeRepository()
+        indexer = FakeIndexer(repo)
+        guard = ScriptedCountingGuard(["<A>", "<B>", "<C>"])
+        service = KnowledgeService(repo, pii_guard=guard, indexer=indexer)
+        context = _context()
+
+        # 1) create path
+        await service.ingest_document(
+            context,
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            content="one",
+            external_id="sp-1",
+        )
+        assert guard.calls == 1
+
+        # 2) changed-content update path (_reingest_existing must NOT
+        #    sanitize again: the caller passes already-sanitized text)
+        await service.ingest_document(
+            context,
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            content="two",
+            external_id="sp-1",
+        )
+        assert guard.calls == 2
+
+        # 3) second changed-content update
+        await service.ingest_document(
+            context,
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            content="three",
+            external_id="sp-1",
+        )
+        assert guard.calls == 3
+        assert len(repo.updated) == 2
+
+        # 4) race recovery reuses the sanitized document content: the loser's
+        #    single sanitize call covers the entire failed attempt + refetch.
+        race_repo = RaceFakeKnowledgeRepository()
+        race_service = KnowledgeService(race_repo, pii_guard=guard)
+        await race_service.ingest_document(
+            context,
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            content="same text",
+            external_id="race-sp-1",
+        )
+        assert guard.calls == 4
