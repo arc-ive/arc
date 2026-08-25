@@ -102,6 +102,18 @@ def test_public_api_exposes_connector_endpoints():
     assert "POST /tenants/{tenant_id}/connectors/{connector_id}/sync" in public
 
 
+def test_public_api_exposes_webhook_endpoints():
+    """Webhook endpoints (PRD 16) are public API with split authentication.
+
+    Ingestion is machine-facing (per-endpoint HMAC signatures, ADR-001
+    webhook security boundary); event listing is RBAC-protected
+    (``webhook:read``) behind the trusted tenant context.
+    """
+    public = _route_paths(api_router.routes)
+    assert "POST /webhooks/{endpoint_id}/events" in public
+    assert "GET /tenants/{tenant_id}/webhooks/events" in public
+
+
 def test_dev_router_isolates_development_endpoints():
     """The dev-only router retains membership provisioning under /internal/dev."""
     dev = _route_paths(dev_router.routes)

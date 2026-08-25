@@ -27,6 +27,7 @@ from arc.security.authorization import (
     TOOL_EXECUTE,
     TOOL_READ,
     USER_CREATE,
+    WEBHOOK_READ,
     AuthorizationService,
 )
 from arc.security.models import ApplicationRole, AuthenticatedPrincipal, Permission
@@ -73,6 +74,7 @@ def test_exactly_four_application_roles_exist():
                 CONNECTOR_CREATE,
                 CONNECTOR_READ,
                 CONNECTOR_SYNC,
+                WEBHOOK_READ,
             ],
             [],
         ),
@@ -90,6 +92,7 @@ def test_exactly_four_application_roles_exist():
                 CONNECTOR_CREATE,
                 CONNECTOR_READ,
                 CONNECTOR_SYNC,
+                WEBHOOK_READ,
             ],
             [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE],
         ),
@@ -103,6 +106,7 @@ def test_exactly_four_application_roles_exist():
                 TOOL_EXECUTE,
                 CONNECTOR_READ,
                 CONNECTOR_SYNC,
+                WEBHOOK_READ,
             ],
             [
                 TENANT_CREATE,
@@ -132,6 +136,7 @@ def test_exactly_four_application_roles_exist():
                 CONNECTOR_CREATE,
                 CONNECTOR_READ,
                 CONNECTOR_SYNC,
+                WEBHOOK_READ,
             ],
         ),
     ],
