@@ -568,6 +568,7 @@ def _intelligence_answer_response(answer: IntelligenceAnswer) -> Dict[str, Any]:
         "citations": answer.citations,
         "retrieval_method": answer.retrieval_method.value,
         "context_used": answer.context_used,
+        "tool_executions": answer.tool_executions,
     }
 
 
@@ -576,6 +577,8 @@ async def query_unified_intelligence(
     tenant_id: str,
     body: Optional[Any] = Body(default=None),
     context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization: AuthorizationService = Depends(get_authorization_service),
     intelligence_service: UnifiedIntelligenceService = Depends(
         lambda: app_context.intelligence_service
     ),
@@ -624,7 +627,13 @@ async def query_unified_intelligence(
         )
 
     try:
-        answer = await intelligence_service.answer_query(context, query, limit=limit)
+        answer = await intelligence_service.answer_query(
+            context,
+            query,
+            limit=limit,
+            principal=principal,
+            authorization=authorization,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except (EmbeddingError, LlmError):

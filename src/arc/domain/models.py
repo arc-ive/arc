@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class UserRole(str, Enum):
@@ -509,6 +509,48 @@ class ApprovedContext:
             )
 
 
+@dataclass(frozen=True)
+class ToolProposal:
+    """One LLM-proposed tool action (ADR-004).
+
+    A proposal is UNTRUSTED model output: a request that the application
+    may validate, authorize, and execute — never a grant. Use
+    :meth:`parse` to strictly validate raw model output; anything that is
+    not exactly this shape parses to ``None`` and the intelligence path
+    continues without a tool (fail closed, no exception escapes).
+    """
+
+    tool_name: str
+    arguments: Dict[str, Any]
+
+    MAX_TOOL_NAME_LENGTH = 255
+
+    @classmethod
+    def parse(cls, raw: Any) -> Optional["ToolProposal"]:
+        """Strictly parse untrusted raw model output into a proposal.
+
+        Returns ``None`` (never raises) when ``raw`` is not exactly a
+        mapping with exactly the keys ``tool_name`` (non-empty string of
+        at most 255 characters) and ``arguments`` (a mapping). Unknown or
+        missing fields are rejected; values are NOT coerced.
+        """
+        if not isinstance(raw, dict):
+            return None
+        if set(raw.keys()) != {"tool_name", "arguments"}:
+            return None
+        tool_name = raw["tool_name"]
+        arguments = raw["arguments"]
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return None
+        if len(tool_name) > cls.MAX_TOOL_NAME_LENGTH:
+            return None
+        if not isinstance(arguments, dict):
+            return None
+        if not all(isinstance(key, str) for key in arguments):
+            return None
+        return cls(tool_name=tool_name, arguments=dict(arguments))
+
+
 @dataclass
 class IntelligenceAnswer:
     """The structured result of a Unified Intelligence reasoning step.
@@ -531,6 +573,7 @@ class IntelligenceAnswer:
     citations: List[str] = field(default_factory=list)
     retrieval_method: RetrievalMethod = RetrievalMethod.DENSE_SEMANTIC
     context_used: bool = False
+    tool_executions: List[Dict[str, str]] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.request_id:
@@ -547,6 +590,18 @@ class IntelligenceAnswer:
             isinstance(citation, str) for citation in self.citations
         ):
             raise ValueError("Intelligence answer citations must be a list of strings")
+        if not isinstance(self.tool_executions, list) or len(self.tool_executions) > 1:
+            raise ValueError("Intelligence answer supports at most one tool execution in V1")
+        for entry in self.tool_executions:
+            if not isinstance(entry, dict) or set(entry.keys()) != {
+                "tool_name",
+                "tool_version",
+            }:
+                raise ValueError(
+                    "Tool execution summaries must contain exactly tool_name and tool_version"
+                )
+            if not all(isinstance(value, str) for value in entry.values()):
+                raise ValueError("Tool execution summary values must be strings")
         if not isinstance(self.retrieval_method, RetrievalMethod):
             raise ValueError(f"Invalid retrieval method: {self.retrieval_method!r}")
         if not isinstance(self.context_used, bool):
