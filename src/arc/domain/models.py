@@ -278,11 +278,16 @@ class KnowledgeDocument:
     persisted: the ingestion boundary (KnowledgeService + PiiGuardService)
     sanitizes content before this model reaches persistence.
 
-    ``version`` is stored document metadata (TRD 9.1). This foundation
-    slice does not implement document revision/update semantics, and no
-    logical document identity or uniqueness relationship between documents
-    and versions is claimed; future document lifecycle work may define
-    that model.
+    ``version`` is structured document metadata (TRD 9.1): it starts at 1
+    and increments by exactly one for every accepted content change of the
+    same logical document. No historical revision rows are kept.
+
+    Logical identity is defined by ADR-003 as ``(tenant_id, source,
+    external_id)``. ``external_id`` is the ingestion writer's stable
+    identifier for one logical document (for example connector
+    synchronization binds ``"{provider}:{source_id}"``). It is optional:
+    documents ingested without an external identity are unique per
+    ingestion and keep pre-ADR create-always behavior.
     """
 
     id: str
@@ -292,6 +297,7 @@ class KnowledgeDocument:
     content: str
     status: KnowledgeStatus = KnowledgeStatus.ACTIVE
     version: int = 1
+    external_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -310,6 +316,13 @@ class KnowledgeDocument:
             raise ValueError("Knowledge document version must be a positive integer")
         if not self.content:
             raise ValueError("Knowledge document content cannot be empty")
+        if self.external_id is not None:
+            if not isinstance(self.external_id, str) or not self.external_id:
+                raise ValueError(
+                    "Knowledge document external_id must be a non-empty string when provided"
+                )
+            if len(self.external_id) > 255:
+                raise ValueError("Knowledge document external_id cannot exceed 255 characters")
 
 
 @dataclass

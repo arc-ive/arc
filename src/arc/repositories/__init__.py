@@ -8,6 +8,7 @@ from arc.domain.models import (
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeMatch,
+    KnowledgeSource,
     Membership,
     Skill,
     Tenant,
@@ -165,6 +166,34 @@ class KnowledgeRepository(Protocol):
         transaction: if the document insert or any chunk insert fails,
         the entire operation rolls back. There is never a document
         without its complete retrieval index, nor a partial chunk set.
+        """
+        ...
+
+    async def get_by_external_id(
+        self, external_id: str, source: KnowledgeSource, tenant_id: str
+    ) -> KnowledgeDocument:
+        """Resolve one logical document by its ADR-003 identity.
+
+        Identity is ``(tenant_id, source, external_id)`` and is resolved
+        strictly within the trusted tenant: the same external identifier
+        under a different tenant or source never matches. Raises
+        ``NotFoundError`` when no such logical document exists.
+        """
+        ...
+
+    async def update_document_with_chunks(
+        self,
+        document: KnowledgeDocument,
+        chunks: List[KnowledgeChunk],
+        embeddings: List[List[float]],
+    ) -> KnowledgeDocument:
+        """Apply an accepted content change to an existing logical document.
+
+        Atomically in ONE transaction: updates content/version/updated_at
+        on the existing row (matched by id AND tenant), deletes the old
+        chunk set, and inserts the new prepared chunk set. A failure at
+        any point rolls back so the prior document version and its complete
+        old index remain intact.
         """
         ...
 

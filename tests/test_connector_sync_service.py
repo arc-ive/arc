@@ -482,3 +482,47 @@ class TestConnectorSyncPiiIntegration:
 
         await connector_repo.delete(connector.id, tenant.id)
         await tenant_repo.delete(tenant.id)
+
+
+class TestConnectorSyncDocumentIdentity:
+    """ADR-003: connector sync binds a stable per-record external identity."""
+
+    async def test_ingest_binds_provider_scoped_external_id(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+        service = _service(connector_repo, sync_repo, knowledge_service)
+        context = _context()
+
+        result = await service.sync(context, config.id)
+
+        assert knowledge_service.ingest_document.await_count == len(result.items)
+        expected = {f"github:{item.source_id}" for item in result.items}
+        passed = {
+            call.kwargs["external_id"] for call in knowledge_service.ingest_document.await_args_list
+        }
+        assert passed == expected
+
+    async def test_repeated_sync_uses_identical_external_ids(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+        service = _service(connector_repo, sync_repo, knowledge_service)
+        context = _context()
+
+        await service.sync(context, config.id)
+        first = [
+            call.kwargs["external_id"] for call in knowledge_service.ingest_document.await_args_list
+        ]
+
+        knowledge_service.ingest_document.reset_mock()
+        await service.sync(context, config.id)
+        second = [
+            call.kwargs["external_id"] for call in knowledge_service.ingest_document.await_args_list
+        ]
+
+        # Stable identity across re-deliveries is what lets the Company Brain
+        # deduplicate instead of creating duplicate logical documents.
+        assert sorted(first) == sorted(second)
