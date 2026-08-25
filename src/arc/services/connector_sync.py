@@ -143,6 +143,11 @@ class ConnectorSyncService:
                     source=KnowledgeSource.INTERNAL_KNOWLEDGE,
                     provenance=f"connector:{config.provider.value}:{record.source_id}",
                     content=record.content,
+                    # ADR-003 logical identity: repeated syncs of one source
+                    # record resolve to ONE tenant-scoped document instead of
+                    # duplicating it. The provider prefix keeps identities of
+                    # different providers distinct within a tenant.
+                    external_id=f"{config.provider.value}:{record.source_id}",
                 )
         except PiiGuardError as exc:
             await self._record_failure(context, config, "pii_guard_failed")

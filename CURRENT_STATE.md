@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract slice implemented (pending review/merge); Unified Intelligence — Secure Knowledge Reasoning Foundation slice implemented (pending review/merge); Connector Provider Integrations implemented (pending review)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation approved pending Person C follow-up (PR #34); Company Brain document identity & re-ingestion implemented per ADR-003 (this slice)
 
 ## Completed
 
@@ -849,6 +849,82 @@ triggering yet).
 
 - Human decision on dropping the orphaned local `webhook_events` table.
 - Commit, push, human review of the PR; merge into `main`.
+## Company Brain — Document Identity & Re-ingestion (Implemented — pending review)
+
+**Branch:** `feat/company-brain-document-identity`
+**Base:** `origin/main` @ `95b36e6`
+**Scope:** Person A — Company Brain primary. Defines logical document
+identity and re-ingestion/deduplication semantics per **ADR-003**
+(`docs/architecture/decisions/ADR-003-company-brain-document-identity-and-re-ingestion.md`),
+resolving the deferral recorded by the connector slice (repeated
+synchronization previously created duplicate logical documents).
+
+### What changed
+
+- **Identity (ADR-003):** a document's logical identity is
+  `(tenant_id, source, external_id)`. New nullable `external_id`
+  column on `knowledge_documents` plus a partial unique index
+  (`WHERE external_id IS NOT NULL`) — DB-enforced, tenant-participating,
+  idempotent under bootstrap, safe against pre-existing rows. Documents
+  ingested without an external identity keep the original create-always
+  behavior.
+- **Domain** (`src/arc/domain/models.py`): `KnowledgeDocument.external_id`
+  with fail-closed validation; docstring updated to define `version`
+  progression (starts at 1, +1 per accepted content change; no revision rows).
+- **Service** (`src/arc/services/knowledge.py`): `ingest_document(...,
+  external_id=None)` — sanitization ALWAYS runs first (including on
+  re-delivery); identical sanitized content → idempotent return of the
+  existing document (no version bump/chunk churn); changed content → new
+  chunks/embeddings prepared in memory BEFORE any write (embedding failure
+  aborts), then version+1 content update and whole chunk-set replacement in
+  one transaction; concurrent first delivery loses the insert race at the
+  identity index and re-resolves through the same logic.
+- **Repository** (`src/arc/repositories/knowledge.py`,
+  Protocol in `src/arc/repositories/__init__.py`): inserts carry
+  `external_id`; new `get_by_external_id` (strictly tenant+source scoped)
+  and `update_document_with_chunks` (UPDATE + chunk DELETE + chunk INSERT
+  in ONE transaction; any failure rolls back to the prior version and its
+  complete old index).
+- **Connectors** (`src/arc/services/connector_sync.py`): sync binds
+  `external_id = "{provider}:{record.source_id}"`; re-syncing one source
+  record now resolves to ONE tenant-scoped document.
+- **API**: unchanged (no new endpoints/permissions; manual ingestion has
+  no external identity by design).
+
+### Tests
+
+- Service-level: create-v1, idempotent redelivery (guard invoked every
+  time), changed-content version bump with chunk replacement,
+  embedding-failure aborts before write, PII failure fails closed on
+  re-ingestion, comparison on SANITIZED text, missing external_id legacy
+  behavior, cross-tenant identity independence, invalid external_id
+  rejected, lost-race recovery to the winner.
+- Repository-level (real PostgreSQL): identity index enforcement, NULL
+  exclusion, cross-tenant same-identity allowance, resolution scoping,
+  atomic chunk replacement, mid-transaction failure rollback preserving
+  prior version + chunks, concurrent first delivery creating exactly one
+  row end-to-end through `KnowledgeService`.
+- Connector-level: provider-scoped `external_id` binding; stable identity
+  across repeated syncs.
+
+### Security
+
+Tenant isolation preserved (identity lookups tenant-scoped; cross-tenant
+negative tests). PII-before-persistence preserved on every path including
+re-ingestion. Approved Context / `approved_search` / RBAC untouched.
+
+### Deferred (unchanged)
+
+Retroactive deduplication/cleanup of pre-existing duplicate rows;
+production embedding providers; hybrid retrieval/reranking.
+
+### Verification
+
+See PR description (Docker + real PostgreSQL suite, ruff, format, compose).
+
+### Pending
+
+- Human review of the PR; ADR-003 acceptance; merge into `main`.
 
 ## CI Baseline (Established)
 

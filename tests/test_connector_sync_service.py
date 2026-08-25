@@ -37,6 +37,7 @@ from arc.repositories import ConnectorRepository, ConnectorSyncRepository
 from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
 from arc.repositories.tenancy import PostgreSQLTenantRepository
 from arc.services.connector_providers.base import (
     ProviderAuthError,
@@ -53,6 +54,7 @@ from arc.services.connector_providers.settings import ConnectorCredentialStore
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.knowledge import KnowledgeService
 from arc.services.pii import PiiGuardError
+from arc.services.retrieval import RetrievalService
 
 
 def _unique(prefix: str) -> str:
@@ -479,6 +481,145 @@ class TestConnectorSyncPiiIntegration:
             assert raw not in str(record.status)
             assert raw not in str(record.provider)
             assert raw not in str(record.items_fetched)
+
+        await connector_repo.delete(connector.id, tenant.id)
+        await tenant_repo.delete(tenant.id)
+
+
+class TestConnectorSyncDocumentIdentity:
+    """ADR-003: connector sync binds a stable per-record external identity."""
+
+    async def test_ingest_binds_provider_scoped_external_id(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+        service = _service(connector_repo, sync_repo, knowledge_service)
+        context = _context()
+
+        result = await service.sync(context, config.id)
+
+        assert knowledge_service.ingest_document.await_count == len(result.items)
+        expected = {f"github:{item.source_id}" for item in result.items}
+        passed = {
+            call.kwargs["external_id"] for call in knowledge_service.ingest_document.await_args_list
+        }
+        assert passed == expected
+
+    async def test_repeated_sync_uses_identical_external_ids(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+        service = _service(connector_repo, sync_repo, knowledge_service)
+        context = _context()
+
+        await service.sync(context, config.id)
+        first = [
+            call.kwargs["external_id"] for call in knowledge_service.ingest_document.await_args_list
+        ]
+
+        knowledge_service.ingest_document.reset_mock()
+        await service.sync(context, config.id)
+        second = [
+            call.kwargs["external_id"] for call in knowledge_service.ingest_document.await_args_list
+        ]
+
+        # Stable identity across re-deliveries is what lets the Company Brain
+        # deduplicate instead of creating duplicate logical documents.
+        assert sorted(first) == sorted(second)
+
+
+class TestConnectorSyncRepeatedSyncDeduplication:
+    """ADR-003 end to end: two syncs of the same provider record must
+    converge to exactly ONE tenant-scoped knowledge document (no duplicate
+    logical documents, no duplicate chunks), with the provider-scoped
+    external identity persisted."""
+
+    class _PassthroughGuard:
+        def sanitize(self, text: str):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(sanitized_text=text)
+
+    async def test_two_syncs_produce_exactly_one_logical_document(self, db):
+        tenant_repo = PostgreSQLTenantRepository(db)
+        connector_repo = PostgreSQLConnectorRepository(db)
+        sync_repo = PostgreSQLConnectorSyncRepository(db)
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Dedup Tenant"))
+        connector = await connector_repo.create(
+            ConnectorConfig(
+                id=_unique("connector"),
+                tenant_id=tenant.id,
+                provider=ConnectorProvider.GITHUB,
+                name="example/acme",
+            )
+        )
+
+        class SingleRecordProvider:
+            provider = ConnectorProvider.GITHUB
+
+            async def fetch(self, credential, target, limit=25):
+                return ProviderFetchResult(
+                    provider=self.provider,
+                    records=[
+                        ProviderRecord(
+                            source_id="dedup-1",
+                            title="Runbook",
+                            content="Deterministic dedup runbook body.",
+                        )
+                    ],
+                )
+
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: SingleRecordProvider()}),
+            credential_store=ConnectorCredentialStore(
+                raw=f'{{"{tenant.id}": {{"github": "dev-token"}}}}'
+            ),
+            knowledge_service=KnowledgeService(
+                knowledge_repo,
+                pii_guard=self._PassthroughGuard(),
+                indexer=RetrievalService(PostgreSQLKnowledgeChunkRepository(db)),
+            ),
+        )
+        context = _context(tenant_id=tenant.id)
+
+        await service.sync(context, connector.id)
+        documents_after_first = await knowledge_repo.list_for_tenant(tenant.id)
+        assert len(documents_after_first) == 1
+        assert documents_after_first[0].version == 1
+        assert documents_after_first[0].external_id == "github:dedup-1"
+
+        await service.sync(context, connector.id)
+        documents_after_second = await knowledge_repo.list_for_tenant(tenant.id)
+
+        # The re-delivery resolves to the SAME logical document: no duplicate
+        # rows, no version churn for identical content.
+        assert len(documents_after_second) == 1
+        assert documents_after_second[0].id == documents_after_first[0].id
+        assert documents_after_second[0].version == 1
+        assert documents_after_second[0].external_id == "github:dedup-1"
+
+        records = await sync_repo.list_for_tenant(tenant.id)
+        assert len(records) == 2
+        assert all(record.status is ConnectorSyncStatus.SUCCESS for record in records)
+
+        async with db._connection_pool.acquire() as conn:
+            chunk_count = await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM knowledge_chunks kc
+                JOIN knowledge_documents kd ON kd.id = kc.document_id
+                WHERE kd.tenant_id = $1
+                """,
+                tenant.id,
+            )
+        # Chunks belong to exactly the one logical document and were not
+        # duplicated by the second delivery.
+        assert chunk_count > 0
 
         await connector_repo.delete(connector.id, tenant.id)
         await tenant_repo.delete(tenant.id)

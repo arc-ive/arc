@@ -63,6 +63,17 @@ CREATE TABLE IF NOT EXISTS knowledge_documents (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_documents_tenant_id ON knowledge_documents(tenant_id);
 
+-- Company Brain document identity (ADR-003): logical identity is the
+-- triple (tenant_id, source, external_id). NULL identities are excluded
+-- from the index and keep create-always behavior. Both statements are
+-- idempotent under bootstrap and safe against pre-existing rows where
+-- external_id is all NULL. NOTE: comment text must never contain a
+-- semicolon because the test/bootstrap splits this file on semicolons.
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS external_id VARCHAR(255);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_documents_identity
+    ON knowledge_documents (tenant_id, source, external_id)
+    WHERE external_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS skills (
     id VARCHAR(255) PRIMARY KEY,
     tenant_id VARCHAR(255) NOT NULL,

@@ -19,6 +19,8 @@ from arc.domain.models import (
     KnowledgeDocument,
     KnowledgeSource,
     Tenant,
+    TenantContext,
+    UserRole,
 )
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
 from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
@@ -269,3 +271,210 @@ class TestKnowledgeDocumentWithChunks:
             await knowledge_repo.create_document_with_chunks(
                 document, _chunks(document, count=1), _embeddings(1)
             )
+
+
+class TestKnowledgeDocumentIdentity:
+    """ADR-003: logical identity (tenant_id, source, external_id)."""
+
+    async def test_identity_uniqueness_enforced_by_database(self, knowledge_repo, seeded_tenant):
+        first = _document(seeded_tenant.id, external_id="ext-shared")
+        await knowledge_repo.create(first)
+
+        duplicate = _document(seeded_tenant.id, external_id="ext-shared")
+        with pytest.raises(DuplicateKeyError):
+            await knowledge_repo.create(duplicate)
+
+    async def test_null_external_id_is_excluded_from_identity(self, knowledge_repo, seeded_tenant):
+        await knowledge_repo.create(_document(seeded_tenant.id))
+        await knowledge_repo.create(_document(seeded_tenant.id))
+
+        rows = await knowledge_repo.list_for_tenant(seeded_tenant.id)
+        assert len(rows) == 2
+        assert all(row.external_id is None for row in rows)
+
+    async def test_same_identity_across_tenants_is_allowed(self, knowledge_repo, seeded_tenants):
+        tenant_a, tenant_b = seeded_tenants
+
+        doc_a = await knowledge_repo.create(_document(tenant_a.id, external_id="shared-ext"))
+        doc_b = await knowledge_repo.create(_document(tenant_b.id, external_id="shared-ext"))
+
+        assert doc_a.tenant_id != doc_b.tenant_id
+
+    async def test_get_by_external_id_round_trip_and_scoping(self, knowledge_repo, seeded_tenants):
+        tenant_a, tenant_b = seeded_tenants
+        created = await knowledge_repo.create(
+            _document(tenant_a.id, external_id="lookup-1", provenance="connector:github:42")
+        )
+
+        found = await knowledge_repo.get_by_external_id(
+            "lookup-1", KnowledgeSource.POLICY, tenant_a.id
+        )
+        assert found.id == created.id
+        assert found.external_id == "lookup-1"
+
+        with pytest.raises(NotFoundError):
+            await knowledge_repo.get_by_external_id("lookup-1", KnowledgeSource.POLICY, tenant_b.id)
+        with pytest.raises(NotFoundError):
+            await knowledge_repo.get_by_external_id(
+                "lookup-1", KnowledgeSource.SOLUTION, tenant_a.id
+            )
+        with pytest.raises(NotFoundError):
+            await knowledge_repo.get_by_external_id("missing", KnowledgeSource.POLICY, tenant_a.id)
+
+    async def test_update_replaces_document_and_chunks_atomically(
+        self, knowledge_repo, seeded_tenant
+    ):
+        document = _document(seeded_tenant.id, external_id="upd-1", content="old content")
+        old_chunks = _chunks(document, count=2)
+        await knowledge_repo.create_document_with_chunks(
+            document, old_chunks, _embeddings(len(old_chunks))
+        )
+
+        updated = KnowledgeDocument(
+            id=document.id,
+            tenant_id=document.tenant_id,
+            source=document.source,
+            provenance=document.provenance,
+            version=document.version + 1,
+            status=document.status,
+            content="new content",
+            external_id=document.external_id,
+            created_at=document.created_at,
+            updated_at=datetime.now(),
+        )
+        new_chunks = _chunks(document, count=1)
+        result = await knowledge_repo.update_document_with_chunks(
+            updated, new_chunks, _embeddings(len(new_chunks))
+        )
+
+        assert result.version == 2
+        assert result.content == "new content"
+        stored = await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
+        assert stored.version == 2
+        assert stored.content == "new content"
+
+        async with knowledge_repo.db._connection_pool.acquire() as conn:
+            chunk_ids = await conn.fetch(
+                "SELECT id FROM knowledge_chunks WHERE document_id = $1",
+                document.id,
+            )
+        assert {row["id"] for row in chunk_ids} == {new_chunks[0].id}
+
+    async def test_update_failure_rolls_back_to_prior_version_and_chunks(
+        self, knowledge_repo, seeded_tenant
+    ):
+        document = _document(seeded_tenant.id, external_id="rb-1", content="old content")
+        old_chunks = _chunks(document, count=2)
+        await knowledge_repo.create_document_with_chunks(
+            document, old_chunks, _embeddings(len(old_chunks))
+        )
+
+        # Two chunks share one id: the second insert violates the chunk PK
+        # INSIDE the transaction (after the UPDATE and DELETE), so the whole
+        # operation must roll back to the prior version and prior chunks.
+        broken_new_chunks = [
+            KnowledgeChunk(
+                id="duplicate-chunk-id",
+                document_id=document.id,
+                tenant_id=document.tenant_id,
+                content="new chunk a",
+                sequence=0,
+                created_at=datetime.now(),
+            ),
+            KnowledgeChunk(
+                id="duplicate-chunk-id",
+                document_id=document.id,
+                tenant_id=document.tenant_id,
+                content="new chunk b",
+                sequence=1,
+                created_at=datetime.now(),
+            ),
+        ]
+        bumped = KnowledgeDocument(
+            id=document.id,
+            tenant_id=document.tenant_id,
+            source=document.source,
+            provenance=document.provenance,
+            version=document.version + 1,
+            status=document.status,
+            content="doomed new content",
+            external_id=document.external_id,
+            created_at=document.created_at,
+            updated_at=datetime.now(),
+        )
+        with pytest.raises(DuplicateKeyError):
+            await knowledge_repo.update_document_with_chunks(
+                bumped, broken_new_chunks, _embeddings(len(broken_new_chunks))
+            )
+
+        stored = await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
+        assert stored.version == 1
+        assert stored.content == "old content"
+
+        async with knowledge_repo.db._connection_pool.acquire() as conn:
+            remaining = await conn.fetch(
+                "SELECT id FROM knowledge_chunks WHERE document_id = $1 ORDER BY sequence",
+                document.id,
+            )
+        assert [row["id"] for row in remaining] == [chunk.id for chunk in old_chunks]
+
+
+class TestConcurrentIdentityIngestion:
+    """ADR-003 concurrency: races are resolved by the database invariant."""
+
+    class _PassthroughGuard:
+        def sanitize(self, text: str):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(sanitized_text=text)
+
+    async def test_concurrent_first_delivery_creates_exactly_one_row(self, db, seeded_tenant):
+        import asyncio
+
+        from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+        from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+        from arc.services.knowledge import KnowledgeService
+        from arc.services.retrieval import RetrievalService
+
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        indexer = RetrievalService(PostgreSQLKnowledgeChunkRepository(db))
+        service = KnowledgeService(
+            knowledge_repo, pii_guard=self._PassthroughGuard(), indexer=indexer
+        )
+        context = TenantContext(
+            tenant_id=seeded_tenant.id,
+            tenant_name="Concurrent",
+            user_id="user-1",
+            role=UserRole.MEMBER,
+        )
+
+        results = await asyncio.gather(
+            service.ingest_document(
+                context,
+                source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+                provenance="connector:github:race",
+                content="identical concurrent content",
+                external_id="github:race",
+            ),
+            service.ingest_document(
+                context,
+                source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+                provenance="connector:github:race",
+                content="identical concurrent content",
+                external_id="github:race",
+            ),
+        )
+
+        assert results[0].id == results[1].id
+        assert results[0].version == 1
+
+        async with db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id FROM knowledge_documents
+                WHERE tenant_id = $1 AND external_id = $2
+                """,
+                seeded_tenant.id,
+                "github:race",
+            )
+        assert len(rows) == 1
