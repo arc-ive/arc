@@ -23,7 +23,7 @@ provisioning) are isolated in ``arc.api.dev_controllers``.
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
 from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import (
@@ -37,6 +37,7 @@ from arc.domain.models import (
     Tenant,
     TenantContext,
     User,
+    WebhookEvent,
 )
 from arc.security.authorization import (
     CONNECTOR_CREATE,
@@ -54,6 +55,7 @@ from arc.security.authorization import (
     TOOL_EXECUTE,
     TOOL_READ,
     USER_CREATE,
+    WEBHOOK_READ,
     AuthorizationService,
 )
 from arc.security.dependencies import (
@@ -86,6 +88,12 @@ from arc.services.tools import (
     ToolExecutionService,
     ToolNotFoundError,
     ToolValidationError,
+)
+from arc.services.webhook_ingestion import (
+    WebhookAuthenticationError,
+    WebhookIngestionError,
+    WebhookIngestionService,
+    WebhookValidationError,
 )
 
 
@@ -158,6 +166,10 @@ class ApplicationContext:
     @property
     def tool_service(self) -> ToolExecutionService:
         return self.services.get("tool_service")
+
+    @property
+    def webhook_ingestion_service(self) -> WebhookIngestionService:
+        return self.services.get("webhook_ingestion_service")
 
     @property
     def observability_service(self):
@@ -942,6 +954,90 @@ async def sync_connector(
             for item in result.items
         ],
     }
+
+
+def _webhook_event_payload(event: WebhookEvent, duplicate: bool) -> Dict[str, Any]:
+    """Serialize a WebhookEvent without exposing any payload content."""
+    return {
+        "id": event.id,
+        "tenant_id": event.tenant_id,
+        "endpoint_id": event.endpoint_id,
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+        "status": event.status.value,
+        "payload_size_bytes": event.payload_size_bytes,
+        "created_at": event.created_at.isoformat(),
+        "duplicate": duplicate,
+    }
+
+
+@api_router.post("/webhooks/{endpoint_id}/events")
+async def ingest_webhook_event(
+    endpoint_id: str,
+    request: Request,
+    webhook_ingestion_service: WebhookIngestionService = Depends(
+        lambda: app_context.webhook_ingestion_service
+    ),
+) -> Dict[str, Any]:
+    """Receive one inbound webhook delivery (machine-to-machine).
+
+    NOT RBAC-gated by design (ADR-001 webhook security boundary):
+    external senders hold no Arc identity. Authentication is per-endpoint
+    HMAC-SHA256 over ``{timestamp}.{raw_body}`` with the signing secret
+    and tenant binding provisioned exclusively through environment
+    configuration; request input can never select a tenant.
+
+    All authentication failures are UNIFORM 401s so senders cannot
+    enumerate valid endpoints. Duplicate deliveries are idempotent:
+    they return the original record with ``duplicate=true`` instead of
+    creating a second row. Raw payloads are never persisted or returned.
+    """
+    body = await request.body()
+    timestamp_header = request.headers.get("X-Arc-Timestamp", "")
+    signature_header = request.headers.get("X-Arc-Signature", "")
+
+    try:
+        result = await webhook_ingestion_service.ingest(
+            endpoint_id, timestamp_header, signature_header, body
+        )
+    except WebhookAuthenticationError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Webhook authentication failed",
+        )
+    except WebhookValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except WebhookIngestionError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook ingestion failed",
+        )
+
+    return _webhook_event_payload(result.event, result.duplicate)
+
+
+@api_router.get("/tenants/{tenant_id}/webhooks/events")
+async def list_webhook_events(
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(WEBHOOK_READ)),
+    webhook_ingestion_service: WebhookIngestionService = Depends(
+        lambda: app_context.webhook_ingestion_service
+    ),
+) -> List[Dict[str, Any]]:
+    """List the caller's tenant webhook event records.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``webhook:read`` permission. The path ``tenant_id`` is validated for
+    consistency against the trusted context (403 on mismatch). Only safe
+    envelope metadata is returned; payload content was never stored.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    events = await webhook_ingestion_service.list_events(context)
+    return [_webhook_event_payload(event, False) for event in events]
 
 
 @api_router.get("/tenants/{tenant_id}/observability/usage-summary")

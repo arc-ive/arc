@@ -15,6 +15,7 @@ from arc.repositories.tenancy import (
     PostgreSQLUserRepository,
 )
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
+from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
 from arc.services.chunking import KnowledgeChunker
 from arc.services.connector_providers import (
     ConnectorCredentialStore,
@@ -32,6 +33,8 @@ from arc.services.observability import ObservabilityService
 from arc.services.retrieval import RetrievalService
 from arc.services.skills import SkillService
 from arc.services.tools import ToolExecutionService, build_platform_tool_registry
+from arc.services.webhook_config import WebhookEndpointStore
+from arc.services.webhook_ingestion import WebhookIngestionService
 
 
 class Application:
@@ -70,6 +73,7 @@ class Application:
             "knowledge_chunk": PostgreSQLKnowledgeChunkRepository(self.db),
             "skill": PostgreSQLSkillRepository(self.db),
             "tool_execution": PostgreSQLToolExecutionRepository(self.db),
+            "webhook_events": PostgreSQLWebhookEventRepository(self.db),
             "observability": PostgreSQLObservabilityRepository(self.db),
         }
 
@@ -148,6 +152,17 @@ class Application:
             knowledge_service=KnowledgeService(
                 self.repositories["knowledge"], indexer=retrieval_service
             ),
+        )
+
+        # Initialize webhook ingestion (Webhooks foundation, PRD 16 /
+        # TRD 16 / ADR-001 webhook security boundary): inbound-only,
+        # HMAC-authenticated per environment-configured endpoint. The
+        # tenant binding and signing secret come exclusively from the
+        # WEBHOOK_INGESTION_ENDPOINTS environment configuration; secrets
+        # are never logged, returned, or persisted.
+        self.services["webhook_ingestion_service"] = WebhookIngestionService(
+            endpoint_store=WebhookEndpointStore(),
+            repository=self.repositories["webhook_events"],
         )
 
         # Register services in app context

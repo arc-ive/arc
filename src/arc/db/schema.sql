@@ -150,6 +150,28 @@ CREATE TABLE IF NOT EXISTS connector_sync_records (
 
 CREATE INDEX IF NOT EXISTS idx_connector_sync_records_tenant_id ON connector_sync_records(tenant_id);
 
+-- Webhooks foundation (PRD 16, TRD 16): tenant-scoped records of
+-- validated inbound webhook events. Records are metadata-only by design:
+-- raw external payloads are untrusted input (ADR-001 webhook security
+-- boundary) and are never persisted. The (tenant_id, event_id)
+-- uniqueness pair is the duplicate-handling contract: a re-delivered
+-- event resolves to the original record instead of creating a new row.
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    endpoint_id VARCHAR(255) NOT NULL,
+    event_id VARCHAR(255) NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'received',
+    payload_size_bytes INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_webhook_events_status CHECK (status IN ('received')),
+    CONSTRAINT ck_webhook_events_payload_size CHECK (payload_size_bytes >= 0),
+    CONSTRAINT uq_webhook_events_tenant_event UNIQUE (tenant_id, event_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_events_tenant_id ON webhook_events(tenant_id);
 -- Observability foundation (PRD 17, TRD 17/28/31): metadata-only HTTP
 -- telemetry owned by the Observability/API layer. This is NOT a generic
 -- event table and never duplicates subsystem records - tool executions,

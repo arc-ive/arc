@@ -59,7 +59,7 @@ class RetrievalMethod(str, Enum):
 
     Only ``DENSE_SEMANTIC`` is implemented in this slice. Lexical,
     hybrid/fusion, reranked, and modular routing are later maturity
-    layers (proposal §10): they must be added as new enum values behind
+    layers (proposal ┬º10): they must be added as new enum values behind
     the same security boundary without changing the contract shape.
     """
 
@@ -457,7 +457,7 @@ class ApprovedContext:
 
     Produced by ``RetrievalService.approved_search`` from the trusted
     ``TenantContext`` and tenant-scoped retrieval results. A future
-    LLM/Unified Intelligence layer receives only this contract — never
+    LLM/Unified Intelligence layer receives only this contract ΓÇö never
     direct access to PostgreSQL, pgvector, raw documents, or
     authorization state.
 
@@ -655,6 +655,71 @@ class ToolExecutionRecord:
             raise ValueError(f"Invalid tool risk level: {self.risk_level!r}")
         if not isinstance(self.input_summary, str) or not self.input_summary:
             raise ValueError("Tool input summary must be a non-empty string")
+
+
+class WebhookEventStatus(str, Enum):
+    """Lifecycle status of an ingested webhook event.
+
+    The Webhooks foundation slice establishes a single terminal state:
+    every accepted event is validated and recorded as ``received``
+    (PRD 16 processing status). Triggering downstream processing is a
+    future slice; new states are added only through approved decisions.
+    """
+
+    RECEIVED = "received"
+
+
+@dataclass
+class WebhookEvent:
+    """Tenant-scoped record of one ingested webhook event (PRD 23 "Event").
+
+    The record is deliberately metadata-only: it never stores the raw
+    external payload. Webhook payloads are untrusted external input
+    (ADR-001 webhook security boundary) and may contain PII; until an
+    approved PII/storage decision exists for event content, only safe
+    envelope metadata is persisted:
+
+    - which ingestion endpoint received the event (``endpoint_id``);
+    - the tenant the event is bound to (``tenant_id``, resolved from the
+      trusted endpoint configuration, NEVER from request input);
+    - the sender-supplied unique event identifier (``event_id``), used
+      for duplicate handling;
+    - the event type label and payload size in bytes;
+    - the processing status and record timestamp.
+    """
+
+    id: str
+    tenant_id: str
+    endpoint_id: str
+    event_id: str
+    event_type: str
+    status: WebhookEventStatus = WebhookEventStatus.RECEIVED
+    payload_size_bytes: int = 0
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Webhook event ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Webhook event tenant ID cannot be empty")
+        if not self.endpoint_id:
+            raise ValueError("Webhook event endpoint ID cannot be empty")
+        if not isinstance(self.event_id, str) or not self.event_id:
+            raise ValueError("Webhook event identifier cannot be empty")
+        if len(self.event_id) > 255:
+            raise ValueError("Webhook event identifier cannot exceed 255 characters")
+        if not isinstance(self.event_type, str) or not self.event_type:
+            raise ValueError("Webhook event type cannot be empty")
+        if len(self.event_type) > 100:
+            raise ValueError("Webhook event type cannot exceed 100 characters")
+        if not isinstance(self.status, WebhookEventStatus):
+            raise ValueError(f"Invalid webhook event status: {self.status!r}")
+        if not isinstance(self.payload_size_bytes, int) or isinstance(
+            self.payload_size_bytes, bool
+        ):
+            raise ValueError("Webhook event payload size must be an integer")
+        if self.payload_size_bytes < 0:
+            raise ValueError("Webhook event payload size cannot be negative")
 
 
 class ApiRequestMethod:
