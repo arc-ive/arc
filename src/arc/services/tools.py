@@ -46,6 +46,7 @@ Audit ownership boundary:
   denial is recorded with ``authorization_outcome=DENIED``.
 """
 
+import hashlib
 import json
 import re
 import uuid
@@ -442,9 +443,15 @@ class ToolExecutionService:
     handler can run.
     """
 
-    def __init__(self, registry: ToolRegistry, record_repo):
+    def __init__(self, registry: ToolRegistry, record_repo, approval_service=None):
         self.registry = registry
         self.record_repo = record_repo
+        # Optional Human Intervention gate (V1 foundation). When wired, a
+        # REQUIRE_HUMAN_APPROVAL policy stop records a pending approval bound
+        # to the EXACT validated request; the fail-closed denial below is
+        # unchanged. Consumption happens only via a later authorized
+        # execute_tool call in a future integration slice.
+        self.approval_service = approval_service
 
     def list_tools(self, context: TenantContext) -> List[ToolDefinition]:
         """Return the platform-owned AI Tool catalog for the trusted tenant.
@@ -544,8 +551,41 @@ class ToolExecutionService:
             )
             raise ToolDeniedError(tool_name)
         if policy_outcome == ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL:
-            # Human Intervention is not implemented: fail closed rather
-            # than silently bypassing the approval policy.
+            # Human Intervention approval gate (V1 foundation): validate the
+            # arguments with the SAME canonical input model the execution
+            # path uses, bind a pending approval to that exact validated
+            # representation, then fail closed exactly as before. Invalid
+            # arguments surface their existing controlled invalid_input
+            # error and never create an approval request.
+            try:
+                validated = tool.input_model.model_validate(raw_input)
+            except ValidationError:
+                await self._record_failure(
+                    context=context,
+                    user_id=principal.user_id,
+                    authorization_outcome=ToolAuthorizationOutcome.GRANTED,
+                    tool_name=tool.name,
+                    tool_version=tool.version,
+                    risk_level=tool.risk_level,
+                    input_summary=_summarize(raw_input),
+                    error_kind="invalid_input",
+                )
+                raise ToolValidationError(tool_name)
+
+            arguments_digest = hashlib.sha256(
+                validated.model_dump_json().encode("utf-8")
+            ).hexdigest()
+            if self.approval_service is not None:
+                await self.approval_service.record_required_approval(
+                    tenant_id=context.tenant_id,
+                    requester_user_id=principal.user_id,
+                    tool_name=tool.name,
+                    tool_version=tool.version,
+                    risk_level=tool.risk_level.value,
+                    input_summary=_summarize(raw_input),
+                    arguments_digest=arguments_digest,
+                )
+
             await self._record_failure(
                 context=context,
                 user_id=principal.user_id,

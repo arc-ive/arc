@@ -1088,6 +1088,64 @@ separate deferred item.
 - ruff check/format clean; compileall clean; compose config valid;
   git diff --check / conflict-marker / secret scans clean.
 
+## Human Intervention — Approval-Gate V1 Foundation (Implemented — pending review)
+
+**Branch:** `feat/human-approval-gate-v1`
+**Base:** `origin/main` @ `9cdcfc2`
+**Scope:** Bharath G — approval persistence/repository/service/lifecycle/
+RBAC/API per the locked Bala/Joe contract. Intelligence/Skills integration,
+auto-execution, notifications, observability counters, and background
+expiry are explicitly later slices.
+
+### What changed
+
+- **Domain**: `ApprovalStatus` (pending/approved/rejected/expired/
+  consumed; terminal immutability; single-use consumption) and
+  `ApprovalRequest` (tenant + requester + tool identity/version +
+  redacted summary + SHA-256 `arguments_digest` of the canonically
+  VALIDATED pydantic input; TTL fields; lazy
+  `effective_status(now)` derivation).
+- **Schema**: idempotent `approval_requests` table (tenant FK cascade,
+  status CHECK over five states, digest format CHECK, tenant/status and
+  created_at indexes). Raw tool arguments never stored.
+- **Repository**: `PostgreSQLApprovalRequestRepository` (+Protocol) —
+  create/get/list plus ATOMIC conditional transitions:
+  `expire_if_due` (pending+past-due→expired), `decide`
+  (pending→approved/rejected with decider identity),
+  `consume` (approved→consumed ONLY for exact tool/version/digest
+  binding, unexpired, not-yet-consumed). Concurrent consumers serialize;
+  exactly one wins. Every query tenant-scoped in SQL.
+- **Service**: `HumanApprovalService` — best-effort idempotent creation
+  (`record_required_approval`; reuse of open identical request;
+  persistence failure logged, denial still fail-closed), reads deriving
+  expiry without mutation, decisions recording the JWT-derived approver
+  identity, and `consume_approval` returning precise controlled errors
+  (NotFound/State/Expired/Binding/Consumed). TTL = exactly 24 h via
+  injected clock (no background infrastructure).
+- **ToolExecutionService hook**: on REQUIRE_HUMAN_APPROVAL the existing
+  policy stop now validates arguments with the SAME input model as
+  execution, computes the canonical digest, records the approval through
+  the optional injected gate service, then audits
+  `requires_human_approval` and raises `ToolDeniedError` exactly as
+  before (invalid arguments audit invalid_input and never create an
+  approval; unwired service preserves prior behavior).
+- **RBAC**: additive `approval:read` / `approval:decide` granted to
+  PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR only (operations user
+  and employees denied); centralized matrix, default DENY.
+- **API**: `GET /tenants/{t}/approvals[?status=]`,
+  `GET /tenants/{t}/approvals/{id}`,
+  `POST /tenants/{t}/approvals/{id}/decisions` (`approve`|`reject`)
+  behind `require_tenant_permission(APPROVAL_READ/DECIDE)` + path-
+  consistency 403. Responses expose decision-minimum metadata only —
+  never raw arguments or the internal digest.
+- **Wiring**: repository/service at composition root; gate injected into
+  ToolExecutionService.
+
+### Verification
+
+- Full suite fresh throwaway DB and warm DB green (counts below);
+  ruff/format/compileall/compose-config/diff/marker/secret gates clean.
+
 ## CI Baseline (Established)
 
 **Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)

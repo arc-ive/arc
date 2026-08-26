@@ -8,6 +8,7 @@ including controlled failures and authorization denials, produces an
 observable tenant-scoped record.
 """
 
+import hashlib
 import uuid
 from dataclasses import replace
 
@@ -784,3 +785,121 @@ async def test_high_risk_tool_never_executes_with_allow_mode(repositories, db):
     assert len(records) == 1
     assert records[0].status == ToolExecutionStatus.FAILED
     assert records[0].error_kind == "invalid_policy_metadata"
+
+
+class TestApprovalGateCreationHook:
+    """V1 approval-gate foundation: REQUIRE_HUMAN_APPROVAL records a
+    pending approval bound to the canonically VALIDATED arguments, then
+    still fails closed exactly as before."""
+
+    class RecordingApprovalService:
+        def __init__(self):
+            self.calls = []
+
+        async def record_required_approval(self, **kwargs):
+            self.calls.append(kwargs)
+            return f"appr-{len(self.calls)}"
+
+    def _service_with_gate(self, db):
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+        )
+        gate = self.RecordingApprovalService()
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}),
+            PostgreSQLToolExecutionRepository(db),
+            approval_service=gate,
+        )
+        return service, gate
+
+    async def test_policy_stop_records_pending_approval_with_validated_digest(
+        self, repositories, db
+    ):
+        service, gate = self._service_with_gate(db)
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        context = _context(tenant.id)
+
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                context, _principal(), "check_service_health", {}, _authorization()
+            )
+
+        assert len(gate.calls) == 1
+        call = gate.calls[0]
+        assert call["tenant_id"] == tenant.id
+        assert call["requester_user_id"] == "user-1"
+        assert call["tool_name"] == "check_service_health"
+        assert call["tool_version"] == SERVICE_HEALTH_TOOL.version
+        assert call["risk_level"] == "low"
+
+        # Digest binds the CANONICAL VALIDATED representation.
+        from arc.services.tools import SERVICE_HEALTH_TOOL as canonical_tool
+
+        expected = hashlib.sha256(
+            canonical_tool.input_model.model_validate({}).model_dump_json().encode("utf-8")
+        ).hexdigest()
+        assert call["arguments_digest"] == expected
+
+        records = await service.record_repo.list_for_tenant(tenant.id)
+        assert records[0].error_kind == "requires_human_approval"
+
+    async def test_invalid_arguments_never_create_an_approval(self, repositories, db):
+        service, gate = self._service_with_gate(db)
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        context = _context(tenant.id)
+
+        with pytest.raises(ToolValidationError):
+            await service.execute_tool(
+                context,
+                _principal(),
+                "check_service_health",
+                {"target": 12345},  # schema-invalid input
+                _authorization(),
+            )
+        assert gate.calls == []
+
+    async def test_unwired_approval_service_preserves_legacy_fail_closed(self, repositories, db):
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+        )
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}), PostgreSQLToolExecutionRepository(db)
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                _context(tenant.id),
+                _principal(),
+                "check_service_health",
+                {},
+                _authorization(),
+            )
+
+    async def test_digest_differs_for_materially_different_arguments(self, repositories, db):
+        """The digest binds the CANONICAL VALIDATED representation: two
+        inputs that differ after validation produce different digests."""
+        import hashlib as _hashlib
+
+        from pydantic import BaseModel, ConfigDict
+
+        class _Probe(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            target: str
+
+        digest_first = _hashlib.sha256(
+            _Probe.model_validate({"target": "payments-api"}).model_dump_json().encode()
+        ).hexdigest()
+        digest_second = _hashlib.sha256(
+            _Probe.model_validate({"target": "billing-api"}).model_dump_json().encode()
+        ).hexdigest()
+        assert digest_first != digest_second
+        assert len(digest_first) == 64

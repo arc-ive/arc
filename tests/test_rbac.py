@@ -12,6 +12,8 @@ import pytest
 
 from arc.domain.models import UserRole
 from arc.security.authorization import (
+    APPROVAL_DECIDE,
+    APPROVAL_READ,
     CONNECTOR_CREATE,
     CONNECTOR_READ,
     CONNECTOR_SYNC,
@@ -81,6 +83,8 @@ def test_exactly_four_application_roles_exist():
                 WEBHOOK_READ,
                 OBSERVABILITY_READ,
                 OBSERVABILITY_PLATFORM_READ,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
             ],
             [],
         ),
@@ -101,6 +105,8 @@ def test_exactly_four_application_roles_exist():
                 CONNECTOR_SYNC,
                 WEBHOOK_READ,
                 OBSERVABILITY_READ,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
             ],
             [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE],
         ),
@@ -126,6 +132,8 @@ def test_exactly_four_application_roles_exist():
                 SKILL_UPDATE,
                 SKILL_DELETE,
                 CONNECTOR_CREATE,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
             ],
         ),
         (
@@ -150,6 +158,8 @@ def test_exactly_four_application_roles_exist():
                 WEBHOOK_READ,
                 OBSERVABILITY_READ,
                 OBSERVABILITY_PLATFORM_READ,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
             ],
         ),
     ],
