@@ -1042,6 +1042,52 @@ See PR description (Docker + real PostgreSQL suite, ruff, format, compose).
 
 - Human review of the PR; ADR-003 acceptance; merge into `main`.
 
+## Webhooks — Ingestion Body-Cap Hardening (Implemented — pending review)
+
+**Branch:** `fix/webhook-ingestion-body-cap`
+**Base:** `origin/main` @ `bc9b436`
+**Scope:** Bharath G — Webhooks. Narrow production-readiness follow-up
+from Bala's APPROVED PR #34 review: `POST /webhooks/{endpoint_id}/events`
+previously buffered the complete unauthenticated body (`await
+request.body()`) before any size check. Answers recorded by Bala/Joe:
+keep the 400 contract; oversize may reject before HMAC/timestamp
+verification; stop consuming past the cap (no drain); rate limiting is a
+separate deferred item.
+
+### What changed
+
+- `src/arc/api/controllers.py` only (+ private helper): new
+  `_read_capped_body(request, max_bytes)` — Content-Length serves as an
+  EARLY-REJECTION FAST PATH only (client-controlled, never enforcement);
+  otherwise the body streams via `request.stream()` with a hard
+  cumulative cap at `MAX_BODY_BYTES` (65536). Reads STOP as soon as the
+  cap trips — the remaining stream is intentionally not drained.
+  Bodies ≤ cap are returned byte-exact to `WebhookIngestionService`, so
+  HMAC-over-exact-received-body semantics and all authentication,
+  tenant-binding, idempotency, and audit behavior are unchanged. The
+  oversize rejection keeps the EXISTING 400 response/message, is
+  endpoint-independent (no enumeration signal), and deliberately
+  precedes authentication (an aborted read cannot be verified).
+- Stack verification: Starlette `Request.stream()` consumes raw chunks;
+  Uvicorn pauses socket reads at its own 64 KB high-water mark
+  (`flow_control.HIGH_WATER_LIMIT`) and closes a connection whose body
+  was left unconsumed after the response — so stopping mid-stream adds
+  no unbounded buffering and no middleware/ASGI machinery was needed.
+- `tests/test_webhook_api.py` (+10): exact-cap success (valid JSON
+  envelope sized to precisely 65536), oversize→400 without credentials,
+  endpoint-independent identical 400 bodies, no payload echo, chunked
+  within/over cap, misleading-large CL fast path, direct stop-consumption
+  proof against a fabricated `receive()` (reader must never request a
+  chunk past the cap), exact-cap stream-reader round-trip. Service-level
+  `MAX_BODY_BYTES` validation retained as defense-in-depth.
+
+### Verification
+
+- Fresh throwaway DB: **880 passed, 1 skipped**. Warm DB: **880 passed,
+  1 skipped** (skip = pre-existing observability absent-source guard).
+- ruff check/format clean; compileall clean; compose config valid;
+  git diff --check / conflict-marker / secret scans clean.
+
 ## CI Baseline (Established)
 
 **Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
