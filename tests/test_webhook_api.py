@@ -20,6 +20,8 @@ import time
 import uuid
 
 import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
 
 from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
 from arc.main import app
@@ -443,3 +445,157 @@ class TestWebhookTenantCascade:
         tenants = PostgreSQLTenantRepository(db)
         await tenants.delete(webhook_tenant.id)
         assert await repo.list_for_tenant(webhook_tenant.id) == []
+
+
+class TestBodyCapHardening:
+    """Body-cap production hardening (approved PR #34 review follow-up).
+
+    Oversized bodies are rejected with the EXISTING 400 contract BEFORE
+    authentication (deliberate precedence: prevents unauthenticated
+    buffering; endpoint-independent, so nothing is revealed). Bodies
+    within the cap keep byte-exact HMAC semantics and unchanged uniform
+    401 behavior.
+    """
+
+    def _oversize(self) -> bytes:
+        return b"x" * (MAX_BODY_BYTES + 1)
+
+    async def test_exactly_max_bytes_with_valid_signature_succeeds(
+        self, client, db, webhook_tenant
+    ):
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            # Valid JSON envelope padded to EXACTLY the cap.
+            base = {
+                "event_id": _unique("sender-event"),
+                "event_type": "issue.opened",
+                "data": {"note": ""},
+            }
+            empty_len = len(json.dumps(base))
+            base["data"]["note"] = "x" * (MAX_BODY_BYTES - empty_len)
+            body = json.dumps(base).encode("utf-8")
+            assert len(body) == MAX_BODY_BYTES
+            response = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=body,
+                headers=_signed_headers(body),
+            )
+        finally:
+            restore()
+        assert response.status_code == 200
+        assert response.json()["duplicate"] is False
+
+    async def test_oversize_rejected_before_authentication_even_without_credentials(
+        self, client, db, webhook_tenant
+    ):
+        """No timestamp/signature at all + oversize => 400 (not 401)."""
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            response = client.post(f"/webhooks/{ENDPOINT_ID}/events", content=self._oversize())
+        finally:
+            restore()
+        assert response.status_code == 400
+
+    async def test_oversize_response_is_endpoint_independent(self, client, webhook_tenant):
+        """Same 400 for unknown and known endpoints: no enumeration signal."""
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            known = client.post(f"/webhooks/{ENDPOINT_ID}/events", content=self._oversize())
+            unknown = client.post(
+                f"/webhooks/{'unknown-endpoint'}/events", content=self._oversize()
+            )
+        finally:
+            restore()
+        assert known.status_code == unknown.status_code == 400
+        assert known.json() == unknown.json()
+
+    async def test_oversize_does_not_echo_payload(self, client, webhook_tenant):
+        marker = b"UNIQUESUPERSECRETCONTENT123"
+        body = marker * 4096  # ~96 KB, contains the unique marker throughout
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            response = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=body,
+                headers=_signed_headers(body),
+            )
+        finally:
+            restore()
+        assert response.status_code == 400
+        assert "UNIQUESUPERSECRETCONTENT123" not in response.text
+        assert "xxxxxx" not in response.text
+
+    async def test_chunked_transfer_within_cap_succeeds(self, client, db, webhook_tenant):
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            body = _valid_body()
+            response = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=iter([body[:100], body[100:]]),  # chunked, no Content-Length
+                headers=_signed_headers(body),
+            )
+        finally:
+            restore()
+        assert response.status_code == 200
+
+    async def test_chunked_transfer_over_cap_is_rejected(self, client, db, webhook_tenant):
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            body = self._oversize()
+            response = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=iter([body[:50000], body[50000:]]),  # chunked over cap
+                headers=_signed_headers(body),
+            )
+        finally:
+            restore()
+        assert response.status_code == 400
+        records = await PostgreSQLWebhookEventRepository(db).list_for_tenant(webhook_tenant.id)
+        assert records == []
+
+    async def test_misleading_large_content_length_hits_fast_path(self, client, webhook_tenant):
+        """CL present and clearly exceeding the cap => early 400 without read."""
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            response = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=b"tiny",
+                headers={"Content-Length": str(MAX_BODY_BYTES + 1)},
+            )
+        finally:
+            restore()
+        assert response.status_code == 400
+
+    async def test_capped_reader_stops_consuming_past_limit(self):
+        """Direct proof: the reader never pulls chunks beyond the cap."""
+        from arc.api.controllers import _read_capped_body
+
+        pulled_chunks: list[int] = []
+        chunk = b"a" * 30000  # 3 chunks exceed 65536 cumulative
+
+        async def receive():
+            if len(pulled_chunks) >= 4:
+                raise AssertionError("reader consumed beyond the cap")
+            pulled_chunks.append(len(chunk))
+            return {"type": "http.request", "body": chunk, "more_body": True}
+
+        scope = {"type": "http", "method": "POST", "headers": []}
+        request = Request(scope, receive)
+        with pytest.raises(HTTPException) as excinfo:
+            await _read_capped_body(request, MAX_BODY_BYTES)
+        assert excinfo.value.status_code == 400
+        # cap tripped inside chunk 3; chunk 4 must never have been requested
+        assert len(pulled_chunks) == 3
+
+    async def test_exact_cap_boundary_via_stream_reader_succeeds(self):
+        from arc.api.controllers import _read_capped_body
+
+        body = b"b" * MAX_BODY_BYTES
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request = Request({"type": "http", "headers": []}, receive)
+        result = await _read_capped_body(request, MAX_BODY_BYTES)
+        assert result == body
+        assert len(result) == MAX_BODY_BYTES
