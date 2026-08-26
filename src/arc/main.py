@@ -6,9 +6,15 @@ from fastapi import FastAPI
 
 from arc.api.controllers import api_router
 from arc.api.dev_controllers import dev_router
+from arc.api.middleware import RequestTelemetryMiddleware
 
 # Import app instance to register services
 from arc.app import app as arc_app
+from arc.observability_logging import configure_observability_logging
+
+# Structured application logging (TRD 28): stdlib only, correlation-ID
+# filter, safe metadata content policy. Installed once at import time.
+configure_observability_logging()
 
 # Create FastAPI application
 app = FastAPI(
@@ -17,6 +23,14 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Observability-owned request correlation + best-effort HTTP telemetry.
+# The service is resolved lazily per request so telemetry remains
+# optional: until application startup completes, requests are still
+# correlated via X-Request-ID but not persisted.
+app.add_middleware(
+    RequestTelemetryMiddleware,
+    service_provider=lambda: arc_app.services.get("observability_service"),
+)
 
 # Include API router
 app.include_router(api_router)

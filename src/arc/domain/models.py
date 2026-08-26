@@ -31,6 +31,41 @@ class ConnectorStatus(str, Enum):
     ERROR = "error"
 
 
+class KnowledgeStatus(str, Enum):
+    """Lifecycle status of a knowledge document."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class KnowledgeSource(str, Enum):
+    """Origin of a knowledge document.
+
+    Source values map to the semantic knowledge categories in TRD 9.2
+    (company policies, support procedures, incident reports,
+    troubleshooting documents, internal knowledge, historical solutions).
+    """
+
+    POLICY = "policy"
+    PROCEDURE = "procedure"
+    INCIDENT_REPORT = "incident_report"
+    TROUBLESHOOTING = "troubleshooting"
+    INTERNAL_KNOWLEDGE = "internal_knowledge"
+    SOLUTION = "solution"
+
+
+class RetrievalMethod(str, Enum):
+    """Retrieval strategies available to the Secure RAG layer.
+
+    Only ``DENSE_SEMANTIC`` is implemented in this slice. Lexical,
+    hybrid/fusion, reranked, and modular routing are later maturity
+    layers (proposal ┬º10): they must be added as new enum values behind
+    the same security boundary without changing the contract shape.
+    """
+
+    DENSE_SEMANTIC = "dense_semantic"
+
+
 class SkillStatus(str, Enum):
     """Lifecycle status of a Skill.
 
@@ -40,6 +75,46 @@ class SkillStatus(str, Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     ARCHIVED = "archived"
+
+
+class ToolRiskLevel(str, Enum):
+    """Risk classification of a platform-approved AI Tool (PRD 15).
+
+    High-risk tool execution requires human approval before the tool is
+    executed (TRD 17.3); the human-approval gate is part of the Human
+    Intervention capability and is not implemented here.
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ToolExecutionStatus(str, Enum):
+    """Final status of a controlled tool execution attempt (TRD 14.2).
+
+    Every controlled execution attempt produces an observable record;
+    a record therefore has exactly one terminal status. The outcome is
+    represented safely: details live in ``error_kind`` only for failures
+    and never contain secrets, stack traces, or sensitive payloads.
+    """
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class ToolAuthorizationOutcome(str, Enum):
+    """Authorization decision for a controlled tool execution attempt.
+
+    Records the fail-closed per-tool authorization outcome (TRD 14.2):
+    ``GRANTED`` means the caller held ``tool:execute`` and every
+    permission required by the tool; ``DENIED`` means the attempt was
+    refused before any handler could run (unknown tool, missing/invalid
+    permission metadata, or insufficient permissions).
+    """
+
+    GRANTED = "granted"
+    DENIED = "denied"
 
 
 @dataclass
@@ -151,6 +226,390 @@ class ConnectorConfig:
             raise ValueError(f"Invalid connector status: {self.status!r}")
 
 
+class ConnectorSyncStatus(str, Enum):
+    """Lifecycle status of a connector synchronization attempt."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+@dataclass
+class ConnectorSyncRecord:
+    """Tenant-scoped audit record of one connector synchronization attempt.
+
+    Records contain only safe summaries: item counts and a generic
+    ``error_kind``. Provider credentials and raw external payloads are
+    never stored here.
+    """
+
+    id: str
+    tenant_id: str
+    connector_id: str
+    provider: ConnectorProvider
+    status: ConnectorSyncStatus
+    items_fetched: int = 0
+    error_kind: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Connector sync record ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not self.connector_id:
+            raise ValueError("Connector ID cannot be empty")
+        if not isinstance(self.provider, ConnectorProvider):
+            raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if not isinstance(self.status, ConnectorSyncStatus):
+            raise ValueError(f"Invalid connector sync status: {self.status!r}")
+        if not isinstance(self.items_fetched, int) or self.items_fetched < 0:
+            raise ValueError("Items fetched must be a non-negative integer")
+        if self.status is ConnectorSyncStatus.SUCCESS and self.error_kind:
+            raise ValueError("Successful sync records cannot have an error kind")
+        if self.status is ConnectorSyncStatus.FAILED and self.items_fetched > 0:
+            raise ValueError("Failed sync records cannot report fetched items")
+
+
+@dataclass
+class KnowledgeDocument:
+    """Tenant-owned knowledge document stored in the Company Brain.
+
+    ``content`` holds the PII-sanitized text. Raw content must never be
+    persisted: the ingestion boundary (KnowledgeService + PiiGuardService)
+    sanitizes content before this model reaches persistence.
+
+    ``version`` is structured document metadata (TRD 9.1): it starts at 1
+    and increments by exactly one for every accepted content change of the
+    same logical document. No historical revision rows are kept.
+
+    Logical identity is defined by ADR-003 as ``(tenant_id, source,
+    external_id)``. ``external_id`` is the ingestion writer's stable
+    identifier for one logical document (for example connector
+    synchronization binds ``"{provider}:{source_id}"``). It is optional:
+    documents ingested without an external identity are unique per
+    ingestion and keep pre-ADR create-always behavior.
+    """
+
+    id: str
+    tenant_id: str
+    source: KnowledgeSource
+    provenance: str
+    content: str
+    status: KnowledgeStatus = KnowledgeStatus.ACTIVE
+    version: int = 1
+    external_id: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Knowledge document ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.source, KnowledgeSource):
+            raise ValueError(f"Invalid knowledge source: {self.source!r}")
+        if not self.provenance:
+            raise ValueError("Knowledge document provenance cannot be empty")
+        if not isinstance(self.status, KnowledgeStatus):
+            raise ValueError(f"Invalid knowledge status: {self.status!r}")
+        if not isinstance(self.version, int) or self.version < 1:
+            raise ValueError("Knowledge document version must be a positive integer")
+        if not self.content:
+            raise ValueError("Knowledge document content cannot be empty")
+        if self.external_id is not None:
+            if not isinstance(self.external_id, str) or not self.external_id:
+                raise ValueError(
+                    "Knowledge document external_id must be a non-empty string when provided"
+                )
+            if len(self.external_id) > 255:
+                raise ValueError("Knowledge document external_id cannot exceed 255 characters")
+
+
+@dataclass
+class KnowledgeChunk:
+    """A deterministic segment of a sanitized knowledge document.
+
+    Chunks are derived exclusively from already-sanitized knowledge
+    content (Secure RAG foundation). The ``embedding`` vector is a
+    storage/retrieval concern and is never part of this domain model: the
+    repository receives embedding vectors alongside chunks.
+
+    ``tenant_id`` and ``document_id`` preserve the ownership required for
+    tenant isolation at the SQL boundary.
+    """
+
+    id: str
+    document_id: str
+    tenant_id: str
+    content: str
+    sequence: int
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Knowledge chunk ID cannot be empty")
+        if not self.document_id:
+            raise ValueError("Knowledge chunk document ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not self.content:
+            raise ValueError("Knowledge chunk content cannot be empty")
+        if not isinstance(self.sequence, int) or self.sequence < 0:
+            raise ValueError("Knowledge chunk sequence must be a non-negative integer")
+
+
+@dataclass
+class KnowledgeMatch:
+    """A retrieved knowledge chunk with its owning document context.
+
+    Secure RAG retrieval returns chunks with their document provenance so
+    results are explainable. ``content`` is always already-sanitized
+    content: raw content never reaches persistence or retrieval.
+    ``sequence`` is the chunk position within the owning document and is
+    required for citation in the Approved Context Contract.
+    """
+
+    chunk_id: str
+    document_id: str
+    tenant_id: str
+    content: str
+    source: KnowledgeSource
+    provenance: str
+    document_version: int
+    sequence: int
+    similarity: float
+
+    def __post_init__(self):
+        if not self.chunk_id:
+            raise ValueError("Knowledge match chunk ID cannot be empty")
+        if not self.document_id:
+            raise ValueError("Knowledge match document ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.source, KnowledgeSource):
+            raise ValueError(f"Invalid knowledge source: {self.source!r}")
+        if not isinstance(self.sequence, int) or self.sequence < 0:
+            raise ValueError("Knowledge match sequence must be a non-negative integer")
+
+
+@dataclass
+class ApprovedContextItem:
+    """A single approved context unit for the future Unified Intelligence layer.
+
+    The future LLM/Unified Intelligence layer consumes ONLY these items:
+    never raw chunk rows, vectors, or the repository. Each item carries
+    already-sanitized content plus the provenance required for citation.
+
+    ``citation_reference`` is a stable, deterministic reference
+    (``{document_id}#c{sequence}``) the downstream layer can cite;
+    human-readable provenance is carried separately.
+    """
+
+    document_id: str
+    chunk_id: str
+    content: str
+    source: KnowledgeSource
+    provenance: str
+    document_version: int
+    sequence: int
+    relevance_score: float
+    citation_reference: str
+
+    def __post_init__(self):
+        if not self.document_id:
+            raise ValueError("Approved context item document ID cannot be empty")
+        if not self.chunk_id:
+            raise ValueError("Approved context item chunk ID cannot be empty")
+        if not self.content:
+            raise ValueError("Approved context item content cannot be empty")
+        if not isinstance(self.source, KnowledgeSource):
+            raise ValueError(f"Invalid knowledge source: {self.source!r}")
+        if not self.provenance:
+            raise ValueError("Approved context item provenance cannot be empty")
+        if not isinstance(self.document_version, int) or self.document_version < 1:
+            raise ValueError("Approved context item document version must be a positive integer")
+        if not isinstance(self.sequence, int) or self.sequence < 0:
+            raise ValueError("Approved context item sequence must be a non-negative integer")
+        if not isinstance(self.relevance_score, float):
+            raise ValueError("Approved context item relevance score must be a float")
+        if not self.citation_reference:
+            raise ValueError("Approved context item citation reference cannot be empty")
+
+
+@dataclass(frozen=True)
+class ApprovedContextSecurityMetadata:
+    """Security assertions recorded on an ApprovedContext.
+
+    This is metadata about the retrieval operation, never an
+    authorization mechanism in itself: authorization is enforced by the
+    application boundary (trusted TenantContext + permission), and the
+    PII Guard runs before content is ever stored or embedded.
+
+    ``authorization_status`` is ``"approved"`` when the caller passed the
+    required permission and tenant checks. ``pii_status`` is
+    ``"sanitized"`` because only sanitized content is stored and
+    embedded; no downstream consumer may assume anything stronger.
+    """
+
+    tenant_id: str
+    authorization_status: str = "approved"
+    pii_status: str = "sanitized"
+
+    def __post_init__(self):
+        if not self.tenant_id:
+            raise ValueError("Approved context security tenant ID cannot be empty")
+        if not self.authorization_status:
+            raise ValueError("Approved context authorization status cannot be empty")
+        if not self.pii_status:
+            raise ValueError("Approved context PII status cannot be empty")
+
+
+@dataclass
+class ApprovedContext:
+    """The secure, authorization-validated retrieval contract.
+
+    Produced by ``RetrievalService.approved_search`` from the trusted
+    ``TenantContext`` and tenant-scoped retrieval results. A future
+    LLM/Unified Intelligence layer receives only this contract ΓÇö never
+    direct access to PostgreSQL, pgvector, raw documents, or
+    authorization state.
+
+    ``tenant_id`` is the trusted tenant boundary and ``principal_id`` is
+    the authenticated user from the trusted context; both are recorded so
+    downstream consumers can attribute and audit the context. Items carry
+    sanitized content and provenance only.
+    """
+
+    request_id: str
+    tenant_id: str
+    principal_id: str
+    query: str
+    retrieval_method: RetrievalMethod
+    items: List[ApprovedContextItem] = field(default_factory=list)
+    security_metadata: ApprovedContextSecurityMetadata = None
+
+    def __post_init__(self):
+        if not self.request_id:
+            raise ValueError("Approved context request ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Approved context tenant ID cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Approved context principal ID cannot be empty")
+        if not self.query or not self.query.strip():
+            raise ValueError("Approved context query cannot be empty")
+        if not isinstance(self.retrieval_method, RetrievalMethod):
+            raise ValueError(f"Invalid retrieval method: {self.retrieval_method!r}")
+        if not isinstance(self.items, list):
+            raise ValueError("Approved context items must be a list")
+        if not isinstance(self.security_metadata, ApprovedContextSecurityMetadata):
+            raise ValueError("Approved context security metadata is required")
+        if self.security_metadata.tenant_id != self.tenant_id:
+            raise ValueError(
+                "Approved context security metadata tenant must match the context tenant"
+            )
+
+
+@dataclass(frozen=True)
+class ToolProposal:
+    """One LLM-proposed tool action (ADR-004).
+
+    A proposal is UNTRUSTED model output: a request that the application
+    may validate, authorize, and execute — never a grant. Use
+    :meth:`parse` to strictly validate raw model output; anything that is
+    not exactly this shape parses to ``None`` and the intelligence path
+    continues without a tool (fail closed, no exception escapes).
+    """
+
+    tool_name: str
+    arguments: Dict[str, Any]
+
+    MAX_TOOL_NAME_LENGTH = 255
+
+    @classmethod
+    def parse(cls, raw: Any) -> Optional["ToolProposal"]:
+        """Strictly parse untrusted raw model output into a proposal.
+
+        Returns ``None`` (never raises) when ``raw`` is not exactly a
+        mapping with exactly the keys ``tool_name`` (non-empty string of
+        at most 255 characters) and ``arguments`` (a mapping). Unknown or
+        missing fields are rejected; values are NOT coerced.
+        """
+        if not isinstance(raw, dict):
+            return None
+        if set(raw.keys()) != {"tool_name", "arguments"}:
+            return None
+        tool_name = raw["tool_name"]
+        arguments = raw["arguments"]
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return None
+        if len(tool_name) > cls.MAX_TOOL_NAME_LENGTH:
+            return None
+        if not isinstance(arguments, dict):
+            return None
+        if not all(isinstance(key, str) for key in arguments):
+            return None
+        return cls(tool_name=tool_name, arguments=dict(arguments))
+
+
+@dataclass
+class IntelligenceAnswer:
+    """The structured result of a Unified Intelligence reasoning step.
+
+    Produced by ``UnifiedIntelligenceService.answer_query`` from the
+    trusted ``TenantContext`` and an ``ApprovedContext``. ``answer`` is
+    the LLM-generated text or ``None`` when no approved context was
+    available (no context means the LLM is never invoked and no answer is
+    invented). ``citations`` are the citation references of the approved
+    context items that were supplied to the LLM, so every answer is
+    attributable. ``context_used`` records whether approved context was
+    supplied to the LLM.
+    """
+
+    request_id: str
+    tenant_id: str
+    principal_id: str
+    query: str
+    answer: Optional[str]
+    citations: List[str] = field(default_factory=list)
+    retrieval_method: RetrievalMethod = RetrievalMethod.DENSE_SEMANTIC
+    context_used: bool = False
+    tool_executions: List[Dict[str, str]] = field(default_factory=list)
+
+    def __post_init__(self):
+        if not self.request_id:
+            raise ValueError("Intelligence answer request ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Intelligence answer tenant ID cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Intelligence answer principal ID cannot be empty")
+        if not self.query or not self.query.strip():
+            raise ValueError("Intelligence answer query cannot be empty")
+        if not isinstance(self.answer, str) and self.answer is not None:
+            raise ValueError("Intelligence answer must be a string or None")
+        if not isinstance(self.citations, list) or not all(
+            isinstance(citation, str) for citation in self.citations
+        ):
+            raise ValueError("Intelligence answer citations must be a list of strings")
+        if not isinstance(self.tool_executions, list) or len(self.tool_executions) > 1:
+            raise ValueError("Intelligence answer supports at most one tool execution in V1")
+        for entry in self.tool_executions:
+            if not isinstance(entry, dict) or set(entry.keys()) != {
+                "tool_name",
+                "tool_version",
+            }:
+                raise ValueError(
+                    "Tool execution summaries must contain exactly tool_name and tool_version"
+                )
+            if not all(isinstance(value, str) for value in entry.values()):
+                raise ValueError("Tool execution summary values must be strings")
+        if not isinstance(self.retrieval_method, RetrievalMethod):
+            raise ValueError(f"Invalid retrieval method: {self.retrieval_method!r}")
+        if not isinstance(self.context_used, bool):
+            raise ValueError("Intelligence answer context_used must be a boolean")
+        if self.context_used and not self.answer:
+            raise ValueError("An answer is required when context was used")
+
+
 @dataclass
 class Skill:
     """Tenant-owned Skill domain model.
@@ -209,46 +668,6 @@ class Skill:
                 raise ValueError(f"{list_field_name} must be a list of strings")
 
 
-class ToolRiskLevel(str, Enum):
-    """Risk classification of a platform-approved AI Tool (PRD 15).
-
-    High-risk tool execution requires human approval before the tool is
-    executed (TRD 17.3); the human-approval gate is part of the Human
-    Intervention capability and is not implemented here.
-    """
-
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-
-class ToolExecutionStatus(str, Enum):
-    """Final status of a controlled tool execution attempt (TRD 14.2).
-
-    Every controlled execution attempt produces an observable record;
-    a record therefore has exactly one terminal status. The outcome is
-    represented safely: details live in ``error_kind`` only for failures
-    and never contain secrets, stack traces, or sensitive payloads.
-    """
-
-    SUCCESS = "success"
-    FAILED = "failed"
-
-
-class ToolAuthorizationOutcome(str, Enum):
-    """Authorization decision for a controlled tool execution attempt.
-
-    Records the fail-closed per-tool authorization outcome (TRD 14.2):
-    ``GRANTED`` means the caller held ``tool:execute`` and every
-    permission required by the tool; ``DENIED`` means the attempt was
-    refused before any handler could run (unknown tool, missing/invalid
-    permission metadata, or insufficient permissions).
-    """
-
-    GRANTED = "granted"
-    DENIED = "denied"
-
-
 @dataclass
 class ToolExecutionRecord:
     """Tenant-scoped audit record for one controlled AI Tool invocation.
@@ -304,6 +723,229 @@ class ToolExecutionRecord:
             raise ValueError(f"Invalid tool risk level: {self.risk_level!r}")
         if not isinstance(self.input_summary, str) or not self.input_summary:
             raise ValueError("Tool input summary must be a non-empty string")
+
+
+class WebhookEventStatus(str, Enum):
+    """Lifecycle status of an ingested webhook event.
+
+    The Webhooks foundation slice establishes a single terminal state:
+    every accepted event is validated and recorded as ``received``
+    (PRD 16 processing status). Triggering downstream processing is a
+    future slice; new states are added only through approved decisions.
+    """
+
+    RECEIVED = "received"
+
+
+@dataclass
+class WebhookEvent:
+    """Tenant-scoped record of one ingested webhook event (PRD 23 "Event").
+
+    The record is deliberately metadata-only: it never stores the raw
+    external payload. Webhook payloads are untrusted external input
+    (ADR-001 webhook security boundary) and may contain PII; until an
+    approved PII/storage decision exists for event content, only safe
+    envelope metadata is persisted:
+
+    - which ingestion endpoint received the event (``endpoint_id``);
+    - the tenant the event is bound to (``tenant_id``, resolved from the
+      trusted endpoint configuration, NEVER from request input);
+    - the sender-supplied unique event identifier (``event_id``), used
+      for duplicate handling;
+    - the event type label and payload size in bytes;
+    - the processing status and record timestamp.
+    """
+
+    id: str
+    tenant_id: str
+    endpoint_id: str
+    event_id: str
+    event_type: str
+    status: WebhookEventStatus = WebhookEventStatus.RECEIVED
+    payload_size_bytes: int = 0
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Webhook event ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Webhook event tenant ID cannot be empty")
+        if not self.endpoint_id:
+            raise ValueError("Webhook event endpoint ID cannot be empty")
+        if not isinstance(self.event_id, str) or not self.event_id:
+            raise ValueError("Webhook event identifier cannot be empty")
+        if len(self.event_id) > 255:
+            raise ValueError("Webhook event identifier cannot exceed 255 characters")
+        if not isinstance(self.event_type, str) or not self.event_type:
+            raise ValueError("Webhook event type cannot be empty")
+        if len(self.event_type) > 100:
+            raise ValueError("Webhook event type cannot exceed 100 characters")
+        if not isinstance(self.status, WebhookEventStatus):
+            raise ValueError(f"Invalid webhook event status: {self.status!r}")
+        if not isinstance(self.payload_size_bytes, int) or isinstance(
+            self.payload_size_bytes, bool
+        ):
+            raise ValueError("Webhook event payload size must be an integer")
+        if self.payload_size_bytes < 0:
+            raise ValueError("Webhook event payload size cannot be negative")
+
+
+class ApiRequestMethod:
+    """Allowed HTTP methods for telemetry records.
+
+    A fixed allowlist (not free-form input): the middleware labels requests
+    itself, and bounding the vocabulary keeps the stored column and every
+    aggregate grouping within known, safe values.
+    """
+
+    ALLOWED = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
+
+
+@dataclass
+class ApiRequestRecord:
+    """Metadata-only telemetry record for one HTTP request (TRD 17/28/31).
+
+    Owned by the Observability/API layer. This is NOT a subsystem audit
+    record: tool, connector, and webhook facts stay in their authoritative
+    tables and are aggregated in place. This record stores ONLY:
+
+    - the correlation ID minted by the request-telemetry middleware
+      (``request_id``; distinct from future Agent execution IDs);
+    - the tenant label applied by SUCCESS-GATED PATH-PARAM attribution:
+      a request is labelled with a tenant ONLY when it resolved through
+      an authenticated tenant route AND completed with status < 400.
+      Attribution is telemetry bookkeeping and NEVER establishes tenant
+      identity or authorization; unattributable/public requests store
+      NULL;
+    - the normalized route TEMPLATE (e.g. ``/tenants/{tenant_id}/tools``),
+      never raw paths or query strings;
+    - method, status code, monotonic-clock duration, coarse error class.
+
+    NEVER persisted: request bodies, query strings, prompts, answers,
+    credentials, tokens, secrets, PII, or arbitrary payload content
+    (PRD 9/10, TRD 20/28).
+    """
+
+    id: str
+    request_id: str
+    method: str
+    route_template: str
+    status_code: int
+    duration_ms: int
+    tenant_id: Optional[str] = None
+    error_kind: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("API request record ID cannot be empty")
+        if len(self.id) > 255:
+            raise ValueError("API request record ID cannot exceed 255 characters")
+        if not isinstance(self.request_id, str) or not self.request_id:
+            raise ValueError("Correlation request ID cannot be empty")
+        if len(self.request_id) > 64:
+            raise ValueError("Correlation request ID cannot exceed 64 characters")
+        if not isinstance(self.method, str) or self.method not in ApiRequestMethod.ALLOWED:
+            raise ValueError(f"Invalid HTTP method for telemetry record: {self.method!r}")
+        if not isinstance(self.route_template, str) or not self.route_template:
+            raise ValueError("Route template cannot be empty")
+        if len(self.route_template) > 255:
+            raise ValueError("Route template cannot exceed 255 characters")
+        if "{" not in self.route_template and "?" in self.route_template:
+            raise ValueError("Route template must not contain a query string")
+        if not isinstance(self.status_code, int) or isinstance(self.status_code, bool):
+            raise ValueError(f"Invalid HTTP status code: {self.status_code!r}")
+        if not 100 <= self.status_code <= 599:
+            raise ValueError(f"HTTP status code out of range: {self.status_code}")
+        if not isinstance(self.duration_ms, int) or isinstance(self.duration_ms, bool):
+            raise ValueError(f"Invalid request duration: {self.duration_ms!r}")
+        if self.duration_ms < 0:
+            raise ValueError("Request duration cannot be negative")
+        if self.tenant_id is not None and (
+            not isinstance(self.tenant_id, str) or not self.tenant_id
+        ):
+            raise ValueError("Attributed tenant ID must be a non-empty string when present")
+        if self.error_kind is not None and (
+            not isinstance(self.error_kind, str) or not self.error_kind
+        ):
+            raise ValueError("Error kind must be a non-empty string when present")
+
+
+@dataclass
+class HttpUsageMetrics:
+    """Aggregate HTTP usage read-model (tenant-scoped or platform-wide).
+
+    Numeric operational aggregates only: never per-tenant breakdowns,
+    paths, or payload data.
+    """
+
+    total_requests: int
+    error_count: int
+    error_rate: float
+    avg_duration_ms: float
+    p95_duration_ms: float
+
+    def __post_init__(self):
+        if self.total_requests < 0 or self.error_count < 0:
+            raise ValueError("HTTP metric counts cannot be negative")
+        if self.error_count > self.total_requests:
+            raise ValueError("HTTP error count cannot exceed total requests")
+        if not 0.0 <= self.error_rate <= 1.0:
+            raise ValueError("HTTP error rate must be between 0 and 1")
+        if self.avg_duration_ms < 0 or self.p95_duration_ms < 0:
+            raise ValueError("HTTP latency metrics cannot be negative")
+
+
+@dataclass
+class ToolExecutionActivityMetrics:
+    """Aggregate AI Tool activity read-model over one source table."""
+
+    total_executions: int
+    successful: int
+    failed: int
+    denied: int
+
+    def __post_init__(self):
+        if min(self.total_executions, self.successful, self.failed, self.denied) < 0:
+            raise ValueError("Tool activity counts cannot be negative")
+        if self.successful + self.failed > self.total_executions:
+            raise ValueError("Status breakdown cannot exceed total executions")
+
+
+@dataclass
+class ConnectorSyncActivityMetrics:
+    """Aggregate connector sync activity read-model over one source table."""
+
+    total_syncs: int
+    successful: int
+    failed: int
+    items_fetched: int
+
+    def __post_init__(self):
+        if min(self.total_syncs, self.successful, self.failed, self.items_fetched) < 0:
+            raise ValueError("Connector activity counts cannot be negative")
+        if self.successful + self.failed > self.total_syncs:
+            raise ValueError("Status breakdown cannot exceed total syncs")
+
+
+@dataclass
+class WebhookEventActivityMetrics:
+    """Aggregate webhook event read-model.
+
+    ``available`` reports whether the authoritative webhook_events table
+    exists in this database. While the Webhooks foundation (PR #34) is
+    unmerged, the table may legitimately be absent on main: Observability
+    then reports zeros WITHOUT fabricating or duplicating the source.
+    """
+
+    available: bool
+    total_events: int = 0
+    distinct_event_types: int = 0
+    total_payload_bytes: int = 0
+
+    def __post_init__(self):
+        if min(self.total_events, self.distinct_event_types, self.total_payload_bytes) < 0:
+            raise ValueError("Webhook activity counts cannot be negative")
 
 
 class SkillExecutionStatus(str, Enum):

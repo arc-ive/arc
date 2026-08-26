@@ -24,7 +24,7 @@ from arc.domain.models import (
 )
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.security.authorization import (
-    SKILL_READ,
+    KNOWLEDGE_READ,
     TENANT_CREATE,
     TOOL_EXECUTE,
     AuthorizationService,
@@ -310,13 +310,13 @@ async def test_execution_requires_tool_execute_and_each_required_permission(repo
     dual_permission_tool = replace(
         SERVICE_HEALTH_TOOL,
         name="dual_permission_tool",
-        required_permissions=frozenset({TOOL_EXECUTE, SKILL_READ}),
+        required_permissions=frozenset({TOOL_EXECUTE, KNOWLEDGE_READ}),
     )
     service = ToolExecutionService(
         ToolRegistry({dual_permission_tool.name: dual_permission_tool}), record_repo
     )
 
-    # OPERATIONS_USER holds tool:execute AND skill:read -> allowed.
+    # OPERATIONS_USER holds tool:execute AND knowledge:read -> allowed.
     result = await service.execute_tool(
         context,
         _principal("ops-user"),

@@ -46,6 +46,34 @@ CREATE TABLE IF NOT EXISTS connector_configs (
 
 CREATE INDEX IF NOT EXISTS idx_connector_configs_tenant_id ON connector_configs(tenant_id);
 
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    source VARCHAR(50) NOT NULL,
+    provenance VARCHAR(255) NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_knowledge_documents_version CHECK (version >= 1),
+    CONSTRAINT ck_knowledge_documents_status CHECK (status IN ('active', 'archived'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_tenant_id ON knowledge_documents(tenant_id);
+
+-- Company Brain document identity (ADR-003): logical identity is the
+-- triple (tenant_id, source, external_id). NULL identities are excluded
+-- from the index and keep create-always behavior. Both statements are
+-- idempotent under bootstrap and safe against pre-existing rows where
+-- external_id is all NULL. NOTE: comment text must never contain a
+-- semicolon because the test/bootstrap splits this file on semicolons.
+ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS external_id VARCHAR(255);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_documents_identity
+    ON knowledge_documents (tenant_id, source, external_id)
+    WHERE external_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS skills (
     id VARCHAR(255) PRIMARY KEY,
     tenant_id VARCHAR(255) NOT NULL,
@@ -95,3 +123,91 @@ ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS user_id VARCHAR(255)
 ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS authorization_outcome VARCHAR(50);
 
 CREATE INDEX IF NOT EXISTS idx_tool_execution_records_tenant_id ON tool_execution_records(tenant_id);
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+    id VARCHAR(255) PRIMARY KEY,
+    document_id VARCHAR(255) NOT NULL,
+    tenant_id VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    embedding vector(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_knowledge_chunks_sequence CHECK (sequence >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_tenant_id ON knowledge_chunks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document_id ON knowledge_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
+    ON knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS connector_sync_records (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    connector_id VARCHAR(255) NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    items_fetched INTEGER NOT NULL DEFAULT 0,
+    error_kind VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (connector_id) REFERENCES connector_configs(id) ON DELETE CASCADE,
+    CONSTRAINT ck_connector_sync_records_status CHECK (status IN ('success', 'failed')),
+    CONSTRAINT ck_connector_sync_records_items_fetched CHECK (items_fetched >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_connector_sync_records_tenant_id ON connector_sync_records(tenant_id);
+
+-- Webhooks foundation (PRD 16, TRD 16): tenant-scoped records of
+-- validated inbound webhook events. Records are metadata-only by design:
+-- raw external payloads are untrusted input (ADR-001 webhook security
+-- boundary) and are never persisted. The (tenant_id, event_id)
+-- uniqueness pair is the duplicate-handling contract: a re-delivered
+-- event resolves to the original record instead of creating a new row.
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    endpoint_id VARCHAR(255) NOT NULL,
+    event_id VARCHAR(255) NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'received',
+    payload_size_bytes INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_webhook_events_status CHECK (status IN ('received')),
+    CONSTRAINT ck_webhook_events_payload_size CHECK (payload_size_bytes >= 0),
+    CONSTRAINT uq_webhook_events_tenant_event UNIQUE (tenant_id, event_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_events_tenant_id ON webhook_events(tenant_id);
+-- Observability foundation (PRD 17, TRD 17/28/31): metadata-only HTTP
+-- telemetry owned by the Observability/API layer. This is NOT a generic
+-- event table and never duplicates subsystem records - tool executions,
+-- connector syncs, and webhook events remain in their authoritative
+-- tables and are aggregated there at read time.
+-- tenant_id is NULL for public/unauthenticated or unattributable requests:
+-- attribution uses SUCCESS-GATED PATH-PARAM labeling only (status < 400 on
+-- an authenticated tenant route) and NEVER establishes identity or
+-- authorization. route_template stores the normalized route template,
+-- never raw paths or query strings. No bodies, prompts, answers, tokens,
+-- secrets, or PII are ever persisted here (TRD 20/28).
+CREATE TABLE IF NOT EXISTS api_request_records (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255),
+    request_id VARCHAR(64) NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    route_template VARCHAR(255) NOT NULL,
+    status_code INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    error_kind VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_api_request_records_status_code CHECK (status_code BETWEEN 100 AND 599),
+    CONSTRAINT ck_api_request_records_duration CHECK (duration_ms >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_request_records_tenant_id ON api_request_records(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_api_request_records_created_at ON api_request_records(created_at);

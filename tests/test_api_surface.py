@@ -90,6 +90,43 @@ def test_ai_tools_routes_present_in_production_openapi():
     assert "/tenants/{tenant_id}/tools/{name}/execute" in paths
 
 
+def test_public_api_exposes_connector_endpoints():
+    """Connector endpoints (PRD 22) are public API and permission-protected.
+
+    The tenant boundary comes from the trusted context and the connector
+    permissions; no credential material is accepted or returned.
+    """
+    public = _route_paths(api_router.routes)
+    assert "GET /tenants/{tenant_id}/connectors" in public
+    assert "POST /tenants/{tenant_id}/connectors" in public
+    assert "POST /tenants/{tenant_id}/connectors/{connector_id}/sync" in public
+
+
+def test_public_api_exposes_webhook_endpoints():
+    """Webhook endpoints (PRD 16) are public API with split authentication.
+
+    Ingestion is machine-facing (per-endpoint HMAC signatures, ADR-001
+    webhook security boundary); event listing is RBAC-protected
+    (``webhook:read``) behind the trusted tenant context.
+    """
+    public = _route_paths(api_router.routes)
+    assert "POST /webhooks/{endpoint_id}/events" in public
+    assert "GET /tenants/{tenant_id}/webhooks/events" in public
+
+
+def test_public_api_exposes_observability_endpoints():
+    """Observability endpoints (PRD 17) are public API, RBAC-protected.
+
+    Tenant usage summaries are tenant-scoped behind ``observability:read``;
+    the platform summary and component health are strictly tenant-agnostic
+    and restricted to ``observability:platform_read`` (platform admin).
+    """
+    public = _route_paths(api_router.routes)
+    assert "GET /tenants/{tenant_id}/observability/usage-summary" in public
+    assert "GET /platform/observability/summary" in public
+    assert "GET /observability/health" in public
+
+
 def test_dev_router_isolates_development_endpoints():
     """The dev-only router retains membership provisioning under /internal/dev."""
     dev = _route_paths(dev_router.routes)
