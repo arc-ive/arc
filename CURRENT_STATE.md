@@ -1074,6 +1074,16 @@ MANUAL document could carry connector-like provenance. Mitigations:
 narrow predicate, archive-only reversibility, dry-run verification,
 exact-predicate re-check, deterministic winner rule.
 
+### Recovery semantics (per review)
+
+Archival is a STATUS-ONLY transition (`active` → `archived`) and is
+therefore technically reversible at the data level. There is currently
+NO application-level restore/unarchive operation: recovery of an
+archived document is a controlled MANUAL DBA action (flipping
+`status` back to `'active'` via SQL). An application-level restore
+API/service is a deferred future follow-up, not an existing
+capability.
+
 ### Idempotency / concurrency
 
 Reruns archive nothing (predicate excludes archived). One-time admin/

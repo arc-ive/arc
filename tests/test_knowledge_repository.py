@@ -526,12 +526,27 @@ class TestLegacyDuplicateArchival:
         assert len(rows) == 1  # winner remains visible on the active surface
 
     async def test_rerun_is_idempotent(self, knowledge_repo, seeded_tenant):
-        await self._seed_legacy_pair(knowledge_repo, seeded_tenant.id)
+        older, newer = await self._seed_legacy_pair(knowledge_repo, seeded_tenant.id)
         first = await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+        assert first == 1
+
+        # Freeze the archived loser's state right after the first run.
+        loser_after_first = await knowledge_repo.get_by_id(older.id, seeded_tenant.id)
+        assert loser_after_first.status.value == "archived"
+
         second = await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
 
-        assert first == 1
         assert second == 0
+
+        # Concurrent-execution guard: the already-archived loser was NOT
+        # re-written by the second run (updated_at/status frozen), and the
+        # winner remains active. Proves the kd.status='active' outer guard.
+        loser_after_second = await knowledge_repo.get_by_id(older.id, seeded_tenant.id)
+        assert loser_after_second.status.value == "archived"
+        assert loser_after_second.updated_at == loser_after_first.updated_at
+
+        winner_after_second = await knowledge_repo.get_by_id(newer.id, seeded_tenant.id)
+        assert winner_after_second.status.value == "active"
 
     async def test_distinct_provenances_are_separate_groups(self, knowledge_repo, seeded_tenant):
         await knowledge_repo.create(self._legacy_doc(seeded_tenant.id, "connector:github:1"))

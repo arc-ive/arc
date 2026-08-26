@@ -350,6 +350,11 @@ class PostgreSQLKnowledgeRepository:
                 FROM candidates c
                 WHERE kd.id = c.id
                   AND c.rn > 1
+                  -- Concurrent-execution guard: a loser already archived by
+                  -- a parallel run is no longer active and must not be
+                  -- re-written; the reported count then reflects only real
+                  -- ACTIVE → ARCHIVED state transitions.
+                  AND kd.status = 'active'
                 """,
                 tenant_id,
             )

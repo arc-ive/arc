@@ -235,17 +235,25 @@ class KnowledgeService:
 
         Safety model:
 
-        - ``dry_run=True`` (default): READ-ONLY candidate report. No state
-          changes; no document content exposed.
         - ``dry_run=False``: executes the archive-only mutation, which
           RE-CHECKS the exact predicate at mutation time inside one
-          statement. Archive-only: winners/content/chunks/external_id are
-          preserved; nothing is deleted. Idempotent — already-archived
+          statement (including an outer ``kd.status = 'active'`` guard so
+          concurrent runs never re-write already-archived losers).
+          Archive-only: winners/content/chunks/external_id are
+          preserved; nothing is deleted. Idempotent - already-archived
           rows stop matching and reruns archive nothing.
 
         Residual caveat (documented in ADR-003): a pre-model MANUAL
         document could theoretically carry a connector-style provenance;
         archive-only reversibility is the mitigation.
+
+        Recovery semantics: archival is a STATUS-ONLY transition
+        (active -> archived) and is therefore technically reversible, but
+        there is NO application-level restore/unarchive operation today.
+        Recovery is a controlled manual DBA action (flipping
+        ``status`` back to ``'active'`` via SQL). An application-level
+        restore API is a deferred future follow-up, not an existing
+        capability.
 
         Returns a content-free report: mode, group/candidate counts,
         per-group winner and would-archive IDs/metadata only.
