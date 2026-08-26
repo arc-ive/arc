@@ -10,9 +10,14 @@ from arc.repositories.tenancy import (
     PostgreSQLTenantRepository,
     PostgreSQLUserRepository,
 )
+from arc.repositories.tools import PostgreSQLToolExecutionRepository
+from arc.services.agent import AgentExecutionService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
+from arc.services.llm import build_llm_provider, get_llm_settings
+from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
+from arc.services.tools import ToolExecutionService, build_platform_tool_registry
 
 
 class Application:
@@ -62,6 +67,31 @@ class Application:
 
         # Initialize skill service
         self.services["skill_service"] = SkillService(self.repositories["skill"])
+
+        # Initialize the AI Tool execution stack (Skills Engine slice):
+        # the platform-owned registry is the only tool whitelist, and every
+        # execution attempt is audited to the tenant-scoped record repo.
+        self.repositories["tool_execution"] = PostgreSQLToolExecutionRepository(self.db)
+        self.services["tool_service"] = ToolExecutionService(
+            build_platform_tool_registry(),
+            self.repositories["tool_execution"],
+        )
+
+        # Initialize the skill execution engine (delegates ALL actions to
+        # the tool service above).
+        self.services["skill_execution_service"] = SkillExecutionService(
+            skill_service=self.services["skill_service"],
+            tool_service=self.services["tool_service"],
+        )
+
+        # Initialize the bounded Agent orchestration layer (ADR-005). It
+        # sits strictly ABOVE SkillExecutionService and holds no tool
+        # registry or handlers of its own.
+        self.services["agent_service"] = AgentExecutionService(
+            skill_service=self.services["skill_service"],
+            skill_execution_service=self.services["skill_execution_service"],
+            llm_provider=build_llm_provider(get_llm_settings()),
+        )
 
         # Register services in app context
         from arc.api.controllers import app_context

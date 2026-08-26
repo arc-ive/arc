@@ -10,6 +10,18 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
 - The permission matrix below is the smallest set required to demonstrate
   X-11. It is not a forward-looking model for future product modules.
 - No Connector, Knowledge, or Operations permissions are defined.
+- Skill permissions (``skill:create``, ``skill:read``, ``skill:delete``,
+  ``skill:execute``) exist for the Skills Engine management and execution
+  slices: PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR manage Skills;
+  OPERATIONS_USER reads and executes them; EMPLOYEE has none.
+- Tool permissions (``tool:read``, ``tool:execute``) exist for the AI Tools
+  foundation: PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR read the
+  catalog and execute approved tools; OPERATIONS_USER reads and executes
+  permitted operational tools; EMPLOYEE has none.
+- ``agent:execute`` exists for the bounded Agent orchestration layer
+  (ADR-005): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and
+  OPERATIONS_USER may run the Agent; EMPLOYEE has none. It authorizes
+  orchestration only and never bypasses Skill or tool controls.
 - ``EMPLOYEE`` intentionally has no matrix permissions; it is allowed only
   self-scoped operations (for example listing the authenticated user's own
   tenants).
@@ -31,15 +43,54 @@ TENANT_CREATE = Permission(resource="tenant", action="create")
 USER_CREATE = Permission(resource="user", action="create")
 MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
 TENANT_READ = Permission(resource="tenant", action="read")
+SKILL_CREATE = Permission(resource="skill", action="create")
+SKILL_READ = Permission(resource="skill", action="read")
+SKILL_DELETE = Permission(resource="skill", action="delete")
+SKILL_EXECUTE = Permission(resource="skill", action="execute")
+TOOL_READ = Permission(resource="tool", action="read")
+TOOL_EXECUTE = Permission(resource="tool", action="execute")
+AGENT_EXECUTE = Permission(resource="agent", action="execute")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     # Global provisioning permissions; they intentionally require NO tenant context.
     ApplicationRole.PLATFORM_ADMINISTRATOR: frozenset(
-        {TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE, TENANT_READ}
+        {
+            TENANT_CREATE,
+            USER_CREATE,
+            MEMBERSHIP_CREATE,
+            TENANT_READ,
+            SKILL_CREATE,
+            SKILL_READ,
+            SKILL_DELETE,
+            SKILL_EXECUTE,
+            TOOL_READ,
+            TOOL_EXECUTE,
+            AGENT_EXECUTE,
+        }
     ),
-    ApplicationRole.COMPANY_ADMINISTRATOR: frozenset({TENANT_READ}),
-    ApplicationRole.OPERATIONS_USER: frozenset({TENANT_READ}),
+    ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
+        {
+            TENANT_READ,
+            SKILL_CREATE,
+            SKILL_READ,
+            SKILL_DELETE,
+            SKILL_EXECUTE,
+            TOOL_READ,
+            TOOL_EXECUTE,
+            AGENT_EXECUTE,
+        }
+    ),
+    ApplicationRole.OPERATIONS_USER: frozenset(
+        {
+            TENANT_READ,
+            SKILL_READ,
+            SKILL_EXECUTE,
+            TOOL_READ,
+            TOOL_EXECUTE,
+            AGENT_EXECUTE,
+        }
+    ),
     # EMPLOYEE has no matrix permissions (self-scoped operations only).
     ApplicationRole.EMPLOYEE: frozenset(),
 }
