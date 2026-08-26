@@ -219,5 +219,94 @@ class KnowledgeService:
         return await self.knowledge_repo.get_by_id(document_id, context.tenant_id)
 
     async def list_documents(self, context: TenantContext) -> List[KnowledgeDocument]:
-        """List all knowledge documents for a tenant."""
+        """List ACTIVE knowledge documents for a tenant."""
         return await self.knowledge_repo.list_for_tenant(context.tenant_id)
+
+    async def archive_legacy_duplicates(
+        self, dry_run: bool = True, tenant_id: Optional[str] = None
+    ) -> dict:
+        """One-time ADR-003 lifecycle cleanup (see ADR-003 follow-ups).
+
+        Detects duplicate logical documents created BEFORE the identity
+        model existed — strictly rows with ``external_id IS NULL`` whose
+        provenance matches the deterministic historical connector binding
+        ``connector:{provider}:{source_id}`` — grouped per tenant by
+        ``(tenant_id, source, provenance)``.
+
+        Safety model:
+
+        - ``dry_run=False``: executes the archive-only mutation, which
+          RE-CHECKS the exact predicate at mutation time inside one
+          statement (including an outer ``kd.status = 'active'`` guard so
+          concurrent runs never re-write already-archived losers).
+          Archive-only: winners/content/chunks/external_id are
+          preserved; nothing is deleted. Idempotent - already-archived
+          rows stop matching and reruns archive nothing.
+
+        Residual caveat (documented in ADR-003): a pre-model MANUAL
+        document could theoretically carry a connector-style provenance;
+        archive-only reversibility is the mitigation.
+
+        Recovery semantics: archival is a STATUS-ONLY transition
+        (active -> archived) and is therefore technically reversible, but
+        there is NO application-level restore/unarchive operation today.
+        Recovery is a controlled manual DBA action (flipping
+        ``status`` back to ``'active'`` via SQL). An application-level
+        restore API is a deferred future follow-up, not an existing
+        capability.
+
+        Returns a content-free report: mode, group/candidate counts,
+        per-group winner and would-archive IDs/metadata only.
+        """
+        candidates = await self.knowledge_repo.find_legacy_duplicate_candidates(tenant_id)
+        groups: dict = {}
+        for row in candidates:
+            key = (row["tenant_id"], row["source"], row["provenance"])
+            groups.setdefault(key, []).append(row)
+
+        group_reports = []
+        to_archive = []
+        for (tenant_id, source, provenance), rows in sorted(
+            groups.items(), key=lambda item: (item[0][0], item[0][1], item[0][2])
+        ):
+            winner = next(row for row in rows if row["is_winner"])
+            losers = sorted(
+                (row for row in rows if not row["is_winner"]),
+                key=lambda row: str(row["id"]),
+            )
+            group_reports.append(
+                {
+                    "tenant_id": tenant_id,
+                    "source": source,
+                    "provenance": provenance,
+                    "winner_id": winner["id"],
+                    "winner_created_at": winner["created_at"].isoformat(),
+                    "would_archive": [
+                        {"id": row["id"], "created_at": row["created_at"].isoformat()}
+                        for row in losers
+                    ],
+                }
+            )
+            to_archive.extend(row["id"] for row in losers)
+
+        report = {
+            "dry_run": bool(dry_run),
+            "candidate_rows": len(candidates),
+            "duplicate_groups": len(group_reports),
+            "rows_to_archive": len(to_archive),
+            "groups": group_reports,
+            "guarantees": {
+                "no_deletion": True,
+                "no_content_or_chunk_mutation": True,
+                "no_external_id_fabrication": True,
+                "archive_only": True,
+            },
+        }
+
+        if dry_run:
+            return report
+
+        archived = await self.knowledge_repo.archive_legacy_duplicates(tenant_id)
+        report["dry_run"] = False
+        report["archived_rows"] = archived
+        return report
