@@ -90,6 +90,7 @@ from arc.services.tools import (
     ToolValidationError,
 )
 from arc.services.webhook_ingestion import (
+    MAX_BODY_BYTES,
     WebhookAuthenticationError,
     WebhookIngestionError,
     WebhookIngestionService,
@@ -980,6 +981,46 @@ def _webhook_event_payload(event: WebhookEvent, duplicate: bool) -> Dict[str, An
     }
 
 
+async def _read_capped_body(request: Request, max_bytes: int) -> bytes:
+    """Read a request body under a hard cumulative byte cap.
+
+    Production-readiness hardening for webhook ingestion (Bala's approved
+    PR #34 review follow-up): the previous ``await request.body()`` buffered
+    the complete UNAUTHENTICATED body in memory before any size check.
+
+    Behavior:
+    - Content-Length is an EARLY-REJECTION FAST PATH only. It is
+      client-controlled, so it never counts as enforcement; when it is
+      absent, non-numeric, chunked, or lying, the streaming cap below is
+      the actual limit.
+    - Otherwise the body is consumed incrementally via ``request.stream()``
+      and the read STOPS as soon as cumulative size exceeds ``max_bytes``.
+      The remaining stream is intentionally NOT drained (draining would
+      defeat the protection). On Uvicorn this is safe by construction:
+      socket reads are paused at the protocol's own 64 KB high-water mark,
+      and a response returned with an unconsumed body closes the
+      connection instead of reusing it.
+    - Bodies up to and including the cap are returned EXACTLY as received
+      so HMAC verification keeps operating over the precise raw bytes.
+    """
+    content_length = request.headers.get("content-length")
+    if content_length is not None and content_length.isdigit() and int(content_length) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Webhook body cannot exceed {max_bytes} bytes",
+        )
+
+    buffer = bytearray()
+    async for chunk in request.stream():
+        buffer.extend(chunk)
+        if len(buffer) > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Webhook body cannot exceed {max_bytes} bytes",
+            )
+    return bytes(buffer)
+
+
 @api_router.post("/webhooks/{endpoint_id}/events")
 async def ingest_webhook_event(
     endpoint_id: str,
@@ -1000,8 +1041,15 @@ async def ingest_webhook_event(
     enumerate valid endpoints. Duplicate deliveries are idempotent:
     they return the original record with ``duplicate=true`` instead of
     creating a second row. Raw payloads are never persisted or returned.
+
+    Deliberate precedence: bodies larger than MAX_BODY_BYTES are rejected
+    BEFORE authentication/timestamp verification (controlled 400). This
+    prevents excessive unauthenticated buffering — an aborted read cannot
+    be HMAC-verified at all. Authentication behavior for bodies within
+    the limit is unchanged, and the oversize rejection is endpoint-
+    independent (it reveals nothing about endpoint validity).
     """
-    body = await request.body()
+    body = await _read_capped_body(request, MAX_BODY_BYTES)
     timestamp_header = request.headers.get("X-Arc-Timestamp", "")
     signature_header = request.headers.get("X-Arc-Signature", "")
 
