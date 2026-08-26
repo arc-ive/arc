@@ -1034,6 +1034,69 @@ re-ingestion. Approved Context / `approved_search` / RBAC untouched.
 Retroactive deduplication/cleanup of pre-existing duplicate rows;
 production embedding providers; hybrid retrieval/reranking.
 
+## Company Brain — Legacy Duplicate Archival Lifecycle (Implemented — pending review)
+
+**Branch:** `feat/company-brain-legacy-archival`
+**Base:** `origin/main` @ `2c425a6`
+**Scope:** Person A — Company Brain lifecycle completion. Implements the
+retroactive cleanup deferred by ADR-003/PR #38: archive-only removal of
+pre-identity duplicate documents from normal retrieval surfaces.
+
+### Semantics
+
+- **Candidate predicate (exact, narrow):** `external_id IS NULL
+  AND status = 'active' AND provenance LIKE 'connector:%'`. Safe because
+  repository history establishes that legacy connector ingestion built
+  provenance deterministically as `connector:{provider}:{source_id}`
+  (`connector_sync.py:144`) — the same binding ADR-003 later formalized
+  as `external_id`.
+- **Grouping key:** `(tenant_id, source, provenance)`; grouping never
+  spans tenants. Winner = newest `created_at`, tie-break smallest `id`;
+  winner stays ACTIVE.
+- **Archive-only:** losers flip to `status='archived'`. No deletion of
+  documents/chunks; no content mutation; no external_id fabrication;
+  chunks are retained but excluded from retrieval.
+- **Retrieval lifecycle:** archived documents excluded at the persistence
+  boundary — chunk search joins documents with `d.status='active'`
+  (covers /knowledge/search, approved_search, Unified Intelligence
+  candidate generation); `list_for_tenant` filters active; explicit
+  `get_by_id` still recovers archived rows for audit/recovery.
+- **Dry-run mandatory:** `KnowledgeService.archive_legacy_duplicates(
+  dry_run=True)` returns a content-free candidate report (groups,
+  winners, would-archive ids/metadata, guarantees) with ZERO mutations;
+  execution requires explicit `dry_run=False` and re-checks the exact
+  predicate inside the single atomic UPDATE statement.
+
+### Residual caveat (documented, not silently widened)
+
+`provenance LIKE 'connector:%'` is not cryptographic proof: a pre-#38
+MANUAL document could carry connector-like provenance. Mitigations:
+narrow predicate, archive-only reversibility, dry-run verification,
+exact-predicate re-check, deterministic winner rule.
+
+### Idempotency / concurrency
+
+Reruns archive nothing (predicate excludes archived). One-time admin/
+maintenance operation invoked deliberately per environment; concurrent
+ingestion during the window can add fresh duplicates which a rerun then
+reconciles. No background jobs introduced.
+
+### Tests
+
+Repository (real PostgreSQL): group discovery, winner/tie-break,
+cross-tenant independence, tenant-scoped sweep leaving other tenants
+untouched, NULL-vs-identified exclusion, non-connector provenance
+exclusion, archived-rows exclusion, idempotency, chunks retained but
+excluded from search, get_by_id recovery, approved_search + Unified
+Intelligence regression proving archived knowledge cannot re-enter RAG.
+Service: dry-run zero-mutation report shape, metadata-only payload,
+explicit execution count, idempotent rerun reporting.
+
+### Deferred
+
+Production embedding providers; hybrid retrieval/reranking; optional
+hard-deletion policy (requires separate team decision).
+
 ### Verification
 
 See PR description (Docker + real PostgreSQL suite, ruff, format, compose).

@@ -187,6 +187,25 @@ class KnowledgeRepository(Protocol):
         """
         ...
 
+    async def find_legacy_duplicate_candidates(self, tenant_id: Optional[str] = None) -> List[dict]:
+        """Read-only discovery of pre-ADR-003 duplicate groups.
+
+        Returns one dict per candidate row with ``is_winner`` marking the
+        per-group newest row. Never mutates state. ``tenant_id`` optionally
+        narrows the sweep; grouping never spans tenants.
+        """
+        ...
+
+    async def archive_legacy_duplicates(self, tenant_id: Optional[str] = None) -> int:
+        """Archive non-winner legacy duplicates; return archived count.
+
+        Archive-only lifecycle operation: re-checks the exact safety
+        predicate at mutation time, preserves winners/content/chunks/
+        external_id values, and is idempotent. ``tenant_id`` optionally
+        narrows the sweep.
+        """
+        ...
+
     async def update_document_with_chunks(
         self,
         document: KnowledgeDocument,

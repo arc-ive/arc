@@ -478,3 +478,342 @@ class TestConcurrentIdentityIngestion:
                 "github:race",
             )
         assert len(rows) == 1
+
+
+class TestLegacyDuplicateArchival:
+    """ADR-003 lifecycle completion: archive-only legacy duplicate cleanup."""
+
+    def _legacy_doc(self, tenant_id, provenance, created_at=None, **overrides):
+        values = dict(
+            source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+            provenance=provenance,
+            content=f"legacy content for {provenance}",
+        )
+        if created_at is not None:
+            values["created_at"] = created_at
+        values.update(overrides)
+        return _document(tenant_id, **values)
+
+    async def _seed_legacy_pair(self, knowledge_repo, tenant_id, provenance="connector:github:7"):
+        older = self._legacy_doc(tenant_id, provenance)
+        newer = self._legacy_doc(tenant_id, provenance)
+        await knowledge_repo.create(older)
+        await knowledge_repo.create(newer)
+        return older, newer
+
+    async def test_dry_run_identifies_groups_and_winners_without_mutation(
+        self, knowledge_repo, seeded_tenant
+    ):
+        await self._seed_legacy_pair(knowledge_repo, seeded_tenant.id)
+
+        candidates = await knowledge_repo.find_legacy_duplicate_candidates(seeded_tenant.id)
+        winners = [c for c in candidates if c["is_winner"]]
+
+        assert len(candidates) == 2
+        assert len(winners) == 1
+        rows = await knowledge_repo.list_for_tenant(seeded_tenant.id)
+        assert all(row.status.value == "active" for row in rows)
+
+    async def test_execute_archives_older_duplicates_keeps_winner_active(
+        self, knowledge_repo, seeded_tenant
+    ):
+        await self._seed_legacy_pair(knowledge_repo, seeded_tenant.id)
+
+        archived_count = await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+
+        assert archived_count == 1
+        rows = await knowledge_repo.list_for_tenant(seeded_tenant.id)
+        assert len(rows) == 1  # winner remains visible on the active surface
+
+    async def test_rerun_is_idempotent(self, knowledge_repo, seeded_tenant):
+        await self._seed_legacy_pair(knowledge_repo, seeded_tenant.id)
+        first = await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+        second = await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+
+        assert first == 1
+        assert second == 0
+
+    async def test_distinct_provenances_are_separate_groups(self, knowledge_repo, seeded_tenant):
+        await knowledge_repo.create(self._legacy_doc(seeded_tenant.id, "connector:github:1"))
+        await knowledge_repo.create(self._legacy_doc(seeded_tenant.id, "connector:github:2"))
+
+        candidates = await knowledge_repo.find_legacy_duplicate_candidates(seeded_tenant.id)
+
+        assert len(candidates) == 2
+        assert all(candidate["is_winner"] for candidate in candidates)
+        assert await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id) == 0
+
+    async def test_same_provenance_across_tenants_is_independent(
+        self, knowledge_repo, seeded_tenants
+    ):
+        tenant_a, tenant_b = seeded_tenants
+        await knowledge_repo.create(self._legacy_doc(tenant_a.id, "connector:linear:9"))
+        await knowledge_repo.create(self._legacy_doc(tenant_a.id, "connector:linear:9"))
+        await knowledge_repo.create(self._legacy_doc(tenant_b.id, "connector:linear:9"))
+
+        # Scoped sweep touches ONLY tenant A's duplicate group.
+        candidates = await knowledge_repo.find_legacy_duplicate_candidates(tenant_a.id)
+        assert len(candidates) == 2
+
+        archived = await knowledge_repo.archive_legacy_duplicates(tenant_a.id)
+        assert archived == 1
+
+        rows_a = await knowledge_repo.list_for_tenant(tenant_a.id)
+        rows_b = await knowledge_repo.list_for_tenant(tenant_b.id)
+        assert len(rows_a) == 1  # tenant A winner kept
+        assert len(rows_b) == 1  # tenant B's lone record completely untouched
+
+    async def test_external_id_rows_are_never_candidates(self, knowledge_repo, seeded_tenant, db):
+        # Two legacy duplicates of one logical document (both eligible)...
+        await knowledge_repo.create(
+            _document(seeded_tenant.id, external_id=None, provenance="connector:github:dup")
+        )
+        await knowledge_repo.create(
+            _document(seeded_tenant.id, external_id=None, provenance="connector:github:dup")
+        )
+        # ...plus a THIRD row with the same tenant/source/provenance that
+        # already carries an ADR-003 identity. It must NEVER be a candidate.
+        identified = _document(
+            seeded_tenant.id,
+            external_id="github:dup",
+            provenance="connector:github:dup",
+        )
+        await knowledge_repo.create(identified)
+
+        candidates = await knowledge_repo.find_legacy_duplicate_candidates(seeded_tenant.id)
+
+        assert len(candidates) == 2
+        assert all(candidate["id"] != identified.id for candidate in candidates)
+
+        archived_count = await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+
+        assert archived_count == 1
+        async with db._connection_pool.acquire() as conn:
+            states = await conn.fetch(
+                """
+                SELECT id, external_id, status
+                FROM knowledge_documents
+                WHERE tenant_id = $1
+                """,
+                seeded_tenant.id,
+            )
+        by_external = {row["external_id"]: dict(row) for row in states}
+        # Final state: ONE active winner + ONE archived older duplicate +
+        # the untouched identity-bearing row (still active, external_id
+        # byte-for-byte unchanged).
+        assert len([r for r in states if r["status"] == "active"]) == 2
+        assert len([r for r in states if r["status"] == "archived"]) == 1
+        assert [r for r in states if r["status"] == "archived"][0]["external_id"] is None
+        assert by_external["github:dup"]["status"] == "active"
+        assert by_external["github:dup"]["external_id"] == "github:dup"
+
+    async def test_archived_rows_are_never_candidates(self, knowledge_repo, seeded_tenant):
+        older = self._legacy_doc(seeded_tenant.id, "connector:github:arch")
+        newer = self._legacy_doc(seeded_tenant.id, "connector:github:arch")
+        await knowledge_repo.create(older)
+        await knowledge_repo.create(newer)
+        assert await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id) == 1
+
+        # Post-cleanup the surviving winner is still an active
+        # connector-provenance row and legitimately appears in discovery as
+        # a single-member group (nothing left to archive).
+        candidates = await knowledge_repo.find_legacy_duplicate_candidates(seeded_tenant.id)
+        assert len(candidates) == 1
+        assert candidates[0]["is_winner"] is True
+
+        assert await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id) == 0
+
+    async def test_single_legitimate_connector_record_remains_active(
+        self, knowledge_repo, seeded_tenant
+    ):
+        await knowledge_repo.create(self._legacy_doc(seeded_tenant.id, "connector:slack:only"))
+
+        candidates = await knowledge_repo.find_legacy_duplicate_candidates(seeded_tenant.id)
+
+        assert len(candidates) == 1
+        assert candidates[0]["is_winner"] is True
+        assert await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id) == 0
+
+    async def test_non_connector_provenance_is_never_a_candidate(
+        self, knowledge_repo, seeded_tenant
+    ):
+        await knowledge_repo.create(_document(seeded_tenant.id, provenance="Policy handbook"))
+        await knowledge_repo.create(_document(seeded_tenant.id, provenance="Policy handbook v2"))
+
+        assert await knowledge_repo.find_legacy_duplicate_candidates(seeded_tenant.id) == []
+        assert await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id) == 0
+
+    async def test_tenant_scoped_archival_leaves_other_tenants_untouched(
+        self, knowledge_repo, seeded_tenants
+    ):
+        tenant_a, tenant_b = seeded_tenants
+        await self._seed_legacy_pair(knowledge_repo, tenant_a.id, "connector:github:scoped")
+        await self._seed_legacy_pair(knowledge_repo, tenant_b.id, "connector:github:scoped")
+
+        archived = await knowledge_repo.archive_legacy_duplicates(tenant_a.id)
+
+        assert archived == 1
+        rows_a = await knowledge_repo.list_for_tenant(tenant_a.id)
+        rows_b = await knowledge_repo.list_for_tenant(tenant_b.id)
+        assert len(rows_a) == 1  # tenant A winner kept
+        assert len(rows_b) == 2  # tenant B completely untouched
+
+    async def test_created_at_tie_breaks_on_smallest_id(self, knowledge_repo, seeded_tenant):
+        stamp = datetime(2026, 8, 24, 12, 0, 0)
+        doc_b = self._legacy_doc(seeded_tenant.id, "connector:github:tie")
+        doc_a = self._legacy_doc(seeded_tenant.id, "connector:github:tie")
+        # Force an exact created_at tie; deterministic rule keeps smallest id.
+        for doc in (doc_a, doc_b):
+            object.__setattr__(doc, "created_at", stamp)
+        await knowledge_repo.create(doc_b)
+        await knowledge_repo.create(doc_a)
+
+        await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+
+        rows = await knowledge_repo.list_for_tenant(seeded_tenant.id)
+        assert len(rows) == 1
+        assert rows[0].id == min(doc_a.id, doc_b.id)
+
+        # The loser is deterministically the larger-id row, now archived.
+        loser_id = max(doc_a.id, doc_b.id)
+        recovered = await knowledge_repo.get_by_id(loser_id, seeded_tenant.id)
+        assert recovered.status.value == "archived"
+
+    async def test_archived_chunks_are_retained_but_excluded_from_search(
+        self, knowledge_repo, seeded_tenant
+    ):
+        from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+
+        chunk_repo = PostgreSQLKnowledgeChunkRepository(knowledge_repo.db)
+
+        # Two legacy duplicates of one logical document; newest wins.
+        older_created = datetime(2026, 8, 20, 9, 0, 0)
+        document_old = _document(
+            seeded_tenant.id,
+            provenance="connector:github:gone",
+            created_at=older_created,
+        )
+        chunks_old = _chunks(document_old, count=1)
+        await knowledge_repo.create_document_with_chunks(
+            document_old, chunks_old, _embeddings(len(chunks_old))
+        )
+
+        document_new = _document(
+            seeded_tenant.id,
+            provenance="connector:github:gone",
+            created_at=datetime(2026, 8, 21, 9, 0, 0),
+        )
+        chunks_new = _chunks(document_new, count=1)
+        await knowledge_repo.create_document_with_chunks(
+            document_new, chunks_new, _embeddings(len(chunks_new))
+        )
+
+        archived_count = await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+        assert archived_count == 1
+
+        # Chunks of the archived duplicate are RETAINED (archive-only
+        # lifecycle; no deletion anywhere) ...
+        async with knowledge_repo.db._connection_pool.acquire() as conn:
+            retained = await conn.fetchval(
+                "SELECT COUNT(*) FROM knowledge_chunks WHERE document_id = $1",
+                document_old.id,
+            )
+        assert retained == 1
+
+        # ...but no longer surface as retrieval candidates, while the
+        # winner's chunk does.
+        matches = await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=10)
+        match_document_ids = {match.document_id for match in matches}
+        assert document_old.id not in match_document_ids
+        assert document_new.id in match_document_ids
+
+    async def test_get_by_id_still_recovers_archived_documents(self, knowledge_repo, seeded_tenant):
+        older = self._legacy_doc(seeded_tenant.id, "connector:github:rec")
+        newer = self._legacy_doc(seeded_tenant.id, "connector:github:rec")
+        await knowledge_repo.create(older)
+        await knowledge_repo.create(newer)
+        await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id)
+
+        # Explicit ID lookup still recovers the ARCHIVED duplicate
+        # (recovery/audit contract), while the winner stays active.
+        recovered = await knowledge_repo.get_by_id(older.id, seeded_tenant.id)
+        assert recovered.status.value == "archived"
+
+        winner = await knowledge_repo.get_by_id(newer.id, seeded_tenant.id)
+        assert winner.status.value == "active"
+
+
+class TestLegacyArchivalRetrievalRegression:
+    """Archived documents must vanish from RAG/Intelligence candidate paths
+    while remaining recoverable by explicit ID."""
+
+    class _PassthroughGuard:
+        def sanitize(self, text: str):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(sanitized_text=text)
+
+    async def test_approved_search_and_intelligence_exclude_archived_documents(
+        self, db, seeded_tenant
+    ):
+        from arc.domain.models import (
+            IntelligenceAnswer,
+            KnowledgeSource,
+        )
+        from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+        from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+        from arc.services.intelligence import UnifiedIntelligenceService
+        from arc.services.knowledge import KnowledgeService
+        from arc.services.llm import DeterministicLlmProvider
+        from arc.services.retrieval import RetrievalService
+
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        chunk_repo = PostgreSQLKnowledgeChunkRepository(db)
+        indexer = RetrievalService(chunk_repo)
+        ingestion = KnowledgeService(
+            knowledge_repo,
+            pii_guard=self._PassthroughGuard(),
+            indexer=indexer,
+        )
+        context = TenantContext(
+            tenant_id=seeded_tenant.id,
+            tenant_name="Regression",
+            user_id="user-1",
+            role=UserRole.MEMBER,
+        )
+
+        document_old = await ingestion.ingest_document(
+            context,
+            source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+            provenance="connector:github:legacy-regression",
+            content="Unique legacy archival regression body. Older crawl.",
+        )
+        document_new = await ingestion.ingest_document(
+            context,
+            source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+            provenance="connector:github:legacy-regression",
+            content="Unique legacy archival regression body. Newer crawl.",
+        )
+
+        # Sanity: BOTH retrievable before archival — this duplication is the
+        # exact legacy problem the slice cleans up.
+        pre = await indexer.approved_search(context, "legacy archival", limit=5)
+        assert {match.document_id for match in pre.items} == {
+            document_old.id,
+            document_new.id,
+        }
+
+        assert await knowledge_repo.archive_legacy_duplicates(seeded_tenant.id) == 1
+
+        post = await indexer.approved_search(context, "legacy archival", limit=5)
+        post_ids = {match.document_id for match in post.items}
+        assert document_old.id not in post_ids
+        assert document_new.id in post_ids
+
+        intelligence = UnifiedIntelligenceService(
+            retrieval=indexer,
+            llm_provider=DeterministicLlmProvider(),
+        )
+        answer = await intelligence.answer_query(context, "legacy archival")
+        assert isinstance(answer, IntelligenceAnswer)
+        assert all(citation.split("#")[0] != document_old.id for citation in answer.citations)

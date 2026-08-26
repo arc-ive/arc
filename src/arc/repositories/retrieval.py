@@ -100,6 +100,9 @@ class PostgreSQLKnowledgeChunkRepository:
                 JOIN knowledge_documents d
                   ON d.id = c.document_id AND d.tenant_id = c.tenant_id
                 WHERE c.tenant_id = $1
+                  -- ADR-003 lifecycle: archived documents are retained for
+                  -- recovery but are never a retrieval source.
+                  AND d.status = 'active'
                 ORDER BY c.embedding <=> $2::vector
                 LIMIT $3
                 """,
