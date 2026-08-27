@@ -402,7 +402,7 @@ async def test_different_user_can_approve():
 
 @pytest.mark.asyncio
 async def test_requester_can_consume_approved_request_by_another():
-    """Per the latest ADR-005: requester ≠ approver is enforced for
+    """Per ADR-004: requester ≠ approver is enforced for
     DECISION, but the original requester may CONSUME an approved request
     if all other binding/authorization conditions are met."""
     service, repo = _service()

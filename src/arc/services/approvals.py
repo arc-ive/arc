@@ -27,6 +27,7 @@ triggered it is fail-closed regardless, so a persistence failure is
 logged safely and never breaks the served business response.
 """
 
+import dataclasses
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -148,12 +149,7 @@ class HumanApprovalService:
         now = self._clock()
         effective = request.effective_status(now)
         if effective != request.status:
-            return ApprovalRequest(
-                **{
-                    **request.__dict__,
-                    "status": effective,
-                }
-            )
+            return dataclasses.replace(request, status=effective)
         return request
 
     async def list_requests(self, context: TenantContext, status: Optional[ApprovalStatus] = None):

@@ -597,8 +597,14 @@ class ToolExecutionService:
                 )
                 raise ToolValidationError(tool_name)
 
+            # ADR-005 canonical serialization: sorted keys, compact
+            # separators, UTF-8, SHA-256 lowercase hex.
             arguments_digest = hashlib.sha256(
-                validated.model_dump_json().encode("utf-8")
+                json.dumps(
+                    validated.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
             ).hexdigest()
 
             if approval_id is not None:
@@ -630,7 +636,7 @@ class ToolExecutionService:
                         tool.version,
                         arguments_digest,
                     )
-                except Exception:
+                except ApprovalError:
                     # Consumption failed — do NOT invoke handler.
                     # Record a failure with an appropriate error kind and
                     # deny execution.  The specific approval error type
@@ -679,21 +685,24 @@ class ToolExecutionService:
 
         # Normal execution path (ALLOW policy, or post-consumption).
         # If we reached here with approval_id, consumption already
-        # succeeded and validated the binding.
-        try:
-            validated = tool.input_model.model_validate(raw_input)
-        except ValidationError:
-            await self._record_failure(
-                context=context,
-                user_id=principal.user_id,
-                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
-                tool_name=tool.name,
-                tool_version=tool.version,
-                risk_level=tool.risk_level,
-                input_summary=_summarize(raw_input),
-                error_kind="invalid_input",
-            )
-            raise ToolValidationError(tool_name)
+        # succeeded and validated the binding.  Reuse the pre-validated
+        # model when it was already computed above (REQUIRE_HUMAN_APPROVAL
+        # path); validate fresh for the ALLOW/DENY paths.
+        if "validated" not in locals():
+            try:
+                validated = tool.input_model.model_validate(raw_input)
+            except ValidationError:
+                await self._record_failure(
+                    context=context,
+                    user_id=principal.user_id,
+                    authorization_outcome=ToolAuthorizationOutcome.GRANTED,
+                    tool_name=tool.name,
+                    tool_version=tool.version,
+                    risk_level=tool.risk_level,
+                    input_summary=_summarize(raw_input),
+                    error_kind="invalid_input",
+                )
+                raise ToolValidationError(tool_name)
 
         input_data = validated.model_dump()
 
