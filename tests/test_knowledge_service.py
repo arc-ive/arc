@@ -770,3 +770,121 @@ class TestSanitizationExactlyOnce:
             external_id="race-sp-1",
         )
         assert guard.calls == 4
+
+
+class LegacyFakeKnowledgeRepository(FakeKnowledgeRepository):
+    """Fake with ADR-003 lifecycle methods for archival-report tests."""
+
+    def __init__(self, candidates):
+        super().__init__()
+        self._candidates = candidates
+        self.archived_calls = 0
+
+    async def find_legacy_duplicate_candidates(self, tenant_id=None):
+        return list(self._candidates)
+
+    async def archive_legacy_duplicates(self, tenant_id=None) -> int:
+        self.archived_calls += 1
+        losers = [c for c in self._candidates if tenant_id is None or c["tenant_id"] == tenant_id]
+        losers = [c for c in losers if not c["is_winner"]]
+        return len(losers)
+
+
+class TestLegacyArchivalReporting:
+    """Operational model: dry run → human verification → explicit execution."""
+
+    def _candidates(self, tenant_id="tenant-1"):
+        from datetime import datetime as dt
+
+        created_old = dt(2026, 8, 20, 10, 0, 0)
+        created_new = dt(2026, 8, 21, 10, 0, 0)
+        return [
+            {
+                "tenant_id": tenant_id,
+                "source": "internal_knowledge",
+                "provenance": "connector:github:77",
+                "id": "row-old",
+                "created_at": created_old,
+                "is_winner": False,
+            },
+            {
+                "tenant_id": tenant_id,
+                "source": "internal_knowledge",
+                "provenance": "connector:github:77",
+                "id": "row-new",
+                "created_at": created_new,
+                "is_winner": True,
+            },
+        ]
+
+    async def test_dry_run_reports_without_any_mutation(self):
+        repo = LegacyFakeKnowledgeRepository(self._candidates())
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard())
+
+        report = await service.archive_legacy_duplicates(dry_run=True)
+
+        assert report["dry_run"] is True
+        assert report["candidate_rows"] == 2
+        assert report["duplicate_groups"] == 1
+        assert report["rows_to_archive"] == 1
+        assert repo.archived_calls == 0  # ZERO mutations in dry-run mode
+        group = report["groups"][0]
+        assert group["winner_id"] == "row-new"
+        assert group["would_archive"] == [{"id": "row-old", "created_at": "2026-08-20T10:00:00"}]
+
+    async def test_report_exposes_metadata_only_never_content(self):
+        repo = LegacyFakeKnowledgeRepository(self._candidates())
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard())
+
+        report = await service.archive_legacy_duplicates(dry_run=True)
+
+        # The report carries identifiers/metadata only: never document
+        # content bodies, chunk bodies, prompts, or secrets.
+        serialized = repr(report).lower()
+        for fragment in ("prompt", "secret", "embedding"):
+            assert fragment not in serialized
+        assert set(report["guarantees"]) == {
+            "no_deletion",
+            "no_content_or_chunk_mutation",
+            "no_external_id_fabrication",
+            "archive_only",
+        }
+        for group in report["groups"]:
+            assert set(group.keys()) == {
+                "tenant_id",
+                "source",
+                "provenance",
+                "winner_id",
+                "winner_created_at",
+                "would_archive",
+            }
+            assert "content" not in group
+            for entry in group["would_archive"]:
+                assert set(entry.keys()) == {"id", "created_at"}
+                assert "content" not in entry
+
+    async def test_explicit_execution_archives_and_reports_count(self):
+        repo = LegacyFakeKnowledgeRepository(self._candidates())
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard())
+
+        report = await service.archive_legacy_duplicates(dry_run=False)
+
+        assert report["dry_run"] is False
+        assert report["archived_rows"] == 1
+        assert repo.archived_calls == 1
+
+    async def test_idempotent_rerun_reports_zero_after_cleanup(self):
+        candidates = self._candidates()
+        # Simulate a post-cleanup state: only the winner remains active.
+        repo = LegacyFakeKnowledgeRepository([candidates[1]])
+        service = KnowledgeService(repo, pii_guard=FakePiiGuard())
+
+        report = await service.archive_legacy_duplicates(dry_run=False)
+
+        assert report["candidate_rows"] == 1
+        assert report["rows_to_archive"] == 0
+        assert report["archived_rows"] == 0
+
+
+def group_keys(group):
+    return set(group.keys())

@@ -1064,3 +1064,283 @@ class ApprovalRequest:
         if self.status == ApprovalStatus.PENDING and now >= self.expires_at:
             return ApprovalStatus.EXPIRED
         return self.status
+
+
+class SkillExecutionStatus(str, Enum):
+    """Terminal status of a Skill execution.
+
+    ``SUCCEEDED`` means every proposed step ran. Every other value is a
+    controlled, fail-closed outcome: nothing executes after a failure,
+    and blocked executions (preconditions/approval) never execute at all.
+    """
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    PRECONDITION_FAILED = "precondition_failed"
+    APPROVAL_REQUIRED = "approval_required"
+    DENIED = "denied"
+
+
+@dataclass
+class SkillExecutionStepOutcome:
+    """Outcome of exactly one proposed tool call within a Skill execution.
+
+    A successful step carries its tool version and output; a failed step
+    carries a safe ``error_kind`` instead. The two shapes are mutually
+    exclusive so an outcome can never blur success and failure.
+    """
+
+    sequence: int
+    tool_name: str
+    status: ToolExecutionStatus
+    tool_version: Optional[str] = None
+    output: Optional[Dict[str, Any]] = None
+    error_kind: Optional[str] = None
+
+    def __post_init__(self):
+        if not isinstance(self.sequence, int) or isinstance(self.sequence, bool):
+            raise ValueError("Step sequence must be an integer")
+        if self.sequence < 0:
+            raise ValueError("Step sequence cannot be negative")
+        if not isinstance(self.tool_name, str) or not self.tool_name:
+            raise ValueError("Step tool name cannot be empty")
+        if not isinstance(self.status, ToolExecutionStatus):
+            raise ValueError(f"Invalid skill execution step status: {self.status!r}")
+        if self.status is ToolExecutionStatus.SUCCESS:
+            if self.error_kind is not None:
+                raise ValueError("Successful steps cannot have an error kind")
+            if self.output is None:
+                raise ValueError("Successful steps must carry an output")
+            if not self.tool_version:
+                raise ValueError("Successful steps must record a tool version")
+        elif self.status is ToolExecutionStatus.FAILED:
+            if not self.error_kind:
+                raise ValueError("Failed steps require an error kind")
+            if self.output is not None:
+                raise ValueError("Failed steps cannot carry an output")
+
+
+@dataclass
+class SkillExecutionResult:
+    """Structured result of one Skill execution (controlled outcomes only).
+
+    Terminal-state invariants are enforced fail closed:
+
+    - ``SUCCEEDED`` carries no error kind and no failed steps.
+    - Blocked executions (``PRECONDITION_FAILED``,
+      ``APPROVAL_REQUIRED``) never record steps and always carry an
+      error kind.
+    - ``FAILED`` / ``DENIED`` always carry an error kind; their step
+      list preserves the completed prefix plus the failing step.
+    """
+
+    id: str
+    tenant_id: str
+    principal_id: str
+    skill_id: str
+    skill_name: str
+    skill_version: str
+    status: SkillExecutionStatus
+    steps: List[SkillExecutionStepOutcome] = field(default_factory=list)
+    error_kind: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Skill execution result ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Skill execution result tenant ID cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Skill execution result principal ID cannot be empty")
+        if not self.skill_id:
+            raise ValueError("Skill execution result skill ID cannot be empty")
+        if not self.skill_name:
+            raise ValueError("Skill execution result skill name cannot be empty")
+        if not self.skill_version:
+            raise ValueError("Skill execution result skill version cannot be empty")
+        if not isinstance(self.status, SkillExecutionStatus):
+            raise ValueError(f"Invalid skill execution status: {self.status!r}")
+        if not isinstance(self.steps, list) or not all(
+            isinstance(step, SkillExecutionStepOutcome) for step in self.steps
+        ):
+            raise ValueError("steps must be a list of SkillExecutionStepOutcome instances")
+        if self.status is SkillExecutionStatus.SUCCEEDED:
+            if self.error_kind is not None:
+                raise ValueError("Succeeded results cannot have an error kind")
+            if any(step.status is ToolExecutionStatus.FAILED for step in self.steps):
+                raise ValueError("Succeeded results cannot contain failed steps")
+        elif self.status in (
+            SkillExecutionStatus.PRECONDITION_FAILED,
+            SkillExecutionStatus.APPROVAL_REQUIRED,
+        ):
+            if self.steps:
+                raise ValueError("Blocked results cannot record steps")
+            if not self.error_kind:
+                raise ValueError("Blocked results require an error kind")
+        else:
+            # FAILED and DENIED are terminal failure states.
+            if not self.error_kind:
+                raise ValueError("Failed or denied results requires an error kind")
+
+
+class AgentRunStatus(str, Enum):
+    """Terminal status of one bounded Agent run.
+
+    ``SUCCEEDED`` means the Agent completed its goal through at least one
+    successful Skill execution. Every other value is a controlled,
+    fail-closed outcome: a Skill failure stops the run immediately (no
+    retries), ``APPROVAL_REQUIRED`` propagates the engine's escalation
+    state for the future Human Intervention capability, and
+    ``MAX_STEPS_REACHED`` enforces the hard execution bound.
+    """
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    APPROVAL_REQUIRED = "approval_required"
+    MAX_STEPS_REACHED = "max_steps_reached"
+
+
+@dataclass
+class AgentStepOutcome:
+    """Outcome of exactly one Skill execution attempted by the Agent.
+
+    The step records the structured terminal status reported by
+    ``SkillExecutionService``. A succeeded step carries no error kind;
+    every non-succeeded step carries the safe error kind observed by the
+    engine (or by the Agent's own decision boundary).
+    """
+
+    sequence: int
+    skill_id: str
+    skill_name: str
+    status: SkillExecutionStatus
+    error_kind: Optional[str] = None
+
+    def __post_init__(self):
+        if not isinstance(self.sequence, int) or isinstance(self.sequence, bool):
+            raise ValueError("Agent step sequence must be an integer")
+        if self.sequence < 0:
+            raise ValueError("Agent step sequence cannot be negative")
+        if not isinstance(self.skill_id, str) or not self.skill_id:
+            raise ValueError("Agent step skill ID cannot be empty")
+        if not isinstance(self.skill_name, str) or not self.skill_name:
+            raise ValueError("Agent step skill name cannot be empty")
+        if not isinstance(self.status, SkillExecutionStatus):
+            raise ValueError(f"Invalid agent step status: {self.status!r}")
+        if self.status is SkillExecutionStatus.SUCCEEDED:
+            if self.error_kind is not None:
+                raise ValueError("Succeeded agent steps cannot have an error kind")
+        else:
+            if not self.error_kind:
+                raise ValueError("Non-succeeded agent steps require an error kind")
+
+
+@dataclass
+class AgentExecutionResult:
+    """Structured result of one bounded Agent run (controlled outcomes only).
+
+    Terminal-state invariants are enforced fail closed:
+
+    - ``SUCCEEDED`` carries no error kind, at least one step, and only
+      succeeded steps.
+    - ``FAILED`` / ``APPROVAL_REQUIRED`` / ``MAX_STEPS_REACHED`` always
+      carry a safe error kind; their step list preserves the executed
+      prefix (decision-layer failures may record zero steps because no
+      Skill ever ran).
+    """
+
+    id: str
+    tenant_id: str
+    principal_id: str
+    goal: str
+    status: AgentRunStatus
+    steps: List[AgentStepOutcome] = field(default_factory=list)
+    error_kind: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Agent run result ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Agent run result tenant ID cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Agent run result principal ID cannot be empty")
+        if not isinstance(self.goal, str) or not self.goal.strip():
+            raise ValueError("Agent run goal cannot be empty")
+        if not isinstance(self.status, AgentRunStatus):
+            raise ValueError(f"Invalid agent run status: {self.status!r}")
+        if not isinstance(self.steps, list) or not all(
+            isinstance(step, AgentStepOutcome) for step in self.steps
+        ):
+            raise ValueError("steps must be a list of AgentStepOutcome instances")
+        if self.status is AgentRunStatus.SUCCEEDED:
+            if self.error_kind is not None:
+                raise ValueError("Succeeded agent results cannot have an error kind")
+            if not self.steps:
+                raise ValueError("Succeeded agent results must contain at least one step")
+            if any(step.status is not SkillExecutionStatus.SUCCEEDED for step in self.steps):
+                raise ValueError("Succeeded agent results cannot contain unsuccessful steps")
+        else:
+            # FAILED, APPROVAL_REQUIRED, and MAX_STEPS_REACHED are terminal
+            # controlled states.
+            if not self.error_kind:
+                raise ValueError("Non-succeeded agent results requires an error kind")
+
+
+@dataclass(frozen=True)
+class AgentDecision:
+    """One untrusted LLM decision: which tenant Skill to run next.
+
+    A decision is UNTRUSTED model output: a request that the application
+    may validate against the trusted tenant's Skill catalog and execute
+    exclusively through ``SkillExecutionService`` — never a grant. Use
+    :meth:`parse` to strictly validate raw model output; anything that is
+    not exactly this shape parses to ``None`` (fail closed, no coercion,
+    no exception escapes).
+
+    Deep structural validation of ``tool_calls`` remains owned by
+    ``SkillExecutionService``: the decision boundary checks only enough
+    shape to guarantee the proposal is a well-formed request.
+    """
+
+    skill_id: str
+    tool_calls: List[Dict[str, Any]]
+    satisfied_preconditions: List[str]
+
+    MAX_SKILL_ID_LENGTH = 255
+    _REQUIRED_KEYS = frozenset({"skill_id", "tool_calls", "satisfied_preconditions"})
+
+    @classmethod
+    def parse(cls, raw: Any) -> Optional["AgentDecision"]:
+        """Strictly parse untrusted raw model output into a decision.
+
+        Returns ``None`` (never raises) unless ``raw`` is exactly a
+        mapping with exactly the keys ``skill_id`` (non-empty string of at
+        most 255 characters), ``tool_calls`` (non-empty list of mapping
+        objects), and ``satisfied_preconditions`` (list of strings).
+        Unknown or missing fields are rejected; values are NOT coerced.
+        """
+        if not isinstance(raw, dict):
+            return None
+        if set(raw.keys()) != cls._REQUIRED_KEYS:
+            return None
+        skill_id = raw["skill_id"]
+        tool_calls = raw["tool_calls"]
+        preconditions = raw["satisfied_preconditions"]
+        if not isinstance(skill_id, str) or not skill_id.strip():
+            return None
+        if len(skill_id) > cls.MAX_SKILL_ID_LENGTH:
+            return None
+        if not isinstance(tool_calls, list) or not tool_calls:
+            return None
+        if not all(isinstance(call, dict) for call in tool_calls):
+            return None
+        if not isinstance(preconditions, list) or not all(
+            isinstance(condition, str) for condition in preconditions
+        ):
+            return None
+        return cls(
+            skill_id=skill_id,
+            tool_calls=list(tool_calls),
+            satisfied_preconditions=list(preconditions),
+        )

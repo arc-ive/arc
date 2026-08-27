@@ -11,7 +11,7 @@ come from an X-10 validated ``TenantContext`` established by the
 application layer, never from an arbitrary request payload.
 """
 
-from typing import List
+from typing import List, Optional
 
 import asyncpg
 
@@ -251,18 +251,115 @@ class PostgreSQLKnowledgeRepository:
         return document
 
     async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
-        """List all knowledge documents for a tenant."""
+        """List ACTIVE knowledge documents for a tenant.
+
+        Archived documents (ADR-003 lifecycle) are retained for
+        recovery/audit via ``get_by_id`` but are not part of the normal
+        listing/retrieval surface.
+        """
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 f"""
                 SELECT {_DOCUMENT_COLUMNS}
                 FROM knowledge_documents
-                WHERE tenant_id = $1
+                WHERE tenant_id = $1 AND status = 'active'
                 ORDER BY created_at DESC
                 """,
                 tenant_id,
             )
             return [self._row_to_document(row) for row in rows]
+
+    async def find_legacy_duplicate_candidates(self, tenant_id: Optional[str] = None) -> List[dict]:
+        """Discover legacy duplicate groups (ADR-003 follow-up cleanup).
+
+        Candidate predicate (deliberately narrow — see ADR-003 and the
+        note in ``archive_legacy_duplicates``): rows created before the
+        identity model existed, i.e. ``external_id IS NULL``, still
+        ``active``, whose provenance matches the deterministic historical
+        connector binding ``connector:{provider}:{source_id}``.
+
+        Rows are grouped per tenant by ``(tenant_id, source, provenance)``.
+        Within each group the newest ``created_at`` (tie-break: smallest
+        ``id``) is the WINNER and remains active; every other row in the
+        group is an archival candidate. Read-only: no state changes.
+
+        ``tenant_id`` optionally narrows the sweep to a single tenant;
+        ``None`` (the default) sweeps every tenant. Grouping NEVER spans
+        tenants regardless.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT tenant_id, source, provenance, id, created_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY tenant_id, source, provenance
+                           ORDER BY created_at DESC, id ASC
+                       ) AS rn
+                FROM knowledge_documents
+                WHERE external_id IS NULL
+                  AND status = 'active'
+                  AND provenance LIKE 'connector:%'
+                  AND ($1::varchar IS NULL OR tenant_id = $1)
+                """,
+                tenant_id,
+            )
+            return [
+                {
+                    "tenant_id": row["tenant_id"],
+                    "source": row["source"],
+                    "provenance": row["provenance"],
+                    "id": row["id"],
+                    "created_at": row["created_at"],
+                    "is_winner": row["rn"] == 1,
+                }
+                for row in rows
+            ]
+
+    async def archive_legacy_duplicates(self, tenant_id: Optional[str] = None) -> int:
+        """Archive non-winner legacy duplicate rows; return the count.
+
+        ONE atomic statement that RE-CHECKS the exact safety predicate and
+        the winner rule at mutation time (no stale ID list from a dry run
+        can be blindly mutated). Archive-only: content, chunks, external_id
+        values, and the per-group winner are never touched. Idempotent:
+        already-archived rows stop matching the predicate, so reruns
+        archive nothing.
+
+        ``tenant_id`` optionally narrows the mutation to a single tenant;
+        ``None`` (the default) sweeps every tenant. Grouping NEVER spans
+        tenants.
+        """
+        async with self.db.transaction() as conn:
+            status = await conn.execute(
+                """
+                WITH candidates AS (
+                    SELECT id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY tenant_id, source, provenance
+                               ORDER BY created_at DESC, id ASC
+                           ) AS rn
+                    FROM knowledge_documents
+                    WHERE external_id IS NULL
+                      AND status = 'active'
+                      AND provenance LIKE 'connector:%'
+                      AND ($1::varchar IS NULL OR tenant_id = $1)
+                )
+                UPDATE knowledge_documents kd
+                SET status = 'archived',
+                    updated_at = CURRENT_TIMESTAMP
+                FROM candidates c
+                WHERE kd.id = c.id
+                  AND c.rn > 1
+                  -- Concurrent-execution guard: a loser already archived by
+                  -- a parallel run is no longer active and must not be
+                  -- re-written; the reported count then reflects only real
+                  -- ACTIVE → ARCHIVED state transitions.
+                  AND kd.status = 'active'
+                """,
+                tenant_id,
+            )
+            archived = int(status.split()[-1]) if status else 0
+        return archived
 
     @staticmethod
     def _row_to_document(row: asyncpg.Record) -> KnowledgeDocument:

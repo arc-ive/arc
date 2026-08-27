@@ -72,6 +72,19 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   COMPANY_ADMINISTRATOR read the platform tool catalog and execute
   approved tools; OPERATIONS_USER reads and executes permitted
   operational tools (TRD 7); EMPLOYEE has none.
+- ``skill:execute`` exists for Skill execution (Skills Engine execution
+  slice): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and
+  OPERATIONS_USER execute Skills within a trusted tenant context;
+  EMPLOYEE has none. Execution authorization for the underlying tools
+  remains enforced by the tool layer (``tool:execute`` plus each tool's
+  declared required permissions), never by this permission alone.
+- ``agent:execute`` exists for the bounded Agent orchestration layer
+  (ADR-006): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and
+  OPERATIONS_USER may run the Agent; EMPLOYEE has none. The Agent can do
+  nothing beyond what Skill execution already permits: it must pass
+  through ``SkillExecutionService``, so this permission never grants
+  direct tool access and never bypasses ``Skill.allowed_tools`` or
+  per-tool RBAC.
 - ``EMPLOYEE`` intentionally has no matrix permissions; it is allowed only
   self-scoped operations (for example listing the authenticated user's own
   tenants).
@@ -99,6 +112,7 @@ SKILL_CREATE = Permission(resource="skill", action="create")
 SKILL_READ = Permission(resource="skill", action="read")
 SKILL_UPDATE = Permission(resource="skill", action="update")
 SKILL_DELETE = Permission(resource="skill", action="delete")
+SKILL_EXECUTE = Permission(resource="skill", action="execute")
 TOOL_READ = Permission(resource="tool", action="read")
 TOOL_EXECUTE = Permission(resource="tool", action="execute")
 CONNECTOR_CREATE = Permission(resource="connector", action="create")
@@ -107,6 +121,7 @@ CONNECTOR_SYNC = Permission(resource="connector", action="sync")
 WEBHOOK_READ = Permission(resource="webhook", action="read")
 OBSERVABILITY_READ = Permission(resource="observability", action="read")
 OBSERVABILITY_PLATFORM_READ = Permission(resource="observability", action="platform_read")
+AGENT_EXECUTE = Permission(resource="agent", action="execute")
 APPROVAL_READ = Permission(resource="approval", action="read")
 APPROVAL_DECIDE = Permission(resource="approval", action="decide")
 
@@ -115,6 +130,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     # Global provisioning permissions; they intentionally require NO tenant context.
     ApplicationRole.PLATFORM_ADMINISTRATOR: frozenset(
         {
+            AGENT_EXECUTE,
             TENANT_CREATE,
             USER_CREATE,
             MEMBERSHIP_CREATE,
@@ -125,6 +141,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             SKILL_READ,
             SKILL_UPDATE,
             SKILL_DELETE,
+            SKILL_EXECUTE,
             TOOL_READ,
             TOOL_EXECUTE,
             CONNECTOR_CREATE,
@@ -139,6 +156,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
         {
+            AGENT_EXECUTE,
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
@@ -146,6 +164,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             SKILL_READ,
             SKILL_UPDATE,
             SKILL_DELETE,
+            SKILL_EXECUTE,
             TOOL_READ,
             TOOL_EXECUTE,
             CONNECTOR_CREATE,
@@ -159,9 +178,11 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     ),
     ApplicationRole.OPERATIONS_USER: frozenset(
         {
+            AGENT_EXECUTE,
             TENANT_READ,
             KNOWLEDGE_READ,
             SKILL_READ,
+            SKILL_EXECUTE,
             TOOL_READ,
             TOOL_EXECUTE,
             CONNECTOR_READ,

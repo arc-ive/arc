@@ -12,6 +12,7 @@ import pytest
 
 from arc.domain.models import UserRole
 from arc.security.authorization import (
+    AGENT_EXECUTE,
     APPROVAL_DECIDE,
     APPROVAL_READ,
     CONNECTOR_CREATE,
@@ -25,6 +26,7 @@ from arc.security.authorization import (
     ROLE_PERMISSIONS,
     SKILL_CREATE,
     SKILL_DELETE,
+    SKILL_EXECUTE,
     SKILL_READ,
     SKILL_UPDATE,
     TENANT_CREATE,
@@ -65,6 +67,7 @@ def test_exactly_four_application_roles_exist():
         (
             ApplicationRole.PLATFORM_ADMINISTRATOR,
             [
+                AGENT_EXECUTE,
                 TENANT_CREATE,
                 USER_CREATE,
                 MEMBERSHIP_CREATE,
@@ -75,6 +78,7 @@ def test_exactly_four_application_roles_exist():
                 SKILL_READ,
                 SKILL_UPDATE,
                 SKILL_DELETE,
+                SKILL_EXECUTE,
                 TOOL_READ,
                 TOOL_EXECUTE,
                 CONNECTOR_CREATE,
@@ -91,6 +95,7 @@ def test_exactly_four_application_roles_exist():
         (
             ApplicationRole.COMPANY_ADMINISTRATOR,
             [
+                AGENT_EXECUTE,
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
                 KNOWLEDGE_READ,
@@ -98,6 +103,7 @@ def test_exactly_four_application_roles_exist():
                 SKILL_READ,
                 SKILL_UPDATE,
                 SKILL_DELETE,
+                SKILL_EXECUTE,
                 TOOL_READ,
                 TOOL_EXECUTE,
                 CONNECTOR_CREATE,
@@ -113,9 +119,11 @@ def test_exactly_four_application_roles_exist():
         (
             ApplicationRole.OPERATIONS_USER,
             [
+                AGENT_EXECUTE,
                 TENANT_READ,
                 KNOWLEDGE_READ,
                 SKILL_READ,
+                SKILL_EXECUTE,
                 TOOL_READ,
                 TOOL_EXECUTE,
                 CONNECTOR_READ,
@@ -140,6 +148,7 @@ def test_exactly_four_application_roles_exist():
             ApplicationRole.EMPLOYEE,
             [],
             [
+                AGENT_EXECUTE,
                 TENANT_CREATE,
                 USER_CREATE,
                 MEMBERSHIP_CREATE,
@@ -150,6 +159,7 @@ def test_exactly_four_application_roles_exist():
                 SKILL_READ,
                 SKILL_UPDATE,
                 SKILL_DELETE,
+                SKILL_EXECUTE,
                 TOOL_READ,
                 TOOL_EXECUTE,
                 CONNECTOR_CREATE,
