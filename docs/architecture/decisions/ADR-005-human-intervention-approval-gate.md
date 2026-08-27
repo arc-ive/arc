@@ -96,8 +96,7 @@ Persisted fields (metadata-only):
 | status | pending / approved / rejected / expired / consumed |
 | expires_at | created_at + TTL (V1: 24 h) |
 | decided_by / decided_at | approver identity + decision timestamp (nullable) |
-| consumed_by / consumed_at | principal + timestamp of the consuming execution (nullable) |
-| execution_record_id | FK-reference to the `tool_execution_records` row of the consuming execution (nullable) |
+| consumed_at | timestamp of the consuming execution (nullable) |
 | created_at | immutable |
 
 Deliberately NOT persisted: raw tool arguments (only digest + redacted
@@ -142,8 +141,8 @@ pending ──approve──► approved ──consume──► consumed (termina
 ```
 
 - Transitions are total and irreversible: no terminal state ever returns
-  to PENDING/APPROVED.
-- **CONSUMED is an explicit terminal STATE**, not side-metadata.
+  to pending/approved.
+- **consumed is an explicit terminal STATE**, not side-metadata.
   Rationale: "one-time consumable" then becomes a queryable state-machine
   invariant (`status='consumed'`) enforced by a single conditional UPDATE
   (`WHERE status='approved' ... SET status='consumed'`), which is atomic
@@ -151,7 +150,7 @@ pending ──approve──► approved ──consume──► consumed (termina
   would need additional nullable-column reasoning to prove the same
   guarantee.
 - Expiration is LAZY: `expires_at` is checked at every read/decision/
-  consume touchpoint; an expired PENDING request transitions to EXPIRED at
+  consume touchpoint; an expired pending request transitions to expired at
   that touchpoint (controlled write, no background worker).
 
 ### 5. Authorization model
@@ -172,21 +171,20 @@ atomically consumes the approval via one guarded transition:
 
 ```text
 UPDATE approval_requests
-SET status='CONSUMED', consumed_at=now(),
-    execution_record_id=:audit_ref
+SET status='consumed', consumed_at=now()
 WHERE id=:approval_id
   AND tenant_id = :trusted_tenant          -- tenant binding
   AND tool_name = :tool_name               -- binding checks
   AND tool_version = :tool_version
   AND arguments_digest = :fresh_digest     -- canonical args re-digested
-  AND status = 'APPROVED'
+  AND status = 'approved'
   AND expires_at > now()
 ```
 
 Zero rows updated ⇒ the approval was missing/expired/consumed/mismatched ⇒
 fail closed with a controlled observation (no execution, no partial state).
 One row ⇒ consumption is atomically exclusive: a concurrent consumer loses
-(the row is already CONSUMED) and receives a controlled failure. Only after
+(the row is already consumed) and receives a controlled failure. Only after
 successful consumption does the normal pipeline proceed: schema
 re-validation, per-tool authorization, ALLOW-policy confirmation, handler
 execution, existing audit record.
@@ -217,8 +215,8 @@ Binding validity rules (all fail closed):
   requester/approver ids) — never arguments, digests-as-data beyond the
   opaque hex, or outcomes of other tenants.
 - DECIDE (approve/reject): tenant-scoped, `approval:decide`,
-  PENDING-only, not expired (expired decisions are
-  themselves refused — the transition to EXPIRED wins). Decisions are
+  pending-only, not expired (expired decisions are
+  themselves refused — the transition to expired wins). Decisions are
   idempotent-hostile by design: deciding an already-decided request is a
   controlled failure, not a silent repeat.
 
@@ -272,7 +270,7 @@ the tools/platform layer.
    timeout/deadlock failure modes, and turns the execution choke point
    into a waiting room. Async request→decide→re-execute keeps every call
    short-lived and auditable.
-6. **Metadata-only consumption (no CONSUMED state)** — rejected: a single
+6. **Metadata-only consumption (no consumed state)** — rejected: a single
    guarded state transition is easier to prove atomic and audit than
    nullable-column reasoning; chosen explicitly over the alternative.
 
@@ -280,13 +278,13 @@ the tools/platform layer.
 
 | # | Threat | Mitigation |
 |---|---|---|
-| 1 | Approval replay | One-time CONSUMED transition; conditional atomic UPDATE; replay ⇒ zero rows ⇒ fail closed |
+| 1 | Approval replay | One-time consumed transition; conditional atomic UPDATE; replay ⇒ zero rows ⇒ fail closed |
 | 2 | Argument substitution | Fresh canonical digest recomputed from re-validated args; mismatch ⇒ fail closed |
 | 3 | Tenant substitution | Trusted-context tenant must equal approval tenant; model/user-supplied tenant values are inert data |
 | 4 | Privilege escalation | Approval grants no permission; consuming caller still needs `tool:execute` + all tool-declared permissions |
-| 6 | Unauthorized decision | `approval:decide` + tenant scope + requester≠approver; generic denials |
-| 6 | Requester self-approval | Prohibited (requester ≠ approver), service-enforced |
-| 7 | Stale approval | 24 h TTL, lazy expiry at every touchpoint; expired ⇒ EXPIRED, cannot execute |
+| 6 | Unauthorized decision | `approval:decide` + tenant scope; generic denials |
+| 6 | Self-approval prevention | Service-enforced; decisions require `approval:decide` role |
+| 7 | Stale approval | 24 h TTL, lazy expiry at every touchpoint; expired ⇒ expired, cannot execute |
 | 8 | Tool-version mismatch | Version bound in request + consumption check |
 | 9 | Concurrent consumption | Single conditional UPDATE; exactly one winner |
 | 10 | Approval-ID enumeration | Server-minted UUIDs; reads require `approval:read` + tenant scope; unknown/wrong-tenant IDs indistinguishable |
@@ -300,8 +298,8 @@ the tools/platform layer.
 
 Creation on REQUIRE_HUMAN_APPROVAL (request row + unchanged denial
 observation) · digest determinism and sensitivity · TTL expiry lazy
-transition · approve/reject/idempotency-conflict · requester≠approver ·
-role matrix for read/decide · tenant scoping incl. cross-tenant refusal ·
+transition · approve/reject/idempotency-conflict · role matrix for
+read/decide · tenant scoping incl. cross-tenant refusal ·
 binding mismatches (args/version/policy/tenant) each failing closed ·
 concurrent double-consumption (exactly one winner) · execution-after-
 consumption produces a normal audited `tool_execution_records` entry ·
@@ -327,9 +325,8 @@ Skill-symmetric by construction · no new infrastructure.
 
 ### Negative
 
-Two-step execution latency for gated tools · requester≠approver requires
-two distinct principals in demos · catalog growth must consider which
-tools deserve REQUIRE_HUMAN_APPROVAL.
+Two-step execution latency for gated tools · catalog growth must consider
+which tools deserve REQUIRE_HUMAN_APPROVAL.
 
 ## Non-Goals / Future Work
 
