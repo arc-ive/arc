@@ -31,6 +31,7 @@ from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
 from arc.services.llm import build_llm_provider, get_llm_settings
 from arc.services.observability import ObservabilityService
+from arc.services.pii import PiiGuardService
 from arc.services.retrieval import RetrievalService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
@@ -106,8 +107,9 @@ class Application:
             embedding_provider=build_embedding_provider(get_embedding_settings()),
         )
         self.services["retrieval_service"] = retrieval_service
+        pii_guard = PiiGuardService()
         self.services["knowledge_service"] = KnowledgeService(
-            self.repositories["knowledge"], indexer=retrieval_service
+            self.repositories["knowledge"], pii_guard=pii_guard, indexer=retrieval_service
         )
 
         # Initialize Unified Intelligence service (first slice: reasoning
@@ -133,7 +135,9 @@ class Application:
         )
 
         # Initialize skill service
-        self.services["skill_service"] = SkillService(self.repositories["skill"])
+        self.services["skill_service"] = SkillService(
+            self.repositories["skill"], pii_guard=pii_guard
+        )
 
         # Initialize the skill execution engine (delegates ALL actions to
         # the tool service above).

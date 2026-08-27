@@ -297,8 +297,22 @@ class TestStructuralFieldsUnchanged:
         created = skill_repo.create.call_args[0][0]
         assert created.approval_required is True
 
-    async def test_failure_behavior_not_modified(self, skill_repo, tenant_context):
-        """failure_behavior should not be modified (not PII-sensitive)."""
+    async def test_pii_in_failure_behavior_is_sanitized(self, skill_repo, tenant_context):
+        """PII in the failure_behavior field should be sanitized before persistence."""
+        behavior = "If failed, email john@company.com for escalation"
+        detections = _find_pii_spans(behavior, "EMAIL_ADDRESS", ["john@company.com"])
+        pii_guard = make_pii_guard(detections)
+        service = SkillService(skill_repo, pii_guard=pii_guard)
+
+        skill = _skill(failure_behavior=behavior)
+        await service.create_skill(tenant_context, skill)
+
+        created = skill_repo.create.call_args[0][0]
+        assert "john@company.com" not in created.failure_behavior
+        assert "<EMAIL_ADDRESS>" in created.failure_behavior
+
+    async def test_clean_failure_behavior_preserved(self, skill_repo, tenant_context):
+        """Clean failure_behavior (no PII) should be preserved."""
         pii_guard = make_pii_guard([])
         service = SkillService(skill_repo, pii_guard=pii_guard)
 
@@ -308,6 +322,17 @@ class TestStructuralFieldsUnchanged:
 
         created = skill_repo.create.call_args[0][0]
         assert created.failure_behavior == behavior
+
+    async def test_none_failure_behavior_stays_none(self, skill_repo, tenant_context):
+        """None failure_behavior should remain None after sanitization."""
+        pii_guard = make_pii_guard([])
+        service = SkillService(skill_repo, pii_guard=pii_guard)
+
+        skill = _skill(failure_behavior=None)
+        await service.create_skill(tenant_context, skill)
+
+        created = skill_repo.create.call_args[0][0]
+        assert created.failure_behavior is None
 
 
 class TestPiiGuardFailurePreventsPersistence:

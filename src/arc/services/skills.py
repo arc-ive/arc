@@ -17,10 +17,11 @@ The critical security boundary is the PII guard on textual Skill fields:
         ↓
     PERSISTENCE
 
-The service reuses the existing ``PiiGuardService`` (Microsoft Presidio).
-It never copies PII detection logic and never instantiates a second PII
-implementation. If sanitization fails, the service fails closed: no
-Skill is persisted and a PiiGuardError is raised.
+The service receives a shared ``PiiGuardService`` instance via dependency
+injection from the application composition root, ensuring a single
+Presidio-backed guard is used across the application. If sanitization
+fails, the service fails closed: no Skill is persisted and a
+PiiGuardError is raised.
 
 Skill-level validation (TRD 25):
 - ``preconditions_met`` — invalid preconditions prevent execution.
@@ -70,6 +71,11 @@ class SkillService:
             if skill.expected_output is not None
             else None
         )
+        sanitized_failure_behavior = (
+            self.pii_guard.sanitize(skill.failure_behavior).sanitized_text
+            if skill.failure_behavior is not None
+            else None
+        )
 
         trusted_skill = replace(
             skill,
@@ -80,6 +86,7 @@ class SkillService:
             inputs=sanitized_inputs,
             steps=sanitized_steps,
             expected_output=sanitized_expected_output,
+            failure_behavior=sanitized_failure_behavior,
         )
         return await self.skill_repo.create(trusted_skill)
 
