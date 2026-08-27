@@ -93,7 +93,7 @@ Persisted fields (metadata-only):
 | tool_version | resolved tool version at proposal time |
 | arguments_digest | SHA-256 hex of the CANONICAL VALIDATED arguments (see §2) |
 | input_summary | existing redacted `_summarize(raw_input)` payload |
-| status | PENDING / APPROVED / REJECTED / EXPIRED / CONSUMED |
+| status | pending / approved / rejected / expired / consumed |
 | expires_at | created_at + TTL (V1: 24 h) |
 | decided_by / decided_at | approver identity + decision timestamp (nullable) |
 | consumed_by / consumed_at | principal + timestamp of the consuming execution (nullable) |
@@ -134,18 +134,19 @@ authorize any other tool, and does not survive tool/schema/policy changes
 ### 4. State machine
 
 ```text
-PENDING ──approve──► APPROVED ──consume──► CONSUMED (terminal)
+```text
+pending ──approve──► approved ──consume──► consumed (terminal)
    │
-   ├──reject──► REJECTED (terminal)
-   └──expire───► EXPIRED  (terminal)
+   ├──reject──► rejected (terminal)
+   └──expire───► expired  (terminal)
 ```
 
 - Transitions are total and irreversible: no terminal state ever returns
   to PENDING/APPROVED.
 - **CONSUMED is an explicit terminal STATE**, not side-metadata.
   Rationale: "one-time consumable" then becomes a queryable state-machine
-  invariant (`status='CONSUMED'`) enforced by a single conditional UPDATE
-  (`WHERE status='APPROVED' ... SET status='CONSUMED'`), which is atomic
+  invariant (`status='consumed'`) enforced by a single conditional UPDATE
+  (`WHERE status='approved' ... SET status='consumed'`), which is atomic
   under concurrency and trivially auditable; metadata-only consumption
   would need additional nullable-column reasoning to prove the same
   guarantee.
@@ -159,24 +160,10 @@ New centralized permissions (existing matrix conventions, default DENY):
 
 | Permission | Granted to | Purpose |
 |---|---|---|
-| `approval:read` | PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, OPERATIONS_USER | list/get approval requests for the tenant |
+| `approval:read` | PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR | list/get approval requests for the tenant |
 | `approval:decide` | PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR | approve/reject decisions |
 
-OPERATIONS_USER deliberately does NOT receive `approval:decide`: current
-authoritative documentation (PRD §7, TRD §7) assigns incident response and
-monitoring to operations, but final authority over high-risk actions rests
-with administrators; extending decide-rights later is a one-line matrix
-change behind the same review gate. EMPLOYEE: nothing.
-
-**Requester ≠ approver**: a principal MAY NOT decide a request they
-requested. Enforced in the service on every decision (tenant-scoped lookup
-compares `requester_user_id` to the deciding principal's trusted user_id);
-violation yields the same generic denial as any other unauthorized
-decision. Rationale: eliminates the single-principal compromise path and
-the confused-deputy case where an operator approves their own blocked
-action.
-
-### 6. Request binding and consumption semantics
+OPERATIONS_USER does NOT receive `approval:read` or `approval:decide`: current documentation (PRD §7, TRD §7) assigns incident response and monitoring to operations, but final authority over high-risk actions rests with administrators; extending decide-rights later is a one-line matrix change behind the same review gate. EMPLOYEE: none.
 
 A subsequent authorized caller executes an approved action by invoking
 `ToolExecutionService.execute_tool(...)` with the proposed tool/arguments
@@ -185,12 +172,10 @@ atomically consumes the approval via one guarded transition:
 
 ```text
 UPDATE approval_requests
-SET status='CONSUMED', consumed_by=:principal, consumed_at=now(),
+SET status='CONSUMED', consumed_at=now(),
     execution_record_id=:audit_ref
 WHERE id=:approval_id
   AND tenant_id = :trusted_tenant          -- tenant binding
-  AND requester_user_id = :trusted_user    -- optional V1 rule: same
-                                           -- requester must re-present
   AND tool_name = :tool_name               -- binding checks
   AND tool_version = :tool_version
   AND arguments_digest = :fresh_digest     -- canonical args re-digested
@@ -232,7 +217,7 @@ Binding validity rules (all fail closed):
   requester/approver ids) — never arguments, digests-as-data beyond the
   opaque hex, or outcomes of other tenants.
 - DECIDE (approve/reject): tenant-scoped, `approval:decide`,
-  requester ≠ approver, PENDING-only, not expired (expired decisions are
+  PENDING-only, not expired (expired decisions are
   themselves refused — the transition to EXPIRED wins). Decisions are
   idempotent-hostile by design: deciding an already-decided request is a
   controlled failure, not a silent repeat.
@@ -299,7 +284,7 @@ the tools/platform layer.
 | 2 | Argument substitution | Fresh canonical digest recomputed from re-validated args; mismatch ⇒ fail closed |
 | 3 | Tenant substitution | Trusted-context tenant must equal approval tenant; model/user-supplied tenant values are inert data |
 | 4 | Privilege escalation | Approval grants no permission; consuming caller still needs `tool:execute` + all tool-declared permissions |
-| 5 | Unauthorized decision | `approval:decide` + tenant scope + requester≠approver; generic denials |
+| 6 | Unauthorized decision | `approval:decide` + tenant scope + requester≠approver; generic denials |
 | 6 | Requester self-approval | Prohibited (requester ≠ approver), service-enforced |
 | 7 | Stale approval | 24 h TTL, lazy expiry at every touchpoint; expired ⇒ EXPIRED, cannot execute |
 | 8 | Tool-version mismatch | Version bound in request + consumption check |
