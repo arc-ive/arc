@@ -7,6 +7,21 @@ tenancy tables, never authenticates users, and never authorizes callers.
 The Skill body is a typed domain model; the exact serialization format
 remains open (ADR-001, TRD 37).
 
+The critical security boundary is the PII guard on textual Skill fields:
+
+    RAW SKILL INPUT
+        ↓
+    PII Guard (PiiGuardService) on textual fields
+        ↓
+    SANITIZED SKILL INPUT
+        ↓
+    PERSISTENCE
+
+The service reuses the existing ``PiiGuardService`` (Microsoft Presidio).
+It never copies PII detection logic and never instantiates a second PII
+implementation. If sanitization fails, the service fails closed: no
+Skill is persisted and a PiiGuardError is raised.
+
 Skill-level validation (TRD 25):
 - ``preconditions_met`` — invalid preconditions prevent execution.
 - ``is_tool_allowed`` — unauthorized tools cannot be called.
@@ -15,16 +30,18 @@ These are validation helpers only; no execution engine is implemented.
 
 import uuid
 from dataclasses import replace
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 from arc.domain.models import Skill, TenantContext
+from arc.services.pii import PiiGuardService
 
 
 class SkillService:
     """Domain service for Skill operations."""
 
-    def __init__(self, skill_repo):
+    def __init__(self, skill_repo, pii_guard: Optional[PiiGuardService] = None):
         self.skill_repo = skill_repo
+        self.pii_guard = pii_guard if pii_guard is not None else PiiGuardService()
 
     async def create_skill(self, context: TenantContext, skill: Skill) -> Skill:
         """Create a new Skill for a tenant.
@@ -33,15 +50,36 @@ class SkillService:
         established by X-10. The service derives the tenant boundary
         exclusively from it, generates a fresh Skill ID, and returns a
         new Skill without mutating the caller-supplied model.
+
+        Textual user-authored fields are sanitized through PiiGuardService
+        before persistence. If sanitization fails, the Skill is not
+        persisted (fail closed).
         """
         if not skill.name:
             raise ValueError("Skill name cannot be empty")
         if not skill.purpose:
             raise ValueError("Skill purpose cannot be empty")
+
+        # PII boundary first — on every path.
+        sanitized_name = self.pii_guard.sanitize(skill.name).sanitized_text
+        sanitized_purpose = self.pii_guard.sanitize(skill.purpose).sanitized_text
+        sanitized_inputs = [self.pii_guard.sanitize(text).sanitized_text for text in skill.inputs]
+        sanitized_steps = [self.pii_guard.sanitize(text).sanitized_text for text in skill.steps]
+        sanitized_expected_output = (
+            self.pii_guard.sanitize(skill.expected_output).sanitized_text
+            if skill.expected_output is not None
+            else None
+        )
+
         trusted_skill = replace(
             skill,
             id=str(uuid.uuid4()),
             tenant_id=context.tenant_id,
+            name=sanitized_name,
+            purpose=sanitized_purpose,
+            inputs=sanitized_inputs,
+            steps=sanitized_steps,
+            expected_output=sanitized_expected_output,
         )
         return await self.skill_repo.create(trusted_skill)
 
