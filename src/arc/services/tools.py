@@ -573,7 +573,11 @@ class ToolExecutionService:
                 raise ToolValidationError(tool_name)
 
             arguments_digest = hashlib.sha256(
-                validated.model_dump_json().encode("utf-8")
+                json.dumps(
+                    validated.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
             ).hexdigest()
             if self.approval_service is not None:
                 await self.approval_service.record_required_approval(

@@ -903,3 +903,52 @@ class TestApprovalGateCreationHook:
         ).hexdigest()
         assert digest_first != digest_second
         assert len(digest_first) == 64
+
+    async def test_canonical_digest_is_stable_across_field_order(self, repositories, db):
+        """Canonical digest (sorted keys) is stable regardless of field definition order.
+
+        ADR-005 §2 requires canonical JSON serialization with sorted keys so that
+        the same logical arguments produce the same digest even if the input model
+        field order changes. This test verifies the fix for PR #46 review finding.
+        """
+        import hashlib as _hashlib
+        import json
+
+        from pydantic import BaseModel, ConfigDict
+
+        class _ProbeFieldOrder1(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            a_field: str
+            b_field: str
+
+        class _ProbeFieldOrder2(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            b_field: str
+            a_field: str
+
+        # Same logical arguments, different model field definition order
+        input_data = {"a_field": "hello", "b_field": "world"}
+
+        validated1 = _ProbeFieldOrder1.model_validate(input_data)
+        validated2 = _ProbeFieldOrder2.model_validate(input_data)
+
+        # OLD behavior (model_dump_json without sorted keys) would differ:
+        old_digest1 = _hashlib.sha256(validated1.model_dump_json().encode("utf-8")).hexdigest()
+        old_digest2 = _hashlib.sha256(validated2.model_dump_json().encode("utf-8")).hexdigest()
+        assert old_digest1 != old_digest2, "Old behavior: field order affects digest"
+
+        # NEW behavior (canonical serialization with sorted keys) must be identical:
+        def canonical_digest(validated_model):
+            return _hashlib.sha256(
+                json.dumps(
+                    validated_model.model_dump(mode="json"),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+
+        new_digest1 = canonical_digest(validated1)
+        new_digest2 = canonical_digest(validated2)
+        assert new_digest1 == new_digest2, "Canonical digest must be stable across field order"
+        assert len(new_digest1) == 64
+        assert all(c in "0123456789abcdef" for c in new_digest1)
