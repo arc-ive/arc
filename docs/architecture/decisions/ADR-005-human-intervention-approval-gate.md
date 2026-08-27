@@ -166,7 +166,9 @@ OPERATIONS_USER does NOT receive `approval:read` or `approval:decide`: current d
 
 A subsequent authorized caller executes an approved action by invoking
 `ToolExecutionService.execute_tool(...)` with the proposed tool/arguments
-PLUS the `approval_id` reference. Before ANY execution, the service
+PLUS the `approval_id` reference. Consumption occurs AFTER the approval has
+already been decided (approved), so the decision metadata (`decided_by`,
+`decided_at`) already exists on the row. Before ANY execution, the service
 atomically consumes the approval via one guarded transition:
 
 ```text
