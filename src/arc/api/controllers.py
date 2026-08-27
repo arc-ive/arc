@@ -27,12 +27,14 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, sta
 
 from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import (
+    AgentExecutionResult,
     ConnectorProvider,
     IntelligenceAnswer,
     KnowledgeDocument,
     KnowledgeMatch,
     KnowledgeSource,
     Skill,
+    SkillExecutionResult,
     SkillStatus,
     Tenant,
     TenantContext,
@@ -40,6 +42,7 @@ from arc.domain.models import (
     WebhookEvent,
 )
 from arc.security.authorization import (
+    AGENT_EXECUTE,
     CONNECTOR_CREATE,
     CONNECTOR_READ,
     CONNECTOR_SYNC,
@@ -49,6 +52,7 @@ from arc.security.authorization import (
     OBSERVABILITY_READ,
     SKILL_CREATE,
     SKILL_DELETE,
+    SKILL_EXECUTE,
     SKILL_READ,
     TENANT_CREATE,
     TENANT_READ,
@@ -65,6 +69,7 @@ from arc.security.dependencies import (
     require_tenant_permission,
 )
 from arc.security.models import AuthenticatedPrincipal
+from arc.services.agent import AgentExecutionService
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import (
@@ -80,6 +85,7 @@ from arc.services.llm import LlmError
 from arc.services.observability import ObservabilityService
 from arc.services.pii import PiiGuardError
 from arc.services.retrieval import RetrievalService
+from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 from arc.services.tools import (
     ToolDefinition,
@@ -163,6 +169,14 @@ class ApplicationContext:
     @property
     def skill_service(self) -> SkillService:
         return self.services.get("skill_service")
+
+    @property
+    def skill_execution_service(self) -> SkillExecutionService:
+        return self.services.get("skill_execution_service")
+
+    @property
+    def agent_service(self) -> AgentExecutionService:
+        return self.services.get("agent_service")
 
     @property
     def tool_service(self) -> ToolExecutionService:
@@ -453,6 +467,160 @@ async def delete_skill(
 
     await skill_service.delete_skill(context, skill_id)
     return None
+
+
+def _skill_execution_response(result: SkillExecutionResult) -> Dict[str, Any]:
+    """Serialize a SkillExecutionResult for the API response envelope.
+
+    Steps preserve the engine's structured outcomes: successful steps
+    carry their tool version and output; failed steps carry only the
+    safe ``error_kind``. No raw exceptions or internal details cross
+    this boundary.
+    """
+    return {
+        "id": result.id,
+        "tenant_id": result.tenant_id,
+        "principal_id": result.principal_id,
+        "skill_id": result.skill_id,
+        "skill_name": result.skill_name,
+        "skill_version": result.skill_version,
+        "status": result.status.value,
+        "error_kind": result.error_kind,
+        "steps": [
+            {
+                "sequence": step.sequence,
+                "tool_name": step.tool_name,
+                "status": step.status.value,
+                "tool_version": step.tool_version,
+                "output": step.output,
+                "error_kind": step.error_kind,
+            }
+            for step in result.steps
+        ],
+        "created_at": result.created_at.isoformat(),
+    }
+
+
+@api_router.post("/skills/{skill_id}/execute")
+async def execute_skill(
+    skill_id: str,
+    tenant_id: str,
+    body: Optional[Any] = Body(default=None),
+    context: TenantContext = Depends(require_tenant_permission(SKILL_EXECUTE)),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization: AuthorizationService = Depends(get_authorization_service),
+    execution_service: SkillExecutionService = Depends(lambda: app_context.skill_execution_service),
+) -> Dict[str, Any]:
+    """Execute a Skill within the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``skill:execute`` permission. The supplied ``tenant_id`` is explicitly
+    validated for consistency against the trusted context (403 on
+    mismatch). The controller adds NO execution logic of its own: it
+    resolves nothing, authorizes no tools, and never touches the tool
+    registry or handlers. Proposed tool calls are validated and executed
+    exclusively by ``SkillExecutionService``, which delegates every action
+    to ``ToolExecutionService`` (platform whitelist, per-tool RBAC,
+    execution policy, input validation, tenant-scoped audit).
+
+    Controlled outcomes (denied, failed, blocked, succeeded) are returned
+    as structured 200 responses. A Skill outside the trusted tenant is
+    indistinguishable from a missing Skill (404); malformed request
+    metadata is rejected with 400 before any execution.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
+        )
+
+    try:
+        result = await execution_service.execute(
+            context,
+            principal,
+            skill_id,
+            body.get("tool_calls"),
+            body.get("satisfied_preconditions", []),
+            authorization,
+        )
+    except NotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return _skill_execution_response(result)
+
+
+def _agent_run_response(result: AgentExecutionResult) -> Dict[str, Any]:
+    """Serialize an AgentExecutionResult for the API response envelope.
+
+    Steps preserve the bounded orchestration outcomes; no raw model
+    output, exceptions, or internal details cross this boundary.
+    """
+    return {
+        "id": result.id,
+        "tenant_id": result.tenant_id,
+        "principal_id": result.principal_id,
+        "goal": result.goal,
+        "status": result.status.value,
+        "error_kind": result.error_kind,
+        "steps": [
+            {
+                "sequence": step.sequence,
+                "skill_id": step.skill_id,
+                "skill_name": step.skill_name,
+                "status": step.status.value,
+                "error_kind": step.error_kind,
+            }
+            for step in result.steps
+        ],
+        "created_at": result.created_at.isoformat(),
+    }
+
+
+@api_router.post("/agent/runs")
+async def run_agent(
+    tenant_id: str,
+    body: Optional[Any] = Body(default=None),
+    context: TenantContext = Depends(require_tenant_permission(AGENT_EXECUTE)),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization: AuthorizationService = Depends(get_authorization_service),
+    agent_service: AgentExecutionService = Depends(lambda: app_context.agent_service),
+) -> Dict[str, Any]:
+    """Run one bounded Agent workflow within the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``agent:execute`` permission. The supplied ``tenant_id`` is explicitly
+    validated for consistency against the trusted context (403 on
+    mismatch). The controller adds NO orchestration of its own: Skill
+    selection is decided by the configured decision-capable LLM provider,
+    strictly validated against the trusted tenant's own catalog, and
+    executed exclusively through ``SkillExecutionService``. The Agent can
+    never touch tools, handlers, or registries directly.
+
+    Controlled outcomes (succeeded, failed, approval_required,
+    max_steps_reached) are returned as structured 200 responses;
+    malformed request metadata is rejected with 400.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
+        )
+
+    try:
+        result = await agent_service.run(
+            context,
+            principal,
+            body.get("goal"),
+            authorization,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return _agent_run_response(result)
 
 
 def _knowledge_document_payload(document: KnowledgeDocument) -> Dict[str, Any]:

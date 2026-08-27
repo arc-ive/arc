@@ -16,6 +16,7 @@ from arc.repositories.tenancy import (
 )
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
+from arc.services.agent import AgentExecutionService
 from arc.services.chunking import KnowledgeChunker
 from arc.services.connector_providers import (
     ConnectorCredentialStore,
@@ -31,6 +32,7 @@ from arc.services.knowledge import KnowledgeService
 from arc.services.llm import build_llm_provider, get_llm_settings
 from arc.services.observability import ObservabilityService
 from arc.services.retrieval import RetrievalService
+from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 from arc.services.tools import ToolExecutionService, build_platform_tool_registry
 from arc.services.webhook_config import WebhookEndpointStore
@@ -132,6 +134,22 @@ class Application:
 
         # Initialize skill service
         self.services["skill_service"] = SkillService(self.repositories["skill"])
+
+        # Initialize the skill execution engine (delegates ALL actions to
+        # the tool service above).
+        self.services["skill_execution_service"] = SkillExecutionService(
+            skill_service=self.services["skill_service"],
+            tool_service=self.services["tool_service"],
+        )
+
+        # Initialize the bounded Agent orchestration layer (ADR-006). It
+        # sits strictly ABOVE SkillExecutionService and holds no tool
+        # registry or handlers of its own.
+        self.services["agent_service"] = AgentExecutionService(
+            skill_service=self.services["skill_service"],
+            skill_execution_service=self.services["skill_execution_service"],
+            llm_provider=build_llm_provider(get_llm_settings()),
+        )
 
         # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
         # read layer over AUTHORITATIVE subsystem records plus the HTTP

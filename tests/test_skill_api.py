@@ -794,7 +794,7 @@ class TestSkillRouteSurface:
     """Requirement 15: the API surface contains exactly the intended endpoints."""
 
     def test_skills_route_surface_is_exactly_the_intended_endpoints(self):
-        """Only the four approved Skills management routes are exposed."""
+        """Only the approved Skills management and execution routes are exposed."""
         from arc.api.controllers import api_router
 
         paths = {
@@ -810,4 +810,5 @@ class TestSkillRouteSurface:
             "GET /skills",
             "GET /skills/{skill_id}",
             "DELETE /skills/{skill_id}",
+            "POST /skills/{skill_id}/execute",
         }

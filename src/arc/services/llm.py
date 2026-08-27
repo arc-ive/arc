@@ -74,6 +74,26 @@ class ToolProposingLlm(Protocol):
         ...
 
 
+@runtime_checkable
+class SkillSelectingLlm(Protocol):
+    """Optional Agent capability (ADR-006): propose the next bounded step.
+
+    Implementations receive the user's goal and a snapshot of the trusted
+    tenant's Skill catalog and return UNTRUSTED raw decision output (a
+    mapping that must still pass strict ``AgentDecision.parse`` validation
+    in the domain layer) or ``None`` when the Agent should stop. Returning
+    a decision is NOT authorization: the application alone validates
+    catalog containment, executes exclusively through
+    ``SkillExecutionService``, and enforces every tool-layer control.
+    """
+
+    def propose_skill(
+        self, goal: str, catalog: Sequence[Mapping[str, Any]]
+    ) -> Optional[Mapping[str, Any]]:
+        """Return raw untrusted decision output for ``goal``, or ``None``."""
+        ...
+
+
 class DeterministicLlmProvider:
     """Local, deterministic LLM provider for development and tests.
 
@@ -89,14 +109,25 @@ class DeterministicLlmProvider:
     armed — the production default — no proposal is ever emitted.
     The script receives the user query; its output remains UNTRUSTED and
     must pass strict domain validation before anything executes.
+
+    ADR-006 V1: an OPTIONAL ``skill_decision_script`` callable may be
+    injected the same way for :meth:`propose_skill`. When not armed —
+    the production default — the Agent capability is unavailable and
+    every Agent run fails closed without executing any Skill. The script
+    receives ``(goal, catalog_snapshot)``; its output remains UNTRUSTED
+    and must pass strict domain validation before anything executes.
     """
 
     def __init__(
         self,
         tool_proposal_script: Optional[Callable[[str], Optional[Mapping[str, Any]]]] = None,
+        skill_decision_script: Optional[
+            Callable[[str, Sequence[Mapping[str, Any]]], Optional[Mapping[str, Any]]]
+        ] = None,
     ):
         self._citation_pattern = re.compile(r"^\[\d+\] citation:\s+(\S+)")
         self._tool_proposal_script = tool_proposal_script
+        self._skill_decision_script = skill_decision_script
 
     def propose_tool(
         self, query: str, context_references: Sequence[str] = ()
@@ -105,6 +136,24 @@ class DeterministicLlmProvider:
         if self._tool_proposal_script is None:
             return None
         return self._tool_proposal_script(query)
+
+    def propose_skill(
+        self, goal: str, catalog: Sequence[Mapping[str, Any]] = ()
+    ) -> Optional[Mapping[str, Any]]:
+        """Return the scripted raw decision for ``goal``, or ``None``."""
+        if self._skill_decision_script is None:
+            return None
+        return self._skill_decision_script(goal, list(catalog))
+
+    @property
+    def skill_decision_capable(self) -> bool:
+        """Whether an Agent decision capability is actually configured.
+
+        The protocol method always exists on this provider, so callers
+        must consult this flag to distinguish an armed decision capability
+        from the fail-closed production default (ADR-006).
+        """
+        return self._skill_decision_script is not None
 
     def complete(self, prompt: str) -> str:
         """Return a deterministic completion derived from the prompt."""
