@@ -1,4 +1,4 @@
-# ADR-005: Bounded Agent Skill Orchestration
+# ADR-006: Bounded Agent Skill Orchestration
 
 ## Status
 

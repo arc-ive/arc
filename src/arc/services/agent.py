@@ -1,4 +1,4 @@
-"""Bounded Agent orchestration above the Skill execution engine (ADR-005).
+"""Bounded Agent orchestration above the Skill execution engine (ADR-006).
 
 The Agent is the Unified Intelligence capability that decides WHICH
 tenant Skill to run next (PRD 14, TRD 8.3). It sits strictly ABOVE the

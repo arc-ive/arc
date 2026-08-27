@@ -142,7 +142,7 @@ class Application:
             tool_service=self.services["tool_service"],
         )
 
-        # Initialize the bounded Agent orchestration layer (ADR-005). It
+        # Initialize the bounded Agent orchestration layer (ADR-006). It
         # sits strictly ABOVE SkillExecutionService and holds no tool
         # registry or handlers of its own.
         self.services["agent_service"] = AgentExecutionService(

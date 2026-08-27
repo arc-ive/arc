@@ -70,7 +70,7 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   remains enforced by the tool layer (``tool:execute`` plus each tool's
   declared required permissions), never by this permission alone.
 - ``agent:execute`` exists for the bounded Agent orchestration layer
-  (ADR-005): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and
+  (ADR-006): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and
   OPERATIONS_USER may run the Agent; EMPLOYEE has none. The Agent can do
   nothing beyond what Skill execution already permits: it must pass
   through ``SkillExecutionService``, so this permission never grants

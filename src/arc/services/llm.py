@@ -76,7 +76,7 @@ class ToolProposingLlm(Protocol):
 
 @runtime_checkable
 class SkillSelectingLlm(Protocol):
-    """Optional Agent capability (ADR-005): propose the next bounded step.
+    """Optional Agent capability (ADR-006): propose the next bounded step.
 
     Implementations receive the user's goal and a snapshot of the trusted
     tenant's Skill catalog and return UNTRUSTED raw decision output (a
@@ -110,7 +110,7 @@ class DeterministicLlmProvider:
     The script receives the user query; its output remains UNTRUSTED and
     must pass strict domain validation before anything executes.
 
-    ADR-005 V1: an OPTIONAL ``skill_decision_script`` callable may be
+    ADR-006 V1: an OPTIONAL ``skill_decision_script`` callable may be
     injected the same way for :meth:`propose_skill`. When not armed —
     the production default — the Agent capability is unavailable and
     every Agent run fails closed without executing any Skill. The script
@@ -151,7 +151,7 @@ class DeterministicLlmProvider:
 
         The protocol method always exists on this provider, so callers
         must consult this flag to distinguish an armed decision capability
-        from the fail-closed production default (ADR-005).
+        from the fail-closed production default (ADR-006).
         """
         return self._skill_decision_script is not None
 
