@@ -3,7 +3,6 @@
 import os
 
 from arc.db.connection import ArcDatabase
-from arc.repositories.approvals import PostgreSQLApprovalRequestRepository
 from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
@@ -18,7 +17,6 @@ from arc.repositories.tenancy import (
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
 from arc.services.agent import AgentExecutionService
-from arc.services.approvals import HumanApprovalService
 from arc.services.chunking import KnowledgeChunker
 from arc.services.connector_providers import (
     ConnectorCredentialStore,
@@ -79,7 +77,6 @@ class Application:
             "tool_execution": PostgreSQLToolExecutionRepository(self.db),
             "webhook_events": PostgreSQLWebhookEventRepository(self.db),
             "observability": PostgreSQLObservabilityRepository(self.db),
-            "approval_requests": PostgreSQLApprovalRequestRepository(self.db),
         }
 
         # Initialize services
@@ -124,18 +121,9 @@ class Application:
         # Initialize AI Tool execution service (platform-owned catalog)
         # BEFORE Unified Intelligence so the ADR-004 V1 contract can reuse
         # it as the single authorization/execution/audit choke point.
-        # Initialize the Human Intervention approval gate BEFORE the tool
-        # service: REQUIRE_HUMAN_APPROVAL policy stops record pending
-        # approvals bound to the exact validated request; execution still
-        # requires a later authorized consume + execute_tool flow.
-        self.services["human_approval_service"] = HumanApprovalService(
-            repository=self.repositories["approval_requests"],
-        )
-
         self.services["tool_service"] = ToolExecutionService(
             build_platform_tool_registry(),
             self.repositories["tool_execution"],
-            approval_service=self.services["human_approval_service"],
         )
 
         self.services["intelligence_service"] = UnifiedIntelligenceService(

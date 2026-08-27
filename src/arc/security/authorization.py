@@ -50,15 +50,6 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   ``observability:platform_read`` grants the STRICTLY TENANT-AGNOSTIC
   platform operational summary to PLATFORM_ADMINISTRATOR only. Platform
   visibility never exposes per-tenant business data. EMPLOYEE has none.
-- Human Intervention approval permissions (``approval:read``,
-  ``approval:decide``) exist for the V1 approval gate (PRD 20/21,
-  ADR-004 extension point): PLATFORM_ADMINISTRATOR and
-  COMPANY_ADMINISTRATOR read pending requests within their tenant and
-  make terminal approve/reject decisions; OPERATIONS_USER and EMPLOYEE
-  have none. Decisions never execute tools - ToolExecutionService keeps
-  the sole authorization/validation/policy/execution/audit boundary, and
-  an approved request is consumed only by a later fully authorized
-  ``execute_tool`` call.
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;
@@ -122,8 +113,6 @@ WEBHOOK_READ = Permission(resource="webhook", action="read")
 OBSERVABILITY_READ = Permission(resource="observability", action="read")
 OBSERVABILITY_PLATFORM_READ = Permission(resource="observability", action="platform_read")
 AGENT_EXECUTE = Permission(resource="agent", action="execute")
-APPROVAL_READ = Permission(resource="approval", action="read")
-APPROVAL_DECIDE = Permission(resource="approval", action="decide")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -150,8 +139,6 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             WEBHOOK_READ,
             OBSERVABILITY_READ,
             OBSERVABILITY_PLATFORM_READ,
-            APPROVAL_READ,
-            APPROVAL_DECIDE,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
@@ -172,8 +159,6 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_SYNC,
             WEBHOOK_READ,
             OBSERVABILITY_READ,
-            APPROVAL_READ,
-            APPROVAL_DECIDE,
         }
     ),
     ApplicationRole.OPERATIONS_USER: frozenset(

@@ -4,8 +4,6 @@ from typing import List, Optional, Protocol
 
 from arc.domain.models import (
     ApiRequestRecord,
-    ApprovalRequest,
-    ApprovalStatus,
     ConnectorConfig,
     ConnectorSyncActivityMetrics,
     ConnectorSyncRecord,
@@ -326,68 +324,6 @@ class WebhookEventRepository(Protocol):
 
     async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[WebhookEvent]:
         """List the most recent webhook events for a tenant."""
-
-
-class ApprovalRequestRepository(Protocol):
-    """Repository for Human Intervention approval requests (V1 gate).
-
-    Tenant isolation is mandatory: every method takes the trusted
-    ``tenant_id`` and enforces it in SQL; lookups can never span tenants.
-    Lifecycle mutations are ATOMIC conditional updates that only fire from
-    the exact allowed source state, so terminal states are immutable and
-    an approval is consumed at most once. Expiry is lazy: ``pending`` rows
-    past ``expires_at`` transition to ``expired`` only via
-    :meth:`expire_if_due` at decision/consumption time.
-    """
-
-    async def create(self, request: ApprovalRequest) -> ApprovalRequest:
-        """Persist one approval request exactly as provided."""
-        ...
-
-    async def get_by_id(self, approval_id: str, tenant_id: str) -> ApprovalRequest:
-        """Fetch one request (any status); raises ``NotFoundError``."""
-        ...
-
-    async def list_for_tenant(self, tenant_id: str, limit: int = 100) -> List[ApprovalRequest]:
-        """List the most recent requests for a tenant (all statuses)."""
-        ...
-
-    async def find_open(
-        self, tenant_id: str, tool_name: str, tool_version: str, arguments_digest: str
-    ) -> Optional[ApprovalRequest]:
-        """Return the open (pending, unexpired) request matching the exact
-        binding, or ``None`` — used for idempotent creation."""
-        ...
-
-    async def expire_if_due(self, approval_id: str, tenant_id: str) -> bool:
-        """Atomically flip a PAST-DUE pending row to expired. Returns True
-        when this call performed the transition."""
-        ...
-
-    async def decide(
-        self,
-        approval_id: str,
-        tenant_id: str,
-        decision: ApprovalStatus,
-        decider_user_id: str,
-    ) -> bool:
-        """Atomically transition pending -> approved/rejected. Returns True
-        when this call performed the transition; False when the row was no
-        longer pending (terminal immutability)."""
-        ...
-
-    async def consume(
-        self,
-        approval_id: str,
-        tenant_id: str,
-        tool_name: str,
-        tool_version: str,
-        arguments_digest: str,
-    ) -> bool:
-        """Atomically transition approved -> consumed for the EXACT binding
-        (tool identity/version/digest must all match, row unexpired). One
-        row is consumed at most once across concurrent calls."""
-        ...
 
 
 class ObservabilityRepository(Protocol):
