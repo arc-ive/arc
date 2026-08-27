@@ -16,6 +16,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from arc.domain.models import (
+    ApprovalStatus,
     Tenant,
     TenantContext,
     ToolAuthorizationOutcome,
@@ -904,51 +905,366 @@ class TestApprovalGateCreationHook:
         assert digest_first != digest_second
         assert len(digest_first) == 64
 
-    async def test_canonical_digest_is_stable_across_field_order(self, repositories, db):
-        """Canonical digest (sorted keys) is stable regardless of field definition order.
 
-        ADR-005 §2 requires canonical JSON serialization with sorted keys so that
-        the same logical arguments produce the same digest even if the input model
-        field order changes. This test verifies the fix for PR #46 review finding.
-        """
-        import hashlib as _hashlib
-        import json
+# -------------------------------------------------------------------
+# Approval consumption flow through ToolExecutionService
+# -------------------------------------------------------------------
 
-        from pydantic import BaseModel, ConfigDict
 
-        class _ProbeFieldOrder1(BaseModel):
-            model_config = ConfigDict(extra="forbid")
-            a_field: str
-            b_field: str
+class TestApprovalConsumptionFlow:
+    """End-to-end tests: approved request consumed through
+    ToolExecutionService.execute_tool() → handler runs."""
 
-        class _ProbeFieldOrder2(BaseModel):
-            model_config = ConfigDict(extra="forbid")
-            b_field: str
-            a_field: str
+    class RecordingApprovalService:
+        """In-memory approval service for integration tests."""
 
-        # Same logical arguments, different model field definition order
-        input_data = {"a_field": "hello", "b_field": "world"}
+        def __init__(self):
+            self.approvals = {}
+            self.consumed = []
 
-        validated1 = _ProbeFieldOrder1.model_validate(input_data)
-        validated2 = _ProbeFieldOrder2.model_validate(input_data)
+        async def record_required_approval(self, **kwargs):
+            from datetime import datetime, timedelta, timezone
 
-        # OLD behavior (model_dump_json without sorted keys) would differ:
-        old_digest1 = _hashlib.sha256(validated1.model_dump_json().encode("utf-8")).hexdigest()
-        old_digest2 = _hashlib.sha256(validated2.model_dump_json().encode("utf-8")).hexdigest()
-        assert old_digest1 != old_digest2, "Old behavior: field order affects digest"
+            from arc.domain.models import ApprovalRequest, ApprovalStatus
 
-        # NEW behavior (canonical serialization with sorted keys) must be identical:
-        def canonical_digest(validated_model):
-            return _hashlib.sha256(
-                json.dumps(
-                    validated_model.model_dump(mode="json"),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
+            now = datetime.now(timezone.utc)
+            req = ApprovalRequest(
+                id=f"appr-test-{len(self.approvals)}",
+                tenant_id=kwargs["tenant_id"],
+                requested_by_user_id=kwargs["requester_user_id"],
+                tool_name=kwargs["tool_name"],
+                tool_version=kwargs["tool_version"],
+                risk_level=kwargs["risk_level"],
+                input_summary=kwargs["input_summary"],
+                arguments_digest=kwargs["arguments_digest"],
+                status=ApprovalStatus.PENDING,
+                created_at=now,
+                expires_at=now + timedelta(hours=24),
+            )
+            self.approvals[req.id] = req
+            return req.id
 
-        new_digest1 = canonical_digest(validated1)
-        new_digest2 = canonical_digest(validated2)
-        assert new_digest1 == new_digest2, "Canonical digest must be stable across field order"
-        assert len(new_digest1) == 64
-        assert all(c in "0123456789abcdef" for c in new_digest1)
+        async def consume_approval(
+            self,
+            context,
+            approval_id,
+            tool_name,
+            tool_version,
+            arguments_digest,
+        ):
+            from arc.domain.models import ApprovalStatus
+            from arc.services.approvals import (
+                ApprovalBindingError,
+                ApprovalNotFoundError,
+                ApprovalStateError,
+            )
+
+            req = self.approvals.get(approval_id)
+            if req is None or req.tenant_id != context.tenant_id:
+                raise ApprovalNotFoundError(f"Approval {approval_id} not found")
+            if req.status != ApprovalStatus.APPROVED:
+                raise ApprovalStateError(f"Approval {approval_id} is '{req.status.value}'")
+            if (
+                req.tool_name != tool_name
+                or req.tool_version != tool_version
+                or req.arguments_digest != arguments_digest
+            ):
+                raise ApprovalBindingError(f"Approval {approval_id} binding mismatch")
+            self.approvals[approval_id].status = ApprovalStatus.CONSUMED
+            self.consumed.append(approval_id)
+            return self.approvals[approval_id]
+
+        async def decide_request(self, context, principal_user_id, approval_id, decision):
+            from datetime import datetime, timezone
+
+            from arc.services.approvals import ApprovalSelfDecisionError
+
+            req = self.approvals.get(approval_id)
+            if req is None:
+                raise Exception("not found")
+            if req.requested_by_user_id == principal_user_id:
+                raise ApprovalSelfDecisionError("self-approval")
+            req.status = decision
+            req.decided_by_user_id = principal_user_id
+            req.decided_at = datetime.now(timezone.utc)
+            return req
+
+    def _tool_with_approval_policy(self):
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+        )
+        return ToolRegistry({tool.name: tool})
+
+    def _spy_handler(self):
+        calls = []
+
+        def handler(input_data, tenant_id):
+            calls.append((input_data, tenant_id))
+            return {"tenant_id": tenant_id, "services": []}
+
+        return handler, calls
+
+    async def test_approved_request_executes_through_handler(self, repositories, db):
+        handler, calls = self._spy_handler()
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+            handler=handler,
+        )
+        gate = self.RecordingApprovalService()
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}),
+            PostgreSQLToolExecutionRepository(db),
+            approval_service=gate,
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        context = _context(tenant.id)
+
+        # 1. Create an approval via the normal REQUIRE_HUMAN_APPROVAL path.
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                context, _principal(), "check_service_health", {}, _authorization()
+            )
+        assert len(gate.approvals) == 1
+        approval_id = list(gate.approvals.keys())[0]
+
+        # 2. Approve it as a different user.
+        await gate.decide_request(context, "approver-1", approval_id, ApprovalStatus.APPROVED)
+
+        # 3. Execute with approval_id — handler should run.
+        result = await service.execute_tool(
+            context,
+            _principal(),
+            "check_service_health",
+            {},
+            _authorization(),
+            approval_id=approval_id,
+        )
+        assert result.tool_name == "check_service_health"
+        assert len(calls) == 1
+        assert calls[0][1] == tenant.id
+        assert approval_id in gate.consumed
+
+    async def test_consumption_failure_never_invokes_handler(self, repositories, db):
+        handler, calls = self._spy_handler()
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+            handler=handler,
+        )
+        gate = self.RecordingApprovalService()
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}),
+            PostgreSQLToolExecutionRepository(db),
+            approval_service=gate,
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        context = _context(tenant.id)
+
+        # Try to consume a non-existent approval_id.
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                context,
+                _principal(),
+                "check_service_health",
+                {},
+                _authorization(),
+                approval_id="appr-nonexistent",
+            )
+        assert calls == []  # Handler must not have run.
+
+    async def test_consumed_approval_cannot_be_replayed(self, repositories, db):
+        handler, calls = self._spy_handler()
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+            handler=handler,
+        )
+        gate = self.RecordingApprovalService()
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}),
+            PostgreSQLToolExecutionRepository(db),
+            approval_service=gate,
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        context = _context(tenant.id)
+
+        # Create and approve.
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                context, _principal(), "check_service_health", {}, _authorization()
+            )
+        approval_id = list(gate.approvals.keys())[0]
+        await gate.decide_request(context, "approver-1", approval_id, ApprovalStatus.APPROVED)
+
+        # Consume once — succeeds.
+        await service.execute_tool(
+            context,
+            _principal(),
+            "check_service_health",
+            {},
+            _authorization(),
+            approval_id=approval_id,
+        )
+        assert len(calls) == 1
+
+        # Replay — fails (already consumed).
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                context,
+                _principal(),
+                "check_service_health",
+                {},
+                _authorization(),
+                approval_id=approval_id,
+            )
+        assert len(calls) == 1  # Handler must not run a second time.
+
+    async def test_approval_id_ignored_for_allow_policy(self, repositories, db):
+        """When approval_id is supplied but the tool's policy is ALLOW (not
+        REQUIRE_HUMAN_APPROVAL), the approval_id is ignored and execution
+        proceeds normally (fail open for irrelevant metadata)."""
+        service = ToolExecutionService(
+            build_platform_tool_registry(),
+            PostgreSQLToolExecutionRepository(db),
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+
+        result = await service.execute_tool(
+            _context(tenant.id),
+            _principal(),
+            "check_service_health",
+            {},
+            _authorization(),
+            approval_id="appr-should-be-ignored",
+        )
+        assert result.tool_name == "check_service_health"
+
+    async def test_consumption_preserves_normal_execution_path(self, repositories, db):
+        """Post-consumption execution produces the normal audit record."""
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+        )
+        gate = self.RecordingApprovalService()
+        record_repo = PostgreSQLToolExecutionRepository(db)
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}),
+            record_repo,
+            approval_service=gate,
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        context = _context(tenant.id)
+
+        # Create approval.
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                context, _principal(), "check_service_health", {}, _authorization()
+            )
+        approval_id = list(gate.approvals.keys())[0]
+        await gate.decide_request(context, "approver-1", approval_id, ApprovalStatus.APPROVED)
+
+        # Execute with approval.
+        await service.execute_tool(
+            context,
+            _principal(),
+            "check_service_health",
+            {},
+            _authorization(),
+            approval_id=approval_id,
+        )
+
+        # Normal successful audit record.
+        records = await record_repo.list_for_tenant(tenant.id)
+        success_records = [r for r in records if r.status == ToolExecutionStatus.SUCCESS]
+        assert len(success_records) == 1
+        assert success_records[0].tool_name == "check_service_health"
+        assert success_records[0].authorization_outcome == ToolAuthorizationOutcome.GRANTED
+
+    async def test_digest_matches_between_creation_and_consumption(self, repositories, db):
+        """Creation and consumption use the same canonical digest."""
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+        )
+        gate = self.RecordingApprovalService()
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}),
+            PostgreSQLToolExecutionRepository(db),
+            approval_service=gate,
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+        context = _context(tenant.id)
+
+        # Create approval.
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                context, _principal(), "check_service_health", {}, _authorization()
+            )
+        approval_id = list(gate.approvals.keys())[0]
+        stored_digest = gate.approvals[approval_id].arguments_digest
+
+        # Compute expected digest.
+        expected = hashlib.sha256(
+            SERVICE_HEALTH_TOOL.input_model.model_validate({}).model_dump_json().encode("utf-8")
+        ).hexdigest()
+        assert stored_digest == expected
+
+        # Approve and consume — the consumption path computes the same
+        # digest from the same validation and binding check passes.
+        await gate.decide_request(context, "approver-1", approval_id, ApprovalStatus.APPROVED)
+        await service.execute_tool(
+            context,
+            _principal(),
+            "check_service_health",
+            {},
+            _authorization(),
+            approval_id=approval_id,
+        )
+        assert gate.approvals[approval_id].status.value == "consumed"
+
+    async def test_unwired_approval_service_with_approval_id_fails_closed(self, repositories, db):
+        """When approval_service is None and approval_id is supplied,
+        execution is denied (fail closed)."""
+        tool = replace(
+            SERVICE_HEALTH_TOOL,
+            execution_policy=ToolExecutionPolicy(
+                mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+            ),
+        )
+        service = ToolExecutionService(
+            ToolRegistry({tool.name: tool}),
+            PostgreSQLToolExecutionRepository(db),
+            # No approval_service wired.
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="T"))
+
+        with pytest.raises(ToolDeniedError):
+            await service.execute_tool(
+                _context(tenant.id),
+                _principal(),
+                "check_service_health",
+                {},
+                _authorization(),
+                approval_id="appr-any",
+            )

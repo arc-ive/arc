@@ -73,6 +73,7 @@ from arc.services.approvals import (
     ApprovalError,
     ApprovalExpiredError,
     ApprovalNotFoundError,
+    ApprovalSelfDecisionError,
     ApprovalStateError,
     HumanApprovalService,
 )
@@ -835,9 +836,17 @@ async def execute_tool(
     _require_path_tenant_matches_context(tenant_id, context)
 
     raw_input = body.get("input", {})
+    approval_id = body.get("approval_id")
 
     try:
-        result = await tool_service.execute_tool(context, principal, name, raw_input, authorization)
+        result = await tool_service.execute_tool(
+            context,
+            principal,
+            name,
+            raw_input,
+            authorization,
+            approval_id=approval_id,
+        )
     except ToolNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
     except ToolValidationError:
@@ -1273,6 +1282,8 @@ async def decide_approval_request(
         )
     except ApprovalExpiredError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except ApprovalSelfDecisionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     except (ApprovalStateError, ApprovalConsumedError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except ApprovalError:

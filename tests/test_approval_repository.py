@@ -119,10 +119,15 @@ class TestDecideTransitions:
 class TestLazyExpiry:
     async def test_expire_if_due_only_transitions_past_due_rows(self, db, two_tenants):
         repo = PostgreSQLApprovalRequestRepository(db)
-        due = _request(two_tenants[0].id)
-        future = _request(two_tenants[0].id, expires_at=_NOW + timedelta(hours=48))
+        due = _request(two_tenants[0].id, arguments_digest="b" * 64)
+        future = _request(
+            two_tenants[0].id,
+            arguments_digest="c" * 64,
+            expires_at=_NOW + timedelta(hours=48),
+        )
         past_not_pending = _request(
             two_tenants[0].id,
+            arguments_digest="d" * 64,
             status=ApprovalStatus.REJECTED,
             decided_at=_NOW + timedelta(minutes=5),
             decided_by_user_id="approver",
@@ -228,3 +233,46 @@ class TestSingleUseConsumption:
         assert sorted(results, reverse=True) == [True, False]
         consumed = await repo.get_by_id(request.id, request.tenant_id)
         assert consumed.status == ApprovalStatus.CONSUMED
+
+
+class TestRaceSafeCreation:
+    """Unique partial index on (tenant, tool, version, digest) WHERE
+    status='pending' enforces at most one open approval per binding."""
+
+    async def test_concurrent_create_exactly_one_open(self, db, two_tenants):
+        repo = PostgreSQLApprovalRequestRepository(db)
+
+        async def _create():
+            r = _request(two_tenants[0].id)
+            return await repo.create(r)
+
+        results = await asyncio.gather(*[_create() for _ in range(4)])
+        # All four should succeed (the index catches races and returns the
+        # existing row via the DuplicateKeyError handler).
+        assert len(results) == 4
+        # Exactly one distinct ID among the returned rows.
+        ids = {r.id for r in results}
+        assert len(ids) == 1
+
+        # Exactly one pending row in the database for this binding.
+        rows = await repo.list_for_tenant(two_tenants[0].id)
+        pending = [r for r in rows if r.status == ApprovalStatus.PENDING]
+        assert len(pending) == 1
+
+    async def test_different_tenants_create_independently(self, db, two_tenants):
+        repo = PostgreSQLApprovalRequestRepository(db)
+        r_a = _request(two_tenants[0].id)
+        r_b = _request(two_tenants[1].id)
+        await repo.create(r_a)
+        await repo.create(r_b)
+        assert len(await repo.list_for_tenant(two_tenants[0].id)) == 1
+        assert len(await repo.list_for_tenant(two_tenants[1].id)) == 1
+
+    async def test_different_bindings_create_independently(self, db, two_tenants):
+        repo = PostgreSQLApprovalRequestRepository(db)
+        r1 = _request(two_tenants[0].id, tool_name="tool_a")
+        r2 = _request(two_tenants[0].id, tool_name="tool_b")
+        await repo.create(r1)
+        await repo.create(r2)
+        rows = await repo.list_for_tenant(two_tenants[0].id)
+        assert len(rows) == 2

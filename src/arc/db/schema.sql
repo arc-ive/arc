@@ -246,3 +246,10 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_tenant_status
     ON approval_requests(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_created_at
     ON approval_requests(created_at);
+
+-- Race-safe idempotent creation: at most one OPEN (pending) approval per
+-- logical binding (tenant, tool, version, digest).  Partial index covers
+-- only pending rows so decided/expired/consumed rows do not collide.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_approval_requests_open_binding
+    ON approval_requests(tenant_id, tool_name, tool_version, arguments_digest)
+    WHERE status = 'pending';

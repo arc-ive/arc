@@ -22,7 +22,9 @@ service layer. Raw tool arguments are never stored anywhere.
 
 from typing import List, Optional
 
-from arc.db.connection import ArcDatabase, NotFoundError
+import asyncpg
+
+from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
 from arc.domain.models import ApprovalRequest, ApprovalStatus
 
 _COLUMNS = """
@@ -58,27 +60,44 @@ class PostgreSQLApprovalRequestRepository:
         )
 
     async def create(self, request: ApprovalRequest) -> ApprovalRequest:
-        async with self.db.transaction() as conn:
-            await conn.execute(
-                """
-                INSERT INTO approval_requests
-                    (id, tenant_id, requested_by_user_id, tool_name,
-                     tool_version, risk_level, input_summary,
-                     arguments_digest, status, created_at, expires_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                """,
-                request.id,
+        try:
+            async with self.db.transaction() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO approval_requests
+                        (id, tenant_id, requested_by_user_id, tool_name,
+                         tool_version, risk_level, input_summary,
+                         arguments_digest, status, created_at, expires_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    """,
+                    request.id,
+                    request.tenant_id,
+                    request.requested_by_user_id,
+                    request.tool_name,
+                    request.tool_version,
+                    request.risk_level,
+                    request.input_summary,
+                    request.arguments_digest,
+                    request.status.value,
+                    request.created_at,
+                    request.expires_at,
+                )
+        except (DuplicateKeyError, asyncpg.UniqueViolationError):
+            # Concurrent creation raced: the unique partial index on
+            # (tenant, tool, version, digest) WHERE status='pending' fired.
+            # Return the existing open row — caller treats this as
+            # idempotent (same logical approval already exists).
+            existing = await self.find_open(
                 request.tenant_id,
-                request.requested_by_user_id,
                 request.tool_name,
                 request.tool_version,
-                request.risk_level,
-                request.input_summary,
                 request.arguments_digest,
-                request.status.value,
-                request.created_at,
-                request.expires_at,
             )
+            if existing is not None:
+                return existing
+            # Defensive: index says a row exists but find_open missed it
+            # (should not happen). Re-raise so the caller sees the error.
+            raise
         return request
 
     async def get_by_id(self, approval_id: str, tenant_id: str) -> ApprovalRequest:

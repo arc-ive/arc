@@ -18,6 +18,7 @@ from arc.services.approvals import (
     ApprovalConsumedError,
     ApprovalExpiredError,
     ApprovalNotFoundError,
+    ApprovalSelfDecisionError,
     ApprovalStateError,
     HumanApprovalService,
 )
@@ -329,3 +330,95 @@ async def test_service_never_touches_tool_execution():
     }
     forbidden = {"execute_tool", "execute", "run_handler", "authorize"}
     assert public_methods.isdisjoint(forbidden)
+
+
+# -------------------------------------------------------------------
+# Self-approval prevention
+# -------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_requester_cannot_approve_own_request():
+    service, repo = _service()
+    approval_id = await service.record_required_approval(
+        tenant_id="tenant-1",
+        requester_user_id="user-1",
+        tool_name="restart_service",
+        tool_version="1",
+        risk_level="high",
+        input_summary="{}",
+        arguments_digest=_DIGEST,
+    )
+    with pytest.raises(ApprovalSelfDecisionError):
+        await service.decide_request(
+            _context("tenant-1"), "user-1", approval_id, ApprovalStatus.APPROVED
+        )
+    # Approval must remain unchanged after rejected self-decision.
+    row = repo.rows[approval_id]
+    assert row.status == ApprovalStatus.PENDING
+    assert row.decided_by_user_id is None
+    assert row.decided_at is None
+
+
+@pytest.mark.asyncio
+async def test_requester_cannot_reject_own_request():
+    service, repo = _service()
+    approval_id = await service.record_required_approval(
+        tenant_id="tenant-1",
+        requester_user_id="user-1",
+        tool_name="restart_service",
+        tool_version="1",
+        risk_level="high",
+        input_summary="{}",
+        arguments_digest=_DIGEST,
+    )
+    with pytest.raises(ApprovalSelfDecisionError):
+        await service.decide_request(
+            _context("tenant-1"), "user-1", approval_id, ApprovalStatus.REJECTED
+        )
+    row = repo.rows[approval_id]
+    assert row.status == ApprovalStatus.PENDING
+    assert row.decided_by_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_different_user_can_approve():
+    service, repo = _service()
+    approval_id = await service.record_required_approval(
+        tenant_id="tenant-1",
+        requester_user_id="user-1",
+        tool_name="restart_service",
+        tool_version="1",
+        risk_level="high",
+        input_summary="{}",
+        arguments_digest=_DIGEST,
+    )
+    decided = await service.decide_request(
+        _context("tenant-1"), "approver-1", approval_id, ApprovalStatus.APPROVED
+    )
+    assert decided.status == ApprovalStatus.APPROVED
+    assert decided.decided_by_user_id == "approver-1"
+
+
+@pytest.mark.asyncio
+async def test_requester_can_consume_approved_request_by_another():
+    """Per the latest ADR-005: requester ≠ approver is enforced for
+    DECISION, but the original requester may CONSUME an approved request
+    if all other binding/authorization conditions are met."""
+    service, repo = _service()
+    approval_id = await service.record_required_approval(
+        tenant_id="tenant-1",
+        requester_user_id="user-1",
+        tool_name="restart_service",
+        tool_version="1",
+        risk_level="high",
+        input_summary="{}",
+        arguments_digest=_DIGEST,
+    )
+    await service.decide_request(
+        _context("tenant-1"), "approver-1", approval_id, ApprovalStatus.APPROVED
+    )
+    consumed = await service.consume_approval(
+        _context("tenant-1"), approval_id, "restart_service", "1", _DIGEST
+    )
+    assert consumed.status == ApprovalStatus.CONSUMED

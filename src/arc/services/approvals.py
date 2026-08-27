@@ -32,7 +32,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from arc.db.connection import NotFoundError
+from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import ApprovalRequest, ApprovalStatus, TenantContext
 
 logger = logging.getLogger("arc.approvals")
@@ -62,6 +62,10 @@ class ApprovalBindingError(ApprovalError):
 
 class ApprovalConsumedError(ApprovalStateError):
     """The approval was already consumed (single-use replay prevention)."""
+
+
+class ApprovalSelfDecisionError(ApprovalError):
+    """The requester attempted to approve or reject their own request."""
 
 
 def _utc_now() -> datetime:
@@ -117,8 +121,18 @@ class HumanApprovalService:
                 created_at=now,
                 expires_at=now + timedelta(hours=TTL_HOURS),
             )
-            await self.repository.create(request)
-            return request.id
+            created = await self.repository.create(request)
+            return created.id
+        except DuplicateKeyError:
+            # Concurrent creation raced past the find_open check; the
+            # unique partial index enforced idempotency.  Re-read the
+            # existing open row so the caller gets a valid ID.
+            existing = await self.repository.find_open(
+                tenant_id, tool_name, tool_version, arguments_digest
+            )
+            if existing is not None:
+                return existing.id
+            return None
         except Exception:
             logger.warning(
                 "approval_request_not_recorded tool=%s digest_prefix=%s",
@@ -174,6 +188,7 @@ class HumanApprovalService:
         system transition with NO human decider recorded — and surface as
         :class:`ApprovalExpiredError`; already-decided/consumed requests
         raise :class:`ApprovalStateError`/:class:`ApprovalConsumedError`.
+        The requester may NOT approve or reject their own request.
         """
         if decision not in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
             raise ValueError("decision must be approved or rejected")
@@ -185,6 +200,12 @@ class HumanApprovalService:
         if current.status == ApprovalStatus.PENDING and self._clock() >= current.expires_at:
             await self.repository.expire_if_due(approval_id, context.tenant_id)
             raise ApprovalExpiredError(f"Approval {approval_id} expired before a decision was made")
+
+        if current.requested_by_user_id == principal_user_id:
+            raise ApprovalSelfDecisionError(
+                f"Approval {approval_id} requester {principal_user_id}"
+                " cannot approve or reject their own request"
+            )
 
         performed = await self.repository.decide(
             approval_id, context.tenant_id, decision, principal_user_id

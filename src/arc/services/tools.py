@@ -66,6 +66,17 @@ from arc.domain.models import (
 from arc.security.authorization import TOOL_EXECUTE, AuthorizationService
 from arc.security.models import AuthenticatedPrincipal, Permission
 
+# Import approval errors so execute_tool callers can catch them.
+from arc.services.approvals import (  # noqa: F401 – re-exported for callers
+    ApprovalBindingError,
+    ApprovalConsumedError,
+    ApprovalError,
+    ApprovalExpiredError,
+    ApprovalNotFoundError,
+    ApprovalSelfDecisionError,
+    ApprovalStateError,
+)
+
 # ---------------------------------------------------------------------------
 # Controlled failure types
 # ---------------------------------------------------------------------------
@@ -471,6 +482,7 @@ class ToolExecutionService:
         tool_name: str,
         raw_input: Dict[str, Any],
         authorization: AuthorizationService,
+        approval_id: Optional[str] = None,
     ) -> ToolExecutionResult:
         """Execute an approved tool following the TRD 14.1 flow.
 
@@ -480,6 +492,13 @@ class ToolExecutionService:
         audit record. Every controlled attempt, including controlled
         failures and authorization denials, produces an observable
         tenant-scoped record.
+
+        When ``approval_id`` is supplied the tool's policy MUST be
+        ``REQUIRE_HUMAN_APPROVAL``.  The service atomically consumes the
+        approved request (re-validating tenant/version/digest binding)
+        BEFORE the handler runs.  On consumption failure no handler
+        invocation occurs.  Supplying ``approval_id`` for a non-approval
+        policy (e.g. ``ALLOW``) has no effect — it is silently ignored.
         """
         if context is None or not context.is_valid:
             # Fail closed with no record: there is no trusted tenant to
@@ -551,12 +570,18 @@ class ToolExecutionService:
             )
             raise ToolDeniedError(tool_name)
         if policy_outcome == ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL:
-            # Human Intervention approval gate (V1 foundation): validate the
-            # arguments with the SAME canonical input model the execution
-            # path uses, bind a pending approval to that exact validated
-            # representation, then fail closed exactly as before. Invalid
-            # arguments surface their existing controlled invalid_input
-            # error and never create an approval request.
+            # Human Intervention approval gate (V1 foundation).
+            #
+            # TWO paths through this policy mode:
+            #
+            # 1. approval_id supplied → consume existing approved request,
+            #    then fall through to the normal execution path below.
+            # 2. approval_id absent → create a new pending approval and
+            #    deny the attempt (the existing V1 creation path).
+
+            # Validate arguments with the SAME canonical input model the
+            # execution path uses — both creation and consumption paths
+            # share this validation so the digest always matches.
             try:
                 validated = tool.input_model.model_validate(raw_input)
             except ValidationError:
@@ -573,35 +598,88 @@ class ToolExecutionService:
                 raise ToolValidationError(tool_name)
 
             arguments_digest = hashlib.sha256(
-                json.dumps(
-                    validated.model_dump(mode="json"),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
+                validated.model_dump_json().encode("utf-8")
             ).hexdigest()
-            if self.approval_service is not None:
-                await self.approval_service.record_required_approval(
-                    tenant_id=context.tenant_id,
-                    requester_user_id=principal.user_id,
+
+            if approval_id is not None:
+                # --- CONSUMPTION PATH ---
+                if self.approval_service is None:
+                    # No approval service wired: cannot consume.  Fail
+                    # closed — the caller must not bypass the gate.
+                    await self._record_failure(
+                        context=context,
+                        user_id=principal.user_id,
+                        authorization_outcome=ToolAuthorizationOutcome.GRANTED,
+                        tool_name=tool.name,
+                        tool_version=tool.version,
+                        risk_level=tool.risk_level,
+                        input_summary=_summarize(raw_input),
+                        error_kind="requires_human_approval",
+                    )
+                    raise ToolDeniedError(tool_name)
+
+                # Atomically consume the approval.  This re-validates
+                # tenant, tool, version, and digest binding.  Any failure
+                # (not found, wrong binding, expired, already consumed,
+                # not yet approved) must prevent handler invocation.
+                try:
+                    await self.approval_service.consume_approval(
+                        context,
+                        approval_id,
+                        tool.name,
+                        tool.version,
+                        arguments_digest,
+                    )
+                except Exception:
+                    # Consumption failed — do NOT invoke handler.
+                    # Record a failure with an appropriate error kind and
+                    # deny execution.  The specific approval error type
+                    # is surfaced as a ToolDeniedError so the API layer
+                    # can translate it (the approval error hierarchy is
+                    # re-exported for callers that need finer handling).
+                    await self._record_failure(
+                        context=context,
+                        user_id=principal.user_id,
+                        authorization_outcome=ToolAuthorizationOutcome.GRANTED,
+                        tool_name=tool.name,
+                        tool_version=tool.version,
+                        risk_level=tool.risk_level,
+                        input_summary=_summarize(raw_input),
+                        error_kind="approval_consumption_failed",
+                    )
+                    raise ToolDeniedError(tool_name)
+
+                # Consumption succeeded — fall through to the normal
+                # execution path (input_data, handler, audit record).
+
+            else:
+                # --- CREATION PATH ---
+                if self.approval_service is not None:
+                    await self.approval_service.record_required_approval(
+                        tenant_id=context.tenant_id,
+                        requester_user_id=principal.user_id,
+                        tool_name=tool.name,
+                        tool_version=tool.version,
+                        risk_level=tool.risk_level.value,
+                        input_summary=_summarize(raw_input),
+                        arguments_digest=arguments_digest,
+                    )
+
+                await self._record_failure(
+                    context=context,
+                    user_id=principal.user_id,
+                    authorization_outcome=ToolAuthorizationOutcome.GRANTED,
                     tool_name=tool.name,
                     tool_version=tool.version,
-                    risk_level=tool.risk_level.value,
+                    risk_level=tool.risk_level,
                     input_summary=_summarize(raw_input),
-                    arguments_digest=arguments_digest,
+                    error_kind="requires_human_approval",
                 )
+                raise ToolDeniedError(tool_name)
 
-            await self._record_failure(
-                context=context,
-                user_id=principal.user_id,
-                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
-                tool_name=tool.name,
-                tool_version=tool.version,
-                risk_level=tool.risk_level,
-                input_summary=_summarize(raw_input),
-                error_kind="requires_human_approval",
-            )
-            raise ToolDeniedError(tool_name)
-
+        # Normal execution path (ALLOW policy, or post-consumption).
+        # If we reached here with approval_id, consumption already
+        # succeeded and validated the binding.
         try:
             validated = tool.input_model.model_validate(raw_input)
         except ValidationError:
