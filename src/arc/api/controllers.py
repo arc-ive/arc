@@ -28,6 +28,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, sta
 from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import (
     AgentExecutionResult,
+    ApprovalStatus,
     ConnectorProvider,
     IntelligenceAnswer,
     KnowledgeDocument,
@@ -43,6 +44,8 @@ from arc.domain.models import (
 )
 from arc.security.authorization import (
     AGENT_EXECUTE,
+    APPROVAL_DECIDE,
+    APPROVAL_READ,
     CONNECTOR_CREATE,
     CONNECTOR_READ,
     CONNECTOR_SYNC,
@@ -70,6 +73,15 @@ from arc.security.dependencies import (
 )
 from arc.security.models import AuthenticatedPrincipal
 from arc.services.agent import AgentExecutionService
+from arc.services.approvals import (
+    ApprovalConsumedError,
+    ApprovalError,
+    ApprovalExpiredError,
+    ApprovalNotFoundError,
+    ApprovalSelfDecisionError,
+    ApprovalStateError,
+    HumanApprovalService,
+)
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import (
@@ -189,6 +201,10 @@ class ApplicationContext:
     @property
     def observability_service(self):
         return self.services.get("observability_service")
+
+    @property
+    def human_approval_service(self):
+        return self.services.get("human_approval_service")
 
 
 # Global application context
@@ -988,9 +1004,17 @@ async def execute_tool(
     _require_path_tenant_matches_context(tenant_id, context)
 
     raw_input = body.get("input", {})
+    approval_id = body.get("approval_id")
 
     try:
-        result = await tool_service.execute_tool(context, principal, name, raw_input, authorization)
+        result = await tool_service.execute_tool(
+            context,
+            principal,
+            name,
+            raw_input,
+            authorization,
+            approval_id=approval_id,
+        )
     except ToolNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
     except ToolValidationError:
@@ -1320,3 +1344,119 @@ async def get_component_health(
     or configuration material.
     """
     return await observability_service.get_component_health()
+
+
+def _approval_payload(approval) -> Dict[str, Any]:
+    """Serialize an approval request for decision-making surfaces.
+
+    Exposes the minimum information required to make a decision. NEVER
+    includes raw tool arguments, the internal arguments digest, secrets,
+    or tenant-external identifiers.
+    """
+    return {
+        "id": approval.id,
+        "tool_name": approval.tool_name,
+        "tool_version": approval.tool_version,
+        "risk_level": approval.risk_level,
+        "status": approval.status.value,
+        "requested_by_user_id": approval.requested_by_user_id,
+        "input_summary": approval.input_summary,
+        "created_at": approval.created_at.isoformat(),
+        "expires_at": approval.expires_at.isoformat(),
+        "decided_at": approval.decided_at.isoformat() if approval.decided_at else None,
+        "decided_by_user_id": approval.decided_by_user_id,
+        "consumed_at": approval.consumed_at.isoformat() if approval.consumed_at else None,
+    }
+
+
+@api_router.get("/tenants/{tenant_id}/approvals")
+async def list_approval_requests(
+    tenant_id: str,
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
+    human_approval_service: HumanApprovalService = Depends(
+        lambda: app_context.human_approval_service
+    ),
+) -> List[Dict[str, Any]]:
+    """List Human Intervention approval requests for the trusted tenant.
+
+    Requires ``approval:read`` and path-consistent tenant scope. Expired
+    pending rows are reported as ``expired`` (lazy derivation). Responses
+    contain redacted summaries only - never raw tool arguments.
+    """
+    status_value: Optional[ApprovalStatus] = None
+    if status_filter is not None:
+        try:
+            status_value = ApprovalStatus(status_filter)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status filter"
+            )
+    approvals = await human_approval_service.list_requests(context, status_value)
+    return [_approval_payload(a) for a in approvals]
+
+
+@api_router.get("/tenants/{tenant_id}/approvals/{approval_id}")
+async def get_approval_request(
+    tenant_id: str,
+    approval_id: str,
+    context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
+    human_approval_service: HumanApprovalService = Depends(
+        lambda: app_context.human_approval_service
+    ),
+) -> Dict[str, Any]:
+    """Read one approval request within the trusted tenant."""
+    try:
+        approval = await human_approval_service.get_request(context, approval_id)
+    except ApprovalNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found"
+        )
+    return _approval_payload(approval)
+
+
+@api_router.post("/tenants/{tenant_id}/approvals/{approval_id}/decisions")
+async def decide_approval_request(
+    tenant_id: str,
+    approval_id: str,
+    decision_data: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(APPROVAL_DECIDE)),
+    human_approval_service: HumanApprovalService = Depends(
+        lambda: app_context.human_approval_service
+    ),
+) -> Dict[str, Any]:
+    """Make the terminal approve/reject decision for one request.
+
+    Requires ``approval:decide`` and path-consistent tenant scope. The
+    deciding identity comes exclusively from the authenticated principal.
+    Decisions are terminal; expired requests fail with 409 and become
+    terminal ``expired``. Execution never happens here: consuming an
+    approved request remains an authorized ToolExecutionService flow.
+    """
+    decision_raw = decision_data.get("decision")
+    if decision_raw not in ("approve", "reject"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="decision must be 'approve' or 'reject'",
+        )
+    decision = ApprovalStatus.APPROVED if decision_raw == "approve" else ApprovalStatus.REJECTED
+    try:
+        approval = await human_approval_service.decide_request(
+            context, context.user_id, approval_id, decision
+        )
+    except ApprovalNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found"
+        )
+    except ApprovalExpiredError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except ApprovalSelfDecisionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except (ApprovalStateError, ApprovalConsumedError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except ApprovalError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Approval decision failed",
+        )
+    return _approval_payload(approval)

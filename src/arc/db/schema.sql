@@ -211,3 +211,45 @@ CREATE TABLE IF NOT EXISTS api_request_records (
 
 CREATE INDEX IF NOT EXISTS idx_api_request_records_tenant_id ON api_request_records(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_api_request_records_created_at ON api_request_records(created_at);
+
+-- Human Intervention approval gate (V1 foundation - ADR-004 extension
+-- point). One row per required approval, bound to the EXACT validated
+-- request via arguments_digest (SHA-256 of the canonical JSON of the
+-- pydantic-VALIDATED tool input). Raw tool arguments are never stored.
+-- Lifecycle: pending -> approved | rejected | expired (terminal) and
+-- approved -> consumed exactly once. EXPIRED is applied lazily at
+-- decision/consumption time - reads derive it from expires_at. Tenant
+-- binding comes exclusively from the trusted execution context and every
+-- query is tenant-scoped at the SQL level.
+CREATE TABLE IF NOT EXISTS approval_requests (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    requested_by_user_id VARCHAR(255) NOT NULL,
+    tool_name VARCHAR(255) NOT NULL,
+    tool_version VARCHAR(50) NOT NULL,
+    risk_level VARCHAR(50) NOT NULL,
+    input_summary TEXT NOT NULL,
+    arguments_digest CHAR(64) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    decided_at TIMESTAMP WITH TIME ZONE,
+    decided_by_user_id VARCHAR(255),
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_approval_requests_status
+        CHECK (status IN ('pending', 'approved', 'rejected', 'expired', 'consumed')),
+    CONSTRAINT ck_approval_requests_digest CHECK (arguments_digest ~ '^[0-9a-f]{64}$')
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_requests_tenant_status
+    ON approval_requests(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_approval_requests_created_at
+    ON approval_requests(created_at);
+
+-- Race-safe idempotent creation: at most one OPEN (pending) approval per
+-- logical binding (tenant, tool, version, digest).  Partial index covers
+-- only pending rows so decided/expired/consumed rows do not collide.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_approval_requests_open_binding
+    ON approval_requests(tenant_id, tool_name, tool_version, arguments_digest)
+    WHERE status = 'pending';

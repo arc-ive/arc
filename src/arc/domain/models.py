@@ -948,6 +948,124 @@ class WebhookEventActivityMetrics:
             raise ValueError("Webhook activity counts cannot be negative")
 
 
+class ApprovalStatus(str, Enum):
+    """Lifecycle states of a Human Intervention approval request.
+
+    Transitions (ADR-004 extension point; approved V1 contract):
+
+        pending -> approved | rejected | expired   (terminal decisions)
+        approved -> consumed                       (single-use execution gate)
+
+    Terminal states are immutable: ``approved``/``rejected``/``expired``
+    can never change again, and an approval is consumed AT MOST ONCE
+    (replay fails). ``EXPIRED`` is applied lazily — physically stored rows
+    stay ``pending`` until a decision/consume attempt transitions them;
+    reads derive expiry from ``expires_at`` without mutating state.
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    CONSUMED = "consumed"
+
+
+@dataclass
+class ApprovalRequest:
+    """One Human Intervention approval request (V1 foundation).
+
+    Created by the ToolExecutionService boundary when a tool's policy is
+    ``REQUIRE_HUMAN_APPROVAL``. The row binds the EXACT validated request:
+
+    - ``arguments_digest`` is the SHA-256 of the canonical JSON of the
+      pydantic-VALIDATED arguments (same input model, same validation the
+      execution path uses) — computed only after validation succeeds, so
+      an approval can never be consumed with materially different
+      arguments. Raw arguments are NEVER persisted.
+    - ``input_summary`` is the existing redacted/truncated summary.
+    - Tenant binding comes exclusively from the trusted execution context.
+
+    Lifecycle is single-use and fail-closed: see ``ApprovalStatus``.
+    """
+
+    id: str
+    tenant_id: str
+    requested_by_user_id: str
+    tool_name: str
+    tool_version: str
+    risk_level: str
+    input_summary: str
+    arguments_digest: str
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    created_at: datetime = field(default_factory=datetime.now)
+    expires_at: datetime = field(default_factory=datetime.now)
+    decided_at: Optional[datetime] = None
+    decided_by_user_id: Optional[str] = None
+    consumed_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        import re
+
+        if not self.id or len(self.id) > 255:
+            raise ValueError(
+                "Approval request ID must be a non-empty string of at most 255 characters"
+            )
+        if not self.tenant_id:
+            raise ValueError("Approval request tenant ID cannot be empty")
+        if not self.requested_by_user_id:
+            raise ValueError("Approval requester user ID cannot be empty")
+        if not self.tool_name or len(self.tool_name) > 255:
+            raise ValueError(
+                "Approval tool name must be a non-empty string of at most 255 characters"
+            )
+        if not self.tool_version or len(self.tool_version) > 50:
+            raise ValueError(
+                "Approval tool version must be a non-empty string of at most 50 characters"
+            )
+        if not isinstance(self.risk_level, str) or not self.risk_level:
+            raise ValueError("Approval risk level must be a non-empty string")
+        if not isinstance(self.input_summary, str) or not self.input_summary:
+            raise ValueError("Approval input summary must be a non-empty string")
+        if not isinstance(self.arguments_digest, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", self.arguments_digest
+        ):
+            raise ValueError("Arguments digest must be a lowercase 64-character SHA-256 hex string")
+        if not isinstance(self.status, ApprovalStatus):
+            raise ValueError(f"Invalid approval status: {self.status!r}")
+        if self.expires_at <= self.created_at:
+            raise ValueError("Approval expiry must be after creation")
+        terminal_requires_decision = {
+            ApprovalStatus.APPROVED,
+            ApprovalStatus.REJECTED,
+            ApprovalStatus.CONSUMED,
+        }
+        if self.status in terminal_requires_decision and (
+            self.decided_at is None or not self.decided_by_user_id
+        ):
+            raise ValueError(
+                "Approved/rejected/consumed approvals require decision metadata"
+                " (decided_at and deciding user)"
+            )
+        if self.status == ApprovalStatus.CONSUMED and self.consumed_at is None:
+            raise ValueError("Consumed approvals require consumed_at")
+        if self.status == ApprovalStatus.PENDING and (
+            self.decided_at is not None
+            or self.decided_by_user_id is not None
+            or self.consumed_at is not None
+        ):
+            raise ValueError("Pending approvals must not carry decision metadata")
+        if self.status == ApprovalStatus.EXPIRED and (
+            self.consumed_at is not None or self.decided_by_user_id is not None
+        ):
+            raise ValueError("Expired approvals must not carry a decider or consumption metadata")
+
+    def effective_status(self, now: datetime) -> ApprovalStatus:
+        """Lazy-expiry view: pending rows past their TTL read as EXPIRED."""
+        if self.status == ApprovalStatus.PENDING and now >= self.expires_at:
+            return ApprovalStatus.EXPIRED
+        return self.status
+
+
 class SkillExecutionStatus(str, Enum):
     """Terminal status of a Skill execution.
 
