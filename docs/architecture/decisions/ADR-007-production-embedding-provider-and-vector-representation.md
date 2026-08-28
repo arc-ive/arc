@@ -113,8 +113,8 @@ is a future optimization, not a V1 requirement.
 
 ### 3. Source-of-truth design
 
-The current architecture has dimension hard-coded in **8 distinct
-locations** across 3 layers (verified against repository):
+The current architecture has dimension hard-coded in **9 distinct
+locations** across 4 layers (verified against repository):
 
 **Application layer** (Python):
 | # | File | Line | What | Coupling Type |
@@ -227,12 +227,20 @@ configured gateway (OmniRoute/OpenRouter) consistent with ADR-001.
 The script is independent of the application's
 `EMBEDDING_DIMENSIONS` constant.
 
+The migration script obtains its target dimension from a
+migration-specific configuration (`TARGET_EMBEDDING_DIMENSION`),
+not from the application's `EMBEDDING_DIMENSIONS` constant. The
+target must be `1536` to match the selected production provider
+output. If the configured target does not match the provider
+output dimension, the migration must fail closed. No padding,
+truncation, implicit cast, or resizing is permitted.
+
 1. Stop application ingestion and vector search.
 2. Drop the existing HNSW index:
    `DROP INDEX IF EXISTS idx_knowledge_chunks_embedding;`
 3. Add a new embedding column:
    `ALTER TABLE knowledge_chunks ADD COLUMN embedding_new vector(1536);`
-4. For each tenant, for each active document:
+4. For each tenant, for each document (including archived documents):
    a. Read each existing chunk's content from `knowledge_chunks.content`
       (already sanitized — PII guard ran at original ingestion time)
    b. Re-embed each existing chunk with the production provider (1536-dim)
@@ -240,7 +248,9 @@ The script is independent of the application's
 
    Existing chunk boundaries remain unchanged. The migration does NOT
    re-run the chunker — only embeddings are regenerated from the stored
-   sanitized content.
+   sanitized content. Archived documents are included because their
+   `knowledge_chunks` rows remain persisted and are part of the existing
+   vector dataset that the global completeness check covers.
 5. Verify completeness:
    `SELECT COUNT(*) FROM knowledge_chunks WHERE embedding_new IS NULL;`
    Must return 0 before proceeding.
