@@ -3,6 +3,7 @@
 import os
 
 from arc.db.connection import ArcDatabase
+from arc.repositories.approvals import PostgreSQLApprovalRequestRepository
 from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
@@ -17,6 +18,7 @@ from arc.repositories.tenancy import (
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
 from arc.services.agent import AgentExecutionService
+from arc.services.approvals import HumanApprovalService
 from arc.services.chunking import KnowledgeChunker
 from arc.services.connector_providers import (
     ConnectorCredentialStore,
@@ -78,6 +80,7 @@ class Application:
             "tool_execution": PostgreSQLToolExecutionRepository(self.db),
             "webhook_events": PostgreSQLWebhookEventRepository(self.db),
             "observability": PostgreSQLObservabilityRepository(self.db),
+            "approval_requests": PostgreSQLApprovalRequestRepository(self.db),
         }
 
         # Initialize services
@@ -145,6 +148,18 @@ class Application:
             skill_service=self.services["skill_service"],
             tool_service=self.services["tool_service"],
         )
+
+        # Initialize Human Intervention approval service (V1 foundation,
+        # ADR-005). The approval gate is optional: when wired, the
+        # ToolExecutionService creates pending approvals for
+        # REQUIRE_HUMAN_APPROVAL tools; consumption happens only through
+        # an authorized execute_tool call with an approval_id.
+        self.services["human_approval_service"] = HumanApprovalService(
+            repository=self.repositories["approval_requests"],
+        )
+
+        # Wire approval service to tool execution service
+        self.services["tool_service"].approval_service = self.services["human_approval_service"]
 
         # Initialize the bounded Agent orchestration layer (ADR-006). It
         # sits strictly ABOVE SkillExecutionService and holds no tool

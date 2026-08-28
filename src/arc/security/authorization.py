@@ -113,6 +113,8 @@ WEBHOOK_READ = Permission(resource="webhook", action="read")
 OBSERVABILITY_READ = Permission(resource="observability", action="read")
 OBSERVABILITY_PLATFORM_READ = Permission(resource="observability", action="platform_read")
 AGENT_EXECUTE = Permission(resource="agent", action="execute")
+APPROVAL_READ = Permission(resource="approval", action="read")
+APPROVAL_DECIDE = Permission(resource="approval", action="decide")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -139,6 +141,8 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             WEBHOOK_READ,
             OBSERVABILITY_READ,
             OBSERVABILITY_PLATFORM_READ,
+            APPROVAL_READ,
+            APPROVAL_DECIDE,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
@@ -159,6 +163,8 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_SYNC,
             WEBHOOK_READ,
             OBSERVABILITY_READ,
+            APPROVAL_READ,
+            APPROVAL_DECIDE,
         }
     ),
     ApplicationRole.OPERATIONS_USER: frozenset(
