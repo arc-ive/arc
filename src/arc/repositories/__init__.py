@@ -4,6 +4,8 @@ from typing import List, Optional, Protocol
 
 from arc.domain.models import (
     ApiRequestRecord,
+    ApprovalRequest,
+    ApprovalStatus,
     ConnectorConfig,
     ConnectorSyncActivityMetrics,
     ConnectorSyncRecord,
@@ -373,6 +375,79 @@ class ObservabilityRepository(Protocol):
 
     async def database_reachable(self) -> bool:
         """Component health probe for the database."""
+        ...
+
+
+class ApprovalRequestRepository(Protocol):
+    """Repository for Human Intervention approval requests (V1 gate).
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. An approval request created for
+    tenant A must never be retrievable or listable by tenant B.
+
+    An approval is consumed at most once. Expiry is lazy: ``pending`` rows
+    past their ``expires_at`` read as EXPIRED without mutation.
+    """
+
+    async def create(self, request: ApprovalRequest) -> ApprovalRequest:
+        """Persist one approval request exactly as provided.
+
+        Raises ``DuplicateKeyError`` when an identical logical binding
+        ``(tenant_id, tool_name, tool_version, arguments_digest)`` already
+        has a ``pending`` request (unique partial index, race-safe).
+        """
+        ...
+
+    async def get_by_id(self, approval_id: str, tenant_id: str) -> ApprovalRequest:
+        """Get an approval request by ID, scoped to a tenant.
+
+        Raises ``NotFoundError`` when no such request exists for the tenant.
+        """
+        ...
+
+    async def list_for_tenant(self, tenant_id: str, limit: int = 100) -> List[ApprovalRequest]:
+        """List approval requests for a tenant, most recent first."""
+        ...
+
+    async def find_open_by_binding(
+        self, tenant_id: str, tool_name: str, tool_version: str, arguments_digest: str
+    ) -> Optional[ApprovalRequest]:
+        """Find the existing OPEN (pending) request for a logical binding.
+
+        Returns ``None`` when no pending request matches. Expired rows are
+        NOT returned here; they are lazily expired at decision/consumption
+        time.
+        """
+        ...
+
+    async def expire_if_due(self, approval_id: str, tenant_id: str) -> bool:
+        """Mark a pending request as EXPIRED if it is past its TTL.
+
+        Returns ``True`` when the row was transitioned, ``False`` when the
+        row was already decided or not found.
+        """
+        ...
+
+    async def decide_request(
+        self, approval_id: str, tenant_id: str, decision: ApprovalStatus, decided_by_user_id: str
+    ) -> ApprovalRequest:
+        """Apply an APPROVED or REJECTED decision to a pending request.
+
+        Transitions ``pending`` to the requested decision. Returns the
+        updated request. Raises ``ApprovalError`` if the request is not in
+        ``pending`` status (fail-closed, no partial transitions).
+        """
+        ...
+
+    async def consume_if_approved(
+        self, approval_id: str, tenant_id: str
+    ) -> Optional[ApprovalRequest]:
+        """Atomically consume exactly one approved request.
+
+        Transitions ``approved`` to ``consumed`` and returns the updated
+        request. Returns ``None`` when the request is not in ``approved``
+        status (already consumed, expired, or rejected -- fail-closed).
+        """
         ...
 
 

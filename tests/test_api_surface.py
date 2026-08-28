@@ -127,6 +127,18 @@ def test_public_api_exposes_observability_endpoints():
     assert "GET /observability/health" in public
 
 
+def test_public_api_exposes_approval_endpoints():
+    """Approval endpoints (ADR-005) are public API, RBAC-protected.
+
+    List, read, and decide endpoints are tenant-scoped behind
+    ``approval:read`` / ``approval:decide``.
+    """
+    public = _route_paths(api_router.routes)
+    assert "GET /tenants/{tenant_id}/approvals" in public
+    assert "GET /tenants/{tenant_id}/approvals/{approval_id}" in public
+    assert "POST /tenants/{tenant_id}/approvals/{approval_id}/decisions" in public
+
+
 def test_dev_router_isolates_development_endpoints():
     """The dev-only router retains membership provisioning under /internal/dev."""
     dev = _route_paths(dev_router.routes)

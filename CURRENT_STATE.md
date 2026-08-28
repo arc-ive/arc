@@ -1178,6 +1178,40 @@ separate deferred item.
   against a freshly rebuilt application image.
 - GitHub Actions CI is active on `main`.
 
+## Human Intervention -- Approval-Gate V1 Foundation (Reintroduction)
+
+The reviewed approval-gate implementation from `84db40b` (PR #46) is being
+surgically reintroduced onto current main. PR #48 reverted PR #46 due to
+premature merge before Bala's final review. This reintroduction applies only
+the approval-gate changes while preserving all PR #47 PII guard work.
+
+**Status**: In progress (reintroduction branch `feat/approval-gate-v1-reintroduction`)
+
+**What this provides**:
+
+- `HumanApprovalService` with lifecycle management (create, decide, consume)
+- `PostgreSQLApprovalRequestRepository` with tenant-scoped SQL operations
+- `ApprovalRequest` and `ApprovalStatus` domain models
+- `approval_requests` database table with race-safe unique partial index
+- `REQUIRE_HUMAN_APPROVAL` policy in `ToolExecutionService`:
+  - Creation path: records pending approval, fails closed
+  - Consumption path: atomically consumes approved request, executes handler
+- Approval endpoints: list, read, decide
+- `APPROVAL_READ` / `APPROVAL_DECIDE` RBAC permissions
+- Canonical digest: `json.dumps(validated.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))`
+- Self-approval prevention: `requester != approver`
+- Single-use consumption: atomic transition `approved -> consumed`
+- Lazy expiry: `pending` rows past TTL read as `EXPIRED`
+
+**Files created**: `approvals.py` (service), `repositories/approvals.py`, 4 test files
+**Files modified**: `controllers.py`, `schema.sql`, `models.py`, `domain/__init__.py`, `repositories/__init__.py`, `authorization.py`, `tools.py`, `app.py`, `test_api_surface.py`, `test_rbac.py`, `test_tool_service.py`
+
+**Preserved unchanged**: PII guard (`skills.py`, `app.py` PII wiring, `test_skill_pii_guard.py`, `test_skill_service.py` PII fixtures), ADR-005 (already on main), PR #45 Skills Engine
+
+**Source**: reviewed implementation at `84db40b`
+**Target**: `origin/main` (`9240186`)
+
+
 ## In Progress
 
 ### GitHub / Engineering Workflow
