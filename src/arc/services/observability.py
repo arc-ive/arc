@@ -88,6 +88,7 @@ class ObservabilityService:
         tools = await self.repository.tool_execution_activity(tenant_id, window)
         connectors = await self.repository.connector_sync_activity(tenant_id, window)
         webhooks = await self.repository.webhook_event_activity(tenant_id, window)
+        approvals = await self.repository.approval_activity(tenant_id, window)
         return {
             "window_hours": window,
             "http": self._http_payload(http),
@@ -109,6 +110,14 @@ class ObservabilityService:
                 "distinct_event_types": webhooks.distinct_event_types,
                 "total_payload_bytes": webhooks.total_payload_bytes,
             },
+            "approvals": {
+                "total": approvals.total,
+                "pending": approvals.pending,
+                "approved": approvals.approved,
+                "rejected": approvals.rejected,
+                "expired": approvals.expired,
+                "consumed": approvals.consumed,
+            },
         }
 
     async def get_platform_summary(self, hours: int = DEFAULT_WINDOW_HOURS) -> Dict[str, Any]:
@@ -123,6 +132,7 @@ class ObservabilityService:
         tools = await self.repository.tool_execution_activity(None, window)
         connectors = await self.repository.connector_sync_activity(None, window)
         webhooks = await self.repository.webhook_event_activity(None, window)
+        approvals = await self.repository.approval_activity(None, window)
         return {
             "window_hours": window,
             "http": self._http_payload(http),
@@ -132,6 +142,8 @@ class ObservabilityService:
             "connector_failures_total": connectors.failed,
             "webhook_events_total": webhooks.total_events if webhooks.available else 0,
             "webhook_source_available": webhooks.available,
+            "approval_activity_total": approvals.total,
+            "approval_failures_total": approvals.rejected + approvals.expired,
         }
 
     @staticmethod

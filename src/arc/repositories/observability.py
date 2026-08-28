@@ -23,6 +23,7 @@ from typing import Optional
 from arc.db.connection import ArcDatabase
 from arc.domain.models import (
     ApiRequestRecord,
+    ApprovalActivityMetrics,
     ConnectorSyncActivityMetrics,
     HttpUsageMetrics,
     ToolExecutionActivityMetrics,
@@ -190,6 +191,40 @@ class PostgreSQLObservabilityRepository:
             total_events=row["total"],
             distinct_event_types=row["distinct_types"],
             total_payload_bytes=row["payload_bytes"],
+        )
+
+    async def approval_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> ApprovalActivityMetrics:
+        """Aggregate authoritative approval requests in place.
+
+        The ``approval_requests`` table is always present (created by
+        schema bootstrap).  Every tenant-scoped aggregate enforces
+        ``tenant_id`` at the SQL level; ``None`` selects the platform
+        view.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+                       COUNT(*) FILTER (WHERE status = 'approved') AS approved,
+                       COUNT(*) FILTER (WHERE status = 'rejected') AS rejected,
+                       COUNT(*) FILTER (WHERE status = 'expired') AS expired,
+                       COUNT(*) FILTER (WHERE status = 'consumed') AS consumed
+                FROM approval_requests
+                WHERE {self._scope_clause()}
+                """,
+                tenant_id,
+                hours,
+            )
+        return ApprovalActivityMetrics(
+            total=row["total"],
+            pending=row["pending"],
+            approved=row["approved"],
+            rejected=row["rejected"],
+            expired=row["expired"],
+            consumed=row["consumed"],
         )
 
     async def database_reachable(self) -> bool:
