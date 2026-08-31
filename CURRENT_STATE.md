@@ -2,11 +2,11 @@
 
 Last Updated:
 
-2026-08-20
+2026-08-31
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation approved pending Person C follow-up (PR #34); Company Brain document identity & re-ingestion implemented per ADR-003 (this slice)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #39); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53)
 
 ## Completed
 
@@ -309,14 +309,14 @@ Secure RAG proposal (`docs/` + `C:\Users\subra\Downloads\Arc_Secure_RAG_Proposal
 
 - **Schema** (`src/arc/db/schema.sql`): `CREATE EXTENSION IF NOT EXISTS vector`;
   new `knowledge_chunks` table (id PK, document FK ON DELETE CASCADE, tenant FK
-  ON DELETE CASCADE, content, sequence >= 0, `embedding vector(64)`) with tenant
+  ON DELETE CASCADE, content, sequence >= 0, `embedding vector(1536)`) with tenant
   and document indexes and an HNSW cosine index on the embedding column.
 - **Chunking** (`src/arc/services/chunking.py`): deterministic,
   whitespace-aware `KnowledgeChunker` (max_chars/overlap_chars, no content loss).
 - **Embeddings** (`src/arc/services/embeddings.py`): `EmbeddingProvider`
-  protocol, `DeterministicEmbeddingProvider` (64-dim, L2-normalized, word-hash
-  histogram), `EmbeddingError` (fail closed). No production provider hard-coded;
-  the exact production embedding model remains open (TRD §34 / ADR-001).
+  protocol, `DeterministicEmbeddingProvider` (L2-normalized, word-hash
+  histogram), `EmbeddingError` (fail closed). Production provider: `OpenAIEmbeddingProvider`
+  (ADR-007, text-embedding-3-small, 1536-dim, gateway-routable via configurable `base_url`).
 - **Repository** (`src/arc/repositories/retrieval.py`):
   `PostgreSQLKnowledgeChunkRepository` — atomic `create_many` (one transaction),
   tenant-scoped `search` at the SQL level (similarity at the PostgreSQL/pgvector
@@ -343,7 +343,7 @@ Secure RAG proposal (`docs/` + `C:\Users\subra\Downloads\Arc_Secure_RAG_Proposal
 
 - Merged to `main` via PR #29 (merge commit `a5b892b`).
 
-## Secure RAG — Approved Context Contract (Implemented — pending review)
+## Secure RAG — Approved Context Contract (Merged)
 
 **Branch:** `feat/approved-context-contract`
 **Base:** `origin/main` (Secure RAG Semantic Retrieval Foundation, PR #29)
@@ -372,8 +372,10 @@ LLM/Agent/Unified Intelligence/Skills/tooling/PageIndex integration.
   (provider/model/dimensions) read from `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`,
   `EMBEDDING_DIMENSION`; `EmbeddingConfigurationError` on invalid config;
   `build_embedding_provider` factory — unknown providers fail closed at startup.
-  Dimension is locked to the storage dimension `vector(64)` (schema change is a
-  deferred decision). Documented in `.env.example`.
+  Dimension is locked to the storage dimension `vector(1536)` (schema change is a
+  deferred decision). Supported providers: `deterministic` (dev/tests) and
+  `openai` (production, ADR-007). Gateway routing via configurable `base_url`.
+  Documented in `.env.example`.
 - **Service** (`src/arc/services/retrieval.py`): `RetrievalService.approved_search`
   builds the contract from tenant-scoped retrieval; re-validates every match
   against the trusted tenant (cross-tenant match → `RuntimeError`, fail closed);
@@ -408,11 +410,7 @@ LLM/Agent/Unified Intelligence/Skills/tooling/PageIndex integration.
 - Runtime smoke: built image imports `ApprovedContext` and constructs the
   configured `DeterministicEmbeddingProvider`.
 
-### Pending
-
-- Human review of the PR; merge into `main`.
-
-## AI Tools — AI Tools Foundation (Implemented — pending review)
+## AI Tools — AI Tools Foundation (Merged)
 
 **Branch:** `feat/ai-tools-foundation`
 **Base:** `origin/main` (reconciled with current main)
@@ -530,10 +528,6 @@ framework-agnostic boundaries.
 - `ruff check .` and `ruff format --check .` pass.
 - `docker compose config --quiet` passes; `compileall` clean.
 
-### Pending
-
-- Human review of PR #31; merge into `main`.
-
 **Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
 
 - Added `.github/workflows/ci.yml` (GitHub Actions, `ubuntu-latest`).
@@ -548,7 +542,7 @@ framework-agnostic boundaries.
 - The repo-wide lint/format gate passes on current `main`, verified locally
   against a freshly rebuilt application image.
 - GitHub Actions CI is active on `main`.
-## Unified Intelligence — Secure Knowledge Reasoning Foundation (Implemented — pending review)
+## Unified Intelligence — Secure Knowledge Reasoning Foundation (Merged)
 
 **Branch:** `feat/approved-context-contract`
 **Base:** `origin/main` (Secure RAG Semantic Retrieval Foundation, PR #29)
@@ -614,11 +608,7 @@ workflows, webhooks, or autonomous actions (later maturity layers).
 - Runtime smoke: rebuilt image imports `UnifiedIntelligenceService` and
   constructs the configured `DeterministicLlmProvider`.
 
-### Pending
-
-- Human review of the PR; merge into `main`.
-
-## Connector Provider Integrations (Implemented — pending review)
+## Connector Provider Integrations (Merged)
 
 **Branch:** `feat/connector-provider-integrations`
 **Base:** `origin/main` @ `a5b892b`
@@ -754,11 +744,7 @@ foundation already on `main` (code-defined `ConnectorProvider` catalog,
   `docker compose config --quiet`, `git diff --check`, the conflict-marker
   scan, and the secret scan are all clean.
 
-### Pending
-
-- Commit, push, human review of the PR; merge into `main`.
-
-## Webhooks — Inbound Event Ingestion Foundation (Implemented — pending review)
+## Webhooks — Inbound Event Ingestion Foundation (Merged)
 
 **Branch:** `feat/webhooks-foundation`
 **Base:** `origin/main` @ `95b36e6`
@@ -848,7 +834,7 @@ triggering yet).
 ### Pending
 
 - Human decision on dropping the orphaned local `webhook_events` table.
-## Observability — Foundation Slice (Implemented — pending review)
+## Observability — Foundation Slice (Merged)
 
 **Branch:** `feat/observability-foundation`
 **Base:** `origin/main` @ `95b36e6`
@@ -962,10 +948,7 @@ action counters (producers not implemented / other owners).
   `docker compose config --quiet`, `git diff --check`, conflict-marker
   scan, secret scan: all clean. Image rebuilt before verification runs.
 
-### Pending
-
-- Commit, push, human review of the PR; merge into `main`.
-## Company Brain — Document Identity & Re-ingestion (Implemented — pending review)
+## Company Brain — Document Identity & Re-ingestion (Merged)
 
 **Branch:** `feat/company-brain-document-identity`
 **Base:** `origin/main` @ `95b36e6`
@@ -1034,7 +1017,7 @@ re-ingestion. Approved Context / `approved_search` / RBAC untouched.
 Retroactive deduplication/cleanup of pre-existing duplicate rows;
 production embedding providers; hybrid retrieval/reranking.
 
-## Company Brain — Legacy Duplicate Archival Lifecycle (Implemented — pending review)
+## Company Brain — Legacy Duplicate Archival Lifecycle (Merged)
 
 **Branch:** `feat/company-brain-legacy-archival`
 **Base:** `origin/main` @ `2c425a6`
@@ -1111,11 +1094,7 @@ hard-deletion policy (requires separate team decision).
 
 See PR description (Docker + real PostgreSQL suite, ruff, format, compose).
 
-### Pending
-
-- Human review of the PR; ADR-003 acceptance; merge into `main`.
-
-## Webhooks — Ingestion Body-Cap Hardening (Implemented — pending review)
+## Webhooks — Ingestion Body-Cap Hardening (Merged)
 
 **Branch:** `fix/webhook-ingestion-body-cap`
 **Base:** `origin/main` @ `bc9b436`
@@ -1212,7 +1191,7 @@ reverted by PR #48). Preserved all PR #47 PII guard work unchanged.
 
 Reviewed and approved production embedding architecture decision record.
 Resolved review findings (gateway, backup, re-embed wording).
-Located at `docs/architecture/decisions/ADR-007-production-embedding-architecture.md`.
+Located at `docs/architecture/decisions/ADR-007-production-embedding-provider-and-vector-representation.md`.
 
 ## Approval Observability Slice (PR #51 — Merged)
 
@@ -1231,6 +1210,29 @@ Observability principle: aggregation/read-only, NOT a second source of truth.
 **Files changed** (7): `domain/models.py`, `repositories/observability.py`, `services/observability.py`, `tests/test_observability_domain.py`, `tests/test_observability_repository.py`, `tests/test_observability_service.py`, `tests/test_observability_api.py`
 
 **Verification**: 1142 tests passed, 0 failed, 1 skipped. ruff check/format clean. compileall clean.
+
+## Production Embedding Provider + 64→1536 Migration (PR #53 — Merged)
+
+**PR #53** — merged to `main` (commit `4daa5a7`).
+
+Implements ADR-007: production OpenAI-compatible embedding provider with
+gateway-routable `base_url`, `EMBEDDING_DIMENSIONS` updated to 1536,
+standalone resumable/idempotent migration script, schema updated to `vector(1536)`.
+
+**What this provides**:
+
+- `OpenAIEmbeddingProvider` in `src/arc/services/embeddings.py` — production provider with configurable `base_url`, dimension validation, error translation
+- `RetrievalService` now requires explicit `EmbeddingProvider` injection (no hidden fallback)
+- `build_embedding_provider` factory supports `deterministic` (dev/tests) and `openai` (production)
+- `OPENAI_API_KEY` required for direct OpenAI; optional when `OMNIROUTE_BASE_URL` is set (gateway-managed)
+- `scripts/migrate_embeddings.py` — standalone migration: preflight, backfill, completeness gate, transactional column swap, HNSW recreation, final verification
+- Schema: `embedding vector(1536) NOT NULL` with HNSW index
+- Docker/Compose/`.env.example` updated for embedding configuration
+- `openai>=1.0,<2.0` added to dependencies
+- 30 migration tests + 29 provider tests
+
+**Verification**: 1191 tests passed, 0 failed, 1 skipped. ruff check/format clean. compileall clean.
+
 
 ## In Progress
 
@@ -1255,8 +1257,8 @@ Observability principle: aggregation/read-only, NOT a second source of truth.
 - Dev Container baseline — established (merged).
 - Compose — established (merged).
 - CI environment — established.
-- Windows verification.
-- macOS verification.
+- Windows verification — complete (Docker build, ruff, format, pytest all pass).
+- macOS verification — pending (Joe to rebuild Docker image and verify inside container).
 
 ## Product Work
 
@@ -1329,8 +1331,8 @@ Bharath
 ### CI
 
 The CI baseline (`.github/workflows/ci.yml`) has been established and
-merged to `main` (PR #23). Remaining Foundation verification is
-cross-platform (Windows/macOS).
+merged to `main` (PR #23). CI is active and passing on `main`.
+Remaining Foundation verification is cross-platform (macOS).
 
 Owner:
 
