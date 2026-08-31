@@ -1178,14 +1178,12 @@ separate deferred item.
   against a freshly rebuilt application image.
 - GitHub Actions CI is active on `main`.
 
-## Human Intervention -- Approval-Gate V1 Foundation (Reintroduction)
+## Human Intervention -- Approval-Gate V1 Foundation (Merged)
 
-The reviewed approval-gate implementation from `84db40b` (PR #46) is being
-surgically reintroduced onto current main. PR #48 reverted PR #46 due to
-premature merge before Bala's final review. This reintroduction applies only
-the approval-gate changes while preserving all PR #47 PII guard work.
+**PR #50** — merged to `main` (commit `aa409c7`).
 
-**Status**: In progress (reintroduction branch `feat/approval-gate-v1-reintroduction`)
+Surgical reintroduction of the reviewed approval-gate from `84db40b` (PR #46,
+reverted by PR #48). Preserved all PR #47 PII guard work unchanged.
 
 **What this provides**:
 
@@ -1208,9 +1206,31 @@ the approval-gate changes while preserving all PR #47 PII guard work.
 
 **Preserved unchanged**: PII guard (`skills.py`, `app.py` PII wiring, `test_skill_pii_guard.py`, `test_skill_service.py` PII fixtures), ADR-005 (already on main), PR #45 Skills Engine
 
-**Source**: reviewed implementation at `84db40b`
-**Target**: `origin/main` (`9240186`)
+## ADR-007 Production Embedding Architecture (Merged)
 
+**Commits**: `ca44f9c`, `c4d535a` on `main`.
+
+Reviewed and approved production embedding architecture decision record.
+Resolved review findings (gateway, backup, re-embed wording).
+Located at `docs/architecture/decisions/ADR-007-production-embedding-architecture.md`.
+
+## Approval Observability Slice (PR #51 — Merged)
+
+**PR #51** — merged to `main` (commit `e7b0b22`).
+
+Authorized by ADR-005 §line 339 ("approval-specific metrics (later observability slice)").
+Observability principle: aggregation/read-only, NOT a second source of truth.
+
+**What this provides**:
+
+- `ApprovalActivityMetrics` dataclass (`domain/models.py`): total, pending, approved, rejected, expired, consumed counts with `__post_init__` validation
+- `observability.approval_activity()` method: tenant-scoped `COUNT FILTER (status = ...)` queries against `approval_requests`, enforces tenant isolation via `_scope_clause()`
+- Wired into `ObservabilityService.get_tenant_usage_summary()` (`"approvals"` key) and `get_platform_summary()` (`"approval_activity_total"`, `"approval_failures_total"` keys)
+- Cross-tenant isolation tests, aggregation math tests, time window tests, platform view tests, service wiring tests
+
+**Files changed** (7): `domain/models.py`, `repositories/observability.py`, `services/observability.py`, `tests/test_observability_domain.py`, `tests/test_observability_repository.py`, `tests/test_observability_service.py`, `tests/test_observability_api.py`
+
+**Verification**: 1142 tests passed, 0 failed, 1 skipped. ruff check/format clean. compileall clean.
 
 ## In Progress
 
@@ -1280,21 +1300,13 @@ Bala is responsible for:
 
 ## Next
 
-1. **Review and merge the two-slice PR** (feat/approved-context-contract → main):
-   "feat(intelligence): add approved context and unified intelligence foundation" —
-   Approved Context Contract + Unified Intelligence (Secure Knowledge Reasoning
-   Foundation), committed as ONE commit, verified (392 tests). Human review
-   required; do not self-merge.
-2. **Next TRD-ordered implementation slice: AI Tools** (TRD §38: Skills → Unified
-   Intelligence → AI Tools). NOT implemented; must not be started until the
-   current PR is reviewed and merged, and the next slice is authorized.
-3. Coordinate the next Bala Foundation issue with Joe and Bharath.
-4. Continue the AI development setup.
-5. Complete Foundation cross-platform verification (Windows/macOS).
-6. Connect GitHub with Linear.
-7. Benchmark candidate AI models.
-8. Conduct the final Foundation review.
-9. Begin product implementation only after Foundation acceptance.
+1. Coordinate the next Bala Foundation issue with Joe and Bharath.
+2. Continue the AI development setup.
+3. Complete Foundation cross-platform verification (Windows/macOS).
+4. Connect GitHub with Linear.
+5. Benchmark candidate AI models.
+6. Conduct the final Foundation review.
+7. Begin product implementation only after Foundation acceptance.
 
 ## Blocked / Waiting
 
