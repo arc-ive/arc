@@ -97,7 +97,7 @@ class TestEmbeddingSettings:
     def test_environment_values_are_read(self, monkeypatch):
         monkeypatch.setenv("EMBEDDING_PROVIDER", "deterministic")
         monkeypatch.setenv("EMBEDDING_MODEL", "local-test")
-        monkeypatch.setenv("EMBEDDING_DIMENSION", "64")
+        monkeypatch.setenv("EMBEDDING_DIMENSION", "1536")
 
         settings = get_embedding_settings()
 

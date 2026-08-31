@@ -18,6 +18,7 @@ dependencies = [
     "spacy==3.8.15",
     "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
     "httpx>=0.28,<1.0",
+    "openai>=1.0,<2.0",
 ]
 
 [project.optional-dependencies]

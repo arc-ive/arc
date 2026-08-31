@@ -10,6 +10,7 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY src ./src
 COPY tests ./tests
+COPY scripts ./scripts
 
 RUN python -m pip install --upgrade pip \
     && python -m pip install ".[dev]" \

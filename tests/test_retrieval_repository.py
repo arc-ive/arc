@@ -57,12 +57,12 @@ def _chunks(document: KnowledgeDocument, count: int = 2):
     ]
 
 
-def _embeddings(count: int, dimension: int = 64):
+def _embeddings(count: int, dimension: int = 1536):
     """Non-zero collinear embeddings: safe for presence tests."""
     return [[float(index) + 1.0] * dimension for index in range(count)]
 
 
-def _axis_embedding(index: int, sign: float = 1.0, dimension: int = 64):
+def _axis_embedding(index: int, sign: float = 1.0, dimension: int = 1536):
     """Embedding along a single distinct axis (different directions).
 
     Cosine similarity is direction-sensitive: axis vectors are mutually
@@ -142,7 +142,7 @@ class TestKnowledgeChunkRepositoryContract:
         created = await chunk_repo.create_many(chunks, _embeddings(len(chunks)))
 
         assert [chunk.id for chunk in created] == [chunk.id for chunk in chunks]
-        persisted = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=10)
+        persisted = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=10)
         assert {match.chunk_id for match in persisted} == {chunk.id for chunk in chunks}
         assert all(match.tenant_id == seeded_document.tenant_id for match in persisted)
         assert all(match.document_id == seeded_document.id for match in persisted)
@@ -154,20 +154,20 @@ class TestKnowledgeChunkRepositoryContract:
         with pytest.raises(ValueError):
             await chunk_repo.create_many(chunks, _embeddings(len(chunks) - 1))
 
-        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=10) == []
+        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=10) == []
 
     async def test_search_with_invalid_limit_is_rejected(self, chunk_repo, seeded_tenant):
         with pytest.raises(ValueError):
-            await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=0)
+            await chunk_repo.search(seeded_tenant.id, [1.0] * 1536, limit=0)
 
     async def test_search_without_chunks_returns_empty(self, chunk_repo, seeded_tenant):
-        assert await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=5) == []
+        assert await chunk_repo.search(seeded_tenant.id, [1.0] * 1536, limit=5) == []
 
     async def test_search_returns_document_context(self, chunk_repo, seeded_document):
         chunks = _chunks(seeded_document, count=1)
         await chunk_repo.create_many(chunks, _embeddings(1))
 
-        matches = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=5)
+        matches = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=5)
         assert len(matches) == 1
         match = matches[0]
         assert match.source == KnowledgeSource.POLICY
@@ -180,7 +180,7 @@ class TestKnowledgeChunkRepositoryContract:
         chunks = _chunks(seeded_document, count=3)
         await chunk_repo.create_many(chunks, _embeddings(3))
 
-        matches = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=10)
+        matches = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=10)
         assert {match.chunk_id: match.sequence for match in matches} == {
             chunk.id: chunk.sequence for chunk in chunks
         }
@@ -194,16 +194,16 @@ class TestKnowledgeChunkRepositoryContract:
         with pytest.raises(ValueError):
             await chunk_repo.create_many(chunks, _embeddings(2))
 
-        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=10) == []
+        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=10) == []
 
     async def test_chunks_are_removed_with_their_document(self, db, chunk_repo, seeded_document):
         chunks = _chunks(seeded_document, count=1)
         await chunk_repo.create_many(chunks, _embeddings(1))
-        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=5)
+        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=5)
 
         async with db._connection_pool.acquire() as conn:
             await conn.execute("DELETE FROM knowledge_documents WHERE id = $1", seeded_document.id)
-        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=5) == []
+        assert await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=5) == []
 
 
 class TestKnowledgeChunkTenantIsolation:
@@ -220,8 +220,8 @@ class TestKnowledgeChunkTenantIsolation:
         await chunk_repo.create_many(chunks_a, _embeddings(len(chunks_a)))
         await chunk_repo.create_many(chunks_b, _embeddings(len(chunks_b)))
 
-        search_a = await chunk_repo.search(tenant_a.id, [1.0] * 64, limit=10)
-        search_b = await chunk_repo.search(tenant_b.id, [1.0] * 64, limit=10)
+        search_a = await chunk_repo.search(tenant_a.id, [1.0] * 1536, limit=10)
+        search_b = await chunk_repo.search(tenant_b.id, [1.0] * 1536, limit=10)
 
         assert {match.chunk_id for match in search_a} == {chunk.id for chunk in chunks_a}
         assert {match.chunk_id for match in search_b} == {chunk.id for chunk in chunks_b}
@@ -255,8 +255,8 @@ class TestKnowledgeChunkRanking:
         chunks = _chunks(seeded_document, count=4)
         await chunk_repo.create_many(chunks, _embeddings(4))
 
-        assert len(await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=2)) == 2
-        assert len(await chunk_repo.search(seeded_document.tenant_id, [1.0] * 64, limit=10)) == 4
+        assert len(await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=2)) == 2
+        assert len(await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=10)) == 4
 
 
 class TestRetrievalServiceEndToEnd:

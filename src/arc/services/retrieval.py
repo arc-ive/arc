@@ -35,7 +35,6 @@ from arc.repositories import KnowledgeChunkRepository
 from arc.services.chunking import KnowledgeChunker
 from arc.services.embeddings import (
     EMBEDDING_DIMENSIONS,
-    DeterministicEmbeddingProvider,
     EmbeddingError,
     EmbeddingProvider,
 )
@@ -60,15 +59,13 @@ class RetrievalService:
         self,
         chunk_repo: KnowledgeChunkRepository,
         chunker: Optional[KnowledgeChunker] = None,
-        embedding_provider: Optional[EmbeddingProvider] = None,
+        embedding_provider: EmbeddingProvider = None,  # type: ignore[assignment]
     ):
         self.chunk_repo = chunk_repo
         self.chunker = chunker if chunker is not None else KnowledgeChunker()
-        self.embedding_provider = (
-            embedding_provider
-            if embedding_provider is not None
-            else DeterministicEmbeddingProvider()
-        )
+        if embedding_provider is None:
+            raise TypeError("embedding_provider is required")
+        self.embedding_provider = embedding_provider
 
     async def prepare_index(
         self, context: TenantContext, document: KnowledgeDocument
