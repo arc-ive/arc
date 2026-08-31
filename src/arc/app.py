@@ -101,9 +101,9 @@ class Application:
         # indexer so ingestion and retrieval always agree on the source of
         # truth (sanitized content only). The embedding provider is
         # selected from environment configuration (EMBEDDING_PROVIDER /
-        # EMBEDDING_MODEL); only the deterministic local provider is
-        # currently supported, and unknown providers fail closed at
-        # startup. Production provider selection is a deferred decision.
+        # EMBEDDING_MODEL); supported providers are ``deterministic``
+        # (development/tests) and ``openai`` (production, ADR-007). Unknown
+        # providers fail closed at startup.
         retrieval_service = RetrievalService(
             chunk_repo=self.repositories["knowledge_chunk"],
             chunker=KnowledgeChunker(),

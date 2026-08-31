@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
     tenant_id VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
     sequence INTEGER NOT NULL,
-    embedding vector(64) NOT NULL,
+    embedding vector(1536) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,

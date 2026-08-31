@@ -309,14 +309,14 @@ Secure RAG proposal (`docs/` + `C:\Users\subra\Downloads\Arc_Secure_RAG_Proposal
 
 - **Schema** (`src/arc/db/schema.sql`): `CREATE EXTENSION IF NOT EXISTS vector`;
   new `knowledge_chunks` table (id PK, document FK ON DELETE CASCADE, tenant FK
-  ON DELETE CASCADE, content, sequence >= 0, `embedding vector(64)`) with tenant
+  ON DELETE CASCADE, content, sequence >= 0, `embedding vector(1536)`) with tenant
   and document indexes and an HNSW cosine index on the embedding column.
 - **Chunking** (`src/arc/services/chunking.py`): deterministic,
   whitespace-aware `KnowledgeChunker` (max_chars/overlap_chars, no content loss).
 - **Embeddings** (`src/arc/services/embeddings.py`): `EmbeddingProvider`
-  protocol, `DeterministicEmbeddingProvider` (64-dim, L2-normalized, word-hash
-  histogram), `EmbeddingError` (fail closed). No production provider hard-coded;
-  the exact production embedding model remains open (TRD §34 / ADR-001).
+  protocol, `DeterministicEmbeddingProvider` (L2-normalized, word-hash
+  histogram), `EmbeddingError` (fail closed). Production provider: `OpenAIEmbeddingProvider`
+  (ADR-007, text-embedding-3-small, 1536-dim, gateway-routable via configurable `base_url`).
 - **Repository** (`src/arc/repositories/retrieval.py`):
   `PostgreSQLKnowledgeChunkRepository` — atomic `create_many` (one transaction),
   tenant-scoped `search` at the SQL level (similarity at the PostgreSQL/pgvector
@@ -372,8 +372,10 @@ LLM/Agent/Unified Intelligence/Skills/tooling/PageIndex integration.
   (provider/model/dimensions) read from `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`,
   `EMBEDDING_DIMENSION`; `EmbeddingConfigurationError` on invalid config;
   `build_embedding_provider` factory — unknown providers fail closed at startup.
-  Dimension is locked to the storage dimension `vector(64)` (schema change is a
-  deferred decision). Documented in `.env.example`.
+  Dimension is locked to the storage dimension `vector(1536)` (schema change is a
+  deferred decision). Supported providers: `deterministic` (dev/tests) and
+  `openai` (production, ADR-007). Gateway routing via configurable `base_url`.
+  Documented in `.env.example`.
 - **Service** (`src/arc/services/retrieval.py`): `RetrievalService.approved_search`
   builds the contract from tenant-scoped retrieval; re-validates every match
   against the trusted tenant (cross-tenant match → `RuntimeError`, fail closed);

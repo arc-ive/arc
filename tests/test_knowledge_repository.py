@@ -61,7 +61,7 @@ def _chunks(document: KnowledgeDocument, count: int = 2, **overrides):
     ]
 
 
-def _embeddings(count: int, dimension: int = 64):
+def _embeddings(count: int, dimension: int = 1536):
     """Non-zero collinear embeddings: safe for presence assertions."""
     return [[float(index) + 1.0] * dimension for index in range(count)]
 
@@ -217,7 +217,7 @@ class TestKnowledgeDocumentWithChunks:
         fetched = await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
         assert fetched.id == document.id
 
-        matches = await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=10)
+        matches = await chunk_repo.search(seeded_tenant.id, [1.0] * 1536, limit=10)
         assert {match.chunk_id for match in matches} == {chunk.id for chunk in chunks}
         assert all(match.document_id == document.id for match in matches)
 
@@ -236,7 +236,7 @@ class TestKnowledgeDocumentWithChunks:
         # The document insert was rolled back: no row, no chunks.
         with pytest.raises(NotFoundError):
             await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
-        assert await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=10) == []
+        assert await chunk_repo.search(seeded_tenant.id, [1.0] * 1536, limit=10) == []
 
     async def test_length_mismatch_is_rejected_before_any_write(
         self, knowledge_repo, seeded_tenant
@@ -433,11 +433,15 @@ class TestConcurrentIdentityIngestion:
 
         from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
         from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+        from arc.services.embeddings import DeterministicEmbeddingProvider
         from arc.services.knowledge import KnowledgeService
         from arc.services.retrieval import RetrievalService
 
         knowledge_repo = PostgreSQLKnowledgeRepository(db)
-        indexer = RetrievalService(PostgreSQLKnowledgeChunkRepository(db))
+        indexer = RetrievalService(
+            PostgreSQLKnowledgeChunkRepository(db),
+            embedding_provider=DeterministicEmbeddingProvider(),
+        )
         service = KnowledgeService(
             knowledge_repo, pii_guard=self._PassthroughGuard(), indexer=indexer
         )
@@ -737,7 +741,7 @@ class TestLegacyDuplicateArchival:
 
         # ...but no longer surface as retrieval candidates, while the
         # winner's chunk does.
-        matches = await chunk_repo.search(seeded_tenant.id, [1.0] * 64, limit=10)
+        matches = await chunk_repo.search(seeded_tenant.id, [1.0] * 1536, limit=10)
         match_document_ids = {match.document_id for match in matches}
         assert document_old.id not in match_document_ids
         assert document_new.id in match_document_ids
@@ -777,6 +781,7 @@ class TestLegacyArchivalRetrievalRegression:
         )
         from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
         from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+        from arc.services.embeddings import DeterministicEmbeddingProvider
         from arc.services.intelligence import UnifiedIntelligenceService
         from arc.services.knowledge import KnowledgeService
         from arc.services.llm import DeterministicLlmProvider
@@ -784,7 +789,10 @@ class TestLegacyArchivalRetrievalRegression:
 
         knowledge_repo = PostgreSQLKnowledgeRepository(db)
         chunk_repo = PostgreSQLKnowledgeChunkRepository(db)
-        indexer = RetrievalService(chunk_repo)
+        indexer = RetrievalService(
+            chunk_repo,
+            embedding_provider=DeterministicEmbeddingProvider(),
+        )
         ingestion = KnowledgeService(
             knowledge_repo,
             pii_guard=self._PassthroughGuard(),

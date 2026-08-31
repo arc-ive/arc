@@ -1,6 +1,5 @@
 """Shared fixtures for X-11 authentication and authorization tests."""
 
-import asyncio
 import os
 import uuid
 from pathlib import Path
@@ -37,11 +36,19 @@ async def _initialize_schema():
     The suite runs against a real PostgreSQL database and must create the
     schema itself: on a fresh database the first test that touches the
     database would otherwise fail with an undefined-table error.
+
+    The entire ``public`` schema is dropped and recreated so that stale
+    types, indexes, or constraints from a prior run never interfere with
+    the bootstrap.
     """
     database = ArcDatabase(DATABASE_URL)
     await database.connect()
 
     async with database._connection_pool.acquire() as conn:
+        await conn.execute("DROP SCHEMA public CASCADE")
+        await conn.execute("CREATE SCHEMA public")
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
         schema = SCHEMA_PATH.read_text()
 
         for statement in schema.split(";"):
@@ -110,24 +117,9 @@ def client():
     """TestClient that runs the real app lifecycle (startup/shutdown).
 
     Requires PostgreSQL, matching the project's Docker-based test
-    environment.
+    environment. The session-scoped ``_initialize_schema`` fixture
+    handles schema bootstrap; this fixture only manages the app lifecycle.
     """
-    database = ArcDatabase(DATABASE_URL)
-
-    async def initialize_schema():
-        await database.connect()
-
-        async with database._connection_pool.acquire() as conn:
-            schema = SCHEMA_PATH.read_text()
-
-            for statement in schema.split(";"):
-                if statement.strip():
-                    await conn.execute(statement)
-
-        await database.disconnect()
-
-    asyncio.run(initialize_schema())
-
     with TestClient(app) as test_client:
         yield test_client
 
@@ -152,16 +144,9 @@ def authorization_override(client):
 
 @pytest.fixture
 async def db():
-    """Connect to PostgreSQL and ensure the tenancy schema exists."""
+    """Connect to PostgreSQL. Schema is bootstrapped by session-scoped ``_initialize_schema``."""
     database = ArcDatabase(DATABASE_URL)
     await database.connect()
-
-    async with database._connection_pool.acquire() as conn:
-        schema = SCHEMA_PATH.read_text()
-
-        for statement in schema.split(";"):
-            if statement.strip():
-                await conn.execute(statement)
 
     yield database
     await database.disconnect()

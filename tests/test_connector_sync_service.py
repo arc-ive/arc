@@ -52,6 +52,7 @@ from arc.services.connector_providers.fake import FakeGitHubProvider
 from arc.services.connector_providers.registry import ProviderRegistry
 from arc.services.connector_providers.settings import ConnectorCredentialStore
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
+from arc.services.embeddings import DeterministicEmbeddingProvider
 from arc.services.knowledge import KnowledgeService
 from arc.services.pii import PiiGuardError
 from arc.services.retrieval import RetrievalService
@@ -583,7 +584,10 @@ class TestConnectorSyncRepeatedSyncDeduplication:
             knowledge_service=KnowledgeService(
                 knowledge_repo,
                 pii_guard=self._PassthroughGuard(),
-                indexer=RetrievalService(PostgreSQLKnowledgeChunkRepository(db)),
+                indexer=RetrievalService(
+                    PostgreSQLKnowledgeChunkRepository(db),
+                    embedding_provider=DeterministicEmbeddingProvider(),
+                ),
             ),
         )
         context = _context(tenant_id=tenant.id)
