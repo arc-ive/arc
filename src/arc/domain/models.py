@@ -948,6 +948,41 @@ class WebhookEventActivityMetrics:
             raise ValueError("Webhook activity counts cannot be negative")
 
 
+@dataclass
+class ApprovalActivityMetrics:
+    """Aggregate Human Intervention approval activity read-model.
+
+    Counts are derived from the authoritative ``approval_requests`` table
+    using DB-level status values.  Lazy-expired pending rows are counted
+    as ``pending`` at the SQL level (consistent with how Observability
+    aggregates authoritative subsystem state); the service layer handles
+    lazy expiry on individual reads.
+    """
+
+    total: int
+    pending: int
+    approved: int
+    rejected: int
+    expired: int
+    consumed: int
+
+    def __post_init__(self):
+        if (
+            min(
+                self.total,
+                self.pending,
+                self.approved,
+                self.rejected,
+                self.expired,
+                self.consumed,
+            )
+            < 0
+        ):
+            raise ValueError("Approval activity counts cannot be negative")
+        if self.pending + self.approved + self.rejected + self.expired + self.consumed > self.total:
+            raise ValueError("Status breakdown cannot exceed total approvals")
+
+
 class ApprovalStatus(str, Enum):
     """Lifecycle states of a Human Intervention approval request.
 

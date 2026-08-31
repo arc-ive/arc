@@ -11,6 +11,7 @@ import pytest
 
 from arc.domain.models import (
     ApiRequestRecord,
+    ApprovalActivityMetrics,
     ConnectorSyncActivityMetrics,
     HttpUsageMetrics,
     ToolExecutionActivityMetrics,
@@ -59,6 +60,11 @@ class RecordingRepository:
     async def webhook_event_activity(self, tenant_id, hours):
         return WebhookEventActivityMetrics(
             available=True, total_events=9, distinct_event_types=2, total_payload_bytes=300
+        )
+
+    async def approval_activity(self, tenant_id, hours):
+        return ApprovalActivityMetrics(
+            total=3, pending=1, approved=1, rejected=0, expired=1, consumed=0
         )
 
 
@@ -117,6 +123,9 @@ async def test_tenant_summary_assembles_aggregates_only():
     assert summary["tools"]["denied"] == 1
     assert summary["connectors"]["items_fetched"] == 42
     assert summary["webhooks"]["available"] is True
+    assert summary["approvals"]["total"] == 3
+    assert summary["approvals"]["pending"] == 1
+    assert summary["approvals"]["consumed"] == 0
     # No raw rows or sensitive material in any section
     flat = str(summary)
     for forbidden in ("input_summary", "output_summary", "content", "answer", "prompt"):
@@ -136,6 +145,8 @@ async def test_platform_summary_is_strictly_tenant_agnostic():
         "connector_failures_total",
         "webhook_events_total",
         "webhook_source_available",
+        "approval_activity_total",
+        "approval_failures_total",
     }
     serialized = str(summary)
     assert "tenant_id" not in serialized

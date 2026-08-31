@@ -10,6 +10,7 @@ import pytest
 
 from arc.domain.models import (
     ApiRequestRecord,
+    ApprovalActivityMetrics,
     ConnectorSyncActivityMetrics,
     HttpUsageMetrics,
     ToolExecutionActivityMetrics,
@@ -165,3 +166,37 @@ class TestMetricReadModels:
     def test_webhook_metrics_negative_counts_rejected(self):
         with pytest.raises(ValueError):
             WebhookEventActivityMetrics(available=True, total_events=-1)
+
+
+class TestApprovalActivityMetrics:
+    def test_approval_activity_metrics_accepts_zero_approvals(self):
+        metrics = ApprovalActivityMetrics(
+            total=0, pending=0, approved=0, rejected=0, expired=0, consumed=0
+        )
+        assert metrics.total == 0
+
+    def test_approval_activity_metrics_valid_counts(self):
+        metrics = ApprovalActivityMetrics(
+            total=10, pending=3, approved=2, rejected=1, expired=2, consumed=2
+        )
+        assert metrics.total == 10
+        assert metrics.pending == 3
+        assert metrics.consumed == 2
+
+    def test_approval_activity_breakdown_cannot_exceed_total(self):
+        with pytest.raises(ValueError):
+            ApprovalActivityMetrics(
+                total=2, pending=1, approved=1, rejected=1, expired=0, consumed=0
+            )
+
+    def test_approval_activity_negative_counts_rejected(self):
+        with pytest.raises(ValueError):
+            ApprovalActivityMetrics(
+                total=0, pending=-1, approved=0, rejected=0, expired=0, consumed=0
+            )
+
+    def test_approval_activity_negative_consumed_rejected(self):
+        with pytest.raises(ValueError):
+            ApprovalActivityMetrics(
+                total=0, pending=0, approved=0, rejected=0, expired=0, consumed=-1
+            )

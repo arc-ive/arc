@@ -248,3 +248,127 @@ class TestAuthoritativeSourceAggregation:
     async def test_database_reachable_true_on_healthy_database(self, db):
         repo = PostgreSQLObservabilityRepository(db)
         assert await repo.database_reachable() is True
+
+
+class TestApprovalAggregate:
+    async def test_tenant_isolation_for_approval_aggregate(self, db):
+        tenants = PostgreSQLTenantRepository(db)
+        tenant_a = await tenants.create(Tenant(id=f"obs-app-a-{uuid.uuid4().hex[:6]}", name="AppA"))
+        tenant_b = await tenants.create(Tenant(id=f"obs-app-b-{uuid.uuid4().hex[:6]}", name="AppB"))
+        try:
+            async with db._connection_pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO approval_requests
+                       (id, tenant_id, requested_by_user_id, tool_name, tool_version,
+                        risk_level, input_summary, arguments_digest, status, expires_at)
+                       VALUES ($1,$2,$3,'check_service_health','1','low','s',
+                               repeat('a', 64), 'pending',
+                               CURRENT_TIMESTAMP + INTERVAL '24 hours')""",
+                    f"apr-{uuid.uuid4().hex[:8]}",
+                    tenant_a.id,
+                    f"u-{uuid.uuid4().hex[:6]}",
+                )
+            repo = PostgreSQLObservabilityRepository(db)
+            agg_a = await repo.approval_activity(tenant_a.id, 24)
+            agg_b = await repo.approval_activity(tenant_b.id, 24)
+            assert agg_a.total == 1
+            assert agg_a.pending == 1
+            assert agg_b.total == 0
+        finally:
+            async with db._connection_pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM tenants WHERE id IN ($1, $2)", tenant_a.id, tenant_b.id
+                )
+
+    async def test_approval_aggregation_math(self, db):
+        tenants = PostgreSQLTenantRepository(db)
+        tenant = await tenants.create(Tenant(id=f"obs-app-c-{uuid.uuid4().hex[:6]}", name="AppC"))
+        try:
+            async with db._connection_pool.acquire() as conn:
+                statuses = [
+                    "pending",
+                    "approved",
+                    "rejected",
+                    "expired",
+                    "consumed",
+                ]
+                for i, status in enumerate(statuses):
+                    await conn.execute(
+                        """INSERT INTO approval_requests
+                           (id, tenant_id, requested_by_user_id,
+                            tool_name, tool_version, risk_level,
+                            input_summary, arguments_digest,
+                            status, expires_at)
+                           VALUES ($1,$2,$3,
+                                   'check_service_health','1','low','s',
+                                   repeat('a', 64), $4,
+                                   CURRENT_TIMESTAMP
+                                   + INTERVAL '24 hours')""",
+                        f"apr-math-{i}-{uuid.uuid4().hex[:6]}",
+                        tenant.id,
+                        f"u-{uuid.uuid4().hex[:6]}",
+                        status,
+                    )
+            repo = PostgreSQLObservabilityRepository(db)
+            metrics = await repo.approval_activity(tenant.id, 24)
+            assert metrics.total == 5
+            assert metrics.pending == 1
+            assert metrics.approved == 1
+            assert metrics.rejected == 1
+            assert metrics.expired == 1
+            assert metrics.consumed == 1
+        finally:
+            async with db._connection_pool.acquire() as conn:
+                await conn.execute("DELETE FROM tenants WHERE id = $1", tenant.id)
+
+    async def test_time_window_excludes_old_approval_records(self, db):
+        from datetime import datetime, timedelta, timezone
+
+        tenants = PostgreSQLTenantRepository(db)
+        tenant = await tenants.create(Tenant(id=f"obs-app-d-{uuid.uuid4().hex[:6]}", name="AppD"))
+        try:
+            old_time = datetime.now(timezone.utc) - timedelta(hours=48)
+            old_expiry = old_time + timedelta(hours=24)
+            async with db._connection_pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO approval_requests
+                       (id, tenant_id, requested_by_user_id, tool_name, tool_version,
+                        risk_level, input_summary, arguments_digest, status, created_at, expires_at)
+                       VALUES ($1,$2,$3,'check_service_health','1','low','s',
+                               repeat('a', 64), 'pending', $4, $5)""",
+                    f"apr-old-{uuid.uuid4().hex[:6]}",
+                    tenant.id,
+                    f"u-{uuid.uuid4().hex[:6]}",
+                    old_time,
+                    old_expiry,
+                )
+                await conn.execute(
+                    """INSERT INTO approval_requests
+                       (id, tenant_id, requested_by_user_id,
+                        tool_name, tool_version, risk_level,
+                        input_summary, arguments_digest,
+                        status, expires_at)
+                       VALUES ($1,$2,$3,
+                               'check_service_health','1','low','s',
+                               repeat('a', 64), 'approved',
+                               CURRENT_TIMESTAMP
+                               + INTERVAL '24 hours')""",
+                    f"apr-new-{uuid.uuid4().hex[:6]}",
+                    tenant.id,
+                    f"u-{uuid.uuid4().hex[:6]}",
+                )
+            repo = PostgreSQLObservabilityRepository(db)
+            recent = await repo.approval_activity(tenant.id, 24)
+            wide = await repo.approval_activity(tenant.id, 72)
+            assert recent.total == 1
+            assert recent.approved == 1
+            assert wide.total == 2
+        finally:
+            async with db._connection_pool.acquire() as conn:
+                await conn.execute("DELETE FROM tenants WHERE id = $1", tenant.id)
+
+    async def test_platform_view_includes_approval_totals(self, db):
+        repo = PostgreSQLObservabilityRepository(db)
+        metrics = await repo.approval_activity(None, 24)
+        assert metrics.total >= 0
+        assert isinstance(metrics.pending, int)

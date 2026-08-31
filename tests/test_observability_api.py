@@ -199,6 +199,37 @@ class TestTenantBoundary:
             == 422
         )
 
+    async def test_cross_tenant_approval_counts_never_leak(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        tenant_a, user_a = two_tenants[0]
+        tenant_b, _ = two_tenants[1]
+        database = await _fresh_db()
+        try:
+            async with database._connection_pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO approval_requests
+                       (id, tenant_id, requested_by_user_id,
+                        tool_name, tool_version, risk_level,
+                        input_summary, arguments_digest,
+                        status, expires_at)
+                       VALUES ($1,$2,$3,
+                               'check_service_health','1','low','s',
+                               repeat('a', 64), 'pending',
+                               CURRENT_TIMESTAMP
+                               + INTERVAL '24 hours')""",
+                    f"leak-apr-{uuid.uuid4().hex[:10]}",
+                    tenant_b.id,
+                    f"u-{uuid.uuid4().hex[:6]}",
+                )
+        finally:
+            await database.disconnect()
+        authorization_override({user_a.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user_a.id)
+        body = _authed_get(client, _summary_url(tenant_a.id), token).json()
+        assert body["approvals"]["total"] == 0
+        assert tenant_b.id not in str(body)
+
 
 class TestResponseContentSafety:
     async def test_tenant_summary_shape_is_aggregates_only(
@@ -208,7 +239,7 @@ class TestResponseContentSafety:
         authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
         token = make_token(user.id)
         body = _authed_get(client, _summary_url(tenant.id), token).json()
-        assert set(body) == {"window_hours", "http", "tools", "connectors", "webhooks"}
+        assert set(body) == {"window_hours", "http", "tools", "connectors", "webhooks", "approvals"}
         assert set(body["http"]) == {
             "total_requests",
             "error_count",
@@ -223,6 +254,14 @@ class TestResponseContentSafety:
             "total_events",
             "distinct_event_types",
             "total_payload_bytes",
+        }
+        assert set(body["approvals"]) == {
+            "total",
+            "pending",
+            "approved",
+            "rejected",
+            "expired",
+            "consumed",
         }
 
     async def test_platform_summary_contains_no_tenant_identifiers_or_breakdowns(
