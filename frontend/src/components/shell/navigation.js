@@ -17,6 +17,9 @@ import {
   Settings,
   History,
   Sparkles,
+  Webhook,
+  Wrench,
+  ShieldCheck,
 } from 'lucide-react'
 import { APPLICATION_ROLES } from '../../auth/useMe.js'
 
@@ -51,9 +54,14 @@ const companyAdminTenantNav = [
   { to: 'company', label: 'Company', icon: Building2 },
   { to: 'knowledge', label: 'Company Brain', icon: BookOpen },
   { to: 'skills', label: 'Skills', icon: Workflow },
+  { to: 'tools', label: 'Tools', icon: Wrench },
+  { to: 'connectors', label: 'Connectors', icon: Plug },
+  { to: 'webhooks', label: 'Webhooks', icon: Webhook },
   { to: 'operations', label: 'Operations', icon: Gauge },
   { to: 'incidents', label: 'Incidents', icon: AlertTriangle },
   { to: 'users', label: 'Users', icon: UserCog },
+  { to: 'observability', label: 'Observability', icon: Activity },
+  { to: 'approvals', label: 'Approvals', icon: ShieldCheck },
   { to: 'usage', label: 'Usage', icon: BarChart3 },
   { to: 'settings', label: 'Settings', icon: Settings },
 ]
@@ -67,12 +75,19 @@ const operationsTenantNav = [
   { to: 'activity', label: 'Activity', icon: History },
 ]
 
+/**
+ * Employee navigation is intentionally minimal.
+ *
+ * EMPLOYEE has zero matrix permissions (authorization.py:194-195).
+ * Backend endpoints for knowledge, skills, tools, connectors, webhooks,
+ * observability, and approvals all require permissions the employee role
+ * does not hold. Showing those nav items would present pages that return
+ * 403 on every API call. Only Home (self-scoped) and Ask Arc
+ * (intelligence query, separate authorization boundary) are accessible.
+ */
 const employeeTenantNav = [
   { to: 'home', label: 'Home', icon: Home },
   { to: 'ask', label: 'Ask Arc', icon: Sparkles },
-  { to: 'knowledge', label: 'Company Knowledge', icon: BookOpen },
-  { to: 'skills', label: 'Procedures', icon: Workflow },
-  { to: 'activity', label: 'My Activity', icon: History },
 ]
 
 /**
@@ -101,9 +116,14 @@ export function tenantNavForRole(role) {
         { to: 'company', label: 'Company', icon: Building2 },
         { to: 'knowledge', label: 'Company Brain', icon: BookOpen },
         { to: 'skills', label: 'Skills', icon: Workflow },
+        { to: 'tools', label: 'Tools', icon: Wrench },
+        { to: 'connectors', label: 'Connectors', icon: Plug },
+        { to: 'webhooks', label: 'Webhooks', icon: Webhook },
         { to: 'operations', label: 'Operations', icon: Gauge },
         { to: 'incidents', label: 'Incidents', icon: AlertTriangle },
         { to: 'users', label: 'Users', icon: UserCog },
+        { to: 'observability', label: 'Observability', icon: Activity },
+        { to: 'approvals', label: 'Approvals', icon: ShieldCheck },
         { to: 'usage', label: 'Usage', icon: BarChart3 },
         { to: 'activity', label: 'Activity', icon: History },
         { to: 'settings', label: 'Settings', icon: Settings },
@@ -123,11 +143,16 @@ export const tenantBreadcrumbLabels = {
   home: 'Home',
   knowledge: 'Company Brain',
   skills: 'Skills',
+  tools: 'Tools',
+  connectors: 'Connectors',
+  webhooks: 'Webhooks',
   operations: 'Operations',
   incidents: 'Incidents',
   users: 'Users',
+  observability: 'Observability',
   usage: 'Usage',
   settings: 'Settings',
+  approvals: 'Approvals',
   activity: 'Activity',
   ask: 'Ask Arc',
 }

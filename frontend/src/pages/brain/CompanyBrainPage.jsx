@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, FilePlus2, Search, X } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
-import { getKnowledge, KNOWLEDGE_SOURCES } from '../../api/endpoints/knowledge.js'
+import { getKnowledge, searchKnowledge, KNOWLEDGE_SOURCES } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { sourceLabels, sourceVariants } from '../../lib/sources.js'
@@ -61,6 +61,12 @@ export function CompanyBrainPage() {
     enabled: !isDemo && Boolean(tenantId),
   })
 
+  const search = useQuery({
+    queryKey: queryKeys.knowledgeSearch(tenantId, debouncedQuery, 20),
+    queryFn: () => searchKnowledge(tenantId, debouncedQuery, 20),
+    enabled: !isDemo && Boolean(tenantId) && Boolean(debouncedQuery.trim()),
+  })
+
   const canCreate = can('knowledge:create')
 
   const documents = knowledge.data ?? []
@@ -81,6 +87,7 @@ export function CompanyBrainPage() {
   }, {})
 
   const hasFilters = Boolean(query.trim())
+  const isSearching = Boolean(debouncedQuery.trim())
 
   return (
     <div className="flex flex-col gap-6">
@@ -171,10 +178,10 @@ export function CompanyBrainPage() {
           </Card>
         )}
 
-        {!knowledge.isPending &&
+      {!knowledge.isPending &&
         !knowledge.isError &&
         knowledge.data?.length > 0 &&
-        tab === 'sources' && (
+        tab === 'sources' && !isSearching && (
           <Card className="overflow-hidden">
             <CardHeader
               title="Sources &amp; provenance"
@@ -203,11 +210,74 @@ export function CompanyBrainPage() {
           </Card>
         )}
 
-      {!knowledge.isPending &&
+      {isSearching &&
+        !search.isPending &&
+        !search.isError &&
+        search.data?.length === 0 && (
+          <Card>
+            <EmptyState
+              icon={Search}
+              title="No results found"
+              description="No knowledge chunks match your search."
+              action={
+                <Button variant="secondary" size="sm" onClick={() => setQuery('')}>
+                  Clear search
+                </Button>
+              }
+            />
+          </Card>
+        )}
+
+      {isSearching &&
+        !search.isPending &&
+        !search.isError &&
+        search.data?.length > 0 && (
+          <section className="grid gap-4 sm:grid-cols-2">
+            {search.data.map((chunk) => (
+              <Card
+                key={chunk.chunk_id}
+                hover
+                className="group flex cursor-pointer flex-col gap-3 p-5"
+                onClick={() => navigate(`../knowledge/${chunk.document_id}`)}
+                role="link"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') navigate(`../knowledge/${chunk.document_id}`)
+                }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant={sourceVariants[chunk.source] ?? 'neutral'}>
+                    {sourceLabels[chunk.source] ?? chunk.source}
+                  </Badge>
+                  <span className="font-mono text-[11px] text-zinc-600">
+                    v{chunk.document_version}
+                  </span>
+                </div>
+                <p className="text-sm font-medium leading-snug text-zinc-100">
+                  {chunk.provenance || 'Untitled document'}
+                </p>
+                <p className="line-clamp-3 text-[13px] leading-relaxed text-zinc-500">
+                  {truncate(chunk.content, 240)}
+                </p>
+                <div className="mt-auto flex items-center justify-between pt-1">
+                  <span className="text-xs text-zinc-600">
+                    Similarity: {(chunk.similarity * 100).toFixed(1)}%
+                  </span>
+                  <Badge variant="indigo" size="sm" dot>
+                    Search result
+                  </Badge>
+                </div>
+              </Card>
+            ))}
+          </section>
+        )}
+
+      {!isSearching &&
+        filtered.length === 0 &&
+        !knowledge.isPending &&
         !knowledge.isError &&
         knowledge.data?.length > 0 &&
-        tab !== 'sources' &&
-        filtered.length === 0 && (
+        tab !== 'sources' && (
           <Card>
             <EmptyState
               icon={Search}
@@ -215,16 +285,19 @@ export function CompanyBrainPage() {
               description={
                 hasFilters
                   ? 'No documents match the current search.'
-                  : 'No documents of this type yet.'
+                  : tab === 'all'
+                    ? 'No knowledge documents yet.'
+                    : `No ${tab.replace(/_/g, ' ')} documents yet.`
               }
               action={
                 hasFilters ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setQuery('')}
-                  >
+                  <Button variant="secondary" size="sm" onClick={() => setQuery('')}>
                     Clear search
+                  </Button>
+                ) : canCreate ? (
+                  <Button size="sm" onClick={() => navigate('new')}>
+                    <FilePlus2 className="size-4" />
+                    Add document
                   </Button>
                 ) : undefined
               }
@@ -232,50 +305,54 @@ export function CompanyBrainPage() {
           </Card>
         )}
 
-      {filtered.length > 0 && tab !== 'sources' && (
-        <section className="grid gap-4 sm:grid-cols-2">
-          {filtered.map((doc) => (
-            <Card
-              key={doc.id}
-              hover
-              className="group flex cursor-pointer flex-col gap-3 p-5"
-              onClick={() => navigate(doc.id)}
-              role="link"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') navigate(doc.id)
-              }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <Badge variant={sourceVariants[doc.source] ?? 'neutral'}>
-                  {sourceLabels[doc.source] ?? doc.source}
-                </Badge>
-                <span className="font-mono text-[11px] text-zinc-600">
-                  v{doc.version}
-                </span>
-              </div>
-              <p className="text-sm font-medium leading-snug text-zinc-100">
-                {doc.provenance || 'Untitled document'}
-              </p>
-              <p className="line-clamp-3 text-[13px] leading-relaxed text-zinc-500">
-                {truncate(doc.content, 240)}
-              </p>
-              <div className="mt-auto flex items-center justify-between pt-1">
-                <span className="text-xs text-zinc-600">
-                  Updated {relativeTime(doc.updated_at)}
-                </span>
-                <Badge
-                  variant={doc.status === 'active' ? 'green' : 'neutral'}
-                  size="sm"
-                  dot
-                >
-                  {doc.status}
-                </Badge>
-              </div>
-            </Card>
-          ))}
-        </section>
-      )}
+      {!isSearching &&
+        filtered.length > 0 &&
+        tab !== 'sources' && (
+          <section className="grid gap-4 sm:grid-cols-2">
+            {filtered.map((doc) => (
+              <Card
+                key={doc.id}
+                hover
+                className="group flex cursor-pointer flex-col gap-3 p-5"
+                onClick={() => navigate(doc.id)}
+                role="link"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') navigate(doc.id)
+                }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant={sourceVariants[doc.source] ?? 'neutral'}>
+                    {sourceLabels[doc.source] ?? doc.source}
+                  </Badge>
+                  <span className="font-mono text-[11px] text-zinc-600">
+                    v{doc.version}
+                  </span>
+                </div>
+                <p className="text-sm font-medium leading-snug text-zinc-100">
+                  {doc.provenance || 'Untitled document'}
+                </p>
+                <p className="line-clamp-3 text-[13px] leading-relaxed text-zinc-500">
+                  {truncate(doc.content, 240)}
+                </p>
+                <div className="mt-auto flex items-center justify-between pt-1">
+                  <span className="text-xs text-zinc-600">
+                    Updated {relativeTime(doc.updated_at)}
+                  </span>
+                  <Badge
+                    variant={doc.status === 'active' ? 'green' : 'neutral'}
+                    size="sm"
+                    dot
+                  >
+                    {doc.status}
+                  </Badge>
+                </div>
+              </Card>
+            ))}
+          </section>
+        )}
+
+
     </div>
   )
 }

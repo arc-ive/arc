@@ -51,7 +51,7 @@ export function TenantSwitcher() {
       >
         <Building2 className="size-4 shrink-0 text-zinc-500" />
         <span className="truncate text-[13px] font-medium text-zinc-200">
-          {current?.name ?? 'Select tenant'}
+          {isDemo ? 'Demo Mode' : (current?.name ?? 'Select tenant')}
         </span>
         <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-zinc-600" />
       </button>

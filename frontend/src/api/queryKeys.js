@@ -11,6 +11,43 @@ export const queryKeys = {
     'knowledge',
     documentId,
   ],
+  knowledgeSearch: (tenantId, query, limit) => [
+    'tenants',
+    tenantId,
+    'knowledge',
+    'search',
+    query,
+    limit,
+  ],
+  intelligenceQuery: (tenantId, query, limit) => [
+    'tenants',
+    tenantId,
+    'intelligence',
+    'query',
+    query,
+    limit,
+  ],
+  skills: (tenantId) => ['tenants', tenantId, 'skills'],
+  skill: (tenantId, skillId) => ['tenants', tenantId, 'skills', skillId],
+  tools: (tenantId) => ['tenants', tenantId, 'tools'],
+  connectors: (tenantId) => ['tenants', tenantId, 'connectors'],
+  webhookEvents: (tenantId) => ['tenants', tenantId, 'webhooks', 'events'],
+  observabilityTenant: (tenantId, hours) => [
+    'tenants',
+    tenantId,
+    'observability',
+    'usage-summary',
+    hours,
+  ],
+  observabilityPlatform: () => ['observability', 'platform', 'summary'],
+  healthComponents: () => ['observability', 'health'],
+  approvals: (tenantId) => ['tenants', tenantId, 'approvals'],
+  approval: (tenantId, approvalId) => [
+    'tenants',
+    tenantId,
+    'approvals',
+    approvalId,
+  ],
 }
 
 export default queryKeys

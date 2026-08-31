@@ -30,3 +30,11 @@ export async function createKnowledge(tenantId, payload) {
   )
   return data
 }
+
+export async function searchKnowledge(tenantId, query, limit = 5) {
+  const { data } = await client.get(
+    `/tenants/${encodeURIComponent(tenantId)}/knowledge/search`,
+    { params: { query, limit } },
+  )
+  return data
+}

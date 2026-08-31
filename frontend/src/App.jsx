@@ -13,8 +13,13 @@ import { TenantIncidentsPage } from './pages/tenant/TenantIncidentsPage.jsx'
 import { TenantUsagePage } from './pages/tenant/TenantUsagePage.jsx'
 import { TenantSettingsPage } from './pages/tenant/TenantSettingsPage.jsx'
 import { TenantActivityPage } from './pages/tenant/TenantActivityPage.jsx'
+import { ConnectorsPage } from './pages/connectors/ConnectorsPage.jsx'
+import { WebhooksPage } from './pages/webhooks/WebhooksPage.jsx'
+import { ToolsPage } from './pages/tools/ToolsPage.jsx'
+import { ObservabilityPage } from './pages/observability/ObservabilityPage.jsx'
 import { TenantUsersPage } from './pages/tenant/TenantUsersPage.jsx'
 import { TenantOperationsPage } from './pages/tenant/TenantOperationsPage.jsx'
+import { ApprovalsPage } from './pages/approvals/ApprovalsPage.jsx'
 import { EmployeeHomePage } from './pages/home/EmployeeHomePage.jsx'
 import { AskArcPage } from './pages/tenant/AskArcPage.jsx'
 import { CompanyBrainPage } from './pages/brain/CompanyBrainPage.jsx'
@@ -109,11 +114,16 @@ export default function App() {
             <Route path="skills" element={<SkillsPage view="list" />} />
             <Route path="skills/new" element={<SkillsPage view="new" />} />
             <Route path="skills/:skillId" element={<SkillsPage view="detail" />} />
+            <Route path="tools" element={<ToolsPage />} />
+            <Route path="connectors" element={<ConnectorsPage />} />
+            <Route path="webhooks" element={<WebhooksPage />} />
             <Route path="operations" element={<TenantOperationsPage />} />
             <Route path="incidents" element={<TenantIncidentsPage />} />
             <Route path="users" element={<TenantUsersPage />} />
+            <Route path="observability" element={<ObservabilityPage />} />
             <Route path="usage" element={<TenantUsagePage />} />
             <Route path="settings" element={<TenantSettingsPage />} />
+            <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="activity" element={<TenantActivityPage />} />
             <Route path="ask" element={<AskArcPage />} />
 

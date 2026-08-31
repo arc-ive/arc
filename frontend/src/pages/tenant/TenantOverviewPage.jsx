@@ -6,9 +6,11 @@ import {
   Building2,
   Users,
   Workflow,
-  AlertTriangle,
-  BarChart3,
-  HeartPulse,
+  Sparkles,
+  Wrench,
+  Plug,
+  Activity,
+  ShieldCheck,
 } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
@@ -21,7 +23,6 @@ import { Badge } from '../../components/ui/Badge.jsx'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { formatDate } from '../../lib/format.js'
-import { cn } from '../../lib/cn.js'
 
 const ROLE_LABELS = {
   platform_administrator: 'Platform Administrator',
@@ -57,22 +58,17 @@ function StatCard({ label, value, hint, to, icon: Icon }) {
   )
 }
 
-function UnavailableCard({ to, label, description, icon: Icon }) {
+function ModuleLink({ to, label, description, icon: Icon }) {
   return (
     <Link
       to={to}
       className="group flex items-start gap-3.5 rounded-xl border border-zinc-800/70 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-zinc-700 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
     >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500 transition-colors duration-150 group-hover:text-zinc-300">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500 transition-colors duration-150 group-hover:text-indigo-400">
         <Icon className="size-4.5" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-zinc-100">{label}</p>
-          <Badge variant="amber" size="sm">
-            Not yet available
-          </Badge>
-        </div>
+        <p className="text-sm font-semibold text-zinc-100">{label}</p>
         <p className="mt-0.5 text-[13px] text-zinc-500">{description}</p>
       </div>
       <ArrowUpRight className="ml-auto mt-1 size-4 shrink-0 text-zinc-600 transition-colors duration-150 group-hover:text-zinc-300" />
@@ -136,7 +132,7 @@ export function TenantOverviewPage() {
         </div>
       </section>
 
-      {(userTenants.isError || users.isError || knowledge.isError) && (
+      {(userTenants.isError || users.isError || knowledge.isError) && role !== 'employee' && (
         <Card>
           <ErrorState
             title="Could not load the workspace"
@@ -150,94 +146,133 @@ export function TenantOverviewPage() {
         </Card>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Knowledge documents"
-          value={
-            knowledge.isPending ? (
-              <Skeleton className="h-7 w-10" />
-            ) : (
-              knowledge.data?.length ?? 0
-            )
-          }
-          hint="Open Company Brain"
-          to="knowledge"
-          icon={BookOpen}
-        />
-        <StatCard
-          label="Members"
-          value={
-            users.isPending ? (
-              <Skeleton className="h-7 w-10" />
-            ) : (
-              users.data?.length ?? 0
-            )
-          }
-          hint="View members"
-          to="users"
-          icon={Users}
-        />
-        <StatCard
-          label="Status"
-          value={tenant?.status ?? '—'}
-          hint="Provisioned on the platform"
-          icon={HeartPulse}
-        />
-        <StatCard
-          label="Created"
-          value={
-            tenant?.created_at ? (
-              <span className="text-lg">{formatDate(tenant.created_at)}</span>
-            ) : (
-              '—'
-            )
-          }
-          hint="Tenant workspace"
-          icon={Building2}
-        />
-      </section>
+      {role !== 'employee' && (
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Knowledge documents"
+            value={
+              knowledge.isPending ? (
+                <Skeleton className="h-7 w-10" />
+              ) : (
+                knowledge.data?.length ?? 0
+              )
+            }
+            hint="Open Company Brain"
+            to="knowledge"
+            icon={BookOpen}
+          />
+          <StatCard
+            label="Members"
+            value={
+              users.isPending ? (
+                <Skeleton className="h-7 w-10" />
+              ) : (
+                users.data?.length ?? 0
+              )
+            }
+            hint="View members"
+            to="users"
+            icon={Users}
+          />
+          <StatCard
+            label="Status"
+            value={tenant?.status ?? '—'}
+            hint="Provisioned on the platform"
+            icon={Activity}
+          />
+          <StatCard
+            label="Created"
+            value={
+              tenant?.created_at ? (
+                <span className="text-lg">{formatDate(tenant.created_at)}</span>
+              ) : (
+                '—'
+              )
+            }
+            hint="Tenant workspace"
+            icon={Building2}
+          />
+        </section>
+      )}
+
+      {role === 'employee' && (
+        <section>
+          <Card>
+            <div className="flex items-start gap-3">
+              <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+                <Building2 className="size-4.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-zinc-100">
+                  {tenant?.name ?? 'Tenant'}
+                </p>
+                <p className="mt-1 text-[13px] leading-relaxed text-zinc-500">
+                  You are signed in as an employee of this workspace.
+                  Use Ask Arc to search approved company information.
+                </p>
+              </div>
+            </div>
+          </Card>
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-sm font-semibold text-zinc-200">
-          Workspace modules
+          Workspace
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          <UnavailableCard
-            to="skills"
-            label="Skills"
-            description="Structured, reusable workflows for this tenant."
-            icon={Workflow}
+          <ModuleLink
+            to="ask"
+            label="Ask Arc"
+            description="Ask questions grounded in the Company Brain."
+            icon={Sparkles}
           />
-          <UnavailableCard
-            to="incidents"
-            label="Incidents"
-            description="Operational incidents tracked for this tenant."
-            icon={AlertTriangle}
-          />
-          <UnavailableCard
-            to="usage"
-            label="Usage"
-            description="Tenant-scoped AI and API usage metrics."
-            icon={BarChart3}
-          />
-          <div
-            className={cn(
-              'flex items-start gap-3.5 rounded-xl border border-dashed border-zinc-800 p-5 opacity-70',
-            )}
-          >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-600">
-              <HeartPulse className="size-4.5" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-zinc-400">
-                Service health
-              </p>
-              <p className="mt-0.5 text-[13px] text-zinc-600">
-                No operational telemetry contract yet — surfaces under
-                Operations when it lands.
-              </p>
-            </div>
-          </div>
+          {role !== 'employee' && (
+            <>
+              <ModuleLink
+                to="knowledge"
+                label="Company Brain"
+                description="Knowledge, policies, procedures, and solutions."
+                icon={BookOpen}
+              />
+              <ModuleLink
+                to="skills"
+                label="Skills"
+                description="Structured, reusable workflows for this tenant."
+                icon={Workflow}
+              />
+              <ModuleLink
+                to="tools"
+                label="Tools"
+                description="Platform-owned AI tools available for execution."
+                icon={Wrench}
+              />
+              <ModuleLink
+                to="connectors"
+                label="Connectors"
+                description="External integrations — GitHub, Slack, Linear."
+                icon={Plug}
+              />
+              <ModuleLink
+                to="approvals"
+                label="Approvals"
+                description="Human-in-the-loop approval requests."
+                icon={ShieldCheck}
+              />
+              <ModuleLink
+                to="observability"
+                label="Observability"
+                description="Usage metrics and operational telemetry."
+                icon={Activity}
+              />
+              <ModuleLink
+                to="users"
+                label="Users"
+                description="Tenant members and access."
+                icon={Users}
+              />
+            </>
+          )}
         </div>
       </section>
     </div>

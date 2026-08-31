@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ShieldCheck, UserPlus } from 'lucide-react'
+import { useAuth } from '../../auth/useAuth.js'
 import { createUser } from '../../api/endpoints/users.js'
 import { errorMessage } from '../../api/errors.js'
 import { Button } from '../../components/ui/Button.jsx'
@@ -30,6 +31,7 @@ function CreateUserDialog({ open, onClose }) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
+      queryClient.invalidateQueries({ queryKey: ['tenants'] })
       onClose()
       setForm({ id: '', email: '', username: '', status: 'active' })
     },
@@ -113,6 +115,7 @@ function CreateUserDialog({ open, onClose }) {
 }
 
 export function PlatformUsersPage() {
+  const { isDemo } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
 
   return (
@@ -126,11 +129,22 @@ export function PlatformUsersPage() {
             Platform-level user provisioning.
           </p>
         </div>
-        <Button variant="secondary" onClick={() => setCreateOpen(true)}>
+        <Button variant="secondary" onClick={() => setCreateOpen(true)} disabled={isDemo}>
           <UserPlus className="size-4" />
           New user
         </Button>
       </section>
+
+      {isDemo && (
+        <Card>
+          <CardContent>
+            <p className="text-[13px] text-zinc-500">
+              Demo Mode — user provisioning requires a backend session.
+              Sign in with a real JWT to create users.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader

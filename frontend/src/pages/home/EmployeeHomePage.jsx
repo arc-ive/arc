@@ -2,11 +2,8 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowUpRight,
-  BookOpen,
   Building2,
-  History,
   Sparkles,
-  Workflow,
 } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
@@ -85,24 +82,6 @@ export function EmployeeHomePage() {
           label="Ask Arc"
           description="Ask questions about your company — policies, procedures, and approved information."
           icon={Sparkles}
-        />
-        <EmployeeCapability
-          to={`${tenantPrefix}/knowledge`}
-          label="Company Knowledge"
-          description="Browse knowledge and policies you are authorized to see."
-          icon={BookOpen}
-        />
-        <EmployeeCapability
-          to={`${tenantPrefix}/skills`}
-          label="Procedures"
-          description="Follow approved procedures as structured, reusable steps."
-          icon={Workflow}
-        />
-        <EmployeeCapability
-          to={`${tenantPrefix}/activity`}
-          label="My Activity"
-          description="Your recent activity in this company workspace."
-          icon={History}
         />
       </section>
 

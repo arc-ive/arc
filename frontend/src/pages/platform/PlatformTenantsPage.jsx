@@ -123,7 +123,7 @@ export function PlatformTenantsPage() {
             enforced by the backend.
           </p>
         </div>
-        <Button variant="secondary" onClick={() => setCreateOpen(true)}>
+        <Button variant="secondary" onClick={() => setCreateOpen(true)} disabled={isDemo}>
           <Plus className="size-4" />
           New tenant
         </Button>

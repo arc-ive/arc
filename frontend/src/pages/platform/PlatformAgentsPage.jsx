@@ -1,12 +1,12 @@
 import { Bot } from 'lucide-react'
-import { PendingContract } from '../../components/shell/PendingContract.jsx'
+import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 
 /**
- * Platform Agents — shell.
+ * Platform Agents — agent run history.
  *
- * The agent runtime (OmniRoute → OpenRouter → configurable LLM) is part of
- * the ARC AI architecture, but no agent management API exists yet.
+ * The backend has POST /agent/runs (trigger a run) but no listing endpoint yet.
+ * This page shows the agent architecture and available run details when available.
  */
 export function PlatformAgentsPage() {
   return (
@@ -21,34 +21,59 @@ export function PlatformAgentsPage() {
               Agents
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
-              AI agents operating on tenant data.
+              AI agents operating on tenant data through OmniRoute.
             </p>
           </div>
         </div>
       </section>
 
-      <PendingContract
-        title="Agent management is not wired yet"
-        description="The agent API contract has not been implemented."
-      >
-        <p className="max-w-2xl text-[13px] leading-relaxed text-zinc-500">
-          Agents execute on tenant data through the ARC runtime —{' '}
-          <span className="text-zinc-300">OmniRoute → OpenRouter → configurable
-          LLM</span>. The runtime model stays outside this console; agents will
-          expose their execution trail (trigger, tenant, knowledge retrieved,
-          skill, tools, actions, result, human intervention) to authorized
-          viewers.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {['Trigger', 'Tenant', 'Knowledge', 'Skill', 'Tools', 'Result', 'Escalation'].map(
-            (label) => (
-              <Badge key={label} variant="neutral" size="sm">
-                {label}
-              </Badge>
-            ),
-          )}
-        </div>
-      </PendingContract>
+      <Card>
+        <CardHeader
+          title="Agent Runtime"
+          description="How agents execute within the ARC platform."
+        />
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Badge variant="indigo" size="sm">Runtime</Badge>
+              <span className="text-sm text-zinc-300">
+                OmniRoute → OpenRouter → Configurable LLM
+              </span>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="p-3 rounded-lg bg-zinc-900/50">
+                <p className="text-sm font-medium text-zinc-100">Trigger</p>
+                <p className="text-xs text-zinc-500">Agent execution initiation</p>
+              </div>
+              <div className="p-3 rounded-lg bg-zinc-900/50">
+                <p className="text-sm font-medium text-zinc-100">Tenant</p>
+                <p className="text-xs text-zinc-500">Tenant-scoped execution context</p>
+              </div>
+              <div className="p-3 rounded-lg bg-zinc-900/50">
+                <p className="text-sm font-medium text-zinc-100">Knowledge</p>
+                <p className="text-xs text-zinc-500">Retrieved company knowledge</p>
+              </div>
+              <div className="p-3 rounded-lg bg-zinc-900/50">
+                <p className="text-sm font-medium text-zinc-100">Skill</p>
+                <p className="text-xs text-zinc-500">Applied workflow procedure</p>
+              </div>
+              <div className="p-3 rounded-lg bg-zinc-900/50">
+                <p className="text-sm font-medium text-zinc-100">Tools</p>
+                <p className="text-xs text-zinc-500">Authorized tool invocations</p>
+              </div>
+              <div className="p-3 rounded-lg bg-zinc-900/50">
+                <p className="text-sm font-medium text-zinc-100">Result</p>
+                <p className="text-xs text-zinc-500">Execution outcome and response</p>
+              </div>
+            </div>
+            <p className="text-[13px] leading-relaxed text-zinc-500">
+              Agent run history will be displayed here once the listing endpoint is implemented.
+              Each run exposes its trigger, tenant context, retrieved knowledge, applied skill,
+              tool invocations, result, and any human escalation — visible only to authorized viewers.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

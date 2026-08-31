@@ -39,7 +39,7 @@ function HealthPill() {
   )
 }
 
-function ModuleCard({ to, label, description, icon: Icon }) {
+function ModuleCard({ to, label, description, icon: Icon, available = false }) {
   return (
     <Link
       to={to}
@@ -49,9 +49,11 @@ function ModuleCard({ to, label, description, icon: Icon }) {
         <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500 transition-colors duration-150 group-hover:text-indigo-400">
           <Icon className="size-4.5" />
         </div>
-        <Badge variant="amber" size="sm">
-          Contract pending
-        </Badge>
+        {!available && (
+          <Badge variant="amber" size="sm">
+            Contract pending
+          </Badge>
+        )}
       </div>
       <div>
         <p className="text-sm font-semibold text-zinc-100">{label}</p>
@@ -168,9 +170,6 @@ export function PlatformDashboardPage() {
           <h2 className="text-sm font-semibold text-zinc-200">
             Platform modules
           </h2>
-          <p className="mt-0.5 text-[13px] text-zinc-500">
-            Backend contracts not yet implemented.
-          </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <ModuleCard
@@ -190,6 +189,7 @@ export function PlatformDashboardPage() {
             label="Observability"
             description="Platform-level telemetry and operational insight."
             icon={Activity}
+            available
           />
         </div>
       </section>

@@ -1,13 +1,138 @@
+import { useQuery } from '@tanstack/react-query'
 import { Activity } from 'lucide-react'
-import { PendingContract } from '../../components/shell/PendingContract.jsx'
+import { useAuth } from '../../auth/useAuth.js'
+import { queryKeys } from '../../api/queryKeys.js'
+import { getPlatformObservabilitySummary, getComponentHealth } from '../../api/endpoints/observability.js'
+import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { Spinner } from '../../components/ui/Spinner.jsx'
+import { ErrorState } from '../../components/ui/ErrorState.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { FlaskConical } from 'lucide-react'
 
-/**
- * Platform Observability — shell.
- *
- * No telemetry endpoints exist yet. Platform-level observability will
- * aggregate tenant-scoped metrics without leaking tenant data.
- */
+function ComponentHealth() {
+  const { isDemo } = useAuth()
+
+  const { data: health, isLoading, error } = useQuery({
+    queryKey: queryKeys.healthComponents(),
+    queryFn: getComponentHealth,
+    refetchInterval: 30000,
+    enabled: !isDemo,
+  })
+
+  if (isDemo) {
+    return (
+      <Card>
+        <CardHeader title="Component Health" description="Status of platform components." />
+        <CardContent>
+          <EmptyState
+            icon={FlaskConical}
+            title="Demo Mode"
+            description="Component health checks require a backend session. Sign in with a real JWT to view live component status."
+          />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isLoading) return <Spinner />
+  if (error) return <ErrorState error={error} />
+
+  const components = health?.components || {}
+  const overall = health?.overall || 'unknown'
+
+  return (
+    <Card>
+      <CardHeader title="Component Health" description="Status of platform components." />
+      <CardContent>
+        <div className="flex items-center gap-3 mb-4">
+          <Badge variant={overall === 'healthy' ? 'green' : 'red'} dot>{overall}</Badge>
+        </div>
+        <div className="space-y-2">
+          {Object.entries(components).map(([name, info]) => (
+            <div key={name} className="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
+              <span className="text-sm text-zinc-300">{name}</span>
+              <Badge variant={info.status === 'healthy' ? 'green' : 'red'} size="sm">
+                {info.status}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function PlatformSummary() {
+  const { isDemo } = useAuth()
+
+  const { data: summary, isLoading, error } = useQuery({
+    queryKey: queryKeys.observabilityPlatform(),
+    queryFn: getPlatformObservabilitySummary,
+    enabled: !isDemo,
+  })
+
+  if (isDemo) {
+    return (
+      <Card>
+        <CardHeader title="Platform Summary" description="Aggregate platform metrics (tenant-agnostic)." />
+        <CardContent>
+          <EmptyState
+            icon={FlaskConical}
+            title="Demo Mode"
+            description="Platform metrics require a backend session. Sign in with a real JWT to view operational telemetry."
+          />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (isLoading) return <Spinner />
+  if (error) return <ErrorState error={error} />
+
+  const http = summary?.http || {}
+
+  return (
+    <Card>
+      <CardHeader title="Platform Summary" description="Aggregate platform metrics (tenant-agnostic)." />
+      <CardContent>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="p-3 rounded-lg bg-zinc-900/50">
+            <p className="text-2xl font-semibold text-zinc-100">{http.total_requests || 0}</p>
+            <p className="text-xs text-zinc-500">Total API Requests</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-900/50">
+            <p className="text-2xl font-semibold text-zinc-100">{http.error_count || 0}</p>
+            <p className="text-xs text-zinc-500">Errors</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-900/50">
+            <p className="text-2xl font-semibold text-zinc-100">{http.avg_duration_ms ? `${http.avg_duration_ms.toFixed(1)}ms` : '—'}</p>
+            <p className="text-xs text-zinc-500">Avg Latency</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-900/50">
+            <p className="text-2xl font-semibold text-zinc-100">{summary?.tool_activity_total || 0}</p>
+            <p className="text-xs text-zinc-500">Tool Executions</p>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3 mt-4">
+          <div className="p-3 rounded-lg bg-zinc-900/50">
+            <p className="text-lg font-semibold text-zinc-100">{summary?.connector_syncs_total || 0}</p>
+            <p className="text-xs text-zinc-500">Connector Syncs</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-900/50">
+            <p className="text-lg font-semibold text-zinc-100">{summary?.webhook_events_total || 0}</p>
+            <p className="text-xs text-zinc-500">Webhook Events</p>
+          </div>
+          <div className="p-3 rounded-lg bg-zinc-900/50">
+            <p className="text-lg font-semibold text-zinc-100">{http.error_rate ? `${(http.error_rate * 100).toFixed(1)}%` : '0%'}</p>
+            <p className="text-xs text-zinc-500">Error Rate</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function PlatformObservabilityPage() {
   return (
     <div className="flex flex-col gap-6">
@@ -17,53 +142,14 @@ export function PlatformObservabilityPage() {
             <Activity className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-              Observability
-            </h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Platform-level telemetry and operational insight.
-            </p>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Observability</h1>
+            <p className="mt-1 text-sm text-zinc-500">Platform-level telemetry and operational insight.</p>
           </div>
         </div>
       </section>
 
-      <PendingContract
-        title="Observability is not wired yet"
-        description="The telemetry contract has not been implemented."
-      >
-        <p className="max-w-2xl text-[13px] leading-relaxed text-zinc-500">
-          Platform administrators will see platform-level metrics — API
-          requests, AI requests, token usage, agent executions, tool
-          invocations, webhook events, successful and failed executions,
-          latency, error rate, tenant usage, service health, incidents,
-          automated actions, and human escalations.
-        </p>
-        <p className="max-w-2xl text-[13px] leading-relaxed text-zinc-500">
-          Tenant users only see their own tenant&apos;s metrics. Sensitive
-          data is never exposed unnecessarily, and payloads are never
-          rendered raw.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {[
-            'API requests',
-            'AI requests',
-            'Token usage',
-            'Agent executions',
-            'Tool invocations',
-            'Webhook events',
-            'Latency',
-            'Error rate',
-            'Tenant usage',
-            'Service health',
-            'Incidents',
-            'Escalations',
-          ].map((label) => (
-            <Badge key={label} variant="neutral" size="sm">
-              {label}
-            </Badge>
-          ))}
-        </div>
-      </PendingContract>
+      <PlatformSummary />
+      <ComponentHealth />
     </div>
   )
 }
