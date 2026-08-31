@@ -241,9 +241,7 @@ async def get_authenticated_profile(
     protected request and remains the authorization authority.
     """
     role = authorization_service.role_for(principal.user_id)
-    permissions = sorted(
-        permission.value for permission in ROLE_PERMISSIONS.get(role, frozenset())
-    )
+    permissions = sorted(permission.value for permission in ROLE_PERMISSIONS.get(role, frozenset()))
     memberships = await membership_service.get_memberships_for_user(principal.user_id)
     return {
         "user_id": principal.user_id,
