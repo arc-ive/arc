@@ -1,0 +1,220 @@
+"""Configurable, provider-agnostic LLM abstraction (Unified Intelligence).
+
+The abstraction must not hard-code any production provider (OpenRouter,
+OmniRoute, OpenAI, or any other). Production LLM provider/model selection
+is a deferred decision (ADR-001: exact AI model remains open; TRD 34:
+OpenRouter is the primary configurable AI provider and the model must
+remain configurable). This foundation ships with a deterministic local
+provider that is suitable for service and API tests.
+
+Provider selection is environment-driven (``LLM_PROVIDER`` /
+``LLM_MODEL``, documented in ``.env.example``) and fails closed: an
+unknown provider or an invalid configuration raises
+``LlmConfigurationError`` before any service is built.
+
+The LLM is NOT the authorization system (TRD 10.3, ADR-001): providers
+receive only the prompt text assembled by UnifiedIntelligenceService
+exclusively from the Approved Context Contract (sanitized content and
+citation references). They never receive repository access, vectors, raw
+documents, or authorization state.
+"""
+
+import os
+import re
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime_checkable
+
+
+class LlmError(Exception):
+    """Raised when an LLM provider cannot complete a request.
+
+    LLM failures are fail-closed: no partial or misleading answer is
+    produced and nothing is persisted.
+    """
+
+
+class LlmConfigurationError(Exception):
+    """Raised when the LLM configuration is missing or invalid.
+
+    Configuration failures fail closed: the application refuses to start
+    with an unsupported provider or an invalid value.
+    """
+
+
+@runtime_checkable
+class LlmProvider(Protocol):
+    """Provider-agnostic LLM completion interface.
+
+    Implementations receive a single deterministic prompt string and
+    return a completion string. Production providers are deferred; the
+    deterministic provider makes the reasoning contract testable and
+    CI-safe without any external API, key, or network access.
+    """
+
+    def complete(self, prompt: str) -> str:
+        """Return the completion for ``prompt``."""
+        ...
+
+
+@runtime_checkable
+class ToolProposingLlm(Protocol):
+    """Optional ADR-004 capability: emit ONE raw tool proposal.
+
+    Implementations return untrusted raw output (a mapping that must still
+    pass strict ``ToolProposal.parse`` validation in the domain layer) or
+    ``None`` when no tool is proposed. Returning a proposal is NOT
+    authorization: the application alone resolves, authorizes, validates,
+    and executes through ``ToolExecutionService``.
+    """
+
+    def propose_tool(
+        self, query: str, context_references: Sequence[str]
+    ) -> Optional[Mapping[str, Any]]:
+        """Return raw untrusted proposal output, or ``None``."""
+        ...
+
+
+@runtime_checkable
+class SkillSelectingLlm(Protocol):
+    """Optional Agent capability (ADR-006): propose the next bounded step.
+
+    Implementations receive the user's goal and a snapshot of the trusted
+    tenant's Skill catalog and return UNTRUSTED raw decision output (a
+    mapping that must still pass strict ``AgentDecision.parse`` validation
+    in the domain layer) or ``None`` when the Agent should stop. Returning
+    a decision is NOT authorization: the application alone validates
+    catalog containment, executes exclusively through
+    ``SkillExecutionService``, and enforces every tool-layer control.
+    """
+
+    def propose_skill(
+        self, goal: str, catalog: Sequence[Mapping[str, Any]]
+    ) -> Optional[Mapping[str, Any]]:
+        """Return raw untrusted decision output for ``goal``, or ``None``."""
+        ...
+
+
+class DeterministicLlmProvider:
+    """Local, deterministic LLM provider for development and tests.
+
+    This is NOT a production model. It returns a deterministic summary of
+    the approved context items cited in the prompt (``[n] citation:
+    <reference>`` lines), which makes the retrieval-to-reasoning contract
+    verifiable: the completion always reflects exactly the approved
+    context that was supplied, nothing more.
+
+    ADR-004 V1: an OPTIONAL ``tool_proposal_script`` callable may be
+    injected (tests/demo wiring only) to make :meth:`propose_tool`
+    return a deterministic raw proposal for a given query. When not
+    armed — the production default — no proposal is ever emitted.
+    The script receives the user query; its output remains UNTRUSTED and
+    must pass strict domain validation before anything executes.
+
+    ADR-006 V1: an OPTIONAL ``skill_decision_script`` callable may be
+    injected the same way for :meth:`propose_skill`. When not armed —
+    the production default — the Agent capability is unavailable and
+    every Agent run fails closed without executing any Skill. The script
+    receives ``(goal, catalog_snapshot)``; its output remains UNTRUSTED
+    and must pass strict domain validation before anything executes.
+    """
+
+    def __init__(
+        self,
+        tool_proposal_script: Optional[Callable[[str], Optional[Mapping[str, Any]]]] = None,
+        skill_decision_script: Optional[
+            Callable[[str, Sequence[Mapping[str, Any]]], Optional[Mapping[str, Any]]]
+        ] = None,
+    ):
+        self._citation_pattern = re.compile(r"^\[\d+\] citation:\s+(\S+)")
+        self._tool_proposal_script = tool_proposal_script
+        self._skill_decision_script = skill_decision_script
+
+    def propose_tool(
+        self, query: str, context_references: Sequence[str] = ()
+    ) -> Optional[Mapping[str, Any]]:
+        """Return the scripted raw proposal for ``query``, or ``None``."""
+        if self._tool_proposal_script is None:
+            return None
+        return self._tool_proposal_script(query)
+
+    def propose_skill(
+        self, goal: str, catalog: Sequence[Mapping[str, Any]] = ()
+    ) -> Optional[Mapping[str, Any]]:
+        """Return the scripted raw decision for ``goal``, or ``None``."""
+        if self._skill_decision_script is None:
+            return None
+        return self._skill_decision_script(goal, list(catalog))
+
+    @property
+    def skill_decision_capable(self) -> bool:
+        """Whether an Agent decision capability is actually configured.
+
+        The protocol method always exists on this provider, so callers
+        must consult this flag to distinguish an armed decision capability
+        from the fail-closed production default (ADR-006).
+        """
+        return self._skill_decision_script is not None
+
+    def complete(self, prompt: str) -> str:
+        """Return a deterministic completion derived from the prompt."""
+        if not prompt or not prompt.strip():
+            raise ValueError("Prompt cannot be empty")
+        citations = [
+            match
+            for match in (self._citation_pattern.match(line) for line in prompt.splitlines())
+            if match
+        ]
+        references = [citation.group(1) for citation in citations]
+        if references:
+            return (
+                f"Deterministic response using {len(references)} approved context "
+                f"item(s): {', '.join(references)}"
+            )
+        return "Deterministic response using 0 approved context item(s)."
+
+
+@dataclass(frozen=True)
+class LlmSettings:
+    """LLM configuration derived from the environment.
+
+    ``provider`` selects the LLM implementation. Only ``deterministic``
+    is currently supported; any other value fails closed at
+    configuration time (a production provider such as OpenRouter is a
+    deferred decision, not silently substituted). ``model`` is metadata
+    for future providers and has no effect on the deterministic provider.
+    """
+
+    provider: str = "deterministic"
+    model: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.provider or not self.provider.strip():
+            raise LlmConfigurationError("LLM_PROVIDER must not be empty")
+
+
+def get_llm_settings() -> LlmSettings:
+    """Build LLM settings from the environment.
+
+    Defaults to the deterministic provider so the application runs
+    without configuration while keeping the configuration explicit.
+    """
+    return LlmSettings(
+        provider=os.getenv("LLM_PROVIDER", "deterministic"),
+        model=os.getenv("LLM_MODEL") or None,
+    )
+
+
+def build_llm_provider(settings: LlmSettings) -> LlmProvider:
+    """Build the configured LLM provider.
+
+    Raises:
+        LlmConfigurationError: for any provider other than
+            ``deterministic``. Fail closed: a production provider is a
+            deferred decision and must never be silently substituted.
+    """
+    if settings.provider == "deterministic":
+        return DeterministicLlmProvider()
+    raise LlmConfigurationError(
+        f"Unsupported LLM_PROVIDER: {settings.provider!r} "
+        "(supported providers: deterministic; a production provider is a deferred decision)"
+    )

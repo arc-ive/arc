@@ -1,0 +1,448 @@
+"""Agent orchestration tests (real PostgreSQL, real SkillExecutionService).
+
+The Agent is security-sensitive: these tests prove it can ONLY act by
+delegating to ``SkillExecutionService`` (which alone enforces
+``Skill.allowed_tools``, tool RBAC/policy/validation and tenant-scoped
+audit), that its decisions are strictly bounded and fail closed, and that
+the trusted ``TenantContext`` can never be influenced by model output.
+"""
+
+import uuid
+from collections import deque
+
+import pytest
+from pydantic import BaseModel, ConfigDict
+
+from arc.domain.models import (
+    AgentRunStatus,
+    Skill,
+    SkillExecutionStatus,
+    SkillStatus,
+    Tenant,
+    TenantContext,
+    UserRole,
+)
+from arc.repositories.skills import PostgreSQLSkillRepository
+from arc.repositories.tools import PostgreSQLToolExecutionRepository
+from arc.security.authorization import TOOL_EXECUTE, AuthorizationService
+from arc.security.models import ApplicationRole, AuthenticatedPrincipal
+from arc.services.agent import MAX_AGENT_STEPS, AgentExecutionService
+from arc.services.llm import DeterministicLlmProvider
+from arc.services.skill_execution import SkillExecutionService
+from arc.services.skills import SkillService
+from arc.services.tools import (
+    SERVICE_HEALTH_TOOL,
+    ToolAuditPolicy,
+    ToolDefinition,
+    ToolExecutionPolicy,
+    ToolExecutionService,
+    ToolRegistry,
+    ToolRiskLevel,
+)
+
+
+class EchoInput(BaseModel):
+    """Permissive input model for the deterministic echo test tool."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+def _unique(prefix: str) -> str:
+    return f"agent-{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+def _context(tenant_id: str, user_id: str = "user-1") -> TenantContext:
+    return TenantContext(
+        tenant_id=tenant_id,
+        tenant_name="Agent Tenant",
+        user_id=user_id,
+        role=UserRole.MEMBER,
+    )
+
+
+def _principal(user_id: str = "user-1") -> AuthenticatedPrincipal:
+    return AuthenticatedPrincipal(user_id=user_id)
+
+
+def _authorization(user_id: str = "user-1") -> AuthorizationService:
+    return AuthorizationService({user_id: ApplicationRole.OPERATIONS_USER})
+
+
+async def _build_environment(repositories, db, decisions=None):
+    """Wire the real stack plus a scripted decision provider.
+
+    Returns the agent under test together with everything needed to prove
+    delegation (real tool audit repository) and decision-boundary behavior
+    (recorded provider calls). ``decisions`` is a mutable list the test
+    fills with raw decision payloads / None before running.
+    """
+    tenant_repo, _, _ = repositories
+    tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Agent Tenant"))
+
+    decisions = decisions if decisions is not None else []
+    queue = deque(decisions)
+    provider_calls: list = []
+
+    def _script(goal, catalog):
+        provider_calls.append(
+            {
+                "goal": goal,
+                "catalog": [dict(item) for item in catalog],
+            }
+        )
+        return queue.popleft() if queue else None
+
+    def _echo_handler(input_data, tenant_id):
+        return {"tenant_id": tenant_id, "echo": input_data}
+
+    def _tool(name, *, handler=None):
+        return ToolDefinition(
+            name=name,
+            version="1",
+            description=f"Deterministic {name} test tool",
+            input_model=EchoInput,
+            output_model=EchoInput,
+            required_permissions=frozenset({TOOL_EXECUTE}),
+            risk_level=ToolRiskLevel.LOW,
+            execution_policy=ToolExecutionPolicy(),
+            audit_policy=ToolAuditPolicy(record_summary_only=True),
+            handler=handler or _echo_handler,
+        )
+
+    registry = ToolRegistry(
+        {"check_service_health": SERVICE_HEALTH_TOOL, "echo_tool": _tool("echo_tool")}
+    )
+
+    skill_repo = PostgreSQLSkillRepository(db)
+    skill_service = SkillService(skill_repo)
+    record_repo = PostgreSQLToolExecutionRepository(db)
+    tool_service = ToolExecutionService(registry, record_repo)
+    engine = SkillExecutionService(skill_service=skill_service, tool_service=tool_service)
+    agent = AgentExecutionService(
+        skill_service=skill_service,
+        skill_execution_service=engine,
+        llm_provider=DeterministicLlmProvider(skill_decision_script=_script),
+    )
+
+    return {
+        "agent": agent,
+        "skill_service": skill_service,
+        "record_repo": record_repo,
+        "provider_calls": provider_calls,
+        "queue": queue,
+        "tenant": tenant,
+        "context": _context(tenant.id),
+        "principal": _principal(),
+        "authorization": _authorization(),
+    }
+
+
+async def _create_skill(env, **overrides) -> Skill:
+    values = {
+        "id": "unassigned",
+        "tenant_id": "placeholder",
+        "name": _unique("skill"),
+        "purpose": "Recover a degraded service",
+        "allowed_tools": ["check_service_health", "echo_tool"],
+    }
+    values.update(overrides)
+    return await env["skill_service"].create_skill(env["context"], Skill(**values))
+
+
+def _decision(skill_id, tool_name="check_service_health", **call_input):
+    return {
+        "skill_id": skill_id,
+        "tool_calls": [{"tool_name": tool_name, "input": dict(call_input)}],
+        "satisfied_preconditions": [],
+    }
+
+
+class TestCapabilityGate:
+    async def test_unarmed_default_provider_fails_closed(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        env["agent"].llm_provider = DeterministicLlmProvider()  # unarmed default
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "agent_capability_unavailable"
+        assert result.steps == []
+        assert env["provider_calls"] == []
+        assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+    async def test_non_skill_selecting_provider_fails_closed(self, repositories, db):
+        env = await _build_environment(repositories, db)
+
+        class CompletionOnlyProvider:
+            def complete(self, prompt: str) -> str:
+                return "text"
+
+        env["agent"].llm_provider = CompletionOnlyProvider()
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "agent_capability_unavailable"
+        assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+
+class TestBoundedOrchestration:
+    async def test_success_then_provider_decline_is_succeeded(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.SUCCEEDED
+        assert result.error_kind is None
+        assert len(result.steps) == 1
+        assert result.steps[0].skill_id == skill.id
+        assert result.steps[0].status is SkillExecutionStatus.SUCCEEDED
+        assert len(env["provider_calls"]) == 2  # one decision + one decline
+        records = await env["record_repo"].list_for_tenant(env["tenant"].id)
+        assert len(records) == 1  # real delegated tool execution audited
+
+    async def test_three_successful_decisions_reach_hard_bound(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        skills = [await _create_skill(env) for _ in range(3)]
+        for skill in skills:
+            env["queue"].append(_decision(skill.id, "echo_tool", marker=skill.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.MAX_STEPS_REACHED
+        assert result.error_kind == "max_steps_reached"
+        assert len(result.steps) == MAX_AGENT_STEPS
+        assert [step.sequence for step in result.steps] == [0, 1, 2]
+        assert len(env["provider_calls"]) == MAX_AGENT_STEPS  # never a fourth ask
+        assert len(await env["record_repo"].list_for_tenant(env["tenant"].id)) == 3
+
+    async def test_skill_failure_stops_immediately_without_retry(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        bad = await _create_skill(env, allowed_tools=["check_service_health", "ghost_tool"])
+        good = await _create_skill(env)
+        env["queue"].extend(
+            [_decision(bad.id, "ghost_tool"), _decision(good.id), _decision(good.id)]
+        )
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "unknown_tool"
+        assert len(result.steps) == 1
+        assert result.steps[-1].error_kind == "unknown_tool"
+        assert len(env["provider_calls"]) == 1  # no second decision, no retry
+
+    async def test_approval_required_propagates_and_stops(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        gated = await _create_skill(env, approval_required=True)
+        env["queue"].append(_decision(gated.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.APPROVAL_REQUIRED
+        assert result.error_kind == "approval_required"
+        assert result.steps[-1].status is SkillExecutionStatus.APPROVAL_REQUIRED
+        assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+
+class TestDecisionBoundaryFailures:
+    async def test_invalid_decisions_execute_nothing(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env)
+
+        malformed = [
+            {},
+            {"skill_id": skill.id},
+            {"skill_id": skill.id, "tool_calls": [], "satisfied_preconditions": []},
+            {"skill_id": 42, "tool_calls": [{"tool_name": "t"}], "satisfied_preconditions": []},
+            {"skill_id": skill.id, "tool_calls": ["x"], "satisfied_preconditions": []},
+            {
+                "skill_id": skill.id,
+                "tool_calls": [{"tool_name": "t"}],
+                "satisfied_preconditions": [7],
+            },
+        ]
+        for payload in malformed:
+            env["queue"].clear()
+            env["queue"].append(payload)
+            result = await env["agent"].run(
+                env["context"], env["principal"], "goal", env["authorization"]
+            )
+            assert result.status is AgentRunStatus.FAILED
+            assert result.error_kind == "invalid_decision"
+            assert result.steps == []
+
+        # A provider decline (None) with no executed step is no_decision,
+        # not an invalid decision (contract: None means "stop proposing").
+        env["queue"].clear()
+        env["queue"].append(None)
+        declined = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert declined.status is AgentRunStatus.FAILED
+        assert declined.error_kind == "no_decision"
+
+        assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+    async def test_out_of_catalog_skill_executes_nothing(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        await _create_skill(env)
+        env["queue"].append(_decision(f"foreign-{uuid.uuid4().hex}"))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "skill_not_available"
+        assert result.steps == []
+        assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+    async def test_cross_tenant_skill_cannot_execute(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        await _create_skill(env)
+
+        other_tenant = await repositories[0].create(Tenant(id=_unique("other"), name="Other"))
+        foreign_context = _context(other_tenant.id, user_id="user-2")
+        foreign = await env["skill_service"].create_skill(
+            foreign_context,
+            Skill(
+                id="unassigned",
+                tenant_id="placeholder",
+                name=_unique("foreign-skill"),
+                purpose="p",
+                allowed_tools=["check_service_health"],
+            ),
+        )
+        env["queue"].append(_decision(foreign.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "skill_not_available"
+        assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+    async def test_inactive_skill_failure_propagates(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        inactive = await _create_skill(env, status=SkillStatus.INACTIVE)
+        env["queue"].append(_decision(inactive.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "inactive_skill"
+        assert result.steps[-1].error_kind == "inactive_skill"
+
+    async def test_deep_malformed_proposal_becomes_invalid_decision(self, repositories, db):
+        """Engine owns deep validation; its rejection stops the run safely."""
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].append(
+            {
+                "skill_id": skill.id,
+                "tool_calls": [{"input": "not-a-dict"}],  # missing tool_name
+                "satisfied_preconditions": [],
+            }
+        )
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "invalid_decision"
+        assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+    async def test_oversized_tool_call_list_becomes_invalid_decision(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].append(
+            {
+                "skill_id": skill.id,
+                "tool_calls": [{"tool_name": "echo_tool", "input": {}} for _ in range(11)],
+                "satisfied_preconditions": [],
+            }
+        )
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "invalid_decision"
+
+
+class TestTrustBoundaries:
+    async def test_catalog_snapshot_is_tenant_scoped_and_has_no_tenant_ids(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        own = await _create_skill(env)
+
+        other_tenant = await repositories[0].create(Tenant(id=_unique("other"), name="Other"))
+        await env["skill_service"].create_skill(
+            _context(other_tenant.id, user_id="user-2"),
+            Skill(
+                id="unassigned",
+                tenant_id="placeholder",
+                name=_unique("foreign"),
+                purpose="p",
+            ),
+        )
+
+        env["queue"].append(None)  # immediate decline after first catalog ask
+        await env["agent"].run(env["context"], env["principal"], "goal", env["authorization"])
+
+        snapshot = env["provider_calls"][0]["catalog"]
+        ids = {item["id"] for item in snapshot}
+        assert ids == {own.id}
+        for item in snapshot:
+            assert set(item.keys()) == {"id", "name", "status"}
+            assert "tenant_id" not in item
+
+    async def test_model_supplied_tenant_hint_never_overrides_context(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id, "echo_tool", tenant_id="tenant-B"), None])
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.SUCCEEDED
+        assert result.steps[0].status is SkillExecutionStatus.SUCCEEDED
+        assert result.tenant_id == env["tenant"].id
+        records = await env["record_repo"].list_for_tenant(env["tenant"].id)
+        assert len(records) == 1
+        assert records[0].tenant_id == env["tenant"].id
+
+    async def test_agent_holds_no_tool_registry_or_audit_collaborators(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        attrs = vars(env["agent"])
+        assert set(attrs) == {"skill_service", "skill_execution_service", "llm_provider"}
+        forbidden = ("tool", "registry", "handler", "audit", "record")
+        assert not any(name in attrs for name in forbidden)
+
+
+class TestRequestValidation:
+    async def test_empty_goal_rejected(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        with pytest.raises(ValueError, match="Goal cannot be empty"):
+            await env["agent"].run(env["context"], env["principal"], "   ", env["authorization"])
+
+    async def test_invalid_context_rejected(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        with pytest.raises(ValueError, match="Invalid tenant context"):
+            await env["agent"].run(None, env["principal"], "goal", env["authorization"])

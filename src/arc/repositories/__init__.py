@@ -1,14 +1,27 @@
 """Repository interfaces for Arc domain."""
 
-from typing import List, Protocol
+from typing import List, Optional, Protocol
 
 from arc.domain.models import (
+    ApiRequestRecord,
+    ApprovalRequest,
+    ApprovalStatus,
     ConnectorConfig,
+    ConnectorSyncActivityMetrics,
+    ConnectorSyncRecord,
+    HttpUsageMetrics,
+    KnowledgeChunk,
     KnowledgeDocument,
+    KnowledgeMatch,
+    KnowledgeSource,
     Membership,
     Skill,
     Tenant,
+    ToolExecutionActivityMetrics,
+    ToolExecutionRecord,
     User,
+    WebhookEvent,
+    WebhookEventActivityMetrics,
 )
 
 
@@ -120,6 +133,23 @@ class ConnectorRepository(Protocol):
         ...
 
 
+class ConnectorSyncRepository(Protocol):
+    """Repository for ConnectorSyncRecord audit entities.
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. Records never contain provider
+    credentials or raw external payloads.
+    """
+
+    async def create_record(self, record: ConnectorSyncRecord) -> ConnectorSyncRecord:
+        """Persist a connector synchronization record."""
+        ...
+
+    async def list_for_tenant(self, tenant_id: str) -> List[ConnectorSyncRecord]:
+        """List all connector synchronization records for a tenant."""
+        ...
+
+
 class KnowledgeRepository(Protocol):
     """Repository for KnowledgeDocument entities.
 
@@ -132,12 +162,99 @@ class KnowledgeRepository(Protocol):
         """Create a new knowledge document."""
         ...
 
+    async def create_document_with_chunks(
+        self,
+        document: KnowledgeDocument,
+        chunks: List[KnowledgeChunk],
+        embeddings: List[List[float]],
+    ) -> KnowledgeDocument:
+        """Create a knowledge document and all its chunks atomically.
+
+        The document row and every chunk row are inserted in ONE
+        transaction: if the document insert or any chunk insert fails,
+        the entire operation rolls back. There is never a document
+        without its complete retrieval index, nor a partial chunk set.
+        """
+        ...
+
+    async def get_by_external_id(
+        self, external_id: str, source: KnowledgeSource, tenant_id: str
+    ) -> KnowledgeDocument:
+        """Resolve one logical document by its ADR-003 identity.
+
+        Identity is ``(tenant_id, source, external_id)`` and is resolved
+        strictly within the trusted tenant: the same external identifier
+        under a different tenant or source never matches. Raises
+        ``NotFoundError`` when no such logical document exists.
+        """
+        ...
+
+    async def find_legacy_duplicate_candidates(self, tenant_id: Optional[str] = None) -> List[dict]:
+        """Read-only discovery of pre-ADR-003 duplicate groups.
+
+        Returns one dict per candidate row with ``is_winner`` marking the
+        per-group newest row. Never mutates state. ``tenant_id`` optionally
+        narrows the sweep; grouping never spans tenants.
+        """
+        ...
+
+    async def archive_legacy_duplicates(self, tenant_id: Optional[str] = None) -> int:
+        """Archive non-winner legacy duplicates; return archived count.
+
+        Archive-only lifecycle operation: re-checks the exact safety
+        predicate at mutation time, preserves winners/content/chunks/
+        external_id values, and is idempotent. ``tenant_id`` optionally
+        narrows the sweep.
+        """
+        ...
+
+    async def update_document_with_chunks(
+        self,
+        document: KnowledgeDocument,
+        chunks: List[KnowledgeChunk],
+        embeddings: List[List[float]],
+    ) -> KnowledgeDocument:
+        """Apply an accepted content change to an existing logical document.
+
+        Atomically in ONE transaction: updates content/version/updated_at
+        on the existing row (matched by id AND tenant), deletes the old
+        chunk set, and inserts the new prepared chunk set. A failure at
+        any point rolls back so the prior document version and its complete
+        old index remain intact.
+        """
+        ...
+
     async def get_by_id(self, document_id: str, tenant_id: str) -> KnowledgeDocument:
         """Get a knowledge document by ID, scoped to a tenant."""
         ...
 
     async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
         """List all knowledge documents for a tenant."""
+        ...
+
+
+class KnowledgeChunkRepository(Protocol):
+    """Repository for KnowledgeChunk entities and vector retrieval.
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. Chunks created for tenant A
+    must never be retrievable or searchable by tenant B.
+
+    Embedding vectors are passed alongside chunks as opaque
+    ``List[float]`` values; the repository is agnostic to the embedding
+    provider (Secure RAG foundation).
+    """
+
+    async def create_many(
+        self, chunks: List[KnowledgeChunk], embeddings: List[List[float]]
+    ) -> List[KnowledgeChunk]:
+        """Persist chunks atomically with their embedding vectors."""
+        ...
+
+    async def search(
+        self, tenant_id: str, query_embedding: List[float], limit: int = 5
+    ) -> List[KnowledgeMatch]:
+        """Return tenant-scoped chunk matches ordered by similarity."""
         ...
 
 
@@ -163,6 +280,174 @@ class SkillRepository(Protocol):
     async def delete(self, skill_id: str, tenant_id: str) -> None:
         """Delete a skill, scoped to a tenant."""
         ...
+        ...
+
+
+class ToolExecutionRepository(Protocol):
+    """Repository for ToolExecutionRecord entities.
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. A record created for tenant A
+    must never be retrievable or listable by tenant B.
+    """
+
+    async def create_record(self, record: ToolExecutionRecord) -> ToolExecutionRecord:
+        """Persist a tool execution record."""
+        ...
+
+    async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[ToolExecutionRecord]:
+        """List the most recent tool execution records for a tenant."""
+        ...
+
+
+class WebhookEventRepository(Protocol):
+    """Repository for WebhookEvent entities (Webhooks foundation).
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. An event ingested for tenant A
+    must never be retrievable or listable by tenant B. Records never
+    contain raw external payloads.
+    """
+
+    async def create(self, event: WebhookEvent) -> WebhookEvent:
+        """Persist a webhook event.
+
+        Raises ``DuplicateKeyError`` when the same ``(tenant_id,
+        event_id)`` pair already exists (duplicate handling, PRD 16).
+        """
+        ...
+
+    async def get_by_event_id(self, event_id: str, tenant_id: str) -> WebhookEvent:
+        """Get an event by its sender-supplied identifier, scoped to a tenant.
+
+        Raises ``NotFoundError`` when no such event exists for the tenant.
+        """
+        ...
+
+    async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[WebhookEvent]:
+        """List the most recent webhook events for a tenant."""
+
+
+class ObservabilityRepository(Protocol):
+    """Repository for Observability aggregates (PRD 17, TRD 17/28/31).
+
+    One write path only: HTTP telemetry records this layer owns. All
+    other methods are READ-SIDE aggregations issued against the
+    authoritative subsystem tables (tool executions, connector syncs,
+    webhook events) which are never duplicated.
+
+    Scope contract: ``tenant_id=None`` selects the PLATFORM view —
+    strictly tenant-agnostic operational totals; no method returns
+    per-tenant breakdowns or raw rows. Every tenant-scoped query
+    enforces ``tenant_id`` at the SQL level.
+    """
+
+    async def create_api_request_record(self, record: ApiRequestRecord) -> ApiRequestRecord:
+        """Persist one HTTP telemetry record (metadata-only)."""
+        ...
+
+    async def api_request_summary(self, tenant_id: Optional[str], hours: int) -> HttpUsageMetrics:
+        """Aggregate HTTP usage for a tenant, or platform-wide when None."""
+        ...
+
+    async def tool_execution_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> ToolExecutionActivityMetrics:
+        """Aggregate authoritative AI Tool execution records in place."""
+        ...
+
+    async def connector_sync_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> ConnectorSyncActivityMetrics:
+        """Aggregate authoritative connector sync records in place."""
+        ...
+
+    async def webhook_event_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> WebhookEventActivityMetrics:
+        """Aggregate webhook events when the source table exists.
+
+        While the Webhooks foundation (PR #34) is unmerged the source is
+        legitimately absent on main: implementations must report it as
+        unavailable (never fabricate or duplicate it).
+        """
+        ...
+
+    async def database_reachable(self) -> bool:
+        """Component health probe for the database."""
+        ...
+
+
+class ApprovalRequestRepository(Protocol):
+    """Repository for Human Intervention approval requests (V1 gate).
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. An approval request created for
+    tenant A must never be retrievable or listable by tenant B.
+
+    An approval is consumed at most once. Expiry is lazy: ``pending`` rows
+    past their ``expires_at`` read as EXPIRED without mutation.
+    """
+
+    async def create(self, request: ApprovalRequest) -> ApprovalRequest:
+        """Persist one approval request exactly as provided.
+
+        Raises ``DuplicateKeyError`` when an identical logical binding
+        ``(tenant_id, tool_name, tool_version, arguments_digest)`` already
+        has a ``pending`` request (unique partial index, race-safe).
+        """
+        ...
+
+    async def get_by_id(self, approval_id: str, tenant_id: str) -> ApprovalRequest:
+        """Get an approval request by ID, scoped to a tenant.
+
+        Raises ``NotFoundError`` when no such request exists for the tenant.
+        """
+        ...
+
+    async def list_for_tenant(self, tenant_id: str, limit: int = 100) -> List[ApprovalRequest]:
+        """List approval requests for a tenant, most recent first."""
+        ...
+
+    async def find_open_by_binding(
+        self, tenant_id: str, tool_name: str, tool_version: str, arguments_digest: str
+    ) -> Optional[ApprovalRequest]:
+        """Find the existing OPEN (pending) request for a logical binding.
+
+        Returns ``None`` when no pending request matches. Expired rows are
+        NOT returned here; they are lazily expired at decision/consumption
+        time.
+        """
+        ...
+
+    async def expire_if_due(self, approval_id: str, tenant_id: str) -> bool:
+        """Mark a pending request as EXPIRED if it is past its TTL.
+
+        Returns ``True`` when the row was transitioned, ``False`` when the
+        row was already decided or not found.
+        """
+        ...
+
+    async def decide_request(
+        self, approval_id: str, tenant_id: str, decision: ApprovalStatus, decided_by_user_id: str
+    ) -> ApprovalRequest:
+        """Apply an APPROVED or REJECTED decision to a pending request.
+
+        Transitions ``pending`` to the requested decision. Returns the
+        updated request. Raises ``ApprovalError`` if the request is not in
+        ``pending`` status (fail-closed, no partial transitions).
+        """
+        ...
+
+    async def consume_if_approved(
+        self, approval_id: str, tenant_id: str
+    ) -> Optional[ApprovalRequest]:
+        """Atomically consume exactly one approved request.
+
+        Transitions ``approved`` to ``consumed`` and returns the updated
+        request. Returns ``None`` when the request is not in ``approved``
+        status (already consumed, expired, or rejected -- fail-closed).
+        """
         ...
 
 

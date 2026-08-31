@@ -1,0 +1,185 @@
+"""Observability service (PRD 17, TRD 17/28/31; approved architecture).
+
+Observability is an aggregation/read layer, NOT a second source of
+truth. Authoritative records remain owned by their subsystems; this
+service only assembles read-side aggregates from them and owns the HTTP
+telemetry write path plus component-health evaluation.
+
+Failure semantics (approved):
+
+- TELEMETRY WRITE: best effort. A telemetry persistence failure is
+  logged safely and dropped — it must NEVER fail the business request.
+- READ APIs: fail closed for authorization and tenant isolation, which
+  is enforced upstream by the security dependencies; this service never
+  widens a scope.
+
+Component health uses ONLY existing public factories/settings readers of
+the owning subsystems (no owner-owned implementation is modified). The
+webhook-configuration component joins once the Webhooks foundation
+(PR #34) merges and its configuration module exists on main.
+"""
+
+import logging
+from typing import Any, Dict
+
+from arc.domain.models import ApiRequestRecord
+from arc.services.embeddings import (
+    EmbeddingConfigurationError,
+    build_embedding_provider,
+    get_embedding_settings,
+)
+from arc.services.llm import LlmConfigurationError, build_llm_provider, get_llm_settings
+
+logger = logging.getLogger("arc.observability")
+
+MIN_WINDOW_HOURS = 1
+MAX_WINDOW_HOURS = 168
+DEFAULT_WINDOW_HOURS = 24
+
+
+class ObservabilityService:
+    """Aggregation/read-side service for operational observability."""
+
+    def __init__(self, repository):
+        self.repository = repository
+
+    # ------------------------------------------------------------------
+    # Telemetry write path (best effort)
+    # ------------------------------------------------------------------
+    async def record_api_request(self, record: ApiRequestRecord) -> bool:
+        """Persist one HTTP telemetry record without ever raising.
+
+        Returns True when persisted, False when dropped. A telemetry
+        failure must never propagate into the served business response
+        (approved failure semantics): failures are counted via the safe
+        log line below, which carries metadata only.
+        """
+        try:
+            await self.repository.create_api_request_record(record)
+            return True
+        except Exception:
+            logger.warning(
+                "telemetry_write_dropped method=%s route=%s status=%s",
+                record.method,
+                record.route_template,
+                record.status_code,
+            )
+            return False
+
+    # ------------------------------------------------------------------
+    # Aggregation reads
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _validated_window(hours: int) -> int:
+        if not isinstance(hours, int) or isinstance(hours, bool):
+            raise ValueError("Window hours must be an integer")
+        if not MIN_WINDOW_HOURS <= hours <= MAX_WINDOW_HOURS:
+            raise ValueError(
+                f"Window hours must be between {MIN_WINDOW_HOURS} and {MAX_WINDOW_HOURS}"
+            )
+        return hours
+
+    async def get_tenant_usage_summary(
+        self, tenant_id: str, hours: int = DEFAULT_WINDOW_HOURS
+    ) -> Dict[str, Any]:
+        """Assemble the tenant-scoped usage summary (aggregates only)."""
+        window = self._validated_window(hours)
+        http = await self.repository.api_request_summary(tenant_id, window)
+        tools = await self.repository.tool_execution_activity(tenant_id, window)
+        connectors = await self.repository.connector_sync_activity(tenant_id, window)
+        webhooks = await self.repository.webhook_event_activity(tenant_id, window)
+        approvals = await self.repository.approval_activity(tenant_id, window)
+        return {
+            "window_hours": window,
+            "http": self._http_payload(http),
+            "tools": {
+                "total_executions": tools.total_executions,
+                "successful": tools.successful,
+                "failed": tools.failed,
+                "denied": tools.denied,
+            },
+            "connectors": {
+                "total_syncs": connectors.total_syncs,
+                "successful": connectors.successful,
+                "failed": connectors.failed,
+                "items_fetched": connectors.items_fetched,
+            },
+            "webhooks": {
+                "available": webhooks.available,
+                "total_events": webhooks.total_events,
+                "distinct_event_types": webhooks.distinct_event_types,
+                "total_payload_bytes": webhooks.total_payload_bytes,
+            },
+            "approvals": {
+                "total": approvals.total,
+                "pending": approvals.pending,
+                "approved": approvals.approved,
+                "rejected": approvals.rejected,
+                "expired": approvals.expired,
+                "consumed": approvals.consumed,
+            },
+        }
+
+    async def get_platform_summary(self, hours: int = DEFAULT_WINDOW_HOURS) -> Dict[str, Any]:
+        """Assemble the STRICTLY TENANT-AGNOSTIC platform summary.
+
+        Answers only: is the ARC platform operating correctly? No tenant
+        identifiers, per-tenant usage, rankings, or breakdowns are ever
+        included (approved Joe/Bala policy).
+        """
+        window = self._validated_window(hours)
+        http = await self.repository.api_request_summary(None, window)
+        tools = await self.repository.tool_execution_activity(None, window)
+        connectors = await self.repository.connector_sync_activity(None, window)
+        webhooks = await self.repository.webhook_event_activity(None, window)
+        approvals = await self.repository.approval_activity(None, window)
+        return {
+            "window_hours": window,
+            "http": self._http_payload(http),
+            "tool_activity_total": tools.total_executions,
+            "tool_failures_total": tools.failed + tools.denied,
+            "connector_syncs_total": connectors.total_syncs,
+            "connector_failures_total": connectors.failed,
+            "webhook_events_total": webhooks.total_events if webhooks.available else 0,
+            "webhook_source_available": webhooks.available,
+            "approval_activity_total": approvals.total,
+            "approval_failures_total": approvals.rejected + approvals.expired,
+        }
+
+    @staticmethod
+    def _http_payload(http) -> Dict[str, Any]:
+        return {
+            "total_requests": http.total_requests,
+            "error_count": http.error_count,
+            "error_rate": round(http.error_rate, 4),
+            "avg_duration_ms": round(http.avg_duration_ms, 2),
+            "p95_duration_ms": round(http.p95_duration_ms, 2),
+        }
+
+    # ------------------------------------------------------------------
+    # Component health
+    # ------------------------------------------------------------------
+    async def get_component_health(self) -> Dict[str, Any]:
+        """Evaluate real component checks using existing public contracts.
+
+        Results expose status labels only — never settings values, error
+        details, or anything that could leak configuration material.
+        """
+        components: Dict[str, Dict[str, str]] = {}
+        database_status = "healthy" if await self.repository.database_reachable() else "unhealthy"
+        components["database"] = {"status": database_status}
+        components["llm_provider"] = self._probe(lambda: build_llm_provider(get_llm_settings()))
+        components["embeddings"] = self._probe(
+            lambda: build_embedding_provider(get_embedding_settings())
+        )
+        all_healthy = all(c["status"] == "healthy" for c in components.values())
+        overall = "healthy" if all_healthy else "degraded"
+        return {"overall": overall, "components": components}
+
+    @staticmethod
+    def _probe(build) -> Dict[str, str]:
+        try:
+            build()
+            return {"status": "healthy"}
+        except (LlmConfigurationError, EmbeddingConfigurationError):
+            return {"status": "unhealthy"}

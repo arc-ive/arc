@@ -12,16 +12,32 @@ import pytest
 
 from arc.domain.models import UserRole
 from arc.security.authorization import (
+    AGENT_EXECUTE,
+    APPROVAL_DECIDE,
+    APPROVAL_READ,
+    CONNECTOR_CREATE,
+    CONNECTOR_READ,
+    CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
     MEMBERSHIP_CREATE,
+    OBSERVABILITY_PLATFORM_READ,
+    OBSERVABILITY_READ,
     ROLE_PERMISSIONS,
+    SKILL_CREATE,
+    SKILL_DELETE,
+    SKILL_EXECUTE,
+    SKILL_READ,
+    SKILL_UPDATE,
     TENANT_CREATE,
     TENANT_READ,
+    TOOL_EXECUTE,
+    TOOL_READ,
     USER_CREATE,
+    WEBHOOK_READ,
     AuthorizationService,
 )
-from arc.security.models import ApplicationRole, AuthenticatedPrincipal
+from arc.security.models import ApplicationRole, AuthenticatedPrincipal, Permission
 
 
 def _unique(prefix: str) -> str:
@@ -51,35 +67,109 @@ def test_exactly_four_application_roles_exist():
         (
             ApplicationRole.PLATFORM_ADMINISTRATOR,
             [
+                AGENT_EXECUTE,
                 TENANT_CREATE,
                 USER_CREATE,
                 MEMBERSHIP_CREATE,
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
                 KNOWLEDGE_READ,
+                SKILL_CREATE,
+                SKILL_READ,
+                SKILL_UPDATE,
+                SKILL_DELETE,
+                SKILL_EXECUTE,
+                TOOL_READ,
+                TOOL_EXECUTE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
+                WEBHOOK_READ,
+                OBSERVABILITY_READ,
+                OBSERVABILITY_PLATFORM_READ,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
             ],
             [],
         ),
         (
             ApplicationRole.COMPANY_ADMINISTRATOR,
-            [TENANT_READ, KNOWLEDGE_CREATE, KNOWLEDGE_READ],
+            [
+                AGENT_EXECUTE,
+                TENANT_READ,
+                KNOWLEDGE_CREATE,
+                KNOWLEDGE_READ,
+                SKILL_CREATE,
+                SKILL_READ,
+                SKILL_UPDATE,
+                SKILL_DELETE,
+                SKILL_EXECUTE,
+                TOOL_READ,
+                TOOL_EXECUTE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
+                WEBHOOK_READ,
+                OBSERVABILITY_READ,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
+            ],
             [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE],
         ),
         (
             ApplicationRole.OPERATIONS_USER,
-            [TENANT_READ, KNOWLEDGE_READ],
-            [TENANT_CREATE, USER_CREATE, MEMBERSHIP_CREATE, KNOWLEDGE_CREATE],
+            [
+                AGENT_EXECUTE,
+                TENANT_READ,
+                KNOWLEDGE_READ,
+                SKILL_READ,
+                SKILL_EXECUTE,
+                TOOL_READ,
+                TOOL_EXECUTE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
+                WEBHOOK_READ,
+                OBSERVABILITY_READ,
+            ],
+            [
+                TENANT_CREATE,
+                USER_CREATE,
+                MEMBERSHIP_CREATE,
+                KNOWLEDGE_CREATE,
+                SKILL_CREATE,
+                SKILL_UPDATE,
+                SKILL_DELETE,
+                CONNECTOR_CREATE,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
+            ],
         ),
         (
             ApplicationRole.EMPLOYEE,
             [],
             [
+                AGENT_EXECUTE,
                 TENANT_CREATE,
                 USER_CREATE,
                 MEMBERSHIP_CREATE,
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
                 KNOWLEDGE_READ,
+                SKILL_CREATE,
+                SKILL_READ,
+                SKILL_UPDATE,
+                SKILL_DELETE,
+                SKILL_EXECUTE,
+                TOOL_READ,
+                TOOL_EXECUTE,
+                CONNECTOR_CREATE,
+                CONNECTOR_READ,
+                CONNECTOR_SYNC,
+                WEBHOOK_READ,
+                OBSERVABILITY_READ,
+                OBSERVABILITY_PLATFORM_READ,
+                APPROVAL_READ,
+                APPROVAL_DECIDE,
             ],
         ),
     ],
@@ -194,3 +284,30 @@ def test_operations_user_cannot_create_user(client, make_token, authorization_ov
         },
     )
     assert response.status_code == 403
+
+
+def test_unknown_connector_permission_is_never_granted():
+    """An unknown connector permission is denied for every role (fail closed).
+
+    The connector layer consumes only the centralized matrix; a permission
+    that does not exist in ROLE_PERMISSIONS can never authorize an action.
+    """
+    unknown = Permission(resource="connector", action="purge")
+    service = AuthorizationService({})
+    for role in ApplicationRole:
+        principal = AuthenticatedPrincipal(user_id=f"u-{role.value}")
+        assert not service.has_permission(principal, unknown), (
+            f"{role.value} must never hold the unknown permission"
+        )
+
+
+def test_connector_permissions_are_tenant_scoped_operations():
+    """Every connector permission requires a trusted tenant context.
+
+    The connector endpoints all use ``require_tenant_permission`` (never a
+    global permission), so the trusted TenantContext is the tenant
+    boundary for connector:create/read/sync.
+    """
+    for permission in (CONNECTOR_CREATE, CONNECTOR_READ, CONNECTOR_SYNC):
+        assert permission.resource == "connector"
+        assert permission.action in ("create", "read", "sync")

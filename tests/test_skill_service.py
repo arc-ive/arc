@@ -1,5 +1,6 @@
 """Tests for the SkillService with mocked repository."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -7,7 +8,44 @@ import pytest
 from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import Skill, SkillStatus, TenantContext, UserRole
 from arc.repositories import SkillRepository
+from arc.services.pii import PiiGuardConfig, PiiGuardService
 from arc.services.skills import SkillService
+
+
+class _FakeRecognizerResult:
+    """Minimal RecognizerResult compatible with PiiGuardService."""
+
+    def __init__(self, entity_type: str, start: int, end: int, score: float):
+        self.entity_type = entity_type
+        self.start = start
+        self.end = end
+        self.score = score
+
+
+class _FakeAnalyzer:
+    """Fake Presidio AnalyzerEngine returning no results."""
+
+    def analyze(self, text: str, language: str, entities=None):
+        return []
+
+
+class _FakeAnonymizer:
+    """Fake Presidio AnonymizerEngine applying replace semantics."""
+
+    def anonymize(self, text: str, analyzer_results, operators=None):
+        out = text
+        for result in sorted(analyzer_results, key=lambda r: -r.start):
+            out = out[: result.start] + f"<{result.entity_type}>" + out[result.end :]
+        return SimpleNamespace(text=out)
+
+
+def _make_noop_pii_guard() -> PiiGuardService:
+    """Create a PiiGuardService that never detects PII (for legacy tests)."""
+    return PiiGuardService(
+        config=PiiGuardConfig(enabled_categories=set()),
+        analyzer_engine=_FakeAnalyzer(),
+        anonymizer_engine=_FakeAnonymizer(),
+    )
 
 
 @pytest.fixture
@@ -19,7 +57,7 @@ def skill_repo():
 @pytest.fixture
 def service(skill_repo):
     """Create a SkillService with the mock repository."""
-    return SkillService(skill_repo)
+    return SkillService(skill_repo, pii_guard=_make_noop_pii_guard())
 
 
 @pytest.fixture

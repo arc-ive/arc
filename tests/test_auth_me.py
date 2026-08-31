@@ -44,13 +44,12 @@ async def test_me_reflects_assigned_role_permissions(client, make_token, authori
     body = response.json()
     assert body["user_id"] == user_id
     assert body["role"] == "platform_administrator"
+    from arc.security.authorization import ROLE_PERMISSIONS
     expected = {
-        "tenant:create",
-        "user:create",
-        "membership:create",
-        "tenant:read",
-        "knowledge:create",
-        "knowledge:read",
+        permission.value
+        for permission in ROLE_PERMISSIONS.get(
+            ApplicationRole.PLATFORM_ADMINISTRATOR, frozenset()
+        )
     }
     assert set(body["permissions"]) == expected
 

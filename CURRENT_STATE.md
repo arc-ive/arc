@@ -6,22 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation implemented (pending review/merge); Frontend — full product surface implemented (uncommitted, tests pending)
-
-## Completed
-
-### Frontend — Product Surface (uncommitted, `frontend/`)
-
-React 19 + Vite + Tailwind v4, JavaScript only, no TypeScript/Redux. Axios API layer against the real backend contracts; JWT session foundation (dev-only paste-a-JWT login page); dev-only Demo Mode (local navigation only, no fake JWTs/data); tenant context with backend-verified membership. Implemented surfaces:
-
-- **Entry & identity**: `/login` (real auth: paste JWT; dev-only Demo Mode), `/app` → `WorkspaceDispatch` (platform administrator → platform console; others → tenant workspaces), `/session` redirects to `/login`, legacy `/app/dashboard`, `/app/tenants`, `/app/users`, `/app/connectors`, `/app/agents`, `/app/observability` redirect to `/platform/*`, legacy `company-brain*` redirects to `knowledge*`
-- **Platform console** (`/platform/*`, platform administrator): Dashboard (real stats), Tenants (list/create + tenant detail incl. users and honest 403 for non-members), Users (provisioning), Connectors (ADR-002: GitHub/Slack/Linear committed; Google Drive conditional), Agents, Observability — all shells marked "not yet available" where no backend contract exists
-- **Tenant workspaces** (`/app/t/:tenantId/*`): Home (employee landing — Ask Arc, Knowledge, Procedures, Activity), Overview (real tenant/users/knowledge stats), Company (org + knowledge-by-source summary), Knowledge (Company Brain: list/search/source-tabbed IA/create/detail, capability-gated), Skills (metadata-structured shell, no backend API yet), Operations (pipeline Health→…→Escalation shell), Incidents, Usage, Settings, Activity (PendingContract shells), Users (real, 403-honest), Ask Arc (composer + pipeline, no fake responses)
-- **Persona-differentiated shell**: navigation, sidebar, breadcrumbs, command palette, tenant switcher, and landing redirects are role-aware via `GET /auth/me` (application role + permission matrix + tenant memberships). Capability layer (`can()`, `hasRole`, …) is UX-only — the backend remains the authorization authority and 403s are rendered truthfully
-- **Skills Engine**: route shells marked "not yet available" — the backend has the Skills domain/service/repository but NO HTTP endpoints or `skill:*` permissions yet
-- **Operations / Incidents / Usage / Settings / Activity / Connectors / Agents / Observability / Ask Arc**: product surfaces with real page architecture; "Backend contract pending" markers where the backend has no endpoints
-- **Backend addition (user-approved, smallest contract)**: read-only `GET /auth/me` in `src/arc/api/controllers.py` returning `{user_id, role, permissions, memberships}` + `tests/test_auth_me.py` (5 tests). No other backend behavior changed — auth, JWT, RBAC untouched. Verified in Docker: 5/5 pass, full suite 254 passed, ruff clean on changed files.
-- `npm run lint` and `npm run build` pass; dev server verified
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation approved pending Person C follow-up (PR #34); Company Brain document identity & re-ingestion implemented per ADR-003; Production embedding provider and migration implemented (PR #53); Frontend — full product surface implemented (PR #52, pending review)
 
 ## Completed
 
@@ -228,10 +213,11 @@ with the X-10 tenant membership boundary.
 - `.env` (local, gitignored) contains a development-only JWT secret and
   `demo-user` as platform_administrator for the simulated environment.
 
-## Company Brain — Knowledge Storage & Ingestion Foundation (Implemented — pending review)
+## Company Brain — Knowledge Storage & Ingestion Foundation (Merged)
 
 **Branch:** `feat/company-brain-foundation`
 **Base:** `origin/main` (reconciled with current main)
+**Merge:** PR #26 (merge commit `d65b57f`)
 **Scope:** authorized slice of the Company Brain module — tenant-scoped
 knowledge document storage and PII-boundary ingestion. Reuses the merged
 X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
@@ -306,9 +292,874 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 - The branch was reconciled with the merged Skills Engine foundation
   (`origin/main`) before the final verification.
 
+### Status
+
+- Merged to `main` via PR #26 (merge commit `d65b57f`).
+
+## Secure RAG — Semantic Retrieval Foundation (Merged)
+
+**Branch:** `feat/secure-rag-foundation`
+**Base:** `origin/main` (Company Brain foundation + Skills Engine)
+**Merge:** PR #29 (merge commit `a5b892b`)
+
+Author: Bharath. Implements the documented semantic half of the approved
+Secure RAG proposal (`docs/` + `C:\Users\subra\Downloads\Arc_Secure_RAG_Proposal.pdf`).
+
+### What changed
+
+- **Schema** (`src/arc/db/schema.sql`): `CREATE EXTENSION IF NOT EXISTS vector`;
+  new `knowledge_chunks` table (id PK, document FK ON DELETE CASCADE, tenant FK
+  ON DELETE CASCADE, content, sequence >= 0, `embedding vector(64)`) with tenant
+  and document indexes and an HNSW cosine index on the embedding column.
+- **Chunking** (`src/arc/services/chunking.py`): deterministic,
+  whitespace-aware `KnowledgeChunker` (max_chars/overlap_chars, no content loss).
+- **Embeddings** (`src/arc/services/embeddings.py`): `EmbeddingProvider`
+  protocol, `DeterministicEmbeddingProvider` (64-dim, L2-normalized, word-hash
+  histogram), `EmbeddingError` (fail closed). No production provider hard-coded;
+  the exact production embedding model remains open (TRD §34 / ADR-001).
+- **Repository** (`src/arc/repositories/retrieval.py`):
+  `PostgreSQLKnowledgeChunkRepository` — atomic `create_many` (one transaction),
+  tenant-scoped `search` at the SQL level (similarity at the PostgreSQL/pgvector
+  layer, never fetch-all-and-filter in Python).
+- **Service** (`src/arc/services/retrieval.py`): `RetrievalService` with
+  `prepare_index`/`persist_index`/`search` — fail-closed ordering (embeddings
+  computed before any persistence), trusted `TenantContext` is the only tenant
+  boundary, `EMBEDDING_DIMENSIONS` validation against provider output.
+- **API** (`src/arc/api/controllers.py`): `GET /tenants/{tenant_id}/knowledge/search`
+  behind the existing `knowledge:read` permission (retrieval is not a new
+  capability); path-tenant consistency 403; generic 500 on `EmbeddingError`.
+- **Tests** (net +63): chunking, embeddings, real-PostgreSQL chunk repository
+  (SQL-level tenant isolation, ranking, cascade, atomicity), retrieval service
+  (fail-closed embedding/dimension), retrieval API (401/403/400/500, cross-tenant
+  denial, PII-sanitized results).
+
+### Verification
+
+- 333 tests pass (Docker + real PostgreSQL), 4 warnings, 0 failures.
+- `ruff check` / `ruff format --check` clean; `docker compose build arc` OK;
+  `docker compose config --quiet` exit 0; `git diff --check` clean.
+
+### Status
+
+- Merged to `main` via PR #29 (merge commit `a5b892b`).
+
+## Secure RAG — Approved Context Contract (Implemented — pending review)
+
+**Branch:** `feat/approved-context-contract`
+**Base:** `origin/main` (Secure RAG Semantic Retrieval Foundation, PR #29)
+
+Next slice after the merged Secure RAG foundation: establishes the secure
+retrieval boundary up to the **Approved Context Contract** (proposal §9). No
+LLM/Agent/Unified Intelligence/Skills/tooling/PageIndex integration.
+
+### What changed
+
+- **Domain** (`src/arc/domain/models.py`): `RetrievalMethod` enum
+  (dense_semantic only; lexical/fusion/reranking/modular are later enum values);
+  `KnowledgeMatch.sequence` (chunk position, required for citation);
+  `ApprovedContextItem` (sanitized content + document/chunk ids, source,
+  provenance, document_version, sequence, relevance_score, citation_reference);
+  `ApprovedContextSecurityMetadata` (tenant_id, authorization_status,
+  pii_status); `ApprovedContext` (request_id, tenant_id, principal_id, query,
+  retrieval_method, items, security_metadata) — the ONLY representation a future
+  Unified Intelligence/LLM layer may consume.
+- **Repository** (`src/arc/repositories/retrieval.py`,
+  `src/arc/repositories/knowledge.py`): `search` now returns `c.sequence`;
+  defensive tenant-consistency guards in `create_many` (all chunks one tenant)
+  and `create_document_with_chunks` (all chunks match the document tenant) —
+  both fail closed with `ValueError` before any write.
+- **Embeddings** (`src/arc/services/embeddings.py`): `EmbeddingSettings`
+  (provider/model/dimensions) read from `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`,
+  `EMBEDDING_DIMENSION`; `EmbeddingConfigurationError` on invalid config;
+  `build_embedding_provider` factory — unknown providers fail closed at startup.
+  Dimension is locked to the storage dimension `vector(64)` (schema change is a
+  deferred decision). Documented in `.env.example`.
+- **Service** (`src/arc/services/retrieval.py`): `RetrievalService.approved_search`
+  builds the contract from tenant-scoped retrieval; re-validates every match
+  against the trusted tenant (cross-tenant match → `RuntimeError`, fail closed);
+  no-match → safe empty contract.
+- **API** (`src/arc/api/controllers.py`): search response adds the additive
+  `sequence` key. No new endpoint; the contract is a service/domain-level
+  boundary (proposal §9: keep it a domain/service-level contract).
+- **Composition root** (`src/arc/app.py`): embedding provider wired through
+  `build_embedding_provider(get_embedding_settings())`.
+
+### Tests (net +22)
+
+- `tests/test_approved_context.py` (new): contract domain validation; contract
+  build from matches; provenance/citation; ordering/scores preserved; trusted
+  tenant only; cross-tenant match fails closed; embedding failure produces no
+  contract; empty result safe.
+- `tests/test_embeddings.py`: embedding settings defaults/env reading,
+  invalid/mismatched dimension fails closed, empty provider fails closed,
+  provider factory (deterministic built, unknown fails closed).
+- `tests/test_retrieval_repository.py`: `sequence` returned from search,
+  mixed-tenant `create_many` rejected atomically.
+- `tests/test_knowledge_repository.py`: document/chunk tenant mismatch rejected
+  atomically.
+- `tests/test_retrieval_service.py` / `tests/test_retrieval_api.py`: updated for
+  `KnowledgeMatch.sequence` and the additive `sequence` response key.
+
+### Verification
+
+- 355 tests pass (Docker + real PostgreSQL), 4 warnings, 0 failures.
+- `ruff check` / `ruff format --check` clean; `docker compose config --quiet`
+  exit 0; `git diff --check` clean; no secrets/conflict markers.
+- Runtime smoke: built image imports `ApprovedContext` and constructs the
+  configured `DeterministicEmbeddingProvider`.
+
 ### Pending
 
 - Human review of the PR; merge into `main`.
+
+## AI Tools — AI Tools Foundation (Implemented — pending review)
+
+**Branch:** `feat/ai-tools-foundation`
+**Base:** `origin/main` (reconciled with current main)
+**Scope:** authorized slice of the AI Tools module (PRD 15, TRD 14) —
+platform-owned, code-defined AI Tool catalog and controlled execution,
+integrated with the merged X-10 (tenancy), X-11 (auth/RBAC), and ADR-001
+framework-agnostic boundaries.
+
+### Platform-owned catalog statement (recorded per review)
+
+- Tenants cannot register arbitrary tools, upload executable code, or
+  execute arbitrary Python/JS/shell.
+- Tenants gain tenant-scoped access to the platform-owned AI Tool catalog
+  exclusively through the existing authorization model
+  (`tool:read`, `tool:execute`, and each tool's declared required
+  permissions).
+- Tenant-level enable/disable configuration may come later.
+- Dynamic tenant-defined tools are explicitly deferred.
+
+### What changed
+
+- **Catalog** (`src/arc/services/tools.py`): static, versioned,
+  platform-owned whitelist (`check_service_health` v1). The registry
+  exposes only read operations; no runtime registration or mutation API.
+  `ToolDefinition` fails closed at construction: non-empty
+  `required_permissions` of `Permission` objects, and high-risk tools
+  must declare `REQUIRE_HUMAN_APPROVAL` or `DENY` (never `ALLOW`).
+- **Execution policy** (`ToolExecutionPolicyMode`): ALLOW / DENY /
+  REQUIRE_HUMAN_APPROVAL are explicitly represented. REQUIRE_HUMAN_APPROVAL
+  and DENY fail closed with a controlled, audited denial; the Human
+  Intervention approval gate itself is not implemented in this slice.
+- **Per-tool authorization**: execution requires `tool:execute` AND every
+  permission declared by the tool, enforced fail-closed inside
+  `ToolExecutionService` using the existing `AuthorizationService`
+  (defense in depth under the controller's `tool:execute` dependency).
+  Unknown tool, missing/invalid permission metadata, and insufficient
+  permissions are denied before any handler runs and are audited.
+- **Tenant isolation**: the tenant boundary comes exclusively from the
+  trusted X-10 `TenantContext`; the path `tenant_id` is request input
+  only and is validated for consistency (403 on mismatch). An invalid
+  context fails closed with no audit record.
+- **Audit contract** (`tool_execution_records`): now explicitly records
+  who (user_id), tenant, tool name/version, authorization outcome
+  (granted/denied), risk level, status, error kind, execution id, and
+  timestamp. Data minimization: summaries are redacted for sensitive
+  keys (password/token/secret/api_key/...) and truncated; secrets,
+  credentials, raw sensitive payloads, and stack traces never reach
+  records.
+- **API** (`src/arc/api/controllers.py`): `GET /tenants/{tenant_id}/tools`
+  (`tool:read`) and `POST /tenants/{tenant_id}/tools/{name}/execute`
+  (`tool:execute` + per-tool permissions). Catalog responses expose only
+  safe metadata (`required_permissions`, schemas, risk level) and never
+  handlers. No registration/modification/upload surface exists.
+- **Schema** (`src/arc/db/schema.sql`): `tool_execution_records` extended
+  with `user_id` and `authorization_outcome` (idempotent bootstrap via
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`).
+- **Tests**: `tests/test_tool_api.py`, `test_tool_domain.py`,
+  `test_tool_registry.py`, `test_tool_repository.py`,
+  `test_tool_service.py` — per-tool authorization matrix, tenant
+  isolation (A→A, A→B 403, mismatch no side effects, missing context),
+  read-only registry API (405/404 on mutation attempts), code-execution
+  guards, audit minimization (secrets absent from records), and the
+  fail-closed metadata/policy cases (real PostgreSQL).
+
+### What was NOT changed
+
+- Agent/LLM calling, Skills execution, Webhooks, Connectors, Secure RAG,
+  Human Intervention, production/external integrations — explicitly out
+  of scope for this slice.
+- No new ADR: ADR-001 already keeps the tool layer framework/agent
+  agnostic, and this slice implements only platform-owned definitions.
+
+### Review response (security review round 2)
+
+- **Legacy audit migration** (`src/arc/db/schema.sql`): the idempotent
+  bootstrap columns `user_id` and `authorization_outcome` are added
+  NULLABLE so pre-audit-contract databases are upgraded without
+  fabricating audit facts: historical rows keep NULL `user_id` (no
+  invented identity) and NULL `authorization_outcome` (no invented
+  GRANTED). New records still require a real trusted `user_id` and a
+  real GRANTED/DENIED outcome through `ToolExecutionService`; fresh
+  installs additionally keep NOT NULL columns at table creation. Proven
+  by `tests/test_tool_audit_migration.py` (real PostgreSQL: old schema +
+  historical rows -> current bootstrap -> history preserved -> new
+  records strict).
+- **Audit ownership boundary**: central authentication/RBAC failure
+  (403 from the FastAPI security dependencies before the service runs,
+  e.g. missing `tool:execute`) is owned by the central security/audit
+  boundary: `ToolExecutionService` is NOT invoked and no
+  `tool_execution_records` row is written. Per-tool authorization
+  failure (holds `tool:execute`, lacks a tool-declared permission) is
+  owned by the service and recorded with `authorization_outcome=DENIED`.
+  Documented in `src/arc/services/tools.py`; proven by
+  `test_user_without_tool_execute_never_invokes_service_or_handler`
+  (403, handler never runs, zero records) alongside the existing DENIED-
+  record test.
+- **Audit redaction**: sensitive key variants now include
+  `access_token`, `refresh_token`, `client_secret`; redaction applies at
+  every nesting depth (objects, arrays, deep nesting). Free-form text is
+  intentionally retained (documented policy: only keyed values are
+  redacted; summaries are bounded by platform-owned handlers and
+  validated input models). Oversized summaries are truncated to the
+  configured maximum (512) end-to-end. Handler exceptions never leak:
+  `error_kind` stays a safe classification (`execution_error`, etc.) and
+  raw messages/secrets never reach records or API responses.
+- **`_summarize` fallback hardening**: an unserializable payload (e.g.
+  non-string dict keys or a self-referential structure) now produces a
+  fixed safe marker (`[unserializable <type> payload redacted]`) instead
+  of a raw `str()` that could bypass keyed redaction.
+
+### Verification
+
+- 427 tests pass (Docker + real PostgreSQL) on both a fresh and a warm
+  database.
+- `ruff check .` and `ruff format --check .` pass.
+- `docker compose config --quiet` passes; `compileall` clean.
+
+### Pending
+
+- Human review of PR #31; merge into `main`.
+
+**Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
+
+- Added `.github/workflows/ci.yml` (GitHub Actions, `ubuntu-latest`).
+- Triggers: pushes to `main` and pull requests targeting `main`.
+- Checks use the existing Docker Compose environment:
+  - `docker compose build arc`
+  - `docker compose run --rm arc ruff check .`
+  - `docker compose run --rm arc ruff format --check .`
+  - `docker compose run --rm arc python -m pytest -q`
+- Environment values are development/test placeholders only; no real
+  credentials.
+- The repo-wide lint/format gate passes on current `main`, verified locally
+  against a freshly rebuilt application image.
+- GitHub Actions CI is active on `main`.
+## Unified Intelligence — Secure Knowledge Reasoning Foundation (Implemented — pending review)
+
+**Branch:** `feat/approved-context-contract`
+**Base:** `origin/main` (Secure RAG Semantic Retrieval Foundation, PR #29)
+
+Next TRD-ordered slice after Skills Engine (management, PR #25) and the
+Approved Context Contract: the first leg of Unified Intelligence (TRD §8,
+§10, §12, §34, §39; PRD §12, §14, §26; ADR-001) — secure reasoning over
+the tenant's approved knowledge. No Skills execution, AI Tools, agent
+workflows, webhooks, or autonomous actions (later maturity layers).
+
+### What changed
+
+- **Domain** (`src/arc/domain/models.py`): `IntelligenceAnswer` (request_id,
+  tenant_id, principal_id, query, answer, citations, retrieval_method,
+  context_used) — validated; `answer` is `None` when no approved context was
+  available (nothing is invented); citations make every answer attributable.
+- **LLM abstraction** (`src/arc/services/llm.py`): `LlmProvider` protocol,
+  `LlmError`, `LlmConfigurationError`, `LlmSettings` (provider/model) from
+  `LLM_PROVIDER`/`LLM_MODEL`, `get_llm_settings`, `build_llm_provider`
+  factory — only the deterministic local provider is supported; unknown
+  providers fail closed at startup (production provider, OpenRouter primary
+  per TRD §34, remains a deferred decision). The LLM is NOT the
+  authorization system (TRD §10.3): providers receive only prompt text.
+- **Service** (`src/arc/services/intelligence.py`): `UnifiedIntelligenceService.answer_query`
+  — the ONLY retrieval path is `approved_search` (no repository reference);
+  the prompt is assembled exclusively from `ApprovedContext` items (sanitized
+  content + citation references; no tenant/principal IDs, vectors, scores, or
+  authorization state); no approved context → LLM never invoked, answer
+  `None`; embedding/LLM failures propagate (fail closed).
+- **API** (`src/arc/api/controllers.py`): `POST /tenants/{tenant_id}/intelligence/query`
+  behind the existing `knowledge:read` permission (reasoning is a read-class
+  operation, not a new capability); path-tenant consistency 403; 400 for
+  empty query/missing body/limit outside 1-50; generic 500 on
+  `EmbeddingError`/`LlmError` with no internals leaked.
+- **Composition root** (`src/arc/app.py`): LLM provider wired through
+  `build_llm_provider(get_llm_settings())`. Documented in `.env.example`
+  (`LLM_PROVIDER=deterministic`, `LLM_MODEL=deterministic-local`).
+
+### Tests (net +37)
+
+- `tests/test_llm.py` (new): deterministic provider (deterministic, cites
+  exactly the approved context, never echoes content, empty prompt rejected),
+  settings defaults/env reading, empty provider fails closed, factory
+  (deterministic built, unknown provider fails closed).
+- `tests/test_intelligence_service.py` (new): `IntelligenceAnswer` domain
+  validation; happy path preserves context/citations; no-context → LLM never
+  invoked, answer `None`; prompt contains only content + citations (no tenant/
+  principal/score/state); empty query and limit<1 rejected; embedding and LLM
+  failures propagate with no partial answer; default provider deterministic.
+- `tests/test_intelligence_api.py` (new): 401/403; happy path end-to-end over
+  real PostgreSQL (create document → query → attributable answer + citations);
+  no-context query → `answer: null`; cross-tenant query never leaks context;
+  path-tenant mismatch 403; empty query/missing body/limit out of range 400;
+  raw PII never reaches the response; LLM and embedding failures map to
+  generic 500 (services restored after injection).
+
+### Verification
+
+- 392 tests pass (Docker + real PostgreSQL, freshly rebuilt `arc-arc:latest`
+  image with the new code), 4 warnings, 0 failures.
+- `ruff check` / `ruff format --check` clean; `docker compose config --quiet`
+  exit 0; `git diff --check` clean; no secrets/conflict markers.
+- Runtime smoke: rebuilt image imports `UnifiedIntelligenceService` and
+  constructs the configured `DeterministicLlmProvider`.
+
+### Pending
+
+- Human review of the PR; merge into `main`.
+
+## Connector Provider Integrations (Implemented — pending review)
+
+**Branch:** `feat/connector-provider-integrations`
+**Base:** `origin/main` @ `a5b892b`
+**Scope:** Person C — Connectors. GitHub, Slack, and Linear provider
+integrations (PRD §22, TRD §33, ADR-002) on top of the X-13 connector
+foundation already on `main` (code-defined `ConnectorProvider` catalog,
+`connector_configs`, `ConnectorService`, 38 tests).
+
+### What changed
+
+- **Schema** (`src/arc/db/schema.sql`): `connector_sync_records` audit
+  table (id PK, tenant FK ON DELETE CASCADE, connector FK ON DELETE
+  CASCADE, provider, status CHECK success/failed, items_fetched >= 0,
+  error_kind, created_at) with a tenant index.
+- **Domain** (`src/arc/domain/models.py`): `ConnectorSyncStatus`
+  (success, failed) and `ConnectorSyncRecord` with validation (success
+  records cannot carry an error_kind; failed records cannot report
+  fetched items).
+- **Repository** (`src/arc/repositories/connector_sync.py`):
+  `PostgreSQLConnectorSyncRepository` implementing the
+  `ConnectorSyncRepository` Protocol; every query is tenant-scoped at the
+  SQL level.
+- **Provider package** (`src/arc/services/connector_providers/`):
+  - `base.py` — controlled `ProviderError` hierarchy (validation / auth /
+    rate-limit / transport / response), `ProviderCredential` (repr masks
+    the token), validated `ProviderRecord`/`ProviderFetchResult`,
+    `ProviderAdapter` Protocol.
+  - `settings.py` — `CONNECTOR_CREDENTIALS` JSON (tenant -> provider ->
+    token) and `CONNECTOR_PROVIDER_MODE` (simulated | live); invalid
+    configuration fails closed; credentials read lazily from the
+    environment.
+  - `github.py`, `slack.py`, `linear.py` — httpx adapters with
+    code-defined endpoints only; the tenant-supplied target is validated
+    before any request; responses are validated into typed records.
+  - `fake.py` — deterministic controlled/fake clients (TRD §33) with
+    failure injection for testing.
+  - `registry.py` — static code-defined catalog; no runtime registration.
+- **Service** (`src/arc/services/connector_sync.py`):
+  `ConnectorSyncService` — tenant-scoped connector lookup -> adapter ->
+  credential -> fetch -> Company Brain ingestion
+  (`KnowledgeService.ingest_document`, INTERNAL_KNOWLEDGE, provenance
+  `connector:{provider}:{source_id}`, through the existing PII boundary)
+  -> success/failed audit record. Provider failures map to generic error
+  kinds (`invalid_target`, `auth_failed`, `rate_limited`,
+  `transport_error`, `invalid_provider_response`, `missing_credential`,
+  `unsupported_provider`, `pii_guard_failed`); the API surfaces a single
+  controlled error.
+- **Authorization** (`src/arc/security/authorization.py`):
+  `connector:create`, `connector:read`, `connector:sync` —
+  PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR: all three;
+  OPERATIONS_USER: read + sync; EMPLOYEE: none. Default DENY.
+- **API** (`src/arc/api/controllers.py`):
+  `GET /tenants/{tenant_id}/connectors` (list),
+  `POST /tenants/{tenant_id}/connectors` (400 invalid provider/name,
+  409 duplicate), and
+  `POST /tenants/{tenant_id}/connectors/{connector_id}/sync` (404 not
+  found, 400 generic failure). The path tenant is validated against the
+  trusted `TenantContext` (403 on mismatch); no credential material is
+  ever accepted or returned.
+- **Config**: composition-root wiring in `src/arc/app.py` (simulated mode
+  default); `CONNECTOR_CREDENTIALS` and `CONNECTOR_PROVIDER_MODE`
+  documented with safe placeholders in `.env.example` and passed through
+  `docker-compose.yml`. `httpx>=0.28,<1.0` added as a runtime dependency
+  (required by the live adapters); the broken `httpx2>=2.0,<3.0` dev
+  entry removed.
+- **Tests** (+99, total 434): `tests/test_connector_providers.py`
+  (credential repr secrecy, fail-closed settings parsing, fake clients,
+  real adapters via httpx MockTransport),
+  `tests/test_connector_sync_domain.py`,
+  `tests/test_connector_sync_repository.py` (real PG, cascade, SQL-level
+  isolation), `tests/test_connector_sync_service.py` (failure kinds,
+  no-secret invariants, real-PG PII sanitization before persistence),
+  `tests/test_connector_api.py` (401/403, permission matrix,
+  cross-tenant 404, path mismatch 403 with no-persistence proof, generic
+  failures, sanitized knowledge ingestion). `tests/test_rbac.py` and
+  `tests/test_api_surface.py` updated.
+
+### Review response (security review)
+
+- **Centralized RBAC**: `connector:create`/`connector:read`/`connector:sync`
+  are integrated into the centralized permission matrix in
+  `src/arc/security/authorization.py` with the explicit role mapping
+  (PLATFORM_ADMIN/COMPANY_ADMIN: all three; OPERATIONS: read + sync;
+  EMPLOYEE: none; default DENY). There is no connector-specific
+  authorization system; the connector layer consumes the centralized
+  `AuthorizationService` decision.
+- **Credential boundary**: credentials are environment-injected
+  (`CONNECTOR_CREDENTIALS`) and are never tenant-supplied, persisted,
+  returned, logged, audited, or exposed through `repr`. Missing/invalid
+  credentials fail closed before any provider request. Production OAuth,
+  secret storage, rotation, and per-tenant provider identity are
+  explicitly deferred.
+- **Provider target allowlist (SSRF)**: every outbound request URL is
+  validated against the approved endpoint allowlist
+  (`connector_providers/targets.py`) before it is sent: `https` only,
+  exact approved provider hosts (GitHub/Slack/Linear), no IP literals,
+  no localhost, no private ranges, no cloud-metadata address, no
+  userinfo. Redirects are not followed (`follow_redirects=False`).
+- **PII boundary**: provider content passes through the existing
+  `KnowledgeService` PII Guard before any knowledge persistence; PII
+  Guard failure fails closed (no raw fallback, no persistence of that
+  record, controlled failure, safe audit event).
+- **Sync vs Company Brain boundary**: this PR is the upstream ingestion
+  source (Option A). It does not establish the final knowledge identity,
+  RAG indexing, or deduplication model; final deduplication/document
+  identity is owned by the future Company Brain ingestion layer.
+- **Audit minimization**: `connector_sync_records` store safe metadata
+  only (tenant, connector, provider, status, item count, generic error
+  kind); raw provider payloads, PII, and secrets never reach audit
+  records.
+- **Live-mode gate**: simulated mode is the default; live adapters are
+  constructed only under an explicit `CONNECTOR_PROVIDER_MODE=live` and
+  still require a credential and allowlisted target before any external
+  request. A normal environment never makes unexpected external calls.
+
+### Deferred (NOT part of this slice; no decisions changed)
+
+- Production credential storage: only environment-based development
+  placeholders exist; ADR-002 defers credential management.
+- Live provider mode enablement: `CONNECTOR_PROVIDER_MODE=live` exists
+  behind the same adapter interface but is NOT authorized by ADR-002;
+  the default is the deterministic simulated mode.
+- Sync deduplication: a re-sync currently creates additional knowledge
+  documents (documented v1 decision).
+- Additional providers (e.g. Google Drive, conditional per ADR-002),
+  webhooks, observability, and the remaining Person C modules are future
+  work.
+
+### Verification
+
+- 434 tests pass (Docker + real PostgreSQL), fresh and warm, 0 failures.
+- `ruff check .`, `ruff format --check .`, `compileall -q src`,
+  `docker compose config --quiet`, `git diff --check`, the conflict-marker
+  scan, and the secret scan are all clean.
+
+### Pending
+
+- Commit, push, human review of the PR; merge into `main`.
+
+## Webhooks — Inbound Event Ingestion Foundation (Implemented — pending review)
+
+**Branch:** `feat/webhooks-foundation`
+**Base:** `origin/main` @ `95b36e6`
+**Scope:** Person C — Webhooks. First TRD-ordered slice after AI Tools
+(TRD §38): inbound-only webhook ingestion per PRD §16, TRD §16, ADR-001
+webhook security boundary. Scope decisions confirmed with the module
+owner before implementation: (1) INBOUND ONLY — no outbound delivery;
+(2) machine senders authenticate via per-endpoint HMAC-SHA256 signatures
+over `{timestamp}.{raw_body}` with a ±300s timestamp window; (3) slice-1
+"processing" = validate → store → record (no Unified Intelligence
+triggering yet).
+
+### What changed
+
+- **Domain** (`src/arc/domain/models.py`): `WebhookEventStatus` (single
+  terminal state `received`; new states require approved decisions) and
+  `WebhookEvent` — metadata-only record (id, tenant_id, endpoint_id,
+  event_id, event_type, status, payload_size_bytes, created_at) with
+  fail-closed validation. Raw external payloads are NEVER persisted
+  (untrusted input, possible PII; no approved payload-storage decision).
+- **Schema** (`src/arc/db/schema.sql`): idempotent `webhook_events`
+  table (tenant FK ON DELETE CASCADE, status CHECK, payload size CHECK,
+  UNIQUE `(tenant_id, event_id)` duplicate-handling pair, tenant index).
+- **Configuration** (`src/arc/services/webhook_config.py`):
+  `WEBHOOK_INGESTION_ENDPOINTS` JSON (endpoint id -> {tenant_id,
+  secret}); secrets >= 16 chars; malformed config fails closed; secrets
+  masked in repr/str; lazy env reads (same contract class as
+  `CONNECTOR_CREDENTIALS`). Documented in `.env.example`, passed through
+  `docker-compose.yml`.
+- **Repository** (`src/arc/repositories/webhook_events.py` +
+  Protocol in `src/arc/repositories/__init__.py`):
+  `PostgreSQLWebhookEventRepository` — create / get_by_event_id /
+  list_for_tenant; EVERY query tenant-scoped at SQL level;
+  `DuplicateKeyError` on uniqueness-pair conflict.
+- **Service** (`src/arc/services/webhook_ingestion.py`):
+  `WebhookIngestionService` — endpoint resolution (tenant binding from
+  trusted config only), constant-time HMAC verification
+  (`compute_signature`), timestamp-window replay resistance, body-size +
+  JSON-envelope validation AFTER authentication, idempotent duplicates
+  (re-delivery resolves to original record, `duplicate=true`). Uniform
+  `WebhookAuthenticationError` for all auth failures (senders cannot
+  enumerate endpoints); controlled `WebhookValidationError` (400);
+  secrets/payload content never logged, returned, or persisted.
+- **Authorization** (`src/arc/security/authorization.py`): `webhook:read`
+  — PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, OPERATIONS_USER;
+  EMPLOYEE none; default DENY. The ingestion endpoint is deliberately
+  NOT RBAC-gated (machine senders hold no Arc identity); documented in
+  the matrix docstring.
+- **API** (`src/arc/api/controllers.py`): `POST /webhooks/{endpoint_id}/events`
+  (uniform 401 on all auth failures; idempotent 200 with `duplicate`
+  flag; 400 validation) and
+  `GET /tenants/{tenant_id}/webhooks/events` behind
+  `require_tenant_permission(WEBHOOK_READ)` + path-consistency 403.
+  Responses expose envelope metadata only.
+- **Wiring** (`src/arc/app.py`): repository + service registered at the
+  composition root.
+- **Tests** (+71, total 730): `tests/test_webhook_domain_config.py`,
+  `tests/test_webhook_ingestion_service.py` (fake doubles),
+  `tests/test_webhook_repository.py` (real PostgreSQL),
+  `tests/test_webhook_api.py` (indistinguishable-401 proofs,
+  RBAC matrix, cross-tenant isolation, idempotent duplicates,
+  secret/payload-leak absence). `tests/test_rbac.py` and
+  `tests/test_api_surface.py` updated additively.
+
+### Deferred (NOT part of this slice)
+
+- Triggering downstream processing (Unified Intelligence entry point is
+  another owner's contract).
+- Outbound webhook delivery, retry strategy finalization (TRD §37),
+  replay nonce storage, per-endpoint CRUD APIs, secret rotation, secure
+  secret storage, multiple endpoints per tenant.
+
+### Verification
+
+- 730 tests pass (Docker + real PostgreSQL), fresh AND warm database,
+  0 failures; verified against a throwaway database so the shared dev
+  volume was untouched.
+- `ruff check .` and `ruff format --check .` clean.
+- Local environment note: this developer's persistent compose volume
+  contains an ORPHANED `webhook_events` table from an earlier
+  uncommitted experiment (80 rows; columns `payload jsonb`, `signature`,
+  `attempts` — not present anywhere in the repository). `CREATE TABLE IF
+  NOT EXISTS` skips recreation, so tests hitting THAT volume fail until
+  the table is dropped by its owner. CI is unaffected (fresh DB every
+  run). Dropping requires the data owner's decision (destructive op).
+
+### Pending
+
+- Human decision on dropping the orphaned local `webhook_events` table.
+## Observability — Foundation Slice (Implemented — pending review)
+
+**Branch:** `feat/observability-foundation`
+**Base:** `origin/main` @ `95b36e6`
+**Scope:** Person C — Observability. First TRD-ordered slice after
+Webhooks (TRD §38): usage-based and operational observability per PRD
+§17, TRD §17/§28/§31, ADR-001 Operational Considerations. Architecture
+decisions confirmed with Bala/Joe before implementation: observability
+is an AGGREGATION/READ layer, never a second source of truth; stdlib
+logging + PostgreSQL aggregation only (no OpenTelemetry/Prometheus);
+success-gated path-param tenant attribution; best-effort telemetry
+writes; strictly tenant-agnostic platform summary; `/health` unchanged.
+Deferred: agent executions, LLM token usage, retrieval/embedding
+instrumentation, incident lifecycle, human-intervention and automated-
+action counters (producers not implemented / other owners).
+
+### What changed
+
+- **Domain** (`src/arc/domain/models.py`): `ApiRequestRecord` — metadata-
+  only HTTP telemetry owned by this layer (id, nullable tenant_id,
+  request_id correlation ID, method allowlist, route TEMPLATE, status
+  code bounds, non-negative duration_ms, coarse error_kind) with
+  fail-closed validation; query strings/raw paths/bodies/prompts/
+  secrets are structurally excluded. Typed read-models:
+  `HttpUsageMetrics`, `ToolExecutionActivityMetrics`,
+  `ConnectorSyncActivityMetrics`, `WebhookEventActivityMetrics`.
+- **Schema** (`src/arc/db/schema.sql`): idempotent `api_request_records`
+  table (nullable tenant FK ON DELETE CASCADE, status/duration CHECKs,
+  tenant + created_at indexes). NO generic event/usage table: tool,
+  connector, and webhook records remain authoritative in their own
+  tables and are aggregated IN PLACE at read time.
+- **Repository** (`src/arc/repositories/observability.py` + Protocol in
+  `src/arc/repositories/__init__.py`): one write path plus SQL-level
+  aggregates (`COUNT/FILTER/AVG/percentile_cont`) against the
+  authoritative tables; every tenant-scoped query enforces tenant_id in
+  SQL; `tenant_id=NULL` selects the PLATFORM view (no GROUP BY tenant
+  ever leaves the module); webhook source detected via `to_regclass` —
+  while PR #34 is unmerged the source reports `available=false` WITHOUT
+  duplication or fabrication (temporary sequencing behavior;
+  aggregation consumes the real table automatically once it exists).
+- **Service** (`src/arc/services/observability.py`):
+  `ObservabilityService` — BEST-EFFORT telemetry writes (persistence
+  failure is logged safely and dropped; never fails a business request),
+  windowed (1–168h) tenant usage summary assembly, tenant-agnostic
+  platform summary, component health via EXISTING public factories only
+  (database SELECT 1, LLM provider constructibility, embeddings
+  constructibility) reporting status labels without configuration
+  leakage. Webhook-config component joins when PR #34 merges.
+- **Correlation middleware**
+  (`src/arc/api/middleware.py`, `src/arc/api/correlation.py`): pure-ASGI;
+  mints a UUID4 canonical HTTP correlation ID per request (ContextVar
+  for logging), returns it as `X-Request-ID` (including handled errors),
+  measures monotonic duration, records AFTER response completion with
+  SUCCESS-GATED PATH-PARAM attribution: tenant label applied ONLY when an
+  authenticated tenant route completed <400; failed/unauthorized/public
+  requests store NULL. Attribution is telemetry bookkeeping and NEVER
+  establishes identity or authorization. Route templates stored, never
+  raw paths/query strings.
+- **Structured logging** (`src/arc/observability_logging.py`): stdlib
+  logging configured once at startup (`LOG_LEVEL`, default INFO);
+  correlation-ID filter stamps every record (`request_id=...`);
+  emission points carry safe metadata only (method/route/status/
+  duration/coarse error class) per TRD §28 forbidden-content list.
+- **RBAC** (`src/arc/security/authorization.py`, additive):
+  `observability:read` → PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR,
+  OPERATIONS_USER (tenant-scoped summaries);
+  `observability:platform_read` → PLATFORM_ADMINISTRATOR only
+  (tenant-agnostic platform summary + component health). EMPLOYEE none;
+  default DENY; no second RBAC system.
+- **API** (`src/arc/api/controllers.py`):
+  `GET /tenants/{tenant_id}/observability/usage-summary` behind
+  `require_tenant_permission(OBSERVABILITY_READ)` + path-consistency 403;
+  `GET /platform/observability/summary` and `GET /observability/health`
+  behind `require_permission(OBSERVABILITY_PLATFORM_READ)`. Responses
+  contain numeric aggregates only — never raw rows, input/output
+  summaries, prompts, answers, payloads, credentials, or per-tenant
+  breakdowns at platform scope.
+- **Wiring** (`src/arc/app.py`, `src/arc/main.py`): repository+service at
+  composition root; middleware mounted with lazy service resolution so
+  requests stay correlated (X-Request-ID) even before startup completes.
+- **Config**: `LOG_LEVEL` documented in `.env.example`, passed through
+  `docker-compose.yml`.
+- **Tests** (+66 net): `tests/test_observability_domain.py`,
+  `_repository.py` (real PostgreSQL: round-trip, NULL-tenant rows,
+  SQL isolation across all aggregates, cascade, aggregation math incl.
+  p95/error-rate, time windows, webhook absent-vs-present), `_service.py`
+  (best-effort write semantics, assembly, health probes without detail
+  leakage), `_api.py` (401/403 matrix, cross-tenant leak-proofing,
+  platform payload contains no tenant identifiers/lists, correlation IDs
+  unique and present on 401/404, success-only attribution proofs,
+  query-string exclusion, telemetry-failure business-continuity).
+  `tests/test_rbac.py` and `tests/test_api_surface.py` updated additively.
+
+### What was NOT changed
+
+- Owner-controlled implementations untouched: intelligence, LLM,
+  embeddings, retrieval, tools, connector providers/sync, webhook
+  ingestion/config (not on main), JWT/security models/settings, PII,
+  skills, knowledge. `IntelligenceAnswer.request_id` semantics preserved
+  (middleware correlation ID documented as distinct from future Agent
+  execution IDs).
+- No incident domain, no agent-execution producers, no fabricated token
+  usage, no new telemetry dependencies, no duplicate webhook source.
+
+### Verification
+
+- Fresh throwaway database: **734 tests passed**, 0 failures.
+- Warm persistent database: **733 passed, 1 skipped** (the
+  webhook-source-absent test self-skips only where a local
+  `webhook_events` table exists; CI/fresh runs exercise it).
+- `ruff check .`, `ruff format --check .`, `compileall -q src tests`,
+  `docker compose config --quiet`, `git diff --check`, conflict-marker
+  scan, secret scan: all clean. Image rebuilt before verification runs.
+
+### Pending
+
+- Commit, push, human review of the PR; merge into `main`.
+## Company Brain — Document Identity & Re-ingestion (Implemented — pending review)
+
+**Branch:** `feat/company-brain-document-identity`
+**Base:** `origin/main` @ `95b36e6`
+**Scope:** Person A — Company Brain primary. Defines logical document
+identity and re-ingestion/deduplication semantics per **ADR-003**
+(`docs/architecture/decisions/ADR-003-company-brain-document-identity-and-re-ingestion.md`),
+resolving the deferral recorded by the connector slice (repeated
+synchronization previously created duplicate logical documents).
+
+### What changed
+
+- **Identity (ADR-003):** a document's logical identity is
+  `(tenant_id, source, external_id)`. New nullable `external_id`
+  column on `knowledge_documents` plus a partial unique index
+  (`WHERE external_id IS NOT NULL`) — DB-enforced, tenant-participating,
+  idempotent under bootstrap, safe against pre-existing rows. Documents
+  ingested without an external identity keep the original create-always
+  behavior.
+- **Domain** (`src/arc/domain/models.py`): `KnowledgeDocument.external_id`
+  with fail-closed validation; docstring updated to define `version`
+  progression (starts at 1, +1 per accepted content change; no revision rows).
+- **Service** (`src/arc/services/knowledge.py`): `ingest_document(...,
+  external_id=None)` — sanitization ALWAYS runs first (including on
+  re-delivery); identical sanitized content → idempotent return of the
+  existing document (no version bump/chunk churn); changed content → new
+  chunks/embeddings prepared in memory BEFORE any write (embedding failure
+  aborts), then version+1 content update and whole chunk-set replacement in
+  one transaction; concurrent first delivery loses the insert race at the
+  identity index and re-resolves through the same logic.
+- **Repository** (`src/arc/repositories/knowledge.py`,
+  Protocol in `src/arc/repositories/__init__.py`): inserts carry
+  `external_id`; new `get_by_external_id` (strictly tenant+source scoped)
+  and `update_document_with_chunks` (UPDATE + chunk DELETE + chunk INSERT
+  in ONE transaction; any failure rolls back to the prior version and its
+  complete old index).
+- **Connectors** (`src/arc/services/connector_sync.py`): sync binds
+  `external_id = "{provider}:{record.source_id}"`; re-syncing one source
+  record now resolves to ONE tenant-scoped document.
+- **API**: unchanged (no new endpoints/permissions; manual ingestion has
+  no external identity by design).
+
+### Tests
+
+- Service-level: create-v1, idempotent redelivery (guard invoked every
+  time), changed-content version bump with chunk replacement,
+  embedding-failure aborts before write, PII failure fails closed on
+  re-ingestion, comparison on SANITIZED text, missing external_id legacy
+  behavior, cross-tenant identity independence, invalid external_id
+  rejected, lost-race recovery to the winner.
+- Repository-level (real PostgreSQL): identity index enforcement, NULL
+  exclusion, cross-tenant same-identity allowance, resolution scoping,
+  atomic chunk replacement, mid-transaction failure rollback preserving
+  prior version + chunks, concurrent first delivery creating exactly one
+  row end-to-end through `KnowledgeService`.
+- Connector-level: provider-scoped `external_id` binding; stable identity
+  across repeated syncs.
+
+### Security
+
+Tenant isolation preserved (identity lookups tenant-scoped; cross-tenant
+negative tests). PII-before-persistence preserved on every path including
+re-ingestion. Approved Context / `approved_search` / RBAC untouched.
+
+### Deferred (unchanged)
+
+Retroactive deduplication/cleanup of pre-existing duplicate rows;
+production embedding providers; hybrid retrieval/reranking.
+
+## Company Brain — Legacy Duplicate Archival Lifecycle (Implemented — pending review)
+
+**Branch:** `feat/company-brain-legacy-archival`
+**Base:** `origin/main` @ `2c425a6`
+**Scope:** Person A — Company Brain lifecycle completion. Implements the
+retroactive cleanup deferred by ADR-003/PR #38: archive-only removal of
+pre-identity duplicate documents from normal retrieval surfaces.
+
+### Semantics
+
+- **Candidate predicate (exact, narrow):** `external_id IS NULL
+  AND status = 'active' AND provenance LIKE 'connector:%'`. Safe because
+  repository history establishes that legacy connector ingestion built
+  provenance deterministically as `connector:{provider}:{source_id}`
+  (`connector_sync.py:144`) — the same binding ADR-003 later formalized
+  as `external_id`.
+- **Grouping key:** `(tenant_id, source, provenance)`; grouping never
+  spans tenants. Winner = newest `created_at`, tie-break smallest `id`;
+  winner stays ACTIVE.
+- **Archive-only:** losers flip to `status='archived'`. No deletion of
+  documents/chunks; no content mutation; no external_id fabrication;
+  chunks are retained but excluded from retrieval.
+- **Retrieval lifecycle:** archived documents excluded at the persistence
+  boundary — chunk search joins documents with `d.status='active'`
+  (covers /knowledge/search, approved_search, Unified Intelligence
+  candidate generation); `list_for_tenant` filters active; explicit
+  `get_by_id` still recovers archived rows for audit/recovery.
+- **Dry-run mandatory:** `KnowledgeService.archive_legacy_duplicates(
+  dry_run=True)` returns a content-free candidate report (groups,
+  winners, would-archive ids/metadata, guarantees) with ZERO mutations;
+  execution requires explicit `dry_run=False` and re-checks the exact
+  predicate inside the single atomic UPDATE statement.
+
+### Residual caveat (documented, not silently widened)
+
+`provenance LIKE 'connector:%'` is not cryptographic proof: a pre-#38
+MANUAL document could carry connector-like provenance. Mitigations:
+narrow predicate, archive-only reversibility, dry-run verification,
+exact-predicate re-check, deterministic winner rule.
+
+### Recovery semantics (per review)
+
+Archival is a STATUS-ONLY transition (`active` → `archived`) and is
+therefore technically reversible at the data level. There is currently
+NO application-level restore/unarchive operation: recovery of an
+archived document is a controlled MANUAL DBA action (flipping
+`status` back to `'active'` via SQL). An application-level restore
+API/service is a deferred future follow-up, not an existing
+capability.
+
+### Idempotency / concurrency
+
+Reruns archive nothing (predicate excludes archived). One-time admin/
+maintenance operation invoked deliberately per environment; concurrent
+ingestion during the window can add fresh duplicates which a rerun then
+reconciles. No background jobs introduced.
+
+### Tests
+
+Repository (real PostgreSQL): group discovery, winner/tie-break,
+cross-tenant independence, tenant-scoped sweep leaving other tenants
+untouched, NULL-vs-identified exclusion, non-connector provenance
+exclusion, archived-rows exclusion, idempotency, chunks retained but
+excluded from search, get_by_id recovery, approved_search + Unified
+Intelligence regression proving archived knowledge cannot re-enter RAG.
+Service: dry-run zero-mutation report shape, metadata-only payload,
+explicit execution count, idempotent rerun reporting.
+
+### Deferred
+
+Production embedding providers; hybrid retrieval/reranking; optional
+hard-deletion policy (requires separate team decision).
+
+### Verification
+
+See PR description (Docker + real PostgreSQL suite, ruff, format, compose).
+
+### Pending
+
+- Human review of the PR; ADR-003 acceptance; merge into `main`.
+
+## Webhooks — Ingestion Body-Cap Hardening (Implemented — pending review)
+
+**Branch:** `fix/webhook-ingestion-body-cap`
+**Base:** `origin/main` @ `bc9b436`
+**Scope:** Bharath G — Webhooks. Narrow production-readiness follow-up
+from Bala's APPROVED PR #34 review: `POST /webhooks/{endpoint_id}/events`
+previously buffered the complete unauthenticated body (`await
+request.body()`) before any size check. Answers recorded by Bala/Joe:
+keep the 400 contract; oversize may reject before HMAC/timestamp
+verification; stop consuming past the cap (no drain); rate limiting is a
+separate deferred item.
+
+### What changed
+
+- `src/arc/api/controllers.py` only (+ private helper): new
+  `_read_capped_body(request, max_bytes)` — Content-Length serves as an
+  EARLY-REJECTION FAST PATH only (client-controlled, never enforcement);
+  otherwise the body streams via `request.stream()` with a hard
+  cumulative cap at `MAX_BODY_BYTES` (65536). Reads STOP as soon as the
+  cap trips — the remaining stream is intentionally not drained.
+  Bodies ≤ cap are returned byte-exact to `WebhookIngestionService`, so
+  HMAC-over-exact-received-body semantics and all authentication,
+  tenant-binding, idempotency, and audit behavior are unchanged. The
+  oversize rejection keeps the EXISTING 400 response/message, is
+  endpoint-independent (no enumeration signal), and deliberately
+  precedes authentication (an aborted read cannot be verified).
+- Stack verification: Starlette `Request.stream()` consumes raw chunks;
+  Uvicorn pauses socket reads at its own 64 KB high-water mark
+  (`flow_control.HIGH_WATER_LIMIT`) and closes a connection whose body
+  was left unconsumed after the response — so stopping mid-stream adds
+  no unbounded buffering and no middleware/ASGI machinery was needed.
+- `tests/test_webhook_api.py` (+10): exact-cap success (valid JSON
+  envelope sized to precisely 65536), oversize→400 without credentials,
+  endpoint-independent identical 400 bodies, no payload echo, chunked
+  within/over cap, misleading-large CL fast path, direct stop-consumption
+  proof against a fabricated `receive()` (reader must never request a
+  chunk past the cap), exact-cap stream-reader round-trip. Service-level
+  `MAX_BODY_BYTES` validation retained as defense-in-depth.
+
+### Verification
+
+- Fresh throwaway DB: **880 passed, 1 skipped**. Warm DB: **880 passed,
+  1 skipped** (skip = pre-existing observability absent-source guard).
+- ruff check/format clean; compileall clean; compose config valid;
+  git diff --check / conflict-marker / secret scans clean.
 
 ## CI Baseline (Established)
 
@@ -326,6 +1177,40 @@ X-10 (tenancy), X-11 (auth/RBAC), and PII Guard foundations.
 - The repo-wide lint/format gate passes on current `main`, verified locally
   against a freshly rebuilt application image.
 - GitHub Actions CI is active on `main`.
+
+## Human Intervention -- Approval-Gate V1 Foundation (Reintroduction)
+
+The reviewed approval-gate implementation from `84db40b` (PR #46) is being
+surgically reintroduced onto current main. PR #48 reverted PR #46 due to
+premature merge before Bala's final review. This reintroduction applies only
+the approval-gate changes while preserving all PR #47 PII guard work.
+
+**Status**: In progress (reintroduction branch `feat/approval-gate-v1-reintroduction`)
+
+**What this provides**:
+
+- `HumanApprovalService` with lifecycle management (create, decide, consume)
+- `PostgreSQLApprovalRequestRepository` with tenant-scoped SQL operations
+- `ApprovalRequest` and `ApprovalStatus` domain models
+- `approval_requests` database table with race-safe unique partial index
+- `REQUIRE_HUMAN_APPROVAL` policy in `ToolExecutionService`:
+  - Creation path: records pending approval, fails closed
+  - Consumption path: atomically consumes approved request, executes handler
+- Approval endpoints: list, read, decide
+- `APPROVAL_READ` / `APPROVAL_DECIDE` RBAC permissions
+- Canonical digest: `json.dumps(validated.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))`
+- Self-approval prevention: `requester != approver`
+- Single-use consumption: atomic transition `approved -> consumed`
+- Lazy expiry: `pending` rows past TTL read as `EXPIRED`
+
+**Files created**: `approvals.py` (service), `repositories/approvals.py`, 4 test files
+**Files modified**: `controllers.py`, `schema.sql`, `models.py`, `domain/__init__.py`, `repositories/__init__.py`, `authorization.py`, `tools.py`, `app.py`, `test_api_surface.py`, `test_rbac.py`, `test_tool_service.py`
+
+**Preserved unchanged**: PII guard (`skills.py`, `app.py` PII wiring, `test_skill_pii_guard.py`, `test_skill_service.py` PII fixtures), ADR-005 (already on main), PR #45 Skills Engine
+
+**Source**: reviewed implementation at `84db40b`
+**Target**: `origin/main` (`9240186`)
+
 
 ## In Progress
 
@@ -395,8 +1280,14 @@ Bala is responsible for:
 
 ## Next
 
-1. **Review and merge Company Brain — Knowledge Storage & Ingestion Foundation** (feat/company-brain-foundation): implemented, committed, and pushed; human review and merge required.
-2. Complete X-6 verification and close the Linear issue.
+1. **Review and merge the two-slice PR** (feat/approved-context-contract → main):
+   "feat(intelligence): add approved context and unified intelligence foundation" —
+   Approved Context Contract + Unified Intelligence (Secure Knowledge Reasoning
+   Foundation), committed as ONE commit, verified (392 tests). Human review
+   required; do not self-merge.
+2. **Next TRD-ordered implementation slice: AI Tools** (TRD §38: Skills → Unified
+   Intelligence → AI Tools). NOT implemented; must not be started until the
+   current PR is reviewed and merged, and the next slice is authorized.
 3. Coordinate the next Bala Foundation issue with Joe and Bharath.
 4. Continue the AI development setup.
 5. Complete Foundation cross-platform verification (Windows/macOS).
