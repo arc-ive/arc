@@ -2,11 +2,11 @@
 
 Last Updated:
 
-2026-08-20
+2026-09-01
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation approved pending Person C follow-up (PR #34); Company Brain document identity & re-ingestion implemented per ADR-003; Production embedding provider and migration implemented (PR #53); Frontend — full product surface implemented (PR #52, pending review)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-007 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54)
 
 ## Completed
 
@@ -343,7 +343,7 @@ Secure RAG proposal (`docs/` + `C:\Users\subra\Downloads\Arc_Secure_RAG_Proposal
 
 - Merged to `main` via PR #29 (merge commit `a5b892b`).
 
-## Secure RAG — Approved Context Contract (Implemented — pending review)
+## Secure RAG — Approved Context Contract (Merged)
 
 **Branch:** `feat/approved-context-contract`
 **Base:** `origin/main` (Secure RAG Semantic Retrieval Foundation, PR #29)
@@ -410,11 +410,11 @@ LLM/Agent/Unified Intelligence/Skills/tooling/PageIndex integration.
 - Runtime smoke: built image imports `ApprovedContext` and constructs the
   configured `DeterministicEmbeddingProvider`.
 
-### Pending
+### Merged to main
 
-- Human review of the PR; merge into `main`.
+- Merged to `main`.
 
-## AI Tools — AI Tools Foundation (Implemented — pending review)
+## AI Tools — AI Tools Foundation (Merged)
 
 **Branch:** `feat/ai-tools-foundation`
 **Base:** `origin/main` (reconciled with current main)
@@ -532,9 +532,9 @@ framework-agnostic boundaries.
 - `ruff check .` and `ruff format --check .` pass.
 - `docker compose config --quiet` passes; `compileall` clean.
 
-### Pending
+### Merged to main
 
-- Human review of PR #31; merge into `main`.
+- Merged to `main` (PR #31).
 
 **Branch:** `chore/ci-github-actions` (merged to `main` via PR #23)
 
@@ -550,7 +550,7 @@ framework-agnostic boundaries.
 - The repo-wide lint/format gate passes on current `main`, verified locally
   against a freshly rebuilt application image.
 - GitHub Actions CI is active on `main`.
-## Unified Intelligence — Secure Knowledge Reasoning Foundation (Implemented — pending review)
+## Unified Intelligence — Secure Knowledge Reasoning Foundation (Merged)
 
 **Branch:** `feat/approved-context-contract`
 **Base:** `origin/main` (Secure RAG Semantic Retrieval Foundation, PR #29)
@@ -616,11 +616,11 @@ workflows, webhooks, or autonomous actions (later maturity layers).
 - Runtime smoke: rebuilt image imports `UnifiedIntelligenceService` and
   constructs the configured `DeterministicLlmProvider`.
 
-### Pending
+### Merged to main
 
-- Human review of the PR; merge into `main`.
+- Merged to `main`.
 
-## Connector Provider Integrations (Implemented — pending review)
+## Connector Provider Integrations (Merged)
 
 **Branch:** `feat/connector-provider-integrations`
 **Base:** `origin/main` @ `a5b892b`
@@ -756,11 +756,11 @@ foundation already on `main` (code-defined `ConnectorProvider` catalog,
   `docker compose config --quiet`, `git diff --check`, the conflict-marker
   scan, and the secret scan are all clean.
 
-### Pending
+### Merged to main
 
-- Commit, push, human review of the PR; merge into `main`.
+- Merged to `main`.
 
-## Webhooks — Inbound Event Ingestion Foundation (Implemented — pending review)
+## Webhooks — Inbound Event Ingestion Foundation (Merged)
 
 **Branch:** `feat/webhooks-foundation`
 **Base:** `origin/main` @ `95b36e6`
@@ -847,10 +847,10 @@ triggering yet).
   the table is dropped by its owner. CI is unaffected (fresh DB every
   run). Dropping requires the data owner's decision (destructive op).
 
-### Pending
+### Merged to main
 
-- Human decision on dropping the orphaned local `webhook_events` table.
-## Observability — Foundation Slice (Implemented — pending review)
+- Merged to `main`.
+## Observability — Foundation Slice (Merged)
 
 **Branch:** `feat/observability-foundation`
 **Base:** `origin/main` @ `95b36e6`
@@ -964,10 +964,10 @@ action counters (producers not implemented / other owners).
   `docker compose config --quiet`, `git diff --check`, conflict-marker
   scan, secret scan: all clean. Image rebuilt before verification runs.
 
-### Pending
+### Merged to main
 
-- Commit, push, human review of the PR; merge into `main`.
-## Company Brain — Document Identity & Re-ingestion (Implemented — pending review)
+- Merged to `main`.
+## Company Brain — Document Identity & Re-ingestion (Merged)
 
 **Branch:** `feat/company-brain-document-identity`
 **Base:** `origin/main` @ `95b36e6`
@@ -1036,7 +1036,7 @@ re-ingestion. Approved Context / `approved_search` / RBAC untouched.
 Retroactive deduplication/cleanup of pre-existing duplicate rows;
 production embedding providers; hybrid retrieval/reranking.
 
-## Company Brain — Legacy Duplicate Archival Lifecycle (Implemented — pending review)
+## Company Brain — Legacy Duplicate Archival Lifecycle (Merged)
 
 **Branch:** `feat/company-brain-legacy-archival`
 **Base:** `origin/main` @ `2c425a6`
@@ -1113,11 +1113,11 @@ hard-deletion policy (requires separate team decision).
 
 See PR description (Docker + real PostgreSQL suite, ruff, format, compose).
 
-### Pending
+### Merged to main
 
-- Human review of the PR; ADR-003 acceptance; merge into `main`.
+- Merged to `main`.
 
-## Webhooks — Ingestion Body-Cap Hardening (Implemented — pending review)
+## Webhooks — Ingestion Body-Cap Hardening (Merged)
 
 **Branch:** `fix/webhook-ingestion-body-cap`
 **Base:** `origin/main` @ `bc9b436`
@@ -1180,14 +1180,12 @@ separate deferred item.
   against a freshly rebuilt application image.
 - GitHub Actions CI is active on `main`.
 
-## Human Intervention -- Approval-Gate V1 Foundation (Reintroduction)
+## Human Intervention — Approval-Gate V1 Foundation (Merged)
 
-The reviewed approval-gate implementation from `84db40b` (PR #46) is being
-surgically reintroduced onto current main. PR #48 reverted PR #46 due to
-premature merge before Bala's final review. This reintroduction applies only
-the approval-gate changes while preserving all PR #47 PII guard work.
+**PR #50** — merged to `main` (commit `aa409c7`).
 
-**Status**: In progress (reintroduction branch `feat/approval-gate-v1-reintroduction`)
+Surgical reintroduction of the reviewed approval-gate from `84db40b` (PR #46,
+reverted by PR #48). Preserved all PR #47 PII guard work unchanged.
 
 **What this provides**:
 
@@ -1210,8 +1208,44 @@ the approval-gate changes while preserving all PR #47 PII guard work.
 
 **Preserved unchanged**: PII guard (`skills.py`, `app.py` PII wiring, `test_skill_pii_guard.py`, `test_skill_service.py` PII fixtures), ADR-005 (already on main), PR #45 Skills Engine
 
-**Source**: reviewed implementation at `84db40b`
-**Target**: `origin/main` (`9240186`)
+## ADR-007 Production Embedding Architecture (Merged)
+
+**Commits**: `ca44f9c`, `c4d535a` on `main`.
+
+Reviewed and approved production embedding architecture decision record.
+Resolved review findings (gateway, backup, re-embed wording).
+Located at `docs/architecture/decisions/ADR-007-production-embedding-provider-and-vector-representation.md`.
+
+## Approval Observability Slice (PR #51 — Merged)
+
+**PR #51** — merged to `main` (commit `e7b0b22`).
+
+Authorized by ADR-005 §line 339 ("approval-specific metrics (later observability slice)").
+Observability principle: aggregation/read-only, NOT a second source of truth.
+
+## Frontend Foundation + Security Hardening (PR #52 — Merged)
+
+**PR #52** — merged to `main` (commit `c0e8dde`).
+
+Joe's original frontend foundation (`7dcc335`), Bala's conflict resolution (`f66e720`), Bala's formatting (`5110834`), and Bharath's security hardening (`b33b889`).
+Provides the full frontend product surface with authentication, tenant context, routing, and focused security hardening (JWT algorithm allowlist, principal.claims restriction, clipboard error handling, duplicate-submit protection, .env protection, Vite proxy documentation, invalid date fallback).
+
+## Production Embedding Provider + 64→1536 Migration (PR #53 — Merged)
+
+**PR #53** — merged to `main` (commit `4daa5a7`).
+
+Implements ADR-007: production OpenAI-compatible embedding provider with
+gateway-routable `base_url`, `EMBEDDING_DIMENSIONS` updated to 1536,
+and the idempotent `migrate_embeddings.py` migration script.
+
+## Secure RAG Source-Type Filtering (PR #54 — Merged)
+
+**PR #54** — merged to `main` (commit `f9de5a9`).
+
+Adds optional `source_type` filtering to the knowledge search endpoint.
+Uses existing `KnowledgeSource` enum; invalid values return HTTP 400.
+Preserves tenant isolation, active-document filtering, and ApprovedContext contracts.
+Repository, service, API, and ApprovedContext tests added.
 
 
 ## In Progress
@@ -1237,8 +1271,8 @@ the approval-gate changes while preserving all PR #47 PII guard work.
 - Dev Container baseline — established (merged).
 - Compose — established (merged).
 - CI environment — established.
-- Windows verification.
-- macOS verification.
+- Windows verification — complete (Docker build, ruff, format, pytest all pass).
+- macOS verification — pending (Joe to rebuild Docker image and verify inside container).
 
 ## Product Work
 
@@ -1282,22 +1316,13 @@ Bala is responsible for:
 
 ## Next
 
-1. **Review and merge the two-slice PR** (feat/approved-context-contract → main):
-   "feat(intelligence): add approved context and unified intelligence foundation" —
-   Approved Context Contract + Unified Intelligence (Secure Knowledge Reasoning
-   Foundation), committed as ONE commit, verified (392 tests). Human review
-   required; do not self-merge.
-2. **Next TRD-ordered implementation slice: AI Tools** (TRD §38: Skills → Unified
-   Intelligence → AI Tools). NOT implemented; must not be started until the
-   current PR is reviewed and merged, and the next slice is authorized.
-3. Coordinate the next Bala Foundation issue with Joe and Bharath.
-4. Continue the AI development setup.
-5. Complete Foundation cross-platform verification (Windows/macOS).
-6. Connect GitHub with Linear.
-7. Benchmark candidate AI models.
-8. Conduct the final Foundation review.
-9. Begin product implementation only after Foundation acceptance.
-10. Review, branch, and PR the frontend product surface + the `GET /auth/me` contract (nothing committed yet).
+1. Coordinate the next Bala Foundation issue with Joe and Bharath.
+2. Continue the AI development setup.
+3. Complete Foundation cross-platform verification (macOS — Joe's responsibility).
+4. Connect GitHub with Linear.
+5. Benchmark candidate AI models.
+6. Conduct the final Foundation review.
+7. Begin product implementation only after Foundation acceptance.
 
 ## Blocked / Waiting
 
@@ -1320,8 +1345,8 @@ Bharath
 ### CI
 
 The CI baseline (`.github/workflows/ci.yml`) has been established and
-merged to `main` (PR #23). Remaining Foundation verification is
-cross-platform (Windows/macOS).
+merged to `main` (PR #23). CI is active and passing on `main`.
+Remaining Foundation cross-platform verification is macOS.
 
 Owner:
 
