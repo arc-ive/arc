@@ -252,7 +252,11 @@ class KnowledgeChunkRepository(Protocol):
         ...
 
     async def search(
-        self, tenant_id: str, query_embedding: List[float], limit: int = 5
+        self,
+        tenant_id: str,
+        query_embedding: List[float],
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
     ) -> List[KnowledgeMatch]:
         """Return tenant-scoped chunk matches ordered by similarity."""
         ...

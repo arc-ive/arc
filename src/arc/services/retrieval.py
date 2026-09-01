@@ -28,6 +28,7 @@ from arc.domain.models import (
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeMatch,
+    KnowledgeSource,
     RetrievalMethod,
     TenantContext,
 )
@@ -110,7 +111,11 @@ class RetrievalService:
         return await self.chunk_repo.create_many(prepared.chunks, prepared.embeddings)
 
     async def search(
-        self, context: TenantContext, query: str, limit: int = 5
+        self,
+        context: TenantContext,
+        query: str,
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
     ) -> List[KnowledgeMatch]:
         """Embed the query and return the top tenant-scoped matches.
 
@@ -118,6 +123,9 @@ class RetrievalService:
         caller-supplied tenant identifiers are never accepted. Embedding
         failures (``EmbeddingError``) propagate: fail closed, no partial
         or misleading results.
+
+        When ``source_type`` is provided, only chunks belonging to
+        documents of that source type are candidates.
 
         Raises:
             ValueError: for an empty query or a non-positive limit.
@@ -134,10 +142,16 @@ class RetrievalService:
                 f"storage expects {EMBEDDING_DIMENSIONS}"
             )
 
-        return await self.chunk_repo.search(context.tenant_id, query_embedding, limit)
+        return await self.chunk_repo.search(
+            context.tenant_id, query_embedding, limit, source_type=source_type
+        )
 
     async def approved_search(
-        self, context: TenantContext, query: str, limit: int = 5
+        self,
+        context: TenantContext,
+        query: str,
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
     ) -> ApprovedContext:
         """Return retrieval results as the Approved Context Contract.
 
@@ -155,6 +169,9 @@ class RetrievalService:
         match is defensively re-validated against the trusted tenant
         (an invariant violation fails closed instead of leaking context).
 
+        When ``source_type`` is provided, only chunks belonging to
+        documents of that source type are candidates.
+
         Raises:
             ValueError: for an empty query or a non-positive limit.
             EmbeddingError: when the embedding provider fails; no
@@ -162,7 +179,7 @@ class RetrievalService:
             RuntimeError: when the repository returns a match outside the
                 trusted tenant (invariant violation; fail closed).
         """
-        matches = await self.search(context, query, limit=limit)
+        matches = await self.search(context, query, limit=limit, source_type=source_type)
 
         for match in matches:
             if match.tenant_id != context.tenant_id:

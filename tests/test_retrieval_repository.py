@@ -313,3 +313,133 @@ class TestRetrievalServiceEndToEnd:
         matches_b = await service.search(context_b, "secret strategy", limit=5)
         assert len(matches_a) == 1
         assert matches_b == []
+
+
+class TestSearchSourceFiltering:
+    """Source-type filtering must narrow the candidate set at the SQL level."""
+
+    async def test_no_filter_returns_all_sources(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=1)
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        matches = await chunk_repo.search(seeded_document.tenant_id, [1.0] * 1536, limit=10)
+        assert len(matches) == 1
+        assert matches[0].source == KnowledgeSource.POLICY
+
+    async def test_matching_source_returns_only_matching_documents(
+        self, db, chunk_repo, seeded_tenant
+    ):
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc_policy = await knowledge_repo.create(
+            _document(seeded_tenant.id, source=KnowledgeSource.POLICY)
+        )
+        doc_procedure = await knowledge_repo.create(
+            _document(seeded_tenant.id, source=KnowledgeSource.PROCEDURE)
+        )
+
+        chunks_policy = _chunks(doc_policy, count=1)
+        chunks_procedure = _chunks(doc_procedure, count=1)
+        await chunk_repo.create_many(chunks_policy, _embeddings(1))
+        await chunk_repo.create_many(chunks_procedure, _embeddings(1))
+
+        matches = await chunk_repo.search(
+            seeded_tenant.id,
+            [1.0] * 1536,
+            limit=10,
+            source_type=KnowledgeSource.POLICY,
+        )
+        assert len(matches) == 1
+        assert matches[0].source == KnowledgeSource.POLICY
+        assert matches[0].document_id == doc_policy.id
+
+    async def test_non_matching_source_returns_empty(self, db, chunk_repo, seeded_tenant):
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc = await knowledge_repo.create(
+            _document(seeded_tenant.id, source=KnowledgeSource.POLICY)
+        )
+        chunks = _chunks(doc, count=1)
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        matches = await chunk_repo.search(
+            seeded_tenant.id,
+            [1.0] * 1536,
+            limit=10,
+            source_type=KnowledgeSource.PROCEDURE,
+        )
+        assert matches == []
+
+    async def test_source_filter_preserves_tenant_isolation(self, db, chunk_repo, seeded_tenants):
+        tenant_a, tenant_b = seeded_tenants
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc_a = await knowledge_repo.create(_document(tenant_a.id, source=KnowledgeSource.POLICY))
+        doc_b = await knowledge_repo.create(_document(tenant_b.id, source=KnowledgeSource.POLICY))
+        await chunk_repo.create_many(_chunks(doc_a, count=1), _embeddings(1))
+        await chunk_repo.create_many(_chunks(doc_b, count=1), _embeddings(1))
+
+        matches_a = await chunk_repo.search(
+            tenant_a.id, [1.0] * 1536, limit=10, source_type=KnowledgeSource.POLICY
+        )
+        matches_b = await chunk_repo.search(
+            tenant_b.id, [1.0] * 1536, limit=10, source_type=KnowledgeSource.POLICY
+        )
+        assert len(matches_a) == 1
+        assert matches_a[0].tenant_id == tenant_a.id
+        assert len(matches_b) == 1
+        assert matches_b[0].tenant_id == tenant_b.id
+
+    async def test_archived_documents_excluded_with_source_filter(
+        self, db, chunk_repo, seeded_tenant
+    ):
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc = await knowledge_repo.create(
+            _document(seeded_tenant.id, source=KnowledgeSource.POLICY)
+        )
+        chunks = _chunks(doc, count=1)
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        # Archive the document
+        async with db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE knowledge_documents SET status = 'archived' WHERE id = $1",
+                doc.id,
+            )
+
+        matches = await chunk_repo.search(
+            seeded_tenant.id, [1.0] * 1536, limit=10, source_type=KnowledgeSource.POLICY
+        )
+        assert matches == []
+
+    async def test_multiple_source_types_isolated_from_each_other(
+        self, db, chunk_repo, seeded_tenant
+    ):
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc_policy = await knowledge_repo.create(
+            _document(
+                seeded_tenant.id,
+                source=KnowledgeSource.POLICY,
+                content="policy content alpha",
+            )
+        )
+        doc_incident = await knowledge_repo.create(
+            _document(
+                seeded_tenant.id,
+                source=KnowledgeSource.INCIDENT_REPORT,
+                content="incident content beta",
+            )
+        )
+        await chunk_repo.create_many(_chunks(doc_policy, count=1), _embeddings(1))
+        await chunk_repo.create_many(_chunks(doc_incident, count=1), _embeddings(1))
+
+        policy_matches = await chunk_repo.search(
+            seeded_tenant.id, [1.0] * 1536, limit=10, source_type=KnowledgeSource.POLICY
+        )
+        incident_matches = await chunk_repo.search(
+            seeded_tenant.id,
+            [1.0] * 1536,
+            limit=10,
+            source_type=KnowledgeSource.INCIDENT_REPORT,
+        )
+        assert len(policy_matches) == 1
+        assert policy_matches[0].source == KnowledgeSource.POLICY
+        assert len(incident_matches) == 1
+        assert incident_matches[0].source == KnowledgeSource.INCIDENT_REPORT

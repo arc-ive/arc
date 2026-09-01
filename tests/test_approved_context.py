@@ -42,8 +42,8 @@ class FakeChunkRepository:
     async def create_many(self, chunks, embeddings):
         return chunks
 
-    async def search(self, tenant_id, query_embedding, limit=5):
-        self.searches.append((tenant_id, query_embedding, limit))
+    async def search(self, tenant_id, query_embedding, limit=5, source_type=None):
+        self.searches.append((tenant_id, query_embedding, limit, source_type))
         return self.search_results
 
 
@@ -187,7 +187,7 @@ class TestApprovedSearch:
         assert contract.security_metadata.tenant_id == "tenant-1"
         assert contract.security_metadata.authorization_status == "approved"
         assert contract.security_metadata.pii_status == "sanitized"
-        assert repo.searches == [("tenant-1", [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), 3)]
+        assert repo.searches == [("tenant-1", [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), 3, None)]
 
         item = contract.items[0]
         assert isinstance(item, ApprovedContextItem)
