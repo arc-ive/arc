@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
   ArrowUpRight,
@@ -75,6 +75,7 @@ export function AskArcPage() {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState(null)
   const [error, setError] = useState(null)
+  const lastSubmitRef = useRef(0)
 
   const mutation = useMutation({
     mutationFn: (payload) => queryIntelligence(tenantId, payload),
@@ -88,9 +89,21 @@ export function AskArcPage() {
     },
   })
 
+  const handleCopy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // Clipboard API may fail in insecure contexts or when permissions
+      // are denied. The user can still manually select and copy the text.
+    }
+  }
+
   const handleSubmit = (event) => {
     event.preventDefault()
     if (!question.trim()) return
+    const now = Date.now()
+    if (now - lastSubmitRef.current < 1000) return
+    lastSubmitRef.current = now
     mutation.mutate({ query: question.trim(), limit: 5 })
   }
 
@@ -227,7 +240,7 @@ export function AskArcPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => navigator.clipboard.writeText(citation)}
+                        onClick={() => handleCopy(citation)}
                         className="h-6 px-2"
                       >
                         <Copy className="size-3.5" />

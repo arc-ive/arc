@@ -3,6 +3,18 @@ import { useQueryClient } from '@tanstack/react-query'
 import { TenantContext } from './context.js'
 import { queryKeys } from '../api/queryKeys.js'
 
+/**
+ * Tenant context provider.
+ *
+ * Stores the active tenant ID in sessionStorage and React state.
+ * This is UX state only — it selects which tenant the UI displays.
+ * It is NOT an authorization mechanism. Every protected API request
+ * independently validates tenant membership via the backend X-10
+ * TenantContext (derived from the JWT session and role assignments).
+ * RequireTenant blocks rendering until the backend-validated membership
+ * list is loaded, so tenant-scoped content is never shown for an
+ * unvalidated tenantId.
+ */
 const STORAGE_KEY = 'arc.tenantId'
 
 export function TenantProvider({ children }) {

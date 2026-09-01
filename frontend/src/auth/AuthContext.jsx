@@ -28,12 +28,11 @@ export function AuthProvider({ children }) {
         return {
           sub: String(payload.sub),
           exp: typeof payload.exp === 'number' ? payload.exp * 1000 : null,
-          claims: payload,
         }
       }
     }
     if (demo) {
-      return { sub: DEMO_SUB, exp: null, claims: null }
+      return { sub: DEMO_SUB, exp: null }
     }
     return null
   }, [token, demo])

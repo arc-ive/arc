@@ -1,3 +1,9 @@
+/**
+ * Allowed JWT algorithms for frontend decoding.
+ * Defense-in-depth only — the backend independently verifies signatures.
+ */
+const ALLOWED_ALGORITHMS = new Set(['HS256'])
+
 function decodeSegment(segment) {
   const base64 = segment.replace(/-/g, '+').replace(/_/g, '/')
   const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
@@ -19,6 +25,9 @@ export function decodeJwt(token) {
   const parts = token.split('.')
   if (parts.length !== 3) return null
   try {
+    const header = JSON.parse(decodeSegment(parts[0]))
+    if (header?.alg && !ALLOWED_ALGORITHMS.has(header.alg)) return null
+
     const payload = JSON.parse(decodeSegment(parts[1]))
     if (typeof payload?.sub !== 'string' && typeof payload?.sub !== 'number') {
       return null

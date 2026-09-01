@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { decodeJwt, isJwtExpired } from './jwt.js'
 
+const HS256_HEADER = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
+
+function makeToken(payload) {
+  const encoded = btoa(JSON.stringify(payload))
+  return `${HS256_HEADER}.${encoded}.signature`
+}
+
 describe('decodeJwt', () => {
   it('returns null for non-string input', () => {
     expect(decodeJwt(null)).toBeNull()
@@ -16,23 +23,31 @@ describe('decodeJwt', () => {
 
   it('decodes a valid JWT payload', () => {
     const payload = { sub: 'user-1', exp: 9999999999 }
-    const encoded = btoa(JSON.stringify(payload))
-    const token = `header.${encoded}.signature`
-    expect(decodeJwt(token)).toEqual(payload)
+    expect(decodeJwt(makeToken(payload))).toEqual(payload)
   })
 
   it('returns null if sub claim is missing', () => {
     const payload = { exp: 9999999999 }
-    const encoded = btoa(JSON.stringify(payload))
-    const token = `header.${encoded}.signature`
-    expect(decodeJwt(token)).toBeNull()
+    expect(decodeJwt(makeToken(payload))).toBeNull()
   })
 
   it('handles numeric sub claim', () => {
     const payload = { sub: 12345, exp: 9999999999 }
+    expect(decodeJwt(makeToken(payload))).toEqual(payload)
+  })
+
+  it('rejects tokens with unknown algorithm', () => {
+    const badHeader = btoa(JSON.stringify({ alg: 'none', typ: 'JWT' }))
+    const payload = { sub: 'user-1', exp: 9999999999 }
     const encoded = btoa(JSON.stringify(payload))
-    const token = `header.${encoded}.signature`
-    expect(decodeJwt(token)).toEqual(payload)
+    expect(decodeJwt(`${badHeader}.${encoded}.signature`)).toBeNull()
+  })
+
+  it('rejects tokens with RSA algorithm', () => {
+    const rsaHeader = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+    const payload = { sub: 'user-1', exp: 9999999999 }
+    const encoded = btoa(JSON.stringify(payload))
+    expect(decodeJwt(`${rsaHeader}.${encoded}.signature`)).toBeNull()
   })
 })
 

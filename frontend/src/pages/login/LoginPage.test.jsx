@@ -60,9 +60,10 @@ describe('LoginPage', () => {
     )
 
     // Create an expired JWT (exp in the past)
+    const hs256Header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
     const expiredPayload = { sub: 'user-1', exp: Math.floor(Date.now() / 1000) - 1000 }
     const encoded = btoa(JSON.stringify(expiredPayload))
-    const expiredToken = `header.${encoded}.signature`
+    const expiredToken = `${hs256Header}.${encoded}.signature`
 
     const textarea = screen.getByLabelText(/session token/i)
     fireEvent.change(textarea, { target: { value: expiredToken } })

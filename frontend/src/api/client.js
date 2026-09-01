@@ -3,6 +3,13 @@ import { getToken, clearToken } from '../auth/token.js'
 
 export const SESSION_EXPIRED_EVENT = 'arc:session-expired'
 
+/**
+ * CSRF note: Bearer tokens are NOT automatically attached by the browser
+ * to cross-origin requests. CSRF relies on automatic credential attachment
+ * (cookies). The Authorization header must be explicitly set by JavaScript,
+ * making CSRF inapplicable to the current authentication model.
+ */
+
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 20000,

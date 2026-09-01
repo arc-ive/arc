@@ -6,7 +6,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      // The FastAPI backend serves endpoints at the root (no /api prefix).
+      // Dev-only proxy: the FastAPI backend serves endpoints at the root
+      // (no /api prefix). This proxy rewrites /api/* to /* so the frontend
+      // can use a consistent /api base URL in development. In production,
+      // a reverse proxy (nginx, Cloudflare, etc.) handles this routing.
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,

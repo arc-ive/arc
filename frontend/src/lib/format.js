@@ -1,7 +1,7 @@
 export function formatDateTime(value) {
   if (!value) return '—'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -14,7 +14,7 @@ export function formatDateTime(value) {
 export function formatDate(value) {
   if (!value) return '—'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  if (Number.isNaN(date.getTime())) return '—'
   return date.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -25,7 +25,7 @@ export function formatDate(value) {
 export function relativeTime(value) {
   if (!value) return '—'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
+  if (Number.isNaN(date.getTime())) return '—'
   const seconds = Math.floor((date.getTime() - Date.now()) / 1000)
   const abs = Math.abs(seconds)
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
