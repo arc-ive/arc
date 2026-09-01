@@ -53,6 +53,7 @@ from arc.security.authorization import (
     KNOWLEDGE_READ,
     OBSERVABILITY_PLATFORM_READ,
     OBSERVABILITY_READ,
+    ROLE_PERMISSIONS,
     SKILL_CREATE,
     SKILL_DELETE,
     SKILL_EXECUTE,
@@ -219,6 +220,43 @@ api_router = APIRouter()
 async def health() -> Dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@api_router.get("/auth/me")
+async def get_authenticated_profile(
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+    membership_service: MembershipService = Depends(lambda: app_context.membership_service),
+) -> Dict[str, Any]:
+    """Return the authenticated user's authorized profile.
+
+    Self-scoped: identity comes exclusively from the JWT ``sub``; no
+    client-supplied user ID or tenant context is accepted. The application
+    role is resolved server-side from the explicit X-11 role assignments,
+    and the role's permission matrix is returned so the frontend can render
+    capability-aware UI.
+
+    The returned permissions are INFORMATIONAL (UX hints) only. The backend
+    re-checks authentication, tenant membership, and permissions on every
+    protected request and remains the authorization authority.
+    """
+    role = authorization_service.role_for(principal.user_id)
+    permissions = sorted(permission.value for permission in ROLE_PERMISSIONS.get(role, frozenset()))
+    memberships = await membership_service.get_memberships_for_user(principal.user_id)
+    return {
+        "user_id": principal.user_id,
+        "role": role.value if role else None,
+        "permissions": permissions,
+        "memberships": [
+            {
+                "tenant_id": membership.tenant_id,
+                "role": membership.role.value,
+                "created_at": membership.created_at.isoformat(),
+                "updated_at": membership.updated_at.isoformat(),
+            }
+            for membership in memberships
+        ],
+    }
 
 
 @api_router.post("/tenants")

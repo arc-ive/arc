@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation approved pending Person C follow-up (PR #34); Company Brain document identity & re-ingestion implemented per ADR-003 (this slice)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 merged; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation approved pending Person C follow-up (PR #34); Company Brain document identity & re-ingestion implemented per ADR-003; Production embedding provider and migration implemented (PR #53); Frontend — full product surface implemented (PR #52, pending review)
 
 ## Completed
 
@@ -1297,6 +1297,7 @@ Bala is responsible for:
 7. Benchmark candidate AI models.
 8. Conduct the final Foundation review.
 9. Begin product implementation only after Foundation acceptance.
+10. Review, branch, and PR the frontend product surface + the `GET /auth/me` contract (nothing committed yet).
 
 ## Blocked / Waiting
 
