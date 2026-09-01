@@ -697,6 +697,7 @@ async def search_knowledge(
     tenant_id: str,
     query: str,
     limit: int = 5,
+    source_type: Optional[str] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
     retrieval_service: RetrievalService = Depends(lambda: app_context.retrieval_service),
 ):
@@ -712,6 +713,9 @@ async def search_knowledge(
     The production embedding provider is a deferred decision; the current
     deterministic provider returns results that are correct for
     development and test suites but are NOT semantically meaningful.
+
+    When ``source_type`` is provided, only documents whose source matches
+    are included in the candidate set.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
@@ -726,8 +730,21 @@ async def search_knowledge(
             detail="Search limit must be between 1 and 50",
         )
 
+    resolved_source_type: Optional[KnowledgeSource] = None
+    if source_type is not None:
+        try:
+            resolved_source_type = KnowledgeSource(source_type)
+        except ValueError:
+            valid_values = [s.value for s in KnowledgeSource]
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid source_type. Must be one of: {', '.join(valid_values)}",
+            )
+
     try:
-        matches = await retrieval_service.search(context, query, limit=limit)
+        matches = await retrieval_service.search(
+            context, query, limit=limit, source_type=resolved_source_type
+        )
     except EmbeddingError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

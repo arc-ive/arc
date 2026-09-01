@@ -72,8 +72,8 @@ class FakeChunkRepository:
         self.persisted.append((chunks, embeddings))
         return chunks
 
-    async def search(self, tenant_id, query_embedding, limit=5):
-        self.searches.append((tenant_id, query_embedding, limit))
+    async def search(self, tenant_id, query_embedding, limit=5, source_type=None):
+        self.searches.append((tenant_id, query_embedding, limit, source_type))
         return self.search_results
 
 
@@ -189,7 +189,7 @@ class TestRetrievalServiceSearch:
         matches = await service.search(_context("tenant-1"), "remote work", limit=3)
 
         assert matches == [match]
-        assert repo.searches == [("tenant-1", [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), 3)]
+        assert repo.searches == [("tenant-1", [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), 3, None)]
 
     async def test_search_rejects_empty_query(self):
         service = _service()
@@ -214,3 +214,29 @@ class TestRetrievalServiceSearch:
         with pytest.raises(EmbeddingError):
             await service.search(_context(), "remote work")
         assert service.chunk_repo.searches == []
+
+    async def test_search_passes_source_type_to_repository(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        await service.search(
+            _context("tenant-1"), "remote work", limit=3, source_type=KnowledgeSource.POLICY
+        )
+
+        assert len(repo.searches) == 1
+        tenant_id, _embedding, limit, source_type = repo.searches[0]
+        assert tenant_id == "tenant-1"
+        assert limit == 3
+        assert source_type == KnowledgeSource.POLICY
+
+    async def test_search_no_source_type_passes_none_to_repository(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        await service.search(_context("tenant-1"), "remote work", limit=3)
+
+        assert len(repo.searches) == 1
+        tenant_id, _embedding, limit, source_type = repo.searches[0]
+        assert tenant_id == "tenant-1"
+        assert limit == 3
+        assert source_type is None

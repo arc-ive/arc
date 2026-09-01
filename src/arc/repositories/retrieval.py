@@ -22,7 +22,7 @@ come from an X-10 validated ``TenantContext`` established by the
 application layer, never from an arbitrary request payload.
 """
 
-from typing import List
+from typing import List, Optional
 
 from arc.db.connection import ArcDatabase
 from arc.domain.models import KnowledgeChunk, KnowledgeMatch, KnowledgeSource
@@ -73,20 +73,53 @@ class PostgreSQLKnowledgeChunkRepository:
         return chunks
 
     async def search(
-        self, tenant_id: str, query_embedding: List[float], limit: int = 5
+        self,
+        tenant_id: str,
+        query_embedding: List[float],
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
     ) -> List[KnowledgeMatch]:
         """Return tenant-scoped chunk matches ordered by similarity.
 
         The SQL boundary is the security boundary: chunks are filtered by
         ``tenant_id`` and joined to their owning document within the same
         tenant, so a tenant B query can never observe tenant A chunks.
+
+        When ``source_type`` is provided, only documents whose
+        ``knowledge_documents.source`` matches are included in the
+        candidate set.
         """
         if limit < 1:
             raise ValueError("Search limit must be a positive integer")
 
-        async with self.db._connection_pool.acquire() as conn:
-            rows = await conn.fetch(
+        if source_type is not None:
+            sql = """
+                SELECT c.id AS chunk_id,
+                       c.document_id,
+                       c.tenant_id,
+                       c.content,
+                       c.sequence,
+                       d.source,
+                       d.provenance,
+                       d.version,
+                       1 - (c.embedding <=> $2::vector) AS similarity
+                FROM knowledge_chunks c
+                JOIN knowledge_documents d
+                  ON d.id = c.document_id AND d.tenant_id = c.tenant_id
+                WHERE c.tenant_id = $1
+                  AND d.status = 'active'
+                  AND d.source = $4
+                ORDER BY c.embedding <=> $2::vector
+                LIMIT $3
                 """
+            params = (
+                tenant_id,
+                _vector_to_text(query_embedding),
+                limit,
+                source_type.value,
+            )
+        else:
+            sql = """
                 SELECT c.id AS chunk_id,
                        c.document_id,
                        c.tenant_id,
@@ -105,11 +138,15 @@ class PostgreSQLKnowledgeChunkRepository:
                   AND d.status = 'active'
                 ORDER BY c.embedding <=> $2::vector
                 LIMIT $3
-                """,
+                """
+            params = (
                 tenant_id,
                 _vector_to_text(query_embedding),
                 limit,
             )
+
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
             return [
                 KnowledgeMatch(
                     chunk_id=row["chunk_id"],
