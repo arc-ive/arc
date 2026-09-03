@@ -633,11 +633,54 @@ def _agent_run_response(result: AgentExecutionResult) -> Dict[str, Any]:
     }
 
 
+async def _require_tenant_permission_from_body(
+    body: Optional[Any] = Body(default=None),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization: AuthorizationService = Depends(get_authorization_service),
+) -> TenantContext:
+    """Body-aware tenant context + permission check for /agent/runs.
+
+    Reads ``tenant_id`` from the JSON request body instead of query params,
+    then delegates to the trusted tenant context service and checks the
+    ``AGENT_EXECUTE`` permission.
+    """
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
+        )
+
+    tenant_id = body.get("tenant_id")
+    if not tenant_id or not isinstance(tenant_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Request body must include a non-empty 'tenant_id' string",
+        )
+
+    try:
+        context = await app_context.tenant_context_service.create_tenant_context(
+            tenant_id=tenant_id,
+            user_id=principal.user_id,
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tenant context"
+        )
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to the requested tenant is denied",
+        )
+
+    if not authorization.has_permission(principal, AGENT_EXECUTE):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    return context
+
+
 @api_router.post("/agent/runs")
 async def run_agent(
-    tenant_id: str,
     body: Optional[Any] = Body(default=None),
-    context: TenantContext = Depends(require_tenant_permission(AGENT_EXECUTE)),
+    context: TenantContext = Depends(_require_tenant_permission_from_body),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
     agent_service: AgentExecutionService = Depends(lambda: app_context.agent_service),
@@ -653,16 +696,20 @@ async def run_agent(
     executed exclusively through ``SkillExecutionService``. The Agent can
     never touch tools, handlers, or registries directly.
 
+    Canonical request contract::
+
+        POST /agent/runs
+        {
+            "tenant_id": "<tenant-id>",
+            "goal": "<agent goal>"
+        }
+
     Controlled outcomes (succeeded, failed, approval_required,
     max_steps_reached) are returned as structured 200 responses;
     malformed request metadata is rejected with 400.
     """
+    tenant_id = body.get("tenant_id")
     _require_path_tenant_matches_context(tenant_id, context)
-
-    if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
-        )
 
     try:
         result = await agent_service.run(
