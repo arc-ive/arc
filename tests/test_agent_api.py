@@ -24,7 +24,7 @@ def _unique(prefix: str) -> str:
 
 
 def _run_body(**overrides) -> dict:
-    values = {"goal": "check the payment service"}
+    values = {"tenant_id": "placeholder", "goal": "check the payment service"}
     values.update(overrides)
     return values
 
@@ -52,8 +52,10 @@ async def _seed_membership(repositories, user_id, tenant_id):
 
 def _run(client, tenant_id, token, body=None):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    payload = body if body is not None else _run_body()
-    return client.post(f"/agent/runs?tenant_id={tenant_id}", headers=headers, json=payload)
+    payload = body if body is not None else _run_body(tenant_id=tenant_id)
+    if isinstance(payload, dict):
+        payload = {**payload, "tenant_id": tenant_id}
+    return client.post("/agent/runs", headers=headers, json=payload)
 
 
 async def _create_skill_via_api(client, tenant_id, token, **payload_overrides) -> str:
@@ -161,7 +163,7 @@ class TestAgentValidation:
         token = make_token(user.id)
 
         response = client.post(
-            f"/agent/runs?tenant_id={tenant.id}",
+            "/agent/runs",
             headers={"Authorization": f"Bearer {token}"},
             json=["not", "an", "object"],
         )

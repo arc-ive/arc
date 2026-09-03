@@ -635,8 +635,7 @@ def _agent_run_response(result: AgentExecutionResult) -> Dict[str, Any]:
 
 @api_router.post("/agent/runs")
 async def run_agent(
-    tenant_id: str,
-    body: Optional[Any] = Body(default=None),
+    body: Dict[str, Any] = Body(...),
     context: TenantContext = Depends(require_tenant_permission(AGENT_EXECUTE)),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
@@ -653,16 +652,31 @@ async def run_agent(
     executed exclusively through ``SkillExecutionService``. The Agent can
     never touch tools, handlers, or registries directly.
 
+    Canonical request contract::
+
+        POST /agent/runs
+        {
+            "tenant_id": "<tenant-id>",
+            "goal": "<agent goal>"
+        }
+
     Controlled outcomes (succeeded, failed, approval_required,
     max_steps_reached) are returned as structured 200 responses;
     malformed request metadata is rejected with 400.
     """
-    _require_path_tenant_matches_context(tenant_id, context)
-
     if not isinstance(body, dict):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
         )
+
+    tenant_id = body.get("tenant_id")
+    if not tenant_id or not isinstance(tenant_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Request body must include a non-empty 'tenant_id' string",
+        )
+
+    _require_path_tenant_matches_context(tenant_id, context)
 
     try:
         result = await agent_service.run(
