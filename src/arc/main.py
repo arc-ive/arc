@@ -2,7 +2,8 @@
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from arc.api.controllers import api_router
 from arc.api.dev_controllers import dev_router
@@ -10,6 +11,7 @@ from arc.api.middleware import RequestTelemetryMiddleware
 
 # Import app instance to register services
 from arc.app import app as arc_app
+from arc.db.connection import DuplicateKeyError
 from arc.observability_logging import configure_observability_logging
 
 # Structured application logging (TRD 28): stdlib only, correlation-ID
@@ -22,6 +24,16 @@ app = FastAPI(
     description="Enterprise multi-tenant AI platform for IT Services organizations.",
     version="0.1.0",
 )
+
+
+@app.exception_handler(DuplicateKeyError)
+async def duplicate_key_error_handler(request: Request, exc: DuplicateKeyError):
+    """Handle duplicate key errors as 409 Conflict responses."""
+    return JSONResponse(
+        status_code=409,
+        content={"detail": str(exc)},
+    )
+
 
 # Observability-owned request correlation + best-effort HTTP telemetry.
 # The service is resolved lazily per request so telemetry remains

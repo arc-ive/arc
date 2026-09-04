@@ -76,6 +76,51 @@ class ArcDatabase:
             except Exception as e:
                 raise DatabaseError(f"Failed to create tenant: {e}") from e
 
+    async def create_tenant_with_owner(self, tenant: Tenant, membership: Membership) -> Tenant:
+        """Create a new tenant with an initial OWNER membership atomically.
+
+        Both the tenant row and the membership row are created within a
+        single database transaction. If either operation fails, both
+        are rolled back, preventing partial state.
+        """
+        async with self.transaction() as conn:
+            try:
+                # Create tenant
+                await conn.execute(
+                    """
+                    INSERT INTO tenants (id, name, status, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    tenant.id,
+                    tenant.name,
+                    tenant.status,
+                    tenant.created_at,
+                    tenant.updated_at,
+                )
+                # Create membership in same transaction
+                await conn.execute(
+                    """
+                    INSERT INTO memberships (
+                        id, user_id, tenant_id, role, created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    """,
+                    membership.id,
+                    membership.user_id,
+                    membership.tenant_id,
+                    membership.role.value,
+                    membership.created_at,
+                    membership.updated_at,
+                )
+                return tenant
+            except asyncpg.UniqueViolationError as e:
+                raise DuplicateKeyError(
+                    f"Tenant with id {tenant.id} already exists "
+                    f"or user {membership.user_id} already belongs to tenant {membership.tenant_id}"
+                ) from e
+            except Exception as e:
+                raise DatabaseError(f"Failed to create tenant with owner: {e}") from e
+
     async def get_tenant(self, tenant_id: str) -> Tenant:
         """Get tenant by ID."""
         async with self._connection_pool.acquire() as conn:

@@ -226,12 +226,25 @@ def test_authenticated_but_unassigned_user_denied_403(client, make_token):
 def test_platform_administrator_can_create_tenant(client, make_token, authorization_override):
     authorization_override({"admin": ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token("admin")
-    response = client.post(
-        "/tenants",
+    # Create the user first so FK constraint is satisfied when OWNER membership is created
+    user_resp = client.post(
+        "/users",
         headers={"Authorization": f"Bearer {token}"},
-        json={"id": _unique("rbac"), "name": "RBAC Tenant"},
+        json={"id": "admin", "email": "admin@example.com", "username": "admin"},
     )
-    assert response.status_code == 200
+    assert user_resp.status_code == 200
+    try:
+        response = client.post(
+            "/tenants",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"id": _unique("rbac"), "name": "RBAC Tenant"},
+        )
+        assert response.status_code == 200
+    finally:
+        client.delete(
+            "/users/admin",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
 
 def test_company_administrator_cannot_create_tenant(client, make_token, authorization_override):
