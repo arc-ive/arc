@@ -262,20 +262,25 @@ async def get_authenticated_profile(
 @api_router.post("/tenants")
 async def create_tenant(
     tenant_data: Dict[str, Any],
-    _: AuthenticatedPrincipal = Depends(require_permission(TENANT_CREATE)),
+    principal: AuthenticatedPrincipal = Depends(require_permission(TENANT_CREATE)),
     tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
 ) -> Dict[str, Any]:
     """Create a new tenant.
 
     Protected: requires the global ``tenant:create`` permission
     (PLATFORM_ADMINISTRATOR). No tenant context is required.
+
+    The authenticated creator is automatically assigned OWNER membership
+    for the new tenant. The tenant and membership are created atomically.
     """
     tenant = Tenant(
         id=tenant_data.get("id"),
         name=tenant_data.get("name"),
         status=tenant_data.get("status", "active"),
     )
-    created_tenant = await tenant_service.create_tenant(tenant)
+    created_tenant = await tenant_service.create_tenant_with_owner(
+        tenant, principal.user_id
+    )
     return {
         "id": created_tenant.id,
         "name": created_tenant.name,

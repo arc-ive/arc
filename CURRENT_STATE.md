@@ -2,11 +2,11 @@
 
 Last Updated:
 
-2026-09-01
+2026-09-04
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-007 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-007 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54); Issue #58 tenant onboarding owner auto-assignment implemented (uncommitted)
 
 ## Completed
 
@@ -1248,6 +1248,58 @@ Preserves tenant isolation, active-document filtering, and ApprovedContext contr
 Repository, service, API, and ApprovedContext tests added.
 
 
+## Issue #58 — Tenant Onboarding Owner Auto-Assignment (Implemented, Uncommitted)
+
+**Issue:** GitHub #58 — "POST /tenants does not create OWNER membership for creator"
+**Resolution:** Option A — auto-create OWNER membership in controller via new atomic service method.
+**Approved by:** Joe (product) + Bala (architecture). No schema or auth-model changes.
+
+### Root cause
+
+`POST /tenants` created the tenant row but did NOT create a membership for the
+authenticated creator. The creator could not list or access the tenant they just
+created. The dev membership endpoint was the only way to add users, which is
+inconvenient for the creator.
+
+### What changed (7 files)
+
+- **`src/arc/db/connection.py`**: New `create_tenant_with_owner(tenant, membership)` —
+  wraps both INSERT statements in a single `async with self.transaction() as conn:`
+  for atomicity. Both inserts succeed or both roll back.
+- **`src/arc/repositories/tenancy.py`**: New `create_with_owner(tenant, membership)`
+  on `PostgreSQLTenantRepository` — delegates to the atomic DB method.
+- **`src/arc/services/domain.py`**: New `create_tenant_with_owner(tenant, user_id)`
+  on `TenantService` — creates `Membership` with `UserRole.OWNER`, calls
+  `tenant_repo.create_with_owner()`.
+- **`src/arc/api/controllers.py`**: `create_tenant` endpoint now calls
+  `tenant_service.create_tenant_with_owner(tenant, principal.user_id)` and captures
+  the `principal` parameter (renamed from `_`).
+- **`src/arc/main.py`**: Added `DuplicateKeyError` exception handler returning
+  409 Conflict JSON response for race-condition idempotency.
+- **`tests/test_rbac.py`**: Updated `test_platform_administrator_can_create_tenant`
+  to create the user first (FK satisfied) then create tenant.
+- **`tests/test_tenant_onboarding.py`** (new, 6 tests): Owner membership assignment,
+  no duplicate membership, permission required, duplicate-tenant-ID 409, database-level
+  atomicity (tenant rollback on membership FK failure), and tenant isolation after creation.
+
+### What was NOT changed
+
+- No schema changes (no new tables, no new columns).
+- No auth-model changes (UserRole for membership, ApplicationRole for RBAC — independent).
+- Dev membership endpoint (`src/arc/api/dev_controllers.py`) unchanged — still available
+  for adding other users/roles.
+- No changes to controllers outside the `create_tenant` endpoint.
+
+### Verification
+
+- **1228 tests pass** (Docker + real PostgreSQL), 1 skipped (pre-existing
+  observability absent-source guard), 0 failures.
+- `ruff check` passes on all changed files.
+- Single-transaction tenant+membership insert; FK constraint validated;
+  race-condition idempotency via DuplicateKeyError → 409; database-level
+  test proves tenant rollback when membership INSERT fails (FK violation
+  on nonexistent user).
+
 ## In Progress
 
 ### GitHub / Engineering Workflow
@@ -1316,13 +1368,14 @@ Bala is responsible for:
 
 ## Next
 
-1. Coordinate the next Bala Foundation issue with Joe and Bharath.
-2. Continue the AI development setup.
-3. Complete Foundation cross-platform verification (macOS — Joe's responsibility).
-4. Connect GitHub with Linear.
-5. Benchmark candidate AI models.
-6. Conduct the final Foundation review.
-7. Begin product implementation only after Foundation acceptance.
+1. Open PR for Issue #58 tenant onboarding fix (branch: `fix/tenant-onboarding-owner`).
+2. Coordinate the next Bala Foundation issue with Joe and Bharath.
+3. Continue the AI development setup.
+4. Complete Foundation cross-platform verification (macOS — Joe's responsibility).
+5. Connect GitHub with Linear.
+6. Benchmark candidate AI models.
+7. Conduct the final Foundation review.
+8. Begin product implementation only after Foundation acceptance.
 
 ## Blocked / Waiting
 

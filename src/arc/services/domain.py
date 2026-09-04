@@ -21,6 +21,35 @@ class TenantService:
             raise ValueError("Tenant name cannot be empty")
         return await self.tenant_repo.create(tenant)
 
+    async def create_tenant_with_owner(
+        self, tenant: Tenant, user_id: str
+    ) -> Tenant:
+        """Create a new tenant with an initial OWNER membership for the creator.
+
+        The tenant and membership are created atomically: if either
+        operation fails, both are rolled back.
+        """
+        if not tenant.id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not tenant.name:
+            raise ValueError("Tenant name cannot be empty")
+        if not user_id:
+            raise ValueError("User ID cannot be empty")
+
+        import uuid
+        from datetime import datetime, timezone
+
+        membership = Membership(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            tenant_id=tenant.id,
+            role=UserRole.OWNER,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+
+        return await self.tenant_repo.create_with_owner(tenant, membership)
+
     async def get_tenant(self, tenant_id: str) -> Tenant:
         """Get tenant by ID."""
         return await self.tenant_repo.get_by_id(tenant_id)

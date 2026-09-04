@@ -22,6 +22,10 @@ class PostgreSQLTenantRepository:
         """Create a new tenant."""
         return await self.db.create_tenant(tenant)
 
+    async def create_with_owner(self, tenant: Tenant, membership: Membership) -> Tenant:
+        """Create a new tenant with an initial OWNER membership atomically."""
+        return await self.db.create_tenant_with_owner(tenant, membership)
+
     async def get_by_id(self, tenant_id: str) -> Tenant:
         """Get tenant by ID."""
         return await self.db.get_tenant(tenant_id)
