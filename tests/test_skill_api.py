@@ -790,6 +790,122 @@ class TestSkillNegativeCases:
         assert response.status_code == 403
 
 
+class TestSkillDuplicateCreation:
+    """Issue #62: duplicate Skill creation must return 409 Conflict.
+
+    Creating a Skill with the same name and version within the same
+    tenant violates the database unique constraint. The controller
+    must return a safe, descriptive 409 response without exposing
+    internal database details or tenant identifiers.
+    """
+
+    async def test_duplicate_skill_returns_409(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Creating a Skill with the same name/version returns 409."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        payload = _skill_payload(name="test-skill", version="1")
+
+        r1 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        assert r1.status_code == 200
+
+        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        assert r2.status_code == 409
+
+    async def test_duplicate_skill_error_message_is_descriptive(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """The 409 response contains a safe, descriptive message."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        payload = _skill_payload(name="deploy-pipeline", version="2")
+
+        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        assert r2.status_code == 409
+
+        body = r2.json()
+        detail = body["detail"]
+        assert "deploy-pipeline" in detail
+        assert "2" in detail
+        assert "already exists in this tenant" in detail
+
+    async def test_duplicate_skill_error_excludes_tenant_id(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """The 409 response does not expose the internal tenant_id."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        payload = _skill_payload(name="secret-skill", version="1")
+
+        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        assert r2.status_code == 409
+
+        detail = r2.json()["detail"]
+        assert tenant.id not in detail
+
+    async def test_duplicate_skill_error_excludes_database_details(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """The 409 response does not expose database internals."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        payload = _skill_payload(name="internal-skill", version="3")
+
+        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        assert r2.status_code == 409
+
+        detail = r2.json()["detail"].lower()
+        assert "unique" not in detail
+        assert "constraint" not in detail
+        assert "asyncpg" not in detail
+
+    async def test_original_skill_is_preserved_after_duplicate(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """The first Skill is unaffected by a duplicate creation attempt."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        payload = _skill_payload(name="stable-skill", version="1")
+
+        r1 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        original_id = r1.json()["id"]
+
+        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+
+        fetched = client.get(f"/skills/{original_id}?tenant_id={tenant.id}", headers=headers)
+        assert fetched.status_code == 200
+        assert fetched.json()["name"] == "stable-skill"
+
+
 class TestSkillRouteSurface:
     """Requirement 15: the API surface contains exactly the intended endpoints."""
 
