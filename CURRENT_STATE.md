@@ -1324,12 +1324,15 @@ are and must remain completely independent role systems.
   behavior, assignment authority, multi-tenant behavior, and compatibility
   with existing architecture.
 - **CURRENT_STATE.md** updated with Issue #60 resolution and ADR-008 reference.
+- **ARC spec** corrected: `UserRole` and `ApplicationRole` now listed as separate rows in the enums table, with correct values for each.
+- **Regression tests** added to `tests/test_tenant_authorization.py`:
+  - `test_owner_in_tenant_a_cannot_access_tenant_b` — cross-tenant isolation independent of ApplicationRole.
+  - `test_owner_does_not_grant_company_administrator_permissions` — OWNER without ApplicationRole denied all permissions.
 
 ### What was NOT changed
 
-- No code changes. The architecture already implements independent role systems.
+- No application code changes. The architecture already implements independent role systems.
 - No schema changes. Both systems use existing storage mechanisms.
-- No test changes. Existing tests already verify role independence.
 - No permission matrix changes. The existing matrix is correct.
 - No service or controller changes. The authorization flow is correct.
 
