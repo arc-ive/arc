@@ -278,9 +278,7 @@ async def create_tenant(
         name=tenant_data.get("name"),
         status=tenant_data.get("status", "active"),
     )
-    created_tenant = await tenant_service.create_tenant_with_owner(
-        tenant, principal.user_id
-    )
+    created_tenant = await tenant_service.create_tenant_with_owner(tenant, principal.user_id)
     return {
         "id": created_tenant.id,
         "name": created_tenant.name,

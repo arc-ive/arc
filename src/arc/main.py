@@ -34,6 +34,7 @@ async def duplicate_key_error_handler(request: Request, exc: DuplicateKeyError):
         content={"detail": str(exc)},
     )
 
+
 # Observability-owned request correlation + best-effort HTTP telemetry.
 # The service is resolved lazily per request so telemetry remains
 # optional: until application startup completes, requests are still

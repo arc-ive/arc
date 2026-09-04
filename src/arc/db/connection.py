@@ -76,9 +76,7 @@ class ArcDatabase:
             except Exception as e:
                 raise DatabaseError(f"Failed to create tenant: {e}") from e
 
-    async def create_tenant_with_owner(
-        self, tenant: Tenant, membership: Membership
-    ) -> Tenant:
+    async def create_tenant_with_owner(self, tenant: Tenant, membership: Membership) -> Tenant:
         """Create a new tenant with an initial OWNER membership atomically.
 
         Both the tenant row and the membership row are created within a

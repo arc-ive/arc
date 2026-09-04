@@ -21,9 +21,7 @@ class TenantService:
             raise ValueError("Tenant name cannot be empty")
         return await self.tenant_repo.create(tenant)
 
-    async def create_tenant_with_owner(
-        self, tenant: Tenant, user_id: str
-    ) -> Tenant:
+    async def create_tenant_with_owner(self, tenant: Tenant, user_id: str) -> Tenant:
         """Create a new tenant with an initial OWNER membership for the creator.
 
         The tenant and membership are created atomically: if either

@@ -168,9 +168,7 @@ async def test_duplicate_tenant_creation_returns_conflict(
 
     # Attempt to create a tenant with duplicate ID (should trigger atomic rollback)
     tenant_id = _unique("tenant")
-    await tenant_repo.create(
-        Tenant(id=tenant_id, name="Pre-existing Tenant")
-    )
+    await tenant_repo.create(Tenant(id=tenant_id, name="Pre-existing Tenant"))
 
     # Attempt to create a tenant with the same ID (should fail with 409)
     response = client.post(
