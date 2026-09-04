@@ -64,6 +64,10 @@ class UserRepository(Protocol):
         """Get all users for a tenant."""
         ...
 
+    async def list_all(self) -> List[User]:
+        """List all users."""
+        ...
+
     async def exists(self, user_id: str) -> bool:
         """Check if user exists."""
         ...

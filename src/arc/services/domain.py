@@ -115,6 +115,10 @@ class UserService:
         """Get all users for a tenant."""
         return await self.user_repo.get_by_tenant(tenant_id)
 
+    async def list_all_users(self) -> List[User]:
+        """List all users (platform administrator operation)."""
+        return await self.user_repo.list_all()
+
 
 class MembershipService:
     """Domain service for membership operations."""

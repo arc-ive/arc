@@ -81,6 +81,25 @@ class PostgreSQLUserRepository:
         """Get all users for a tenant."""
         return await self.db.get_users_for_tenant(tenant_id)
 
+    async def list_all(self) -> List[User]:
+        """List all users."""
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, email, username, status, created_at, updated_at "
+                "FROM users ORDER BY created_at DESC"
+            )
+            return [
+                User(
+                    id=row["id"],
+                    email=row["email"],
+                    username=row["username"],
+                    status=row["status"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+
     async def exists(self, user_id: str) -> bool:
         """Check if user exists."""
         try:

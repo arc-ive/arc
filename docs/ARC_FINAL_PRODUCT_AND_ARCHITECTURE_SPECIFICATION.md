@@ -106,7 +106,7 @@ Backend code is authoritative for auth, RBAC, tenancy, validation, security, exe
 |---|---|---|---|---|
 | **Multi-Tenancy** | TenantContext from JWT, cross-tenant denied, path consistency check | Same (complete for V1) | None | **Frozen** |
 | **Authentication** | HS256 JWT, sessionStorage, test users | Same + Enterprise SSO (out of scope) | SSO deferred | **Conditionally Frozen** |
-| **RBAC** | 22 permissions, 4 roles, Employee has zero permissions | Employee should "initiate permitted low-risk workflows" per PRD §7.4 | Employee role conflict | **Open Decision (C-1)** |
+| **RBAC** | 23 permissions, 4 roles, Employee has zero permissions | Employee should "initiate permitted low-risk workflows" per PRD §7.4 | Employee role conflict | **Open Decision (C-1)** |
 | **PII Guard** | Microsoft Presidio, 6 default categories, applied at ingestion + skill creation + connector sync | Same + webhooks + tool results + observability | Boundary incomplete | **Conditionally Frozen** |
 | **Company Brain** | Knowledge CRUD, PII-sanitized ingestion, ADR-003 identity, atomic chunk+document persistence | Same (complete for V1) | None | **Frozen** |
 | **Secure RAG** | pgvector HNSW, cosine similarity, ApprovedContext contract, dense semantic only | Same + lexical + hybrid + reranking | Advanced retrieval deferred | **Conditionally Frozen** |
@@ -149,7 +149,7 @@ ARC ENTERPRISE AI PLATFORM
     |
     +-- Multi-Tenancy (TenantContext from JWT, X-10)
     +-- Authentication (JWT, sessionStorage)
-    +-- RBAC (22 permissions, 4 roles)
+    +-- RBAC (23 permissions, 4 roles)
     |
     v
 PII GUARD (Microsoft Presidio — ingestion boundary only)
@@ -288,10 +288,10 @@ class AuthenticatedPrincipal:
 | `operations_user` | Monitors company/service operations and handles incidents |
 | `employee` | Uses Arc to obtain approved company information and assistance |
 
-### Permissions (22 total, colon-based format)
+### Permissions (23 total, colon-based format)
 
 ```
-tenant:create, tenant:read, user:create, membership:create,
+tenant:create, tenant:read, user:create, user:read, membership:create,
 knowledge:create, knowledge:read,
 skill:create, skill:read, skill:update, skill:delete, skill:execute,
 tool:read, tool:execute,
@@ -311,6 +311,7 @@ observability:read, observability:platform_read
 | `tenant:create` | YES | NO | NO | NO |
 | `tenant:read` | YES | YES | YES | NO |
 | `user:create` | YES | NO | NO | NO |
+| `user:read` | YES | NO | NO | NO |
 | `membership:create` | YES | NO | NO | NO |
 | `knowledge:create` | YES | YES | NO | NO |
 | `knowledge:read` | YES | YES | YES | NO |
@@ -1370,6 +1371,7 @@ Key domain objects include: `Tenant`, `User`, `Membership`, `ConnectorConfig`, `
 | `GET` | `/tenants/{tenant_id}/webhooks/events` | `webhook:read` | List webhook events |
 | `GET` | `/tenants/{tenant_id}/observability/usage-summary` | `observability:read` | Tenant usage summary (`hours` query param, default 24, range 1-168) |
 | `GET` | `/platform/observability/summary` | `observability:platform_read` | Platform summary |
+| `GET` | `/platform/users` | `user:read` | List all provisioned users (PLATFORM_ADMINISTRATOR only) |
 | `GET` | `/observability/health` | `observability:platform_read` | Component health |
 | `GET` | `/tenants/{tenant_id}/approvals` | `approval:read` | List approval requests (`status` query param optional) |
 | `GET` | `/tenants/{tenant_id}/approvals/{id}` | `approval:read` | Get approval request |
@@ -1466,7 +1468,7 @@ EXPOSE 8000
 ### Mandatory Boundaries
 
 1. **Authentication:** JWT-based, `sessionStorage` only
-2. **Authorization:** Application-enforced RBAC (22 permissions, 4 roles)
+2. **Authorization:** Application-enforced RBAC (23 permissions, 4 roles)
 3. **Tenant Isolation:** `TenantContext` derived exclusively from JWT; cross-tenant access denied
 4. **PII Protection:** Microsoft Presidio before all AI/data boundaries
 5. **Permission-Aware Retrieval:** `approved_search` returns only tenant-scoped, sanitized context
@@ -1912,7 +1914,7 @@ Requirements → Source → Current Implementation → Final Requirement → Sta
 |---|---|---|---|---|---|---|
 | Multi-tenancy | §5 | §9 | ADR-002 | TenantContext from JWT, cross-tenant denied | Same | **Frozen** |
 | Authentication | §5 | §9 | — | HS256 JWT, sessionStorage | Same + SSO (excluded) | **Conditionally Frozen** |
-| RBAC | §7 | §9 | — | 22 permissions, 4 roles | Same; Employee role conflict (C-1) | **Open Decision** |
+| RBAC | §7 | §9 | — | 23 permissions, 4 roles | Same; Employee role conflict (C-1) | **Open Decision** |
 | PII Guard | §12 | §12 | — | Presidio, 3 ingestion points | Same + webhooks + tool results | **Conditionally Frozen** |
 | Company Brain | §8 | §11 | ADR-003 | Knowledge CRUD, atomic persistence | Same | **Frozen** |
 | Secure RAG | §9 | §11 | ADR-001 | pgvector HNSW, ApprovedContext | Same + lexical/hybrid (deferred) | **Conditionally Frozen** |
@@ -1935,10 +1937,10 @@ Requirements → Source → Current Implementation → Final Requirement → Sta
 
 ## Appendix A: Permission Matrix
 
-Full permission matrix is in §7. The 22 permissions use colon-based format:
+Full permission matrix is in §7. The 23 permissions use colon-based format:
 
 ```
-tenant:create, tenant:read, user:create, membership:create,
+tenant:create, tenant:read, user:create, user:read, membership:create,
 knowledge:create, knowledge:read,
 skill:create, skill:read, skill:update, skill:delete, skill:execute,
 tool:read, tool:execute,
@@ -1966,4 +1968,4 @@ webhook_events, api_request_records, approval_requests
 
 ## Appendix C: API Endpoints
 
-Full endpoint list is in §23. 31 endpoints total across 15 resource groups. All tenant-scoped endpoints enforce `_require_path_tenant_matches_context()`. Webhook ingestion uses HMAC authentication (no RBAC).
+Full endpoint list is in §23. 32 endpoints total across 15 resource groups. All tenant-scoped endpoints enforce `_require_path_tenant_matches_context()`. Webhook ingestion uses HMAC authentication (no RBAC).

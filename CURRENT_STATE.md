@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-007 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54); Issue #58 tenant onboarding owner auto-assignment implemented (uncommitted)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-007 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54); Issue #58 tenant onboarding owner auto-assignment implemented and merged (PR #74); Issue #61 platform user listing implemented (uncommitted)
 
 ## Completed
 
@@ -1300,6 +1300,34 @@ inconvenient for the creator.
   test proves tenant rollback when membership INSERT fails (FK violation
   on nonexistent user).
 
+## Issue #61 — Platform User Listing (Implemented)
+
+**Issue:** GitHub #61 — "feat(platform): add global user listing to Platform Users page"
+**Resolution:** Add `GET /platform/users` endpoint with `user:read` permission (PLATFORM_ADMINISTRATOR only). Replace frontend placeholder with query-backed user table.
+
+### What changed
+
+- **`src/arc/security/authorization.py`**: New `USER_READ = Permission(resource="user", action="read")` permission. Granted to PLATFORM_ADMINISTRATOR only. Permission count increases from 22 to 23.
+- **`src/arc/repositories/__init__.py`**: Added `list_all()` to `UserRepository` Protocol.
+- **`src/arc/repositories/tenancy.py`**: Implemented `list_all()` in `PostgreSQLUserRepository` — `SELECT id, email, username, status, created_at, updated_at FROM users ORDER BY created_at DESC`.
+- **`src/arc/services/domain.py`**: Added `UserService.list_all_users()`.
+- **`src/arc/api/controllers.py`**: New `GET /platform/users` endpoint — requires `USER_READ` permission via `require_permission(USER_READ)`. Returns list of user identity dictionaries.
+- **`frontend/src/api/endpoints/users.js`**: Added `listPlatformUsers()` function.
+- **`frontend/src/api/queryKeys.js`**: Added `platformUsers()` query key factory.
+- **`frontend/src/pages/platform/PlatformUsersPage.jsx`**: Replaced placeholder with query-backed user listing table (Avatar, email, username, status badge, created date). Preserves New User dialog and demo mode.
+- **`tests/test_platform_user_listing.py`** (new): 7 tests — success, 403 for unauthorized roles, empty list, response fields, production OpenAPI.
+- **`tests/test_api_surface.py`**: Updated to verify `GET /platform/users` is public production API.
+- **`tests/test_rbac.py`**: Updated permission matrix to include `USER_READ` for all roles.
+
+### What was NOT changed
+
+- No schema changes.
+- No changes to `POST /users` behavior.
+- No changes to dev-only endpoints.
+- No pagination, search, editing, or deletion.
+- No ApplicationRole assignment.
+- No tenant-membership display.
+
 ## In Progress
 
 ### GitHub / Engineering Workflow
@@ -1368,8 +1396,7 @@ Bala is responsible for:
 
 ## Next
 
-1. Open PR for Issue #58 tenant onboarding fix (branch: `fix/tenant-onboarding-owner`).
-2. Coordinate the next Bala Foundation issue with Joe and Bharath.
+1. Coordinate the next Bala Foundation issue with Joe and Bharath.
 3. Continue the AI development setup.
 4. Complete Foundation cross-platform verification (macOS — Joe's responsibility).
 5. Connect GitHub with Linear.
