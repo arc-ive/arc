@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-007 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54); Issue #58 tenant onboarding owner auto-assignment implemented (uncommitted)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-008 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54); Issue #58 tenant onboarding owner auto-assignment merged (PR #74); Issue #60 RBAC role independence clarified (ADR-008)
 
 ## Completed
 
@@ -1300,6 +1300,49 @@ inconvenient for the creator.
   test proves tenant rollback when membership INSERT fails (FK violation
   on nonexistent user).
 
+## Issue #60 — RBAC Role Independence Clarification (Implemented)
+
+**Issue:** GitHub #60 — "clarify(auth): define provisioning and mapping between application RBAC roles and tenant membership roles"
+**Resolution:** Option B — completely independent role systems, no automatic mapping.
+**ADR:** ADR-008 (`docs/architecture/decisions/ADR-008-tenant-membership-and-application-rbac-roles.md`)
+
+### Decision
+
+UserRole (tenant membership: OWNER/MEMBER/VIEWER) and ApplicationRole
+(platform RBAC: PLATFORM_ADMINISTRATOR/COMPANY_ADMINISTRATOR/OPERATIONS_USER/EMPLOYEE)
+are and must remain completely independent role systems.
+
+- No automatic mapping exists between them.
+- Membership in a tenant does NOT grant application-level permissions.
+- ApplicationRole assignment does NOT grant tenant-level access.
+- Both systems must be satisfied independently for full access.
+
+### What changed
+
+- **ADR-008** created at `docs/architecture/decisions/ADR-008-tenant-membership-and-application-rbac-roles.md`.
+  Formalizes the role-system relationship, provisioning model, default
+  behavior, assignment authority, multi-tenant behavior, and compatibility
+  with existing architecture.
+- **CURRENT_STATE.md** updated with Issue #60 resolution and ADR-008 reference.
+
+### What was NOT changed
+
+- No code changes. The architecture already implements independent role systems.
+- No schema changes. Both systems use existing storage mechanisms.
+- No test changes. Existing tests already verify role independence.
+- No permission matrix changes. The existing matrix is correct.
+- No service or controller changes. The authorization flow is correct.
+
+### Verification
+
+- Existing tests verify independence:
+  - `test_application_roles_are_independent_of_membership_roles`
+  - `test_membership_role_never_grants_application_permissions`
+  - `test_permission_matrix` (all four ApplicationRoles)
+  - `test_tenant_creation_assigns_owner_membership` (OWNER created, no ApplicationRole change)
+  - `test_tenant_isolation_after_creation` (cross-tenant isolation maintained)
+- No regressions expected (documentation-only change).
+
 ## In Progress
 
 ### GitHub / Engineering Workflow
@@ -1368,7 +1411,7 @@ Bala is responsible for:
 
 ## Next
 
-1. Open PR for Issue #58 tenant onboarding fix (branch: `fix/tenant-onboarding-owner`).
+1. Open PR for Issue #60 RBAC role independence clarification (branch: `fix/issue-60-rbac-provisioning`).
 2. Coordinate the next Bala Foundation issue with Joe and Bharath.
 3. Continue the AI development setup.
 4. Complete Foundation cross-platform verification (macOS — Joe's responsibility).
