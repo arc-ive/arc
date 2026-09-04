@@ -261,11 +261,13 @@ class AuthenticatedPrincipal:
 
 ### Test Users
 
-| User | Role |
-|---|---|
-| `demo-user` | platform_administrator |
-| `admin-a` | company_administrator |
-| `employee-a` | employee |
+| User | Role | Source |
+|---|---|---|
+| `demo-user` | platform_administrator | Repository bootstrap (`src/arc/setup/init.py`) |
+| `admin-a` | company_administrator | Environment configuration (`APPLICATION_ROLE_ASSIGNMENTS`) |
+| `employee-a` | employee | Environment configuration (`APPLICATION_ROLE_ASSIGNMENTS`) |
+
+`demo-user` is the only user created by the repository bootstrap process. `admin-a` and `employee-a` are development/test identities whose application roles are supplied through the `APPLICATION_ROLE_ASSIGNMENTS` environment variable — they are not created by any repository code.
 
 ### Enterprise SSO
 
@@ -1525,7 +1527,7 @@ pytest (configured in `pyproject.toml`)
 
 ### Current Test Coverage
 
-**13 test files** in `tests/` directory. Local pytest is blocked by `.venv` truststore bug on macOS. CI runs via GitHub Actions.
+**62 test files** in `tests/` directory. Local pytest is blocked by `.venv` truststore bug on macOS. CI runs via GitHub Actions.
 
 | Test Area | Files | Coverage Status |
 |---|---|---|
@@ -1561,7 +1563,7 @@ GitHub Actions runs lint (Ruff) and tests on every PR and push to `main`.
 - 12 database tables
 - Docker Compose local environment
 - CI pipeline
-- 13 test files (local pytest blocked by `.venv` truststore bug on macOS)
+- 62 test files (local pytest blocked by `.venv` truststore bug on macOS)
 
 ### Deferred / Excluded / Not Yet Implemented
 
@@ -1927,7 +1929,7 @@ Requirements → Source → Current Implementation → Final Requirement → Sta
 | Database | §23 | §3 | — | 12 tables | Same + agent_runs + skill_executions (if C-4) | **Open Decision** |
 | Frontend | §4 | §3 | — | 33 pages, sessionStorage | Same | **Frozen** |
 | Deployment | — | §3 | — | Docker Compose, GitHub Actions CI | Same + AWS | **Deferred** |
-| Testing | — | §25 | — | 13 test files, CI on PR | Same + expanded coverage | **Conditionally Frozen** |
+| Testing | — | §25 | — | 62 test files, CI on PR | Same + expanded coverage | **Conditionally Frozen** |
 
 ---
 
