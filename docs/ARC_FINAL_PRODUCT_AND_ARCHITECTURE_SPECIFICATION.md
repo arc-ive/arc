@@ -281,7 +281,11 @@ class AuthenticatedPrincipal:
 
 ### Roles
 
-| Role | Description |
+**ApplicationRole** (`src/arc/security/models.py`) — platform-level RBAC roles.
+These are independent from the tenant membership roles (`UserRole`: OWNER/MEMBER/VIEWER).
+See ADR-008 for the formal relationship.
+
+| ApplicationRole | Description |
 |---|---|
 | `platform_administrator` | Manages Arc-level configuration and tenant administration |
 | `company_administrator` | Manages one customer organization's users, knowledge, and configuration |
@@ -1313,7 +1317,8 @@ OMNIROUTE_BASE_URL=          # optional, routes through gateway
 
 | Enum | Values |
 |---|---|
-| `UserRole` | platform_administrator, company_administrator, operations_user, employee |
+| `UserRole` (tenant membership) | owner, member, viewer |
+| `ApplicationRole` (platform RBAC) | platform_administrator, company_administrator, operations_user, employee |
 | `ConnectorProvider` | github, slack, linear, google_drive |
 | `ConnectorStatus` | active, inactive, error |
 | `KnowledgeStatus` | active, archived |
