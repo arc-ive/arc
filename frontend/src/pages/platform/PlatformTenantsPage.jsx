@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Building2, Plus } from 'lucide-react'
@@ -32,11 +32,11 @@ function CreateTenantDialog({ open, onClose }) {
     onError: (err) => setError(errorMessage(err)),
   })
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (mutation.isPending) return
     onClose()
     setError(null)
-  }
+  }, [mutation.isPending, onClose])
 
   const canSubmit = form.id.trim() && form.name.trim() && !mutation.isPending
 
@@ -103,6 +103,7 @@ export function PlatformTenantsPage() {
   const { principal, isDemo } = useAuth()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
+  const handleCloseCreate = useCallback(() => setCreateOpen(false), [])
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
@@ -221,7 +222,7 @@ export function PlatformTenantsPage() {
 
       <CreateTenantDialog
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={handleCloseCreate}
       />
     </div>
   )
