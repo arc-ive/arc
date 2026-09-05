@@ -16,6 +16,9 @@ RUN python -m pip install --upgrade pip \
     && python -m pip install ".[dev]" \
     && chown -R 1000:1000 /app
 
+ENV XDG_CACHE_HOME=/app/.cache
+RUN mkdir -p /app/.cache && chown 1000:1000 /app/.cache
+
 USER 1000:1000
 
 EXPOSE 8000
