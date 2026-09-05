@@ -63,6 +63,7 @@ from arc.security.authorization import (
     TOOL_EXECUTE,
     TOOL_READ,
     USER_CREATE,
+    USER_READ,
     WEBHOOK_READ,
     AuthorizationService,
 )
@@ -336,6 +337,31 @@ async def create_user(
         "created_at": created_user.created_at.isoformat(),
         "updated_at": created_user.updated_at.isoformat(),
     }
+
+
+@api_router.get("/platform/users")
+async def list_platform_users(
+    _: AuthenticatedPrincipal = Depends(require_permission(USER_READ)),
+    user_service: UserService = Depends(lambda: app_context.user_service),
+) -> List[Dict[str, Any]]:
+    """List all provisioned users — PLATFORM_ADMINISTRATOR only.
+
+    Protected: requires the global ``user:read`` permission
+    (PLATFORM_ADMINISTRATOR). Returns all users regardless of tenant
+    membership. No tenant context is required.
+    """
+    users = await user_service.list_all_users()
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "username": user.username,
+            "status": user.status,
+            "created_at": user.created_at.isoformat(),
+            "updated_at": user.updated_at.isoformat(),
+        }
+        for user in users
+    ]
 
 
 @api_router.get("/tenants/{tenant_id}/users")

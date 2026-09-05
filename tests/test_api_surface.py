@@ -76,6 +76,16 @@ def test_public_api_does_not_expose_caller_supplied_identity_context():
     assert "GET /tenant-contexts/validate" not in public
 
 
+def test_public_api_exposes_platform_user_listing():
+    """Platform user listing endpoint is public production API.
+
+    GET /platform/users lists all provisioned users.
+    Requires user:read permission (PLATFORM_ADMINISTRATOR only).
+    """
+    public = _route_paths(api_router.routes)
+    assert "GET /platform/users" in public
+
+
 def test_ai_tools_routes_are_public_api_surface():
     """The AI Tools catalog and execution endpoints are public application routes."""
     public = _route_paths(api_router.routes)
@@ -88,6 +98,12 @@ def test_ai_tools_routes_present_in_production_openapi():
     paths = _openapi_paths("production")
     assert "/tenants/{tenant_id}/tools" in paths
     assert "/tenants/{tenant_id}/tools/{name}/execute" in paths
+
+
+def test_platform_user_listing_present_in_production_openapi():
+    """GET /platform/users is a production application route (not dev-only)."""
+    paths = _openapi_paths("production")
+    assert "/platform/users" in paths
 
 
 def test_public_api_exposes_connector_endpoints():

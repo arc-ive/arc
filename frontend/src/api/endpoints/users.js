@@ -5,6 +5,11 @@ export async function createUser(payload) {
   return data
 }
 
+export async function listPlatformUsers() {
+  const { data } = await client.get('/platform/users')
+  return data
+}
+
 export async function getTenantUsers(tenantId) {
   const { data } = await client.get(
     `/tenants/${encodeURIComponent(tenantId)}/users`,

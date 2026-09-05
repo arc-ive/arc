@@ -1,15 +1,32 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ShieldCheck, UserPlus } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { UserPlus, Users } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
-import { createUser } from '../../api/endpoints/users.js'
+import {
+  createUser,
+  listPlatformUsers,
+} from '../../api/endpoints/users.js'
+import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { Button } from '../../components/ui/Button.jsx'
-import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
+import { Card } from '../../components/ui/Card.jsx'
 import { Dialog } from '../../components/ui/Dialog.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { Avatar } from '../../components/ui/Avatar.jsx'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '../../components/ui/Table.jsx'
+import { Skeleton } from '../../components/ui/Skeleton.jsx'
+import { EmptyState } from '../../components/ui/EmptyState.jsx'
+import { ErrorState } from '../../components/ui/ErrorState.jsx'
+import { formatDate } from '../../lib/format.js'
 
 function CreateUserDialog({ open, onClose }) {
   const queryClient = useQueryClient()
@@ -30,8 +47,7 @@ function CreateUserDialog({ open, onClose }) {
         status: form.status,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
-      queryClient.invalidateQueries({ queryKey: ['tenants'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.platformUsers() })
       onClose()
       setForm({ id: '', email: '', username: '', status: 'active' })
     },
@@ -118,6 +134,12 @@ export function PlatformUsersPage() {
   const { isDemo } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
 
+  const users = useQuery({
+    queryKey: queryKeys.platformUsers(),
+    queryFn: listPlatformUsers,
+    enabled: !isDemo,
+  })
+
   return (
     <div className="flex flex-col gap-8">
       <section className="flex flex-wrap items-end justify-between gap-4">
@@ -126,52 +148,119 @@ export function PlatformUsersPage() {
             Users
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Platform-level user provisioning.
+            Platform-level user directory. All provisioned users are listed
+            here regardless of tenant membership.
           </p>
         </div>
-        <Button variant="secondary" onClick={() => setCreateOpen(true)} disabled={isDemo}>
+        <Button
+          variant="secondary"
+          onClick={() => setCreateOpen(true)}
+          disabled={isDemo}
+        >
           <UserPlus className="size-4" />
           New user
         </Button>
       </section>
 
       {isDemo && (
-        <Card>
-          <CardContent>
-            <p className="text-[13px] text-zinc-500">
-              Demo Mode — user provisioning requires a backend session.
-              Sign in with a real JWT to create users.
-            </p>
-          </CardContent>
+        <Card className="p-5">
+          <p className="text-[13px] text-zinc-500">
+            Demo Mode — user listing requires a backend session.
+            Sign in with a real JWT to view and create users.
+          </p>
         </Card>
       )}
 
-      <Card>
-        <CardHeader
-          title="Platform user directory"
-          description="There is no global user listing endpoint yet."
-        />
-        <CardContent>
-          <div className="flex flex-col items-start gap-3">
-            <div className="flex items-center gap-2">
-              <Badge variant="indigo">
-                <ShieldCheck className="mr-1 size-3" />
-                user:create — platform administrators
-              </Badge>
-            </div>
-            <p className="max-w-2xl text-[13px] leading-relaxed text-zinc-500">
-              Creating a user here provisions an identity the backend will
-              accept. Application roles are assigned through the backend
-              configuration (APPLICATION_ROLE_ASSIGNMENTS), and tenant
-              membership is provisioned separately. To list or manage users
-              inside a tenant, open the tenant&apos;s{' '}
-              <span className="text-zinc-300">Users</span> page.
-            </p>
+      {!isDemo && users.isPending && (
+        <Card className="p-5">
+          <div className="flex flex-col gap-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="size-8 rounded-full" />
+                <div className="flex flex-1 flex-col gap-1.5">
+                  <Skeleton className="h-3.5 w-1/3" />
+                  <Skeleton className="h-3 w-1/4" />
+                </div>
+              </div>
+            ))}
           </div>
-        </CardContent>
-      </Card>
+        </Card>
+      )}
 
-      <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+      {!isDemo && users.isError && (
+        <Card>
+          <ErrorState
+            title="Could not load users"
+            message={errorMessage(users.error)}
+            onRetry={() => users.refetch()}
+            error={users.error}
+          />
+        </Card>
+      )}
+
+      {!isDemo && users.data?.length === 0 && (
+        <Card>
+          <EmptyState
+            icon={Users}
+            title="No users provisioned yet"
+            description="Click 'New user' to provision the first platform user."
+          />
+        </Card>
+      )}
+
+      {!isDemo && users.data?.length > 0 && (
+        <Card className="overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Username</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.data.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Avatar name={user.email} size="sm" />
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-zinc-100">
+                          {user.email}
+                        </p>
+                        <p className="truncate font-mono text-xs text-zinc-600">
+                          {user.id}
+                        </p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-zinc-400">
+                    {user.username ?? '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={user.status === 'active' ? 'green' : 'neutral'}
+                      size="sm"
+                      dot
+                    >
+                      {user.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-zinc-500">
+                    {formatDate(user.created_at)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      <CreateUserDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+      />
     </div>
   )
 }
