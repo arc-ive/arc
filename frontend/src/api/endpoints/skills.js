@@ -26,3 +26,10 @@ export async function deleteSkill(tenantId, skillId) {
     params: { tenant_id: tenantId },
   })
 }
+
+export async function executeSkill(tenantId, skillId, body) {
+  const response = await client.post(`/skills/${skillId}/execute`, body, {
+    params: { tenant_id: tenantId },
+  })
+  return response.data
+}
