@@ -125,9 +125,10 @@ class TestSearchAuthentication:
 
 
 class TestSearchAuthorization:
-    async def test_search_requires_knowledge_read_permission(
+    async def test_employee_can_search_knowledge(
         self, client, seeded, make_token, authorization_override
     ):
+        """EMPLOYEE holds knowledge:read (PRD 7.4) and can search documents."""
         tenant, user, _ = seeded
         authorization_override({user.id: ApplicationRole.EMPLOYEE})
         token = make_token(user.id)
@@ -137,7 +138,8 @@ class TestSearchAuthorization:
             headers={"Authorization": f"Bearer {token}"},
             params={"query": "remote"},
         )
-        assert response.status_code == 403
+        assert response.status_code == 200
+        assert response.json() == []
 
     async def test_company_administrator_can_search(
         self, client, seeded, make_token, authorization_override
