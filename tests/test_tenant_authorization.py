@@ -179,8 +179,13 @@ async def test_global_permission_requires_no_tenant_context(
     client, repositories, make_token, authorization_override
 ):
     """A global permission (tenant:create) needs no tenant membership."""
-    authorization_override({"admin": ApplicationRole.PLATFORM_ADMINISTRATOR})
-    token = make_token("admin")
+    user_id = _unique("admin")
+    authorization_override({user_id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+    token = make_token(user_id)
+
+    # Create the user first so FK constraint is satisfied when OWNER membership is created
+    _, user_repo, _ = repositories
+    await user_repo.create(User(id=user_id, email=f"{user_id}@example.com", username=user_id))
 
     response = client.post(
         "/tenants",

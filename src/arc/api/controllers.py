@@ -279,7 +279,13 @@ async def create_tenant(
         name=tenant_data.get("name"),
         status=tenant_data.get("status", "active"),
     )
-    created_tenant = await tenant_service.create_tenant_with_owner(tenant, principal.user_id)
+    try:
+        created_tenant = await tenant_service.create_tenant_with_owner(tenant, principal.user_id)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant already exists",
+        )
     return {
         "id": created_tenant.id,
         "name": created_tenant.name,
@@ -328,7 +334,13 @@ async def create_user(
         username=user_data.get("username"),
         status=user_data.get("status", "active"),
     )
-    created_user = await user_service.create_user(user)
+    try:
+        created_user = await user_service.create_user(user)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User already exists",
+        )
     return {
         "id": created_user.id,
         "email": created_user.email,
