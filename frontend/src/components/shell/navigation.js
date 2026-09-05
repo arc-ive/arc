@@ -78,12 +78,13 @@ const operationsTenantNav = [
 /**
  * Employee navigation is intentionally minimal.
  *
- * EMPLOYEE has zero matrix permissions (authorization.py:194-195).
- * Backend endpoints for knowledge, skills, tools, connectors, webhooks,
- * observability, and approvals all require permissions the employee role
- * does not hold. Showing those nav items would present pages that return
- * 403 on every API call. Only Home (self-scoped) and Ask Arc
- * (intelligence query, separate authorization boundary) are accessible.
+ * EMPLOYEE holds knowledge:read (authorization.py) for Ask Arc (Unified
+ * Intelligence) and Company Brain read access per PRD §7.4. Backend
+ * endpoints for skills, tools, connectors, webhooks, observability,
+ * approvals, and knowledge management (create) require permissions the
+ * employee role does not hold. Showing those nav items would present
+ * pages that return 403 on every API call. Only Home (self-scoped) and
+ * Ask Arc (knowledge:read authorization boundary) are accessible.
  */
 const employeeTenantNav = [
   { to: 'home', label: 'Home', icon: Home },

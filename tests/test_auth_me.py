@@ -53,10 +53,10 @@ async def test_me_reflects_assigned_role_permissions(client, make_token, authori
     assert set(body["permissions"]) == expected
 
 
-async def test_me_reflects_employee_role_with_empty_permissions(
+async def test_me_reflects_employee_role_with_knowledge_read(
     client, make_token, authorization_override
 ):
-    """EMPLOYEE is an explicit role with an intentionally empty matrix."""
+    """EMPLOYEE holds knowledge:read for Ask Arc per PRD §7.4."""
     user_id = _unique("employee")
     authorization_override({user_id: ApplicationRole.EMPLOYEE})
     token = make_token(user_id)
@@ -64,7 +64,7 @@ async def test_me_reflects_employee_role_with_empty_permissions(
     response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     body = response.json()
     assert body["role"] == "employee"
-    assert body["permissions"] == []
+    assert body["permissions"] == ["knowledge:read"]
 
 
 async def test_me_lists_persisted_memberships(
