@@ -224,13 +224,14 @@ def test_authenticated_but_unassigned_user_denied_403(client, make_token):
 
 
 def test_platform_administrator_can_create_tenant(client, make_token, authorization_override):
-    authorization_override({"admin": ApplicationRole.PLATFORM_ADMINISTRATOR})
-    token = make_token("admin")
+    user_id = _unique("admin")
+    authorization_override({user_id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+    token = make_token(user_id)
     # Create the user first so FK constraint is satisfied when OWNER membership is created
     user_resp = client.post(
         "/users",
         headers={"Authorization": f"Bearer {token}"},
-        json={"id": "admin", "email": "admin@example.com", "username": "admin"},
+        json={"id": user_id, "email": f"{user_id}@example.com", "username": user_id},
     )
     assert user_resp.status_code == 200
     try:
@@ -242,7 +243,7 @@ def test_platform_administrator_can_create_tenant(client, make_token, authorizat
         assert response.status_code == 200
     finally:
         client.delete(
-            "/users/admin",
+            f"/users/{user_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -270,8 +271,9 @@ def test_employee_cannot_create_tenant(client, make_token, authorization_overrid
 
 
 def test_platform_administrator_can_create_user(client, make_token, authorization_override):
-    authorization_override({"admin": ApplicationRole.PLATFORM_ADMINISTRATOR})
-    token = make_token("admin")
+    user_id = _unique("admin")
+    authorization_override({user_id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+    token = make_token(user_id)
     response = client.post(
         "/users",
         headers={"Authorization": f"Bearer {token}"},
