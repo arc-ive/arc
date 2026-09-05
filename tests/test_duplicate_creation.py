@@ -22,6 +22,14 @@ class TestDuplicateTenantCreation:
         authorization_override({"admin": ApplicationRole.PLATFORM_ADMINISTRATOR})
         token = make_token("admin")
 
+        # Create the user first so FK constraint is satisfied when OWNER membership is created
+        user_resp = client.post(
+            "/users",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"id": "admin", "email": "admin@example.com", "username": "admin"},
+        )
+        assert user_resp.status_code == 200
+
         tenant_id = _unique("tenant")
 
         first = client.post(
@@ -42,6 +50,14 @@ class TestDuplicateTenantCreation:
     async def test_different_tenant_ids_succeed(self, client, make_token, authorization_override):
         authorization_override({"admin": ApplicationRole.PLATFORM_ADMINISTRATOR})
         token = make_token("admin")
+
+        # Create the user first so FK constraint is satisfied when OWNER membership is created
+        user_resp = client.post(
+            "/users",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"id": "admin", "email": "admin@example.com", "username": "admin"},
+        )
+        assert user_resp.status_code == 200
 
         first = client.post(
             "/tenants",
