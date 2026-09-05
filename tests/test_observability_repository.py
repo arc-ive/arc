@@ -257,9 +257,9 @@ class TestApprovalAggregate:
         tenant_b = await tenants.create(Tenant(id=f"obs-app-b-{uuid.uuid4().hex[:6]}", name="AppB"))
         try:
             async with db._connection_pool.acquire() as conn:
-                await conn.execute(
+                 await conn.execute(
                     """INSERT INTO approval_requests
-                       (id, tenant_id, requested_by_user_id, tool_name, tool_version,
+                       (id, tenant_id, requester_user_id, tool_name, tool_version,
                         risk_level, input_summary, arguments_digest, status, expires_at)
                        VALUES ($1,$2,$3,'check_service_health','1','low','s',
                                repeat('a', 64), 'pending',
@@ -295,7 +295,7 @@ class TestApprovalAggregate:
                 for i, status in enumerate(statuses):
                     await conn.execute(
                         """INSERT INTO approval_requests
-                           (id, tenant_id, requested_by_user_id,
+                           (id, tenant_id, requester_user_id,
                             tool_name, tool_version, risk_level,
                             input_summary, arguments_digest,
                             status, expires_at)
@@ -332,7 +332,7 @@ class TestApprovalAggregate:
             async with db._connection_pool.acquire() as conn:
                 await conn.execute(
                     """INSERT INTO approval_requests
-                       (id, tenant_id, requested_by_user_id, tool_name, tool_version,
+                       (id, tenant_id, requester_user_id, tool_name, tool_version,
                         risk_level, input_summary, arguments_digest, status, created_at, expires_at)
                        VALUES ($1,$2,$3,'check_service_health','1','low','s',
                                repeat('a', 64), 'pending', $4, $5)""",
@@ -344,7 +344,7 @@ class TestApprovalAggregate:
                 )
                 await conn.execute(
                     """INSERT INTO approval_requests
-                       (id, tenant_id, requested_by_user_id,
+                       (id, tenant_id, requester_user_id,
                         tool_name, tool_version, risk_level,
                         input_summary, arguments_digest,
                         status, expires_at)

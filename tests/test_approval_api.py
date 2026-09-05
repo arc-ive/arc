@@ -29,17 +29,17 @@ def _unique(prefix):
     return f"apig-{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-async def _seed(db, tenant_id, *, status=ApprovalStatus.PENDING):
+async def _seed(db, tenant_id, *, status=ApprovalStatus.PENDING, arguments_digest=_DIGEST):
     repo = PostgreSQLApprovalRequestRepository(db)
     request = ApprovalRequest(
         id=f"appr-{uuid.uuid4().hex[:14]}",
         tenant_id=tenant_id,
-        requested_by_user_id="requester-1",
+        requester_user_id="requester-1",
         tool_name="restart_service",
         tool_version="1",
         risk_level="high",
         input_summary='{"target": "svc"}',
-        arguments_digest=_DIGEST,
+        arguments_digest=arguments_digest,
         status=status,
         created_at=_NOW,
         expires_at=_NOW + timedelta(hours=24),
@@ -263,7 +263,7 @@ class TestResponseMinimizationAndIsolation:
             "tool_version",
             "risk_level",
             "status",
-            "requested_by_user_id",
+            "requester_user_id",
             "input_summary",
             "created_at",
             "expires_at",
@@ -292,3 +292,52 @@ class TestResponseMinimizationAndIsolation:
             == 404
         )
         assert _authed(client, "get", _url(foreign_tenant.id), token).status_code == 403
+
+
+class TestEmptyListingAndFieldMapping:
+    async def test_empty_listing_returns_200_and_empty_list(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """GET /tenants/{id}/approvals with no records returns 200 and []."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user.id)
+        response = _authed(client, "get", _url(tenant.id), token)
+        assert response.status_code == 200
+        assert response.json() == []
+
+    async def test_listing_maps_requester_user_id_correctly(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        """The requester_user_id field is mapped from the database column."""
+        tenant, user, _ = seeded
+        await _seed(db, tenant.id)
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user.id)
+        body = _authed(client, "get", _url(tenant.id), token).json()
+        assert len(body) == 1
+        assert body[0]["requester_user_id"] == "requester-1"
+
+    async def test_status_filter_returns_matching_approvals(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        """Status filtering continues to work after the column rename."""
+        tenant, user, _ = seeded
+        await _seed(db, tenant.id)
+        await _seed(db, tenant.id, arguments_digest="a" * 64)
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        all_approvals = _authed(client, "get", _url(tenant.id), token).json()
+        assert len(all_approvals) == 2
+
+        pending = _authed(
+            client, "get", _url(tenant.id) + "?status=pending", token
+        ).json()
+        assert len(pending) == 2
+        assert all(a["status"] == "pending" for a in pending)
+
+        rejected = _authed(
+            client, "get", _url(tenant.id) + "?status=rejected", token
+        ).json()
+        assert len(rejected) == 0

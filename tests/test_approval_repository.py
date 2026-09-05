@@ -25,7 +25,7 @@ def _request(tenant_id, **overrides):
     defaults = dict(
         id=f"appr-{uuid.uuid4().hex[:14]}",
         tenant_id=tenant_id,
-        requested_by_user_id="user-1",
+        requester_user_id="user-1",
         tool_name="restart_service",
         tool_version="1",
         risk_level="high",

@@ -28,7 +28,7 @@ from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
 from arc.domain.models import ApprovalRequest, ApprovalStatus
 
 _COLUMNS = """
-    id, tenant_id, requested_by_user_id, tool_name, tool_version,
+    id, tenant_id, requester_user_id, tool_name, tool_version,
     risk_level, input_summary, arguments_digest, status,
     created_at, expires_at, decided_at, decided_by_user_id, consumed_at
 """
@@ -45,7 +45,7 @@ class PostgreSQLApprovalRequestRepository:
         return ApprovalRequest(
             id=row["id"],
             tenant_id=row["tenant_id"],
-            requested_by_user_id=row["requested_by_user_id"],
+            requester_user_id=row["requester_user_id"],
             tool_name=row["tool_name"],
             tool_version=row["tool_version"],
             risk_level=row["risk_level"],
@@ -65,14 +65,14 @@ class PostgreSQLApprovalRequestRepository:
                 await conn.execute(
                     """
                     INSERT INTO approval_requests
-                        (id, tenant_id, requested_by_user_id, tool_name,
+                        (id, tenant_id, requester_user_id, tool_name,
                          tool_version, risk_level, input_summary,
                          arguments_digest, status, created_at, expires_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     """,
                     request.id,
                     request.tenant_id,
-                    request.requested_by_user_id,
+                    request.requester_user_id,
                     request.tool_name,
                     request.tool_version,
                     request.risk_level,

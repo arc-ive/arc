@@ -1025,7 +1025,7 @@ class ApprovalRequest:
 
     id: str
     tenant_id: str
-    requested_by_user_id: str
+    requester_user_id: str
     tool_name: str
     tool_version: str
     risk_level: str
@@ -1047,7 +1047,7 @@ class ApprovalRequest:
             )
         if not self.tenant_id:
             raise ValueError("Approval request tenant ID cannot be empty")
-        if not self.requested_by_user_id:
+        if not self.requester_user_id:
             raise ValueError("Approval requester user ID cannot be empty")
         if not self.tool_name or len(self.tool_name) > 255:
             raise ValueError(
