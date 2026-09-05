@@ -934,7 +934,7 @@ class TestApprovalConsumptionFlow:
             req = ApprovalRequest(
                 id=f"appr-test-{len(self.approvals)}",
                 tenant_id=kwargs["tenant_id"],
-                requested_by_user_id=kwargs["requester_user_id"],
+                requester_user_id=kwargs["requester_user_id"],
                 tool_name=kwargs["tool_name"],
                 tool_version=kwargs["tool_version"],
                 risk_level=kwargs["risk_level"],
@@ -985,7 +985,7 @@ class TestApprovalConsumptionFlow:
             req = self.approvals.get(approval_id)
             if req is None:
                 raise Exception("not found")
-            if req.requested_by_user_id == principal_user_id:
+            if req.requester_user_id == principal_user_id:
                 raise ApprovalSelfDecisionError("self-approval")
             req.status = decision
             req.decided_by_user_id = principal_user_id

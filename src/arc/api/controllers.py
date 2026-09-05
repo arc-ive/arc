@@ -1496,7 +1496,7 @@ def _approval_payload(approval) -> Dict[str, Any]:
         "tool_version": approval.tool_version,
         "risk_level": approval.risk_level,
         "status": approval.status.value,
-        "requested_by_user_id": approval.requested_by_user_id,
+        "requester_user_id": approval.requester_user_id,
         "input_summary": approval.input_summary,
         "created_at": approval.created_at.isoformat(),
         "expires_at": approval.expires_at.isoformat(),

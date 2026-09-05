@@ -224,7 +224,7 @@ CREATE INDEX IF NOT EXISTS idx_api_request_records_created_at ON api_request_rec
 CREATE TABLE IF NOT EXISTS approval_requests (
     id VARCHAR(255) PRIMARY KEY,
     tenant_id VARCHAR(255) NOT NULL,
-    requested_by_user_id VARCHAR(255) NOT NULL,
+    requester_user_id VARCHAR(255) NOT NULL,
     tool_name VARCHAR(255) NOT NULL,
     tool_version VARCHAR(50) NOT NULL,
     risk_level VARCHAR(50) NOT NULL,

@@ -143,7 +143,7 @@ async def test_record_creates_pending_request_with_24h_ttl():
     stored = repo.rows[approval_id]
     assert stored.status == ApprovalStatus.PENDING
     assert stored.expires_at - stored.created_at == timedelta(hours=24)
-    assert stored.requested_by_user_id == "user-9"
+    assert stored.requester_user_id == "user-9"
 
 
 @pytest.mark.asyncio

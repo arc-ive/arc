@@ -209,7 +209,7 @@ class TestTenantBoundary:
             async with database._connection_pool.acquire() as conn:
                 await conn.execute(
                     """INSERT INTO approval_requests
-                       (id, tenant_id, requested_by_user_id,
+                       (id, tenant_id, requester_user_id,
                         tool_name, tool_version, risk_level,
                         input_summary, arguments_digest,
                         status, expires_at)

@@ -112,7 +112,7 @@ class HumanApprovalService:
             request = ApprovalRequest(
                 id=f"appr-{uuid.uuid4().hex[:16]}",
                 tenant_id=tenant_id,
-                requested_by_user_id=requester_user_id,
+                requester_user_id=requester_user_id,
                 tool_name=tool_name,
                 tool_version=tool_version,
                 risk_level=risk_level,
@@ -197,7 +197,7 @@ class HumanApprovalService:
             await self.repository.expire_if_due(approval_id, context.tenant_id)
             raise ApprovalExpiredError(f"Approval {approval_id} expired before a decision was made")
 
-        if current.requested_by_user_id == principal_user_id:
+        if current.requester_user_id == principal_user_id:
             raise ApprovalSelfDecisionError(
                 f"Approval {approval_id} requester {principal_user_id}"
                 " cannot approve or reject their own request"

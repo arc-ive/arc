@@ -19,7 +19,7 @@ def _request(**overrides):
     defaults = dict(
         id="appr-1",
         tenant_id="tenant-1",
-        requested_by_user_id="user-1",
+        requester_user_id="user-1",
         tool_name="restart_service",
         tool_version="1",
         risk_level="high",
@@ -53,7 +53,7 @@ class TestConstructionValidation:
 
     def test_empty_requester_rejected(self):
         with pytest.raises(ValueError):
-            _request(requested_by_user_id="")
+            _request(requester_user_id="")
 
     def test_empty_tool_name_rejected(self):
         with pytest.raises(ValueError):
