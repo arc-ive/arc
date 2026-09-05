@@ -23,12 +23,8 @@ import logging
 from typing import Any, Dict
 
 from arc.domain.models import ApiRequestRecord
-from arc.services.embeddings import (
-    EmbeddingConfigurationError,
-    build_embedding_provider,
-    get_embedding_settings,
-)
-from arc.services.llm import LlmConfigurationError, build_llm_provider, get_llm_settings
+from arc.services.embeddings import build_embedding_provider, get_embedding_settings
+from arc.services.llm import build_llm_provider, get_llm_settings
 
 logger = logging.getLogger("arc.observability")
 
@@ -181,5 +177,5 @@ class ObservabilityService:
         try:
             build()
             return {"status": "healthy"}
-        except (LlmConfigurationError, EmbeddingConfigurationError):
+        except Exception:
             return {"status": "unhealthy"}

@@ -217,3 +217,25 @@ async def test_component_health_reports_failures_without_details(monkeypatch):
     serialized = str(health)
     assert "secret-config-value" not in serialized
     assert "embedding-config-must-not-leak" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_probe_catches_unexpected_exceptions(monkeypatch):
+    from arc.services import observability as obs_module
+
+    def boom(settings):
+        raise ConnectionError("database connection refused")
+
+    monkeypatch.setattr(obs_module, "get_llm_settings", lambda: object())
+    monkeypatch.setattr(obs_module, "build_llm_provider", boom)
+    monkeypatch.setattr(obs_module, "get_embedding_settings", lambda: object())
+    monkeypatch.setattr(obs_module, "build_embedding_provider", boom)
+
+    service = ObservabilityService(repository=HealthRepository(ok=True))
+    health = await service.get_component_health()
+    # Even though the probes raise unexpected exception types,
+    # the health endpoint should return gracefully with "unhealthy" labels.
+    assert health["overall"] == "degraded"
+    assert health["components"]["llm_provider"]["status"] == "unhealthy"
+    assert health["components"]["embeddings"]["status"] == "unhealthy"
+    assert "database connection refused" not in str(health)

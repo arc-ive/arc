@@ -13,11 +13,12 @@ import { FlaskConical } from 'lucide-react'
 function ComponentHealth() {
   const { isDemo } = useAuth()
 
-  const { data: health, isLoading, error } = useQuery({
+  const healthQuery = useQuery({
     queryKey: queryKeys.healthComponents(),
     queryFn: getComponentHealth,
     refetchInterval: 30000,
     enabled: !isDemo,
+    retry: 2,
   })
 
   if (isDemo) {
@@ -35,11 +36,11 @@ function ComponentHealth() {
     )
   }
 
-  if (isLoading) return <Spinner />
-  if (error) return <ErrorState error={error} />
+  if (healthQuery.isLoading) return <Spinner />
+  if (healthQuery.error) return <ErrorState error={healthQuery.error} onRetry={() => healthQuery.refetch()} />
 
-  const components = health?.components || {}
-  const overall = health?.overall || 'unknown'
+  const components = healthQuery.data?.components || {}
+  const overall = healthQuery.data?.overall || 'unknown'
 
   return (
     <Card>
@@ -66,10 +67,12 @@ function ComponentHealth() {
 function PlatformSummary() {
   const { isDemo } = useAuth()
 
-  const { data: summary, isLoading, error } = useQuery({
+  const summaryQuery = useQuery({
     queryKey: queryKeys.observabilityPlatform(),
     queryFn: getPlatformObservabilitySummary,
     enabled: !isDemo,
+    retry: 2,
+    refetchOnWindowFocus: true,
   })
 
   if (isDemo) {
@@ -87,10 +90,10 @@ function PlatformSummary() {
     )
   }
 
-  if (isLoading) return <Spinner />
-  if (error) return <ErrorState error={error} />
+  if (summaryQuery.isLoading) return <Spinner />
+  if (summaryQuery.error) return <ErrorState error={summaryQuery.error} onRetry={() => summaryQuery.refetch()} />
 
-  const http = summary?.http || {}
+  const http = summaryQuery.data?.http || {}
 
   return (
     <Card>
@@ -110,17 +113,17 @@ function PlatformSummary() {
             <p className="text-xs text-zinc-500">Avg Latency</p>
           </div>
           <div className="p-3 rounded-lg bg-zinc-900/50">
-            <p className="text-2xl font-semibold text-zinc-100">{summary?.tool_activity_total || 0}</p>
+            <p className="text-2xl font-semibold text-zinc-100">{summaryQuery.data?.tool_activity_total || 0}</p>
             <p className="text-xs text-zinc-500">Tool Executions</p>
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-3 mt-4">
           <div className="p-3 rounded-lg bg-zinc-900/50">
-            <p className="text-lg font-semibold text-zinc-100">{summary?.connector_syncs_total || 0}</p>
+            <p className="text-lg font-semibold text-zinc-100">{summaryQuery.data?.connector_syncs_total || 0}</p>
             <p className="text-xs text-zinc-500">Connector Syncs</p>
           </div>
           <div className="p-3 rounded-lg bg-zinc-900/50">
-            <p className="text-lg font-semibold text-zinc-100">{summary?.webhook_events_total || 0}</p>
+            <p className="text-lg font-semibold text-zinc-100">{summaryQuery.data?.webhook_events_total || 0}</p>
             <p className="text-xs text-zinc-500">Webhook Events</p>
           </div>
           <div className="p-3 rounded-lg bg-zinc-900/50">
