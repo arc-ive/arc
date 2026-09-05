@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Play, Plus, Trash2, Workflow, AlertTriangle, CheckCircle2, XCircle, ShieldAlert, Ban, Clock } from 'lucide-react'
@@ -63,11 +63,16 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
   const [jsonError, setJsonError] = useState(null)
   const [apiError, setApiError] = useState(null)
   const [result, setResult] = useState(null)
+  const [selectedPreconditions, setSelectedPreconditions] = useState([])
 
   const mutation = useMutation({
     mutationFn: () => {
       const tool_calls = JSON.parse(argsText)
-      return executeSkill(tenantId, skill.id, { tool_calls })
+      const body = { tool_calls }
+      if (selectedPreconditions.length > 0) {
+        body.satisfied_preconditions = selectedPreconditions
+      }
+      return executeSkill(tenantId, skill.id, body)
     },
     onSuccess: (data) => {
       setResult(data)
@@ -76,16 +81,17 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
     onError: (err) => setApiError(errorMessage(err)),
   })
 
-  if (!open || !skill) return null
-
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (mutation.isPending) return
     onClose()
     setArgsText('[]')
     setJsonError(null)
     setApiError(null)
     setResult(null)
-  }
+    setSelectedPreconditions([])
+  }, [mutation.isPending, onClose])
+
+  if (!open || !skill) return null
 
   const handleSubmit = () => {
     setJsonError(null)
@@ -100,6 +106,14 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
     } catch {
       setJsonError('Invalid JSON — please check your input')
     }
+  }
+
+  const hasPreconditions = skill.preconditions && skill.preconditions.length > 0
+
+  const togglePrecondition = (pre) => {
+    setSelectedPreconditions((prev) =>
+      prev.includes(pre) ? prev.filter((p) => p !== pre) : [...prev, pre],
+    )
   }
 
   const inputClass = "mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none font-mono"
@@ -166,6 +180,35 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
             </div>
           ) : (
             <div className="space-y-4 mb-6">
+              {hasPreconditions && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Preconditions
+                  </label>
+                  <p className="text-xs text-zinc-500 mb-2">
+                    Confirm that each precondition is satisfied before executing.
+                  </p>
+                  <div className="space-y-2">
+                    {skill.preconditions.map((pre, idx) => (
+                      <label key={idx} className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedPreconditions.includes(pre)}
+                          onChange={() => togglePrecondition(pre)}
+                          disabled={mutation.isPending}
+                          className="mt-0.5 size-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500/40"
+                        />
+                        <span className="text-sm text-zinc-300">{pre}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!hasPreconditions && (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3.5 py-2.5">
+                  <p className="text-xs text-zinc-500">No preconditions required for this skill.</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-zinc-300">
                   Tool calls (JSON array)

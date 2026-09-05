@@ -334,4 +334,228 @@ describe('SkillsPage — execution controls', () => {
     expect(screen.getByText('check_health')).toBeInTheDocument()
     expect(screen.getByText('restart_service')).toBeInTheDocument()
   })
+
+  it('shows precondition checkboxes for skill with preconditions', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    expect(screen.getByText('Preconditions')).toBeInTheDocument()
+    expect(screen.getByText('Service must be monitored')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox')).toBeInTheDocument()
+  })
+
+  it('shows no-preconditions message for skill without preconditions', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[1])
+
+    expect(screen.getByText('No preconditions required for this skill.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('sends satisfied_preconditions when checkboxes are selected', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-7',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+    expect(mockExecuteSkill).toHaveBeenCalledWith(
+      't-123',
+      'skill-1',
+      expect.objectContaining({
+        tool_calls: expect.any(Array),
+        satisfied_preconditions: ['Service must be monitored'],
+      }),
+    )
+  })
+
+  it('does not send satisfied_preconditions when none selected', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-8',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+    expect(mockExecuteSkill).toHaveBeenCalledWith(
+      't-123',
+      'skill-1',
+      expect.objectContaining({
+        tool_calls: expect.any(Array),
+      }),
+    )
+    const callBody = mockExecuteSkill.mock.calls[0][2]
+    expect(callBody).not.toHaveProperty('satisfied_preconditions')
+  })
+
+  it('resets precondition selections when dialog closes and reopens', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByRole('checkbox'))
+    expect(screen.getByRole('checkbox').checked).toBe(true)
+
+    await user.click(screen.getByText('Cancel'))
+    expect(screen.queryByText('Preconditions')).not.toBeInTheDocument()
+
+    await user.click(executeButtons[0])
+    expect(screen.getByRole('checkbox').checked).toBe(false)
+  })
+
+  it('displays 403 error on permission denied', async () => {
+    mockExecuteSkill.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 403, data: { detail: 'Not enough permissions' } },
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Not enough permissions')).toBeInTheDocument()
+  })
+
+  it('sends correct request body with tool_calls array', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-9',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    await user.clear(textarea)
+    fireEvent.change(textarea, { target: { value: '[{"tool_name": "check_service_health", "input": {"svc": "web"}}]' } })
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+    expect(mockExecuteSkill).toHaveBeenCalledWith(
+      't-123',
+      'skill-1',
+      {
+        tool_calls: [{ tool_name: 'check_service_health', input: { svc: 'web' } }],
+      },
+    )
+  })
+
+  it('prevents duplicate submission while mutation is pending', async () => {
+    let resolveMutation
+    mockExecuteSkill.mockImplementation(() => new Promise((resolve) => { resolveMutation = resolve }))
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByText('Execute'))
+    expect(screen.getByText('Executing...')).toBeInTheDocument()
+    expect(screen.queryByText('Execute')).not.toBeInTheDocument()
+
+    resolveMutation({ id: 'exec-10', status: 'succeeded', error_kind: null, steps: [] })
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+  })
+
+  it('shows approval_required result with clear explanation', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-11',
+      status: 'approval_required',
+      error_kind: 'approval_required',
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Approval required')).toBeInTheDocument()
+    expect(screen.getByText(/approval_required/)).toBeInTheDocument()
+  })
+
+  it('displays succeeded status badge with green variant', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-12',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByText('Execute'))
+
+    const badge = await screen.findByText('Succeeded')
+    expect(badge).toBeInTheDocument()
+  })
+
+  it('allows submitting empty tool_calls array (backend validates)', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-13',
+      status: 'failed',
+      error_kind: 'invalid_request',
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    await user.clear(textarea)
+    fireEvent.change(textarea, { target: { value: '[]' } })
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(mockExecuteSkill).toHaveBeenCalledWith('t-123', 'skill-1', { tool_calls: [] })
+  })
 })
