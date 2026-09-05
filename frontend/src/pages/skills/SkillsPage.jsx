@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, Workflow, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Play, Plus, Trash2, Workflow, AlertTriangle, CheckCircle2, XCircle, ShieldAlert, Ban, Clock } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
-import { listSkills, getSkill, createSkill, deleteSkill } from '../../api/endpoints/skills.js'
+import { listSkills, getSkill, createSkill, deleteSkill, executeSkill } from '../../api/endpoints/skills.js'
 import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
@@ -48,6 +48,208 @@ function DeleteConfirmDialog({ open, onConfirm, onCancel, skillName, isPending }
   )
 }
 
+const STATUS_CONFIG = {
+  succeeded: { icon: CheckCircle2, label: 'Succeeded', variant: 'green' },
+  failed: { icon: XCircle, label: 'Failed', variant: 'red' },
+  precondition_failed: { icon: ShieldAlert, label: 'Precondition failed', variant: 'amber' },
+  approval_required: { icon: Clock, label: 'Approval required', variant: 'amber' },
+  denied: { icon: Ban, label: 'Denied', variant: 'red' },
+}
+
+function ExecuteSkillDialog({ open, onClose, skill }) {
+  const queryClient = useQueryClient()
+  const { tenantId } = useTenant()
+  const [argsText, setArgsText] = useState('[]')
+  const [jsonError, setJsonError] = useState(null)
+  const [apiError, setApiError] = useState(null)
+  const [result, setResult] = useState(null)
+  const [selectedPreconditions, setSelectedPreconditions] = useState([])
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const tool_calls = JSON.parse(argsText)
+      const body = { tool_calls }
+      if (selectedPreconditions.length > 0) {
+        body.satisfied_preconditions = selectedPreconditions
+      }
+      return executeSkill(tenantId, skill.id, body)
+    },
+    onSuccess: (data) => {
+      setResult(data)
+      queryClient.invalidateQueries({ queryKey: queryKeys.skills(tenantId) })
+    },
+    onError: (err) => setApiError(errorMessage(err)),
+  })
+
+  const handleClose = useCallback(() => {
+    if (mutation.isPending) return
+    onClose()
+    setArgsText('[]')
+    setJsonError(null)
+    setApiError(null)
+    setResult(null)
+    setSelectedPreconditions([])
+  }, [mutation.isPending, onClose])
+
+  if (!open || !skill) return null
+
+  const handleSubmit = () => {
+    setJsonError(null)
+    setApiError(null)
+    try {
+      const parsed = JSON.parse(argsText)
+      if (!Array.isArray(parsed)) {
+        setJsonError('Tool-call arguments must be a JSON array')
+        return
+      }
+      mutation.mutate()
+    } catch {
+      setJsonError('Invalid JSON — please check your input')
+    }
+  }
+
+  const hasPreconditions = skill.preconditions && skill.preconditions.length > 0
+
+  const togglePrecondition = (pre) => {
+    setSelectedPreconditions((prev) =>
+      prev.includes(pre) ? prev.filter((p) => p !== pre) : [...prev, pre],
+    )
+  }
+
+  const inputClass = "mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none font-mono"
+
+  return (
+    <Dialog open={open} onClose={handleClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-indigo-950/50 border border-indigo-900/50">
+              <Play className="size-5 text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-100">Execute skill</h3>
+              <p className="text-xs text-zinc-500">{skill.name}</p>
+            </div>
+          </div>
+
+          {result ? (
+            <div className="space-y-3 mb-6">
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const cfg = STATUS_CONFIG[result.status]
+                  const Icon = cfg?.icon ?? CheckCircle2
+                  return (
+                    <>
+                      <Badge variant={cfg?.variant ?? 'neutral'}>
+                        <Icon className="size-3" />
+                        {cfg?.label ?? result.status}
+                      </Badge>
+                    </>
+                  )
+                })()}
+              </div>
+              {result.error_kind && (
+                <p className="text-xs text-zinc-400">
+                  Error: <span className="text-zinc-300">{result.error_kind}</span>
+                </p>
+              )}
+              {result.steps && result.steps.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-zinc-500">Steps</p>
+                  {result.steps.map((step) => (
+                    <div key={step.sequence} className="rounded border border-zinc-800 bg-zinc-950/50 p-2.5 text-xs">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-zinc-500">#{step.sequence + 1}</span>
+                        <span className="text-zinc-300 font-mono">{step.tool_name}</span>
+                        <Badge variant={step.status === 'success' ? 'green' : 'red'} size="sm">
+                          {step.status}
+                        </Badge>
+                      </div>
+                      {step.output && (
+                        <pre className="mt-1 whitespace-pre-wrap text-zinc-400 overflow-x-auto">
+                          {JSON.stringify(step.output, null, 2)}
+                        </pre>
+                      )}
+                      {step.error_kind && (
+                        <p className="mt-1 text-red-400">{step.error_kind}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4 mb-6">
+              {hasPreconditions && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Preconditions
+                  </label>
+                  <p className="text-xs text-zinc-500 mb-2">
+                    Confirm that each precondition is satisfied before executing.
+                  </p>
+                  <div className="space-y-2">
+                    {skill.preconditions.map((pre, idx) => (
+                      <label key={idx} className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedPreconditions.includes(pre)}
+                          onChange={() => togglePrecondition(pre)}
+                          disabled={mutation.isPending}
+                          className="mt-0.5 size-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500/40"
+                        />
+                        <span className="text-sm text-zinc-300">{pre}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!hasPreconditions && (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3.5 py-2.5">
+                  <p className="text-xs text-zinc-500">No preconditions required for this skill.</p>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">
+                  Tool calls (JSON array)
+                </label>
+                <textarea
+                  value={argsText}
+                  onChange={(e) => setArgsText(e.target.value)}
+                  className={inputClass}
+                  rows={6}
+                  placeholder='[{"tool_name": "check_health", "input": {}}]'
+                  spellCheck={false}
+                  disabled={mutation.isPending}
+                />
+                {jsonError && (
+                  <p className="mt-1 text-xs text-red-400">{jsonError}</p>
+                )}
+              </div>
+              {apiError && (
+                <div className="rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+                  {apiError}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={handleClose} disabled={mutation.isPending}>
+              {result ? 'Close' : 'Cancel'}
+            </Button>
+            {!result && (
+              <Button onClick={handleSubmit} disabled={mutation.isPending}>
+                {mutation.isPending ? 'Executing...' : 'Execute'}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 function SkillList() {
   const queryClient = useQueryClient()
   const { tenantId } = useTenant()
@@ -55,7 +257,9 @@ function SkillList() {
   const { can } = useCapabilities()
   const canCreate = can('skill:create')
   const canDelete = can('skill:delete')
+  const canExecute = can('skill:execute')
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [executeTarget, setExecuteTarget] = useState(null)
 
   const { data: skills, isLoading, error } = useQuery({
     queryKey: queryKeys.skills(tenantId),
@@ -103,6 +307,11 @@ function SkillList() {
         onConfirm={() => deleteTarget && deleteMutation.mutate({ skillId: deleteTarget.id })}
         onCancel={() => setDeleteTarget(null)}
       />
+      <ExecuteSkillDialog
+        open={Boolean(executeTarget)}
+        skill={executeTarget}
+        onClose={() => setExecuteTarget(null)}
+      />
       <div className="flex items-center justify-between">
         <p className="text-sm text-zinc-500">
           {skills.length} skill{skills.length !== 1 ? 's' : ''}
@@ -134,6 +343,16 @@ function SkillList() {
               <div className="flex items-center gap-2 ml-4">
                 <Badge variant={skill.status === 'active' ? 'green' : 'neutral'}>{skill.status}</Badge>
                 <span className="text-xs text-zinc-600">v{skill.version}</span>
+                {canExecute && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setExecuteTarget(skill)}
+                    title="Execute skill"
+                  >
+                    <Play className="size-4 text-zinc-500" />
+                  </Button>
+                )}
                 {canDelete && (
                   <Button
                     variant="ghost"
