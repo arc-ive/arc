@@ -483,7 +483,13 @@ async def create_skill(
         provenance=skill_data.get("provenance"),
         status=status_value,
     )
-    created_skill = await skill_service.create_skill(context, skill)
+    try:
+        created_skill = await skill_service.create_skill(context, skill)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Skill '{skill.name}' version '{skill.version}' already exists in this tenant.",
+        )
     return _skill_response(created_skill)
 
 
