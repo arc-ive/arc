@@ -257,7 +257,7 @@ class TestApprovalAggregate:
         tenant_b = await tenants.create(Tenant(id=f"obs-app-b-{uuid.uuid4().hex[:6]}", name="AppB"))
         try:
             async with db._connection_pool.acquire() as conn:
-                 await conn.execute(
+                await conn.execute(
                     """INSERT INTO approval_requests
                        (id, tenant_id, requester_user_id, tool_name, tool_version,
                         risk_level, input_summary, arguments_digest, status, expires_at)

@@ -331,13 +331,9 @@ class TestEmptyListingAndFieldMapping:
         all_approvals = _authed(client, "get", _url(tenant.id), token).json()
         assert len(all_approvals) == 2
 
-        pending = _authed(
-            client, "get", _url(tenant.id) + "?status=pending", token
-        ).json()
+        pending = _authed(client, "get", _url(tenant.id) + "?status=pending", token).json()
         assert len(pending) == 2
         assert all(a["status"] == "pending" for a in pending)
 
-        rejected = _authed(
-            client, "get", _url(tenant.id) + "?status=rejected", token
-        ).json()
+        rejected = _authed(client, "get", _url(tenant.id) + "?status=rejected", token).json()
         assert len(rejected) == 0
