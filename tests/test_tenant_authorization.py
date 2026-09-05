@@ -188,3 +188,85 @@ async def test_global_permission_requires_no_tenant_context(
         json={"id": _unique("tenant"), "name": "Global Admin Tenant"},
     )
     assert response.status_code == 200
+
+
+async def test_owner_in_tenant_a_cannot_access_tenant_b(
+    client, repositories, make_token, authorization_override
+):
+    """OWNER membership in Tenant A must not grant access to Tenant B.
+
+    Regression test for Issue #60: tenant isolation must be independent
+    of ApplicationRole. An OWNER in one tenant cannot see another tenant.
+    """
+    tenant_repo, user_repo, membership_repo = repositories
+    tenant_a = await tenant_repo.create(Tenant(id=_unique("tenant-a"), name="Tenant A"))
+    tenant_b = await tenant_repo.create(Tenant(id=_unique("tenant-b"), name="Tenant B"))
+    user = await user_repo.create(
+        User(id=_unique("user"), email=f"{uuid.uuid4().hex}@example.com", username="owner-user")
+    )
+    membership_a = await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=user.id,
+            tenant_id=tenant_a.id,
+            role=UserRole.OWNER,
+        )
+    )
+    authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+    token = make_token(user.id)
+
+    # Can access Tenant A (OWNER + has ApplicationRole with tenant:read)
+    response = client.get(f"/tenants/{tenant_a.id}", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+
+    # Cannot access Tenant B (no membership)
+    response = client.get(f"/tenants/{tenant_b.id}", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+
+    await membership_repo.delete(membership_a.id)
+    await user_repo.delete(user.id)
+    await tenant_repo.delete(tenant_a.id)
+    await tenant_repo.delete(tenant_b.id)
+
+
+async def test_owner_does_not_grant_company_administrator_permissions(
+    client, repositories, make_token, authorization_override
+):
+    """OWNER membership must not grant COMPANY_ADMINISTRATOR application permissions.
+
+    Regression test for Issue #60: OWNER is a membership role, not an
+    application role. An OWNER without an ApplicationRole assignment
+    has no platform permissions.
+    """
+    tenant_repo, user_repo, membership_repo = repositories
+    tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Owner Tenant"))
+    user = await user_repo.create(
+        User(id=_unique("user"), email=f"{uuid.uuid4().hex}@example.com", username="owner-only")
+    )
+    membership = await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=user.id,
+            tenant_id=tenant.id,
+            role=UserRole.OWNER,
+        )
+    )
+    # No ApplicationRole assigned
+    authorization_override({})
+    token = make_token(user.id)
+
+    # OWNER without ApplicationRole is denied (no tenant:read permission)
+    response = client.get(f"/tenants/{tenant.id}", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+
+    # OWNER without ApplicationRole cannot create tenants either
+    response = client.post(
+        "/tenants",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"id": _unique("tenant"), "name": "Should Fail"},
+    )
+    assert response.status_code == 403
+
+    await membership_repo.delete(membership.id)
+    await user_repo.delete(user.id)
+    await tenant_repo.delete(tenant.id)
