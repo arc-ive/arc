@@ -101,7 +101,7 @@ export function TenantUsagePage() {
 
       {usage.isPending && !isDemo && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: 10 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-zinc-800/80 bg-panel p-4 shadow-card">
               <Skeleton className="h-3 w-16" />
               <Skeleton className="mt-2 h-7 w-12" />
@@ -115,45 +115,45 @@ export function TenantUsagePage() {
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="API Requests"
-              value={data.api_requests ?? 0}
+              value={data.http?.total_requests ?? 'N/A'}
               hint="Total API calls"
             />
             <StatCard
               label="AI Requests"
-              value={data.ai_requests ?? 0}
-              hint="Intelligence queries"
+              value="N/A"
+              hint="Not tracked"
             />
             <StatCard
               label="Tokens"
-              value={data.tokens ?? 0}
-              hint="Total tokens consumed"
+              value="N/A"
+              hint="Not tracked"
             />
             <StatCard
               label="Agent Runs"
-              value={data.agent_runs ?? 0}
-              hint="Automated agent executions"
+              value="N/A"
+              hint="Not tracked"
             />
           </section>
 
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Tool Calls"
-              value={data.tool_calls ?? 0}
+              value={data.tools?.total_executions ?? 'N/A'}
               hint="External tool invocations"
             />
             <StatCard
               label="Webhook Events"
-              value={data.webhook_events ?? 0}
+              value={data.webhooks?.total_events ?? 'N/A'}
               hint="Inbound webhook deliveries"
             />
             <StatCard
               label="Successful"
-              value={data.successful_executions ?? 0}
+              value={data.tools?.successful ?? 'N/A'}
               hint="Completed without error"
             />
             <StatCard
               label="Failed"
-              value={data.failed_executions ?? 0}
+              value={data.tools?.failed ?? 'N/A'}
               hint="Encountered an error"
             />
           </section>
@@ -161,19 +161,19 @@ export function TenantUsagePage() {
           <section className="grid gap-4 sm:grid-cols-2">
             <StatCard
               label="Avg Latency"
-              value={data.avg_latency_ms != null ? `${Math.round(data.avg_latency_ms)}ms` : '—'}
+              value={data.http?.avg_duration_ms != null ? `${Math.round(data.http.avg_duration_ms)}ms` : 'N/A'}
               hint="Mean response time"
             />
             <StatCard
               label="Error Rate"
-              value={data.error_rate != null ? `${(data.error_rate * 100).toFixed(1)}%` : '—'}
-              hint="Failed / total executions"
+              value={data.http?.error_rate != null ? `${(data.http.error_rate * 100).toFixed(1)}%` : 'N/A'}
+              hint="Failed / total requests"
             />
           </section>
 
-          {data.period_hours && (
+          {data.window_hours && (
             <p className="text-xs text-zinc-600">
-              Metrics cover the last {data.period_hours} hours.
+              Metrics cover the last {data.window_hours} hours.
             </p>
           )}
         </>
