@@ -331,6 +331,54 @@ class TestDomainServices:
 
         assert await service.validate_context(context) is True
 
+    async def test_update_tenant_updates_company_config(self, repositories):
+        """Test: update_tenant persists company configuration fields."""
+        from arc.services.domain import TenantService
+
+        tenant_repo, _, _ = repositories
+        service = TenantService(tenant_repo)
+
+        updated_tenant = Tenant(
+            id="test-tenant",
+            name="Updated Tenant",
+            status="active",
+            industry="Technology",
+            address="123 Main St",
+            phone="+1-555-0100",
+            website="https://example.com",
+            logo_url="https://example.com/logo.png",
+        )
+        tenant_repo.update.return_value = updated_tenant
+
+        result = await service.update_tenant(updated_tenant)
+
+        assert result.industry == "Technology"
+        assert result.address == "123 Main St"
+        assert result.phone == "+1-555-0100"
+        assert result.website == "https://example.com"
+        assert result.logo_url == "https://example.com/logo.png"
+        tenant_repo.update.assert_awaited_once_with(updated_tenant)
+
+    async def test_update_tenant_rejects_empty_id(self, repositories):
+        """Test: update_tenant rejects empty tenant ID."""
+        from arc.services.domain import TenantService
+
+        tenant_repo, _, _ = repositories
+        service = TenantService(tenant_repo)
+
+        with pytest.raises(ValueError, match="Tenant ID cannot be empty"):
+            await service.update_tenant(Tenant(id="", name="Test"))
+
+    async def test_update_tenant_rejects_empty_name(self, repositories):
+        """Test: update_tenant rejects empty tenant name."""
+        from arc.services.domain import TenantService
+
+        tenant_repo, _, _ = repositories
+        service = TenantService(tenant_repo)
+
+        with pytest.raises(ValueError, match="Tenant name cannot be empty"):
+            await service.update_tenant(Tenant(id="test-tenant", name=""))
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

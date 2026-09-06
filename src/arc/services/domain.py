@@ -52,6 +52,14 @@ class TenantService:
         """Get tenant by ID."""
         return await self.tenant_repo.get_by_id(tenant_id)
 
+    async def update_tenant(self, tenant: Tenant) -> Tenant:
+        """Update tenant company configuration."""
+        if not tenant.id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not tenant.name:
+            raise ValueError("Tenant name cannot be empty")
+        return await self.tenant_repo.update(tenant)
+
     async def tenant_exists(self, tenant_id: str) -> bool:
         """Check if tenant exists."""
         return await self.tenant_repo.exists(tenant_id)

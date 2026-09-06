@@ -60,6 +60,7 @@ from arc.security.authorization import (
     SKILL_READ,
     TENANT_CREATE,
     TENANT_READ,
+    TENANT_UPDATE,
     TOOL_EXECUTE,
     TOOL_READ,
     USER_CREATE,
@@ -312,8 +313,54 @@ async def get_tenant(
         "id": tenant.id,
         "name": tenant.name,
         "status": tenant.status,
+        "industry": tenant.industry,
+        "address": tenant.address,
+        "phone": tenant.phone,
+        "website": tenant.website,
+        "logo_url": tenant.logo_url,
         "created_at": tenant.created_at.isoformat(),
         "updated_at": tenant.updated_at.isoformat(),
+    }
+
+
+@api_router.put("/tenants/{tenant_id}")
+async def update_tenant(
+    tenant_id: str,
+    tenant_data: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(TENANT_UPDATE)),
+    tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
+) -> Dict[str, Any]:
+    """Update tenant company configuration.
+
+    Protected: requires a trusted X-10 tenant context for the
+    authenticated principal and the ``tenant:update`` permission.
+    Cross-tenant access and missing membership are denied.
+    """
+    existing = await tenant_service.get_tenant(tenant_id)
+    updated = Tenant(
+        id=existing.id,
+        name=tenant_data.get("name", existing.name),
+        status=tenant_data.get("status", existing.status),
+        industry=tenant_data.get("industry", existing.industry),
+        address=tenant_data.get("address", existing.address),
+        phone=tenant_data.get("phone", existing.phone),
+        website=tenant_data.get("website", existing.website),
+        logo_url=tenant_data.get("logo_url", existing.logo_url),
+        created_at=existing.created_at,
+        updated_at=existing.updated_at,
+    )
+    result = await tenant_service.update_tenant(updated)
+    return {
+        "id": result.id,
+        "name": result.name,
+        "status": result.status,
+        "industry": result.industry,
+        "address": result.address,
+        "phone": result.phone,
+        "website": result.website,
+        "logo_url": result.logo_url,
+        "created_at": result.created_at.isoformat(),
+        "updated_at": result.updated_at.isoformat(),
     }
 
 
