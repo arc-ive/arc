@@ -286,7 +286,11 @@ class TestUpdateCompanyConfig:
         tenants = PostgreSQLTenantRepository(db)
         persisted = await tenants.get_by_id(tenant.id)
         assert persisted.updated_at.isoformat() == body["updated_at"]
-        # created_at must not change (compare datetime values, not string
-        # representations, because PostgreSQL returns timezone-aware
-        # timestamps while the original may be naive)
-        assert persisted.created_at.replace(tzinfo=None) == tenant.created_at.replace(tzinfo=None)
+        # created_at must not change.  Compare the API response value
+        # against the persisted DB value (both timezone-aware) because the
+        # seeded fixture uses a naive datetime that may differ from how
+        # PostgreSQL interprets and returns it.
+        from datetime import datetime
+
+        body_created = datetime.fromisoformat(body["created_at"])
+        assert body_created == persisted.created_at
