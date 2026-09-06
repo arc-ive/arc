@@ -12,10 +12,9 @@ package: the shared schema-bootstrap path must be able to connect before
 the ``vector`` extension exists, and vector values are only ever written
 (insert) or compared (similarity search), never decoded back into Python.
 
-The embedding column is fixed at 64 dimensions, matching the
-deterministic embedding provider used by the Secure RAG foundation. A
-future production embedding-provider decision may require a schema
-migration; that decision is intentionally deferred.
+The embedding column is fixed at ``EMBEDDING_DIMENSIONS`` (1536)
+dimensions, matching the production embedding provider. The single
+source of truth is ``EMBEDDING_DIMENSIONS`` in ``arc.services.embeddings``.
 
 The repository performs no authorization. The trusted ``tenant_id`` must
 come from an X-10 validated ``TenantContext`` established by the
