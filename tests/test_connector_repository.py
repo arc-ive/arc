@@ -79,11 +79,13 @@ class TestConnectorRepositoryContract:
             tenant_id=seeded_tenant.id,
             provider=ConnectorProvider.SLACK,
             name="Test Slack",
+            target="#general",
         )
         created = await connector_repo.create(connector)
         assert created.id == connector_id
         assert created.provider == ConnectorProvider.SLACK
         assert created.name == "Test Slack"
+        assert created.target == "#general"
         assert created.status == ConnectorStatus.ACTIVE
 
         fetched = await connector_repo.get_by_id(connector_id, seeded_tenant.id)
@@ -91,6 +93,7 @@ class TestConnectorRepositoryContract:
         assert fetched.tenant_id == seeded_tenant.id
         assert fetched.provider == ConnectorProvider.SLACK
         assert fetched.name == "Test Slack"
+        assert fetched.target == "#general"
         assert fetched.status == ConnectorStatus.ACTIVE
 
         await connector_repo.delete(connector_id, seeded_tenant.id)
@@ -111,6 +114,7 @@ class TestConnectorRepositoryContract:
                     tenant_id=seeded_tenant.id,
                     provider=ConnectorProvider.SLACK,
                     name=f"Slack {i}",
+                    target=f"#{i}-channel",
                 )
             )
             ids.append(cid)
@@ -132,6 +136,7 @@ class TestConnectorRepositoryContract:
                 tenant_id=seeded_tenant.id,
                 provider=ConnectorProvider.GITHUB,
                 name="GitHub",
+                target="org/repo",
             )
         )
         assert await connector_repo.exists(connector_id, seeded_tenant.id) is True
@@ -150,6 +155,7 @@ class TestConnectorRepositoryContract:
                 tenant_id=seeded_tenant.id,
                 provider=ConnectorProvider.LINEAR,
                 name="Linear",
+                target="ENG",
             )
         )
         await connector_repo.delete(connector_id, seeded_tenant.id)
@@ -168,6 +174,7 @@ class TestConnectorRepositoryContract:
                 tenant_id=seeded_tenant.id,
                 provider=ConnectorProvider.SLACK,
                 name="Duplicate Name",
+                target="#general",
             )
         )
         with pytest.raises(DuplicateKeyError):
@@ -177,6 +184,7 @@ class TestConnectorRepositoryContract:
                     tenant_id=seeded_tenant.id,
                     provider=ConnectorProvider.SLACK,
                     name="Duplicate Name",
+                    target="#general",
                 )
             )
         await connector_repo.delete(_unique("conn-a"), seeded_tenant.id)
@@ -200,6 +208,7 @@ class TestConnectorTenantIsolation:
                 tenant_id=tenant_a.id,
                 provider=ConnectorProvider.SLACK,
                 name="Tenant A Slack",
+                target="#a-channel",
             )
         )
 
@@ -221,6 +230,7 @@ class TestConnectorTenantIsolation:
                 tenant_id=tenant_a.id,
                 provider=ConnectorProvider.SLACK,
                 name="Tenant A Slack",
+                target="#a-channel",
             )
         )
 
@@ -232,6 +242,7 @@ class TestConnectorTenantIsolation:
                 tenant_id=tenant_b.id,
                 provider=ConnectorProvider.SLACK,
                 name="Tenant B Slack",
+                target="#b-channel",
             )
         )
 
@@ -258,6 +269,7 @@ class TestConnectorTenantIsolation:
                 tenant_id=tenant_b.id,
                 provider=ConnectorProvider.GITHUB,
                 name="Tenant B GitHub",
+                target="org/repo",
             )
         )
 
@@ -280,6 +292,7 @@ class TestConnectorTenantIsolation:
                 tenant_id=tenant_b.id,
                 provider=ConnectorProvider.LINEAR,
                 name="Tenant B Linear",
+                target="ENG",
             )
         )
 

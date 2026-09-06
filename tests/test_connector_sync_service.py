@@ -315,6 +315,7 @@ class TestConnectorSyncPiiIntegration:
                 tenant_id=tenant.id,
                 provider=ConnectorProvider.GITHUB,
                 name="example/acme",
+                target="acme/project",
             )
         )
 
@@ -376,6 +377,7 @@ class TestConnectorSyncPiiIntegration:
                 tenant_id=tenant.id,
                 provider=ConnectorProvider.GITHUB,
                 name="example/acme",
+                target="acme/project",
             )
         )
 
@@ -439,6 +441,7 @@ class TestConnectorSyncPiiIntegration:
                 tenant_id=tenant.id,
                 provider=ConnectorProvider.GITHUB,
                 name="example/acme",
+                target="acme/project",
             )
         )
 
@@ -558,6 +561,7 @@ class TestConnectorSyncRepeatedSyncDeduplication:
                 tenant_id=tenant.id,
                 provider=ConnectorProvider.GITHUB,
                 name="example/acme",
+                target="acme/project",
             )
         )
 

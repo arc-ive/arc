@@ -62,6 +62,7 @@ class TestConnectorServiceCreate:
             tenant_id=tenant_context.tenant_id,
             provider=ConnectorProvider.SLACK,
             name="Slack Workspace",
+            target="#general",
         )
         connector_repo.create.return_value = expected
 
@@ -115,6 +116,7 @@ class TestConnectorServiceGet:
             tenant_id=tenant_context.tenant_id,
             provider=ConnectorProvider.GITHUB,
             name="GitHub",
+            target="org/repo",
         )
         connector_repo.get_by_id.return_value = expected
 
@@ -144,6 +146,7 @@ class TestConnectorServiceList:
                 tenant_id=tenant_context.tenant_id,
                 provider=ConnectorProvider.SLACK,
                 name="Slack",
+                target="#general",
             )
         ]
         connector_repo.list_for_tenant.return_value = expected
@@ -185,7 +188,7 @@ class TestConnectorServiceTenantIsolation:
             role=UserRole.MEMBER,
         )
         connector_repo.create.return_value = ConnectorConfig(
-            id="id", tenant_id="x", provider=ConnectorProvider.SLACK, name="x"
+            id="id", tenant_id="x", provider=ConnectorProvider.SLACK, name="x", target="x"
         )
 
         await service.create_connector(ctx_a, ConnectorProvider.SLACK, "A")
@@ -213,7 +216,7 @@ class TestConnectorServiceTenantIsolation:
             role=UserRole.MEMBER,
         )
         connector_repo.get_by_id.return_value = ConnectorConfig(
-            id="c1", tenant_id="x", provider=ConnectorProvider.SLACK, name="x"
+            id="c1", tenant_id="x", provider=ConnectorProvider.SLACK, name="x", target="x"
         )
 
         await service.get_connector(ctx_a, "c1")

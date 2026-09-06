@@ -67,6 +67,7 @@ async def seeded_tenant(db):
             tenant_id=tenant.id,
             provider=ConnectorProvider.GITHUB,
             name="example/acme",
+            target="acme/project",
         )
     )
     yield tenant, connector
@@ -88,6 +89,7 @@ async def seeded_tenants(db):
             tenant_id=tenant_a.id,
             provider=ConnectorProvider.SLACK,
             name="general",
+            target="#general",
         )
     )
     connector_b = await connector_repo.create(
@@ -96,6 +98,7 @@ async def seeded_tenants(db):
             tenant_id=tenant_b.id,
             provider=ConnectorProvider.LINEAR,
             name="abc",
+            target="ENG",
         )
     )
     yield tenant_a, tenant_b, connector_a, connector_b

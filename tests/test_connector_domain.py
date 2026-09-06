@@ -52,11 +52,13 @@ class TestConnectorConfigModel:
             tenant_id="test-tenant-1",
             provider=ConnectorProvider.SLACK,
             name="Test Slack",
+            target="#general",
         )
         assert config.id == "test-connector-1"
         assert config.tenant_id == "test-tenant-1"
         assert config.provider == ConnectorProvider.SLACK
         assert config.name == "Test Slack"
+        assert config.target == "#general"
         assert config.status == ConnectorStatus.ACTIVE
 
     def test_config_default_status(self):
@@ -66,8 +68,10 @@ class TestConnectorConfigModel:
             tenant_id="t1",
             provider=ConnectorProvider.GITHUB,
             name="GitHub",
+            target="org/repo",
         )
         assert config.status == ConnectorStatus.ACTIVE
+        assert config.target == "org/repo"
 
     def test_config_explicit_status(self):
         """Test explicit status override."""
@@ -76,9 +80,11 @@ class TestConnectorConfigModel:
             tenant_id="t1",
             provider=ConnectorProvider.LINEAR,
             name="Linear",
+            target="ENG",
             status=ConnectorStatus.INACTIVE,
         )
         assert config.status == ConnectorStatus.INACTIVE
+        assert config.target == "ENG"
 
     def test_config_default_timestamps(self):
         """Test that default timestamps are datetime instances."""
@@ -89,9 +95,20 @@ class TestConnectorConfigModel:
             tenant_id="t1",
             provider=ConnectorProvider.SLACK,
             name="Slack",
+            target="#general",
         )
         assert isinstance(config.created_at, datetime)
         assert isinstance(config.updated_at, datetime)
+
+    def test_config_default_target(self):
+        """Test default target is empty string."""
+        config = ConnectorConfig(
+            id="c1",
+            tenant_id="t1",
+            provider=ConnectorProvider.SLACK,
+            name="Slack",
+        )
+        assert config.target == ""
 
     def test_config_validation_empty_id(self):
         """Test empty ID raises ValueError."""
@@ -101,6 +118,7 @@ class TestConnectorConfigModel:
                 tenant_id="t1",
                 provider=ConnectorProvider.SLACK,
                 name="Slack",
+                target="#general",
             )
 
     def test_config_validation_empty_tenant_id(self):
@@ -111,6 +129,7 @@ class TestConnectorConfigModel:
                 tenant_id="",
                 provider=ConnectorProvider.SLACK,
                 name="Slack",
+                target="#general",
             )
 
     def test_config_validation_empty_name(self):
@@ -121,6 +140,7 @@ class TestConnectorConfigModel:
                 tenant_id="t1",
                 provider=ConnectorProvider.SLACK,
                 name="",
+                target="#general",
             )
 
     def test_config_validation_invalid_provider(self):
@@ -131,6 +151,7 @@ class TestConnectorConfigModel:
                 tenant_id="t1",
                 provider="invalid_provider",
                 name="Test",
+                target="test",
             )
 
     def test_config_validation_invalid_status(self):
@@ -141,5 +162,6 @@ class TestConnectorConfigModel:
                 tenant_id="t1",
                 provider=ConnectorProvider.SLACK,
                 name="Test",
+                target="test",
                 status="invalid_status",
             )
