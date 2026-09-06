@@ -104,11 +104,11 @@ class TestAuthenticationAndAuthorization:
 
 class TestTenantBoundary:
     async def test_cross_tenant_update_denied(
-        self, client, seeded, make_token, authorization_override
+        self, client, seeded, db, make_token, authorization_override
     ):
         tenant_a, user_a = seeded
         # Create a second tenant the user is NOT a member of
-        tenants = PostgreSQLTenantRepository(client.app.state.db)
+        tenants = PostgreSQLTenantRepository(db)
         tenant_b = await tenants.create(
             Tenant(id=_unique("b"), name="Other Tenant", status="active")
         )
@@ -118,7 +118,7 @@ class TestTenantBoundary:
             client, "put", f"/tenants/{tenant_b.id}", token, {"name": "Hacked"}
         )
         assert response.status_code == 403
-        async with client.app.state.db._connection_pool.acquire() as conn:
+        async with db._connection_pool.acquire() as conn:
             await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_b.id)
 
 

@@ -157,7 +157,13 @@ class ArcDatabase:
             )
 
     async def update_tenant(self, tenant: Tenant) -> Tenant:
-        """Update tenant company configuration."""
+        """Update tenant company configuration.
+
+        The SELECT re-reads within the same transaction connection so it
+        sees the updated row before the transaction commits.  This avoids
+        the stale-read bug where ``get_tenant`` acquires a different
+        connection from the pool and misses uncommitted writes.
+        """
         async with self.transaction() as conn:
             try:
                 await conn.execute(
@@ -177,7 +183,26 @@ class ArcDatabase:
                     tenant.logo_url,
                     tenant.updated_at,
                 )
-                return await self.get_tenant(tenant.id)
+                row = await conn.fetchrow(
+                    "SELECT id, name, status, industry, address, phone, "
+                    "website, logo_url, created_at, updated_at "
+                    "FROM tenants WHERE id = $1",
+                    tenant.id,
+                )
+                if not row:
+                    raise NotFoundError(f"Tenant with id {tenant.id} not found")
+                return Tenant(
+                    id=row["id"],
+                    name=row["name"],
+                    status=row["status"],
+                    industry=row["industry"],
+                    address=row["address"],
+                    phone=row["phone"],
+                    website=row["website"],
+                    logo_url=row["logo_url"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
             except Exception as e:
                 raise DatabaseError(f"Failed to update tenant: {e}") from e
 
