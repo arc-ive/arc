@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -29,11 +29,13 @@ function renderWithProviders(ui) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const wrapper = ({ children }) => (
     <MemoryRouter>
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
-    </MemoryRouter>,
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </MemoryRouter>
   )
+  const result = render(ui, { wrapper })
+  return { ...result, queryClient }
 }
 
 describe('PlatformUsersPage', () => {
@@ -119,5 +121,137 @@ describe('PlatformUsersPage', () => {
     expect(addButton.closest('button')).toBeDisabled()
 
     vi.doUnmock('../../auth/useAuth.js')
+  })
+
+  describe('user creation dialog focus', () => {
+    it('User ID input retains focus while typing', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<PlatformUsersPage />)
+
+      await user.click(screen.getByRole('button', { name: /new user/i }))
+
+      const userIdInput = screen.getByLabelText(/user id/i)
+      await user.click(userIdInput)
+      await user.type(userIdInput, 'u_acme_admin')
+
+      expect(userIdInput).toHaveFocus()
+      expect(userIdInput).toHaveValue('u_acme_admin')
+    })
+
+    it('Email input retains focus while typing', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<PlatformUsersPage />)
+
+      await user.click(screen.getByRole('button', { name: /new user/i }))
+
+      const emailInput = screen.getByLabelText(/^email/i)
+      await user.click(emailInput)
+      await user.type(emailInput, 'admin@acme.example')
+
+      expect(emailInput).toHaveFocus()
+      expect(emailInput).toHaveValue('admin@acme.example')
+    })
+
+    it('Username input retains focus while typing', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<PlatformUsersPage />)
+
+      await user.click(screen.getByRole('button', { name: /new user/i }))
+
+      const usernameInput = screen.getByLabelText(/^username/i)
+      await user.click(usernameInput)
+      await user.type(usernameInput, 'admin')
+
+      expect(usernameInput).toHaveFocus()
+      expect(usernameInput).toHaveValue('admin')
+    })
+
+    it('all inputs retain focus across sequential typing', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<PlatformUsersPage />)
+
+      await user.click(screen.getByRole('button', { name: /new user/i }))
+
+      const userIdInput = screen.getByLabelText(/user id/i)
+      const emailInput = screen.getByLabelText(/^email/i)
+      const usernameInput = screen.getByLabelText(/^username/i)
+
+      await user.type(userIdInput, 'u_test')
+      expect(userIdInput).toHaveFocus()
+
+      await user.type(emailInput, 'test@example.com')
+      expect(emailInput).toHaveFocus()
+
+      await user.type(usernameInput, 'testuser')
+      expect(usernameInput).toHaveFocus()
+    })
+
+    it('form submission works after filling required fields', async () => {
+      const { createUser } = await import('../../api/endpoints/users.js')
+      const user = userEvent.setup()
+      renderWithProviders(<PlatformUsersPage />)
+
+      await user.click(screen.getByRole('button', { name: /new user/i }))
+
+      await user.type(screen.getByLabelText(/user id/i), 'u_new_user')
+      await user.type(screen.getByLabelText(/^email/i), 'new@example.com')
+
+      const submitButtons = screen.getAllByRole('button', { name: /^create user$/i })
+      const submitButton = submitButtons[submitButtons.length - 1]
+      expect(submitButton).toBeEnabled()
+
+      await user.click(submitButton)
+
+      expect(createUser).toHaveBeenCalledWith({
+        id: 'u_new_user',
+        email: 'new@example.com',
+        username: null,
+        status: 'active',
+      })
+    })
+
+    it('dialog closes and resets on cancel', async () => {
+      const user = userEvent.setup()
+      renderWithProviders(<PlatformUsersPage />)
+
+      await user.click(screen.getByRole('button', { name: /new user/i }))
+
+      expect(screen.getByLabelText(/user id/i)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /cancel/i }))
+
+      expect(screen.queryByLabelText(/user id/i)).not.toBeInTheDocument()
+    })
+
+    it('retains input focus when parent re-renders while dialog is open', async () => {
+      const user = userEvent.setup()
+      const { rerender } = renderWithProviders(<PlatformUsersPage />)
+
+      await user.click(screen.getByRole('button', { name: /new user/i }))
+
+      const userIdInput = screen.getByLabelText(/user id/i)
+      await user.click(userIdInput)
+      await user.type(userIdInput, 'u_test')
+
+      expect(userIdInput).toHaveFocus()
+
+      // Trigger a parent re-render while the dialog is open.
+      // Without the useCallback fix on handleCloseCreate, this re-render
+      // creates a new onClose reference, causing Dialog's useEffect
+      // [open, onClose] to re-run and steal focus via
+      // dialogRef.current?.focus().
+      rerender(<PlatformUsersPage />)
+
+      // Wait for any async focus side-effects to settle (the Dialog
+      // setTimeout(0) for focus).
+      await act(async () => {
+        await new Promise((resolve) => {
+          setTimeout(resolve, 50)
+        })
+      })
+
+      // The input must still have focus, not the dialog container.
+      expect(userIdInput).toHaveFocus()
+    })
   })
 })
