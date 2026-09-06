@@ -63,10 +63,22 @@ def _route_paths(routes) -> set:
     return paths
 
 
-def test_public_api_does_not_expose_membership_provisioning():
-    """Concern 1: OWNER-capable membership provisioning is not a public endpoint."""
+def test_public_api_does_not_expose_legacy_membership_provisioning():
+    """Concern 1: legacy caller-supplied identity membership path is not a public endpoint."""
     public = _route_paths(api_router.routes)
     assert "POST /users/{user_id}/tenants/{tenant_id}/memberships" not in public
+
+
+def test_public_api_exposes_production_membership_endpoints():
+    """Production membership provisioning endpoints are in the public API.
+
+    POST /tenants/{tenant_id}/memberships creates a membership.
+    DELETE /tenants/{tenant_id}/memberships/{user_id} removes a membership.
+    Both require membership:create permission (PLATFORM_ADMINISTRATOR).
+    """
+    public = _route_paths(api_router.routes)
+    assert "POST /tenants/{tenant_id}/memberships" in public
+    assert "DELETE /tenants/{tenant_id}/memberships/{user_id}" in public
 
 
 def test_public_api_does_not_expose_caller_supplied_identity_context():

@@ -168,6 +168,22 @@ class MembershipService:
         """Get all memberships for a tenant."""
         return await self.membership_repo.get_memberships_for_tenant(tenant_id)
 
+    async def remove_membership(self, user_id: str, tenant_id: str) -> None:
+        """Remove a user's membership from a tenant.
+
+        Args:
+            user_id: The user whose membership to remove.
+            tenant_id: The tenant from which to remove the membership.
+
+        Raises:
+            ValueError: If the membership does not exist.
+        """
+        try:
+            membership = await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)
+        except NotFoundError:
+            raise ValueError(f"No membership found for user {user_id} in tenant {tenant_id}")
+        await self.membership_repo.delete(membership.id)
+
 
 class TenantContextService:
     """Service for managing tenant context."""
