@@ -70,9 +70,10 @@ class TestIntelligenceAuthentication:
 
 
 class TestIntelligenceAuthorization:
-    async def test_query_requires_knowledge_read_permission(
+    async def test_employee_can_query_intelligence(
         self, client, seeded, make_token, authorization_override
     ):
+        """EMPLOYEE holds knowledge:read (PRD §7.4) and can query intelligence."""
         tenant, user, _ = seeded
         authorization_override({user.id: ApplicationRole.EMPLOYEE})
         token = make_token(user.id)
@@ -82,7 +83,12 @@ class TestIntelligenceAuthorization:
             headers={"Authorization": f"Bearer {token}"},
             json=_query_payload(),
         )
-        assert response.status_code == 403
+        assert response.status_code == 200
+        body = response.json()
+        # No documents ingested for this tenant, so context_used is False
+        # and answer is None — but the request itself is authorized.
+        assert body["context_used"] is False
+        assert body["answer"] is None
 
 
 class TestIntelligenceHappyPath:

@@ -149,7 +149,7 @@ def test_exactly_four_application_roles_exist():
         ),
         (
             ApplicationRole.EMPLOYEE,
-            [],
+            [KNOWLEDGE_READ],
             [
                 AGENT_EXECUTE,
                 TENANT_CREATE,
@@ -158,7 +158,6 @@ def test_exactly_four_application_roles_exist():
                 MEMBERSHIP_CREATE,
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
-                KNOWLEDGE_READ,
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_UPDATE,

@@ -53,7 +53,9 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
   the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
   company knowledge; OPERATIONS_USER reads it for operational workflows;
-  PLATFORM_ADMINISTRATOR retains global access; EMPLOYEE has none.
+  PLATFORM_ADMINISTRATOR retains global access; EMPLOYEE holds
+  ``knowledge:read`` for Ask Arc (Unified Intelligence) and Company Brain
+  read access per PRD §7.4.
 - Skill permissions (``skill:create``, ``skill:read``, ``skill:update``,
   ``skill:delete``) exist for the Skills Engine management API:
   PLATFORM_ADMINISTRATOR and COMPANY_ADMINISTRATOR create, update, read, and
@@ -76,9 +78,10 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   through ``SkillExecutionService``, so this permission never grants
   direct tool access and never bypasses ``Skill.allowed_tools`` or
   per-tool RBAC.
-- ``EMPLOYEE`` intentionally has no matrix permissions; it is allowed only
-  self-scoped operations (for example listing the authenticated user's own
-  tenants).
+- ``EMPLOYEE`` holds ``knowledge:read`` for Ask Arc (Unified Intelligence)
+  and Company Brain read access per PRD §7.4; all other permissions are
+  denied. Self-scoped operations (for example listing the authenticated
+  user's own tenants) are always available through authenticated endpoints.
 - Default behavior is DENY: an unknown user, an unknown role, or an
   unassigned permission is always denied.
 - ``ApplicationRole`` is completely independent of the X-10 membership
@@ -184,8 +187,11 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             OBSERVABILITY_READ,
         }
     ),
-    # EMPLOYEE has no matrix permissions (self-scoped operations only).
-    ApplicationRole.EMPLOYEE: frozenset(),
+    # EMPLOYEE holds knowledge:read for Ask Arc (Unified Intelligence) and
+    # Company Brain read access per PRD §7.4; all other permissions are denied.
+    # Self-scoped operations (for example listing the authenticated user's own
+    # tenants) are always available through authenticated endpoints.
+    ApplicationRole.EMPLOYEE: frozenset({KNOWLEDGE_READ}),
 }
 
 

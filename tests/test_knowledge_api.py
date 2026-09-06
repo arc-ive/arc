@@ -65,18 +65,21 @@ class TestKnowledgeAuthorization:
         )
         assert response.status_code == 403
 
-    async def test_read_requires_knowledge_read_permission(
+    async def test_employee_can_read_knowledge_document(
         self, client, seeded, make_token, authorization_override
     ):
+        """EMPLOYEE holds knowledge:read (PRD §7.4) and can read documents."""
         tenant, user, _ = seeded
         authorization_override({user.id: ApplicationRole.EMPLOYEE})
         token = make_token(user.id)
 
+        # Non-existent document returns 404 (not 403) — the permission
+        # check passes, but the document does not exist.
         response = client.get(
             f"/tenants/{tenant.id}/knowledge/{_unique('doc')}",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     async def test_company_administrator_can_create_and_read(
         self, client, seeded, make_token, authorization_override
