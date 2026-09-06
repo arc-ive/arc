@@ -838,6 +838,7 @@ def _knowledge_document_payload(document: KnowledgeDocument) -> Dict[str, Any]:
         "version": document.version,
         "status": document.status.value,
         "content": document.content,
+        "external_id": document.external_id,
         "created_at": document.created_at.isoformat(),
         "updated_at": document.updated_at.isoformat(),
     }
@@ -1046,6 +1047,19 @@ async def create_knowledge_document(
     ``tenant_id`` is validated for consistency against the trusted context
     but is never trusted as the security boundary. Raw content is
     sanitized by the PII Guard before persistence.
+
+    Request body fields:
+
+    - ``source``: required, KnowledgeSource enum value.
+    - ``provenance``: required, attribution string.
+    - ``content``: required, raw document content (PII-sanitized before
+      persistence).
+    - ``version``: optional, defaults to 1.
+    - ``external_id``: optional, stable writer-supplied identifier for
+      logical document identity (ADR-003). When provided, re-ingestion
+      of the same ``(tenant_id, source, external_id)`` with identical
+      sanitized content is idempotent; changed content bumps the version
+      in-place.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
@@ -1060,6 +1074,7 @@ async def create_knowledge_document(
     provenance = knowledge_data.get("provenance")
     content = knowledge_data.get("content")
     version = knowledge_data.get("version", 1)
+    external_id = knowledge_data.get("external_id")
 
     try:
         document = await knowledge_service.ingest_document(
@@ -1068,6 +1083,7 @@ async def create_knowledge_document(
             provenance=provenance,
             content=content,
             version=version,
+            external_id=external_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

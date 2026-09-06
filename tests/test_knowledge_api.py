@@ -401,3 +401,280 @@ class TestKnowledgeListPiiBoundary:
         # The list response must not contain raw PII.
         for document in documents:
             assert "bob.jones@example.com" not in document["content"]
+
+
+class TestKnowledgeExternalId:
+    """Verify the public API wires external_id through to ADR-003 behavior.
+
+    The POST /tenants/{tenant_id}/knowledge endpoint must accept an optional
+    ``external_id`` field and pass it to KnowledgeService.ingest_document()
+    unchanged.  When omitted, existing create-every-time behavior is
+    preserved.  When supplied, ADR-003 re-ingestion semantics apply:
+    idempotent redelivery for identical content, version bump for changed
+    content, and tenant-scoped identity.
+    """
+
+    async def test_create_without_external_id_unchanged(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """POST without external_id behaves exactly as before."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        payload = _knowledge_payload(provenance="ext-test-no-id")
+        r1 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        assert r1.status_code == 200
+        doc1 = r1.json()
+        assert doc1["version"] == 1
+        assert doc1["external_id"] is None
+
+        # A second POST without external_id always creates a new document.
+        r2 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        assert r2.status_code == 200
+        doc2 = r2.json()
+        assert doc2["id"] != doc1["id"]
+
+    async def test_first_create_with_external_id(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """First ingestion with external_id creates a new document."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        r = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-first",
+                external_id="test-ext-001",
+                content="First version of the document.",
+            ),
+        )
+        assert r.status_code == 200
+        doc = r.json()
+        assert doc["version"] == 1
+        assert doc["external_id"] == "test-ext-001"
+        assert doc["source"] == "policy"
+
+    async def test_idempotent_redelivery_same_content(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Same external_id + same content → returned unchanged (idempotent)."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        content = "Stable content for idempotency check."
+        r1 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-idempotent",
+                external_id="test-ext-idempotent",
+                content=content,
+            ),
+        )
+        assert r1.status_code == 200
+        doc1 = r1.json()
+
+        r2 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-idempotent",
+                external_id="test-ext-idempotent",
+                content=content,
+            ),
+        )
+        assert r2.status_code == 200
+        doc2 = r2.json()
+
+        # Same logical document: same id, same version, same content.
+        assert doc2["id"] == doc1["id"]
+        assert doc2["version"] == doc1["version"]
+        assert doc2["content"] == doc1["content"]
+
+    async def test_changed_content_bumps_version(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Same external_id + different content → version bump, same id."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        r1 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-version",
+                external_id="test-ext-version",
+                content="Original content.",
+            ),
+        )
+        assert r1.status_code == 200
+        doc1 = r1.json()
+        assert doc1["version"] == 1
+
+        r2 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-version",
+                external_id="test-ext-version",
+                content="Updated content with new information.",
+            ),
+        )
+        assert r2.status_code == 200
+        doc2 = r2.json()
+
+        # Same logical document identity preserved, version incremented.
+        assert doc2["id"] == doc1["id"]
+        assert doc2["version"] == doc1["version"] + 1
+        assert doc2["content"] != doc1["content"]
+        # Provenance is immutable.
+        assert doc2["provenance"] == doc1["provenance"]
+
+    async def test_tenant_isolation_for_external_id(
+        self, client, repositories, seeded, make_token, authorization_override
+    ):
+        """Same external_id in tenant-a must not collide with tenant-b."""
+        tenant_a, user_a, _ = seeded
+        tenant_repo, user_repo, membership_repo = repositories
+
+        user_b = await user_repo.create(
+            User(id=_unique("user-b"), email=f"{uuid.uuid4().hex}@example.com", username="b")
+        )
+        tenant_b = await tenant_repo.create(Tenant(id=_unique("tenant-b"), name="Tenant B"))
+        membership_b = await membership_repo.create(
+            Membership(id=_unique("membership"), user_id=user_b.id, tenant_id=tenant_b.id)
+        )
+        authorization_override(
+            {
+                user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        token_a = make_token(user_a.id)
+        token_b = make_token(user_b.id)
+        shared_ext_id = "shared-external-id"
+
+        r_a = client.post(
+            f"/tenants/{tenant_a.id}/knowledge",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json=_knowledge_payload(
+                provenance="tenant-a-doc",
+                external_id=shared_ext_id,
+                content="Tenant A content.",
+            ),
+        )
+        assert r_a.status_code == 200
+        doc_a = r_a.json()
+
+        r_b = client.post(
+            f"/tenants/{tenant_b.id}/knowledge",
+            headers={"Authorization": f"Bearer {token_b}"},
+            json=_knowledge_payload(
+                provenance="tenant-b-doc",
+                external_id=shared_ext_id,
+                content="Tenant B content.",
+            ),
+        )
+        assert r_b.status_code == 200
+        doc_b = r_b.json()
+
+        # Different tenants: different documents even with same external_id.
+        assert doc_a["id"] != doc_b["id"]
+        assert doc_a["tenant_id"] == tenant_a.id
+        assert doc_b["tenant_id"] == tenant_b.id
+
+        await membership_repo.delete(membership_b.id)
+        await user_repo.delete(user_b.id)
+        await tenant_repo.delete(tenant_b.id)
+
+    async def test_pii_sanitization_with_external_id(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """PII is sanitized even when external_id is supplied."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        raw = "Contact carol@example.com for details."
+        r = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-pii",
+                external_id="test-ext-pii",
+                content=raw,
+            ),
+        )
+        assert r.status_code == 200
+        doc = r.json()
+        assert "carol@example.com" not in doc["content"]
+        assert doc["external_id"] == "test-ext-pii"
+
+        # Persisted document is also sanitized.
+        read = client.get(
+            f"/tenants/{tenant.id}/knowledge/{doc['id']}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert read.status_code == 200
+        assert "carol@example.com" not in read.json()["content"]
+
+    async def test_empty_external_id_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Empty string external_id is rejected by the service validation."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        r = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-empty",
+                external_id="",
+                content="Test content.",
+            ),
+        )
+        assert r.status_code == 400
+
+    async def test_external_id_in_get_response(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """GET /knowledge/{id} returns external_id when present."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        r = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(
+                provenance="ext-test-get",
+                external_id="test-ext-get-response",
+                content="Document with external_id.",
+            ),
+        )
+        assert r.status_code == 200
+        doc_id = r.json()["id"]
+
+        read = client.get(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert read.status_code == 200
+        assert read.json()["external_id"] == "test-ext-get-response"
