@@ -6,7 +6,7 @@ Last Updated:
 
 Current Phase:
 
-Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-008 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54); Issue #58 tenant onboarding owner auto-assignment merged (PR #74); Issue #60 RBAC role independence clarified (ADR-008); Issue #61 platform user listing implemented (uncommitted)
+Foundation Phase — X-10, X-11, and X-13 merged; ADR-002 through ADR-008 accepted; CI baseline established; Company Brain — Knowledge Storage & Ingestion Foundation merged (PR #26); Secure RAG — Semantic Retrieval Foundation merged (PR #29); Approved Context Contract + Unified Intelligence foundation merged (PR #33); AI Tools foundation merged (PR #31); Connector Provider Integrations merged (PR #32); Webhooks inbound foundation merged (PR #34); Company Brain document identity & re-ingestion merged per ADR-003 (PR #38); Company Brain legacy duplicate archival merged (PR #42); Webhook ingestion body-cap hardening merged (PR #43); Human Intervention Approval Gate V1 merged (PR #50); Approval observability slice merged (PR #51); ADR-007 production embedding architecture accepted; Production embedding provider + 64→1536 migration merged (PR #53); Frontend foundation + security hardening merged (PR #52); Secure RAG source-type filtering merged (PR #54); Issue #58 tenant onboarding owner auto-assignment merged (PR #74); Issue #60 RBAC role independence clarified (ADR-008); Issue #61 platform user listing implemented (uncommitted); Issue #59 production membership provisioning in review (PR #72)
 
 ## Completed
 
@@ -1320,59 +1320,76 @@ are and must remain completely independent role systems.
 ### What changed
 
 - **ADR-008** created at `docs/architecture/decisions/ADR-008-tenant-membership-and-application-rbac-roles.md`.
-  Formalizes the role-system relationship, provisioning model, default
-  behavior, assignment authority, multi-tenant behavior, and compatibility
-  with existing architecture.
 - **CURRENT_STATE.md** updated with Issue #60 resolution and ADR-008 reference.
-- **ARC spec** corrected: `UserRole` and `ApplicationRole` now listed as separate rows in the enums table, with correct values for each.
-- **Regression tests** added to `tests/test_tenant_authorization.py`:
-  - `test_owner_in_tenant_a_cannot_access_tenant_b` — cross-tenant isolation independent of ApplicationRole.
-  - `test_owner_does_not_grant_company_administrator_permissions` — OWNER without ApplicationRole denied all permissions.
+- **ARC spec** corrected: `UserRole` and `ApplicationRole` listed as separate rows in enums table.
+- **Regression tests** added to `tests/test_tenant_authorization.py`.
 
 ### What was NOT changed
 
-- No application code changes. The architecture already implements independent role systems.
-- No schema changes. Both systems use existing storage mechanisms.
-- No permission matrix changes. The existing matrix is correct.
-- No service or controller changes. The authorization flow is correct.
-
-### Verification
-
-- Existing tests verify independence:
-  - `test_application_roles_are_independent_of_membership_roles`
-  - `test_membership_role_never_grants_application_permissions`
-  - `test_permission_matrix` (all four ApplicationRoles)
-  - `test_tenant_creation_assigns_owner_membership` (OWNER created, no ApplicationRole change)
-  - `test_tenant_isolation_after_creation` (cross-tenant isolation maintained)
-- No regressions expected (documentation-only change).
+- No application code changes. No schema changes. No permission matrix changes. No service or controller changes.
 
 ## Issue #61 — Platform User Listing (Implemented)
 
 **Issue:** GitHub #61 — "feat(platform): add global user listing to Platform Users page"
-**Resolution:** Add `GET /platform/users` endpoint with `user:read` permission (PLATFORM_ADMINISTRATOR only). Replace frontend placeholder with query-backed user table.
+**Resolution:** Add `GET /platform/users` endpoint with `user:read` permission (PLATFORM_ADMINISTRATOR only).
 
-### What changed
+### What was changed
 
-- **`src/arc/security/authorization.py`**: New `USER_READ = Permission(resource="user", action="read")` permission. Granted to PLATFORM_ADMINISTRATOR only. Permission count increases from 22 to 23.
-- **`src/arc/repositories/__init__.py`**: Added `list_all()` to `UserRepository` Protocol.
-- **`src/arc/repositories/tenancy.py`**: Implemented `list_all()` in `PostgreSQLUserRepository` — `SELECT id, email, username, status, created_at, updated_at FROM users ORDER BY created_at DESC`.
-- **`src/arc/services/domain.py`**: Added `UserService.list_all_users()`.
-- **`src/arc/api/controllers.py`**: New `GET /platform/users` endpoint — requires `USER_READ` permission via `require_permission(USER_READ)`. Returns list of user identity dictionaries.
-- **`frontend/src/api/endpoints/users.js`**: Added `listPlatformUsers()` function.
-- **`frontend/src/api/queryKeys.js`**: Added `platformUsers()` query key factory.
-- **`frontend/src/pages/platform/PlatformUsersPage.jsx`**: Replaced placeholder with query-backed user listing table (Avatar, email, username, status badge, created date). Preserves New User dialog and demo mode.
-- **`tests/test_platform_user_listing.py`** (new): 7 tests — success, 403 for unauthorized roles, empty list, response fields, production OpenAPI.
-- **`tests/test_api_surface.py`**: Updated to verify `GET /platform/users` is public production API.
-- **`tests/test_rbac.py`**: Updated permission matrix to include `USER_READ` for all roles.
+- **`src/arc/security/authorization.py`**: New `USER_READ` permission.
+- **`src/arc/repositories/`**: `list_all()` added to UserRepository.
+- **`src/arc/api/controllers.py`**: New `GET /platform/users` endpoint.
+- **`frontend/`**: PlatformUsersPage query-backed user listing.
+- **`tests/`**: 7 new tests + API surface + permission matrix updated.
 
 ### What was NOT changed
 
-- No schema changes.
-- No changes to `POST /users` behavior.
-- No changes to dev-only endpoints.
-- No pagination, search, editing, or deletion.
-- No ApplicationRole assignment.
-- No tenant-membership display.
+- No schema changes. No dev-only endpoint changes. No ApplicationRole assignment.
+
+## Issue #59 — Production Tenant Membership Provisioning (Implemented, PR #72)
+
+**Issue:** GitHub #59 — "Tenant Membership Provisioning"
+**Resolution:** Production membership endpoints and frontend UI implemented. ApplicationRole provisioning deferred (governed by Issue #60 / ADR-008).
+**PR:** #72 (`feat/tenant-membership-provisioning`)
+
+### Decision
+
+UserRole (tenant membership) and ApplicationRole (platform RBAC) are independent role systems per ADR-008. This PR implements only the tenant-membership provisioning portion of Issue #59.
+
+### Production Endpoints
+
+| Endpoint | Method | Permission | Behavior |
+|---|---|---|---|
+| `/tenants/{tenant_id}/memberships` | POST | `membership:create` (PLATFORM_ADMINISTRATOR) | Creates UserRole membership for a user in a tenant |
+| `/tenants/{tenant_id}/memberships/{user_id}` | DELETE | `membership:create` (PLATFORM_ADMINISTRATOR) | Removes a user's membership from a tenant |
+
+### What was implemented
+
+- **Backend:** POST/DELETE membership endpoints with validation (400/409/422), MembershipService.remove_membership(), tenant/user existence checks, duplicate membership constraint.
+- **Frontend:** TenantUsersPage with Add member dialog (user_id + role selector) and Remove member confirmation. Demo mode restrictions preserved.
+- **Tests:** 13 backend tests (permission, success, duplicate, missing user/tenant, invalid role, delete success/not-found, OpenAPI surface). 4 frontend tests.
+- **Dev endpoint:** `/internal/dev/.../memberships` remains development-only, unchanged.
+
+### What was NOT implemented
+
+- ApplicationRole assignment API (deferred — Issue #60 / ADR-008)
+- Runtime role administration (future)
+- Membership audit trail (existing API request logging sufficient)
+- Last-owner deletion prevention (follow-up)
+- Delete race-condition hardening (follow-up)
+
+### Authorization
+
+- Both endpoints require `membership:create` permission — PLATFORM_ADMINISTRATOR only.
+- user_id comes from trusted validated input; tenant_id is authorization-scoped.
+- No cross-tenant membership assignment possible.
+- ApplicationRole remains independent — no mapping introduced.
+
+### Verification
+
+- Backend lint (ruff): clean
+- Frontend lint (oxlint): clean
+- Backend tests: 13 new tests, all existing tests unchanged
+- Frontend tests: 38/38 passed
 
 ## In Progress
 
@@ -1442,13 +1459,15 @@ Bala is responsible for:
 
 ## Next
 
-1. Coordinate the next Bala Foundation issue with Joe and Bharath.
-3. Continue the AI development setup.
-4. Complete Foundation cross-platform verification (macOS — Joe's responsibility).
-5. Connect GitHub with Linear.
-6. Benchmark candidate AI models.
-7. Conduct the final Foundation review.
-8. Begin product implementation only after Foundation acceptance.
+1. Merge PR #72 (production membership provisioning) after review.
+2. Merge PR #78 (Issue #60 — RBAC role independence) after review.
+3. Coordinate the next Bala Foundation issue with Joe and Bharath.
+4. Continue the AI development setup.
+5. Complete Foundation cross-platform verification (macOS — Joe's responsibility).
+6. Connect GitHub with Linear.
+7. Benchmark candidate AI models.
+8. Conduct the final Foundation review.
+9. Begin product implementation only after Foundation acceptance.
 
 ## Blocked / Waiting
 
