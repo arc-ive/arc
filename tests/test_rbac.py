@@ -31,6 +31,7 @@ from arc.security.authorization import (
     SKILL_UPDATE,
     TENANT_CREATE,
     TENANT_READ,
+    TENANT_UPDATE,
     TOOL_EXECUTE,
     TOOL_READ,
     USER_CREATE,
@@ -70,6 +71,7 @@ def test_exactly_four_application_roles_exist():
             [
                 AGENT_EXECUTE,
                 TENANT_CREATE,
+                TENANT_UPDATE,
                 USER_CREATE,
                 USER_READ,
                 MEMBERSHIP_CREATE,
@@ -98,6 +100,7 @@ def test_exactly_four_application_roles_exist():
             ApplicationRole.COMPANY_ADMINISTRATOR,
             [
                 AGENT_EXECUTE,
+                TENANT_UPDATE,
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
                 KNOWLEDGE_READ,
@@ -135,6 +138,7 @@ def test_exactly_four_application_roles_exist():
             ],
             [
                 TENANT_CREATE,
+                TENANT_UPDATE,
                 USER_CREATE,
                 USER_READ,
                 MEMBERSHIP_CREATE,
@@ -153,6 +157,7 @@ def test_exactly_four_application_roles_exist():
             [
                 AGENT_EXECUTE,
                 TENANT_CREATE,
+                TENANT_UPDATE,
                 USER_CREATE,
                 USER_READ,
                 MEMBERSHIP_CREATE,

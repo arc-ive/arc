@@ -14,3 +14,8 @@ export async function createTenant(payload) {
   const { data } = await client.post('/tenants', payload)
   return data
 }
+
+export async function updateTenant(tenantId, payload) {
+  const { data } = await client.put(`/tenants/${encodeURIComponent(tenantId)}`, payload)
+  return data
+}

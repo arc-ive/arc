@@ -132,6 +132,38 @@ export function TenantCompanyPage() {
 
         <Card>
           <CardHeader
+            title="Company Profile"
+            description="Organization details configured in Settings."
+          />
+          <CardContent>
+            {userTenants.isPending ? (
+              <div className="flex flex-col gap-3">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ) : (
+              <dl className="flex flex-col gap-3 text-[13px]">
+                {[
+                  { label: 'Industry', value: tenant?.industry },
+                  { label: 'Address', value: tenant?.address },
+                  { label: 'Phone', value: tenant?.phone },
+                  { label: 'Website', value: tenant?.website },
+                  { label: 'Logo URL', value: tenant?.logo_url },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-baseline justify-between gap-3">
+                    <dt className="shrink-0 text-zinc-500">{label}</dt>
+                    <dd className="min-w-0 truncate text-right text-zinc-300">
+                      {value || <span className="text-zinc-600">—</span>}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader
             title="Company intelligence"
             description="Knowledge stored in the Company Brain, by source."
           />
@@ -171,11 +203,10 @@ export function TenantCompanyPage() {
       <section className="flex items-start gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
         <Info className="mt-0.5 size-4 shrink-0 text-zinc-600" />
         <p className="text-xs leading-relaxed text-zinc-500">
-          Company configuration (procedures, policies, decisions, settings)
-          is a tenant-scoped product area. Backend contracts for editing
-          company configuration do not exist yet; the <span className="text-zinc-300">Settings</span>{' '}
-          page shows what is planned. Every request is authorized by the
-          backend — access to this tenant is validated on each call.
+          Company profile details are configured on the{' '}
+          <span className="text-zinc-300">Settings</span> page. Every
+          request is authorized by the backend — access to this tenant is
+          validated on each call.
         </p>
       </section>
 

@@ -61,12 +61,18 @@ class ArcDatabase:
             try:
                 await conn.execute(
                     """
-                    INSERT INTO tenants (id, name, status, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO tenants (id, name, status, industry, address,
+                        phone, website, logo_url, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     """,
                     tenant.id,
                     tenant.name,
                     tenant.status,
+                    tenant.industry,
+                    tenant.address,
+                    tenant.phone,
+                    tenant.website,
+                    tenant.logo_url,
                     tenant.created_at,
                     tenant.updated_at,
                 )
@@ -88,12 +94,18 @@ class ArcDatabase:
                 # Create tenant
                 await conn.execute(
                     """
-                    INSERT INTO tenants (id, name, status, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO tenants (id, name, status, industry, address,
+                        phone, website, logo_url, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                     """,
                     tenant.id,
                     tenant.name,
                     tenant.status,
+                    tenant.industry,
+                    tenant.address,
+                    tenant.phone,
+                    tenant.website,
+                    tenant.logo_url,
                     tenant.created_at,
                     tenant.updated_at,
                 )
@@ -125,7 +137,8 @@ class ArcDatabase:
         """Get tenant by ID."""
         async with self._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, name, status, created_at, updated_at FROM tenants WHERE id = $1",
+                "SELECT id, name, status, industry, address, phone, website, "
+                "logo_url, created_at, updated_at FROM tenants WHERE id = $1",
                 tenant_id,
             )
             if not row:
@@ -134,9 +147,64 @@ class ArcDatabase:
                 id=row["id"],
                 name=row["name"],
                 status=row["status"],
+                industry=row["industry"],
+                address=row["address"],
+                phone=row["phone"],
+                website=row["website"],
+                logo_url=row["logo_url"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
             )
+
+    async def update_tenant(self, tenant: Tenant) -> Tenant:
+        """Update tenant company configuration.
+
+        The SELECT re-reads within the same transaction connection so it
+        sees the updated row before the transaction commits.  This avoids
+        the stale-read bug where ``get_tenant`` acquires a different
+        connection from the pool and misses uncommitted writes.
+        """
+        async with self.transaction() as conn:
+            try:
+                await conn.execute(
+                    """
+                    UPDATE tenants
+                    SET name = $2, status = $3, industry = $4, address = $5,
+                        phone = $6, website = $7, logo_url = $8, updated_at = $9
+                    WHERE id = $1
+                    """,
+                    tenant.id,
+                    tenant.name,
+                    tenant.status,
+                    tenant.industry,
+                    tenant.address,
+                    tenant.phone,
+                    tenant.website,
+                    tenant.logo_url,
+                    tenant.updated_at,
+                )
+                row = await conn.fetchrow(
+                    "SELECT id, name, status, industry, address, phone, "
+                    "website, logo_url, created_at, updated_at "
+                    "FROM tenants WHERE id = $1",
+                    tenant.id,
+                )
+                if not row:
+                    raise NotFoundError(f"Tenant with id {tenant.id} not found")
+                return Tenant(
+                    id=row["id"],
+                    name=row["name"],
+                    status=row["status"],
+                    industry=row["industry"],
+                    address=row["address"],
+                    phone=row["phone"],
+                    website=row["website"],
+                    logo_url=row["logo_url"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+            except Exception as e:
+                raise DatabaseError(f"Failed to update tenant: {e}") from e
 
     async def create_user(self, user: User) -> User:
         """Create a new user."""

@@ -36,6 +36,10 @@ class TenantRepository(Protocol):
         """Get tenant by ID."""
         ...
 
+    async def update(self, tenant: Tenant) -> Tenant:
+        """Update tenant."""
+        ...
+
     async def exists(self, tenant_id: str) -> bool:
         """Check if tenant exists."""
         ...

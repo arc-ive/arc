@@ -30,6 +30,10 @@ class PostgreSQLTenantRepository:
         """Get tenant by ID."""
         return await self.db.get_tenant(tenant_id)
 
+    async def update(self, tenant: Tenant) -> Tenant:
+        """Update tenant."""
+        return await self.db.update_tenant(tenant)
+
     async def exists(self, tenant_id: str) -> bool:
         """Check if tenant exists."""
         try:

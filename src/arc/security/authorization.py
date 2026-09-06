@@ -97,6 +97,7 @@ from arc.security.models import ApplicationRole, AuthenticatedPrincipal, Permiss
 # ---------------------------------------------------------------------------
 
 TENANT_CREATE = Permission(resource="tenant", action="create")
+TENANT_UPDATE = Permission(resource="tenant", action="update")
 USER_CREATE = Permission(resource="user", action="create")
 USER_READ = Permission(resource="user", action="read")
 MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
@@ -127,6 +128,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
         {
             AGENT_EXECUTE,
             TENANT_CREATE,
+            TENANT_UPDATE,
             USER_CREATE,
             USER_READ,
             MEMBERSHIP_CREATE,
@@ -153,6 +155,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
         {
             AGENT_EXECUTE,
+            TENANT_UPDATE,
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
