@@ -471,6 +471,11 @@ async def get_tenants_for_user(
             "id": tenant.id,
             "name": tenant.name,
             "status": tenant.status,
+            "industry": tenant.industry,
+            "address": tenant.address,
+            "phone": tenant.phone,
+            "website": tenant.website,
+            "logo_url": tenant.logo_url,
             "created_at": tenant.created_at.isoformat(),
             "updated_at": tenant.updated_at.isoformat(),
         }
