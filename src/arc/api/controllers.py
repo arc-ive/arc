@@ -41,6 +41,7 @@ from arc.domain.models import (
     Tenant,
     TenantContext,
     User,
+    UserRole,
     WebhookEvent,
 )
 from arc.security.authorization import (
@@ -52,6 +53,7 @@ from arc.security.authorization import (
     CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
+    MEMBERSHIP_CREATE,
     OBSERVABILITY_PLATFORM_READ,
     OBSERVABILITY_READ,
     ROLE_PERMISSIONS,
@@ -447,6 +449,74 @@ async def get_users_for_tenant(
         }
         for user in users
     ]
+
+
+@api_router.post("/tenants/{tenant_id}/memberships")
+async def create_membership(
+    tenant_id: str,
+    membership_data: Dict[str, Any],
+    _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
+    user_service: UserService = Depends(lambda: app_context.user_service),
+) -> Dict[str, Any]:
+    """Create a membership associating a user with a tenant.
+
+    Protected: requires the global ``membership:create`` permission
+    (PLATFORM_ADMINISTRATOR). The target ``user_id`` and ``role`` are
+    provisioning inputs, not the caller's identity. The caller's identity
+    comes from the authenticated principal (JWT ``sub``).
+    """
+    user_id = membership_data.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="user_id is required",
+        )
+
+    role_str = membership_data.get("role", "member")
+    try:
+        role = UserRole(role_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid role: {role_str}"
+        )
+
+    try:
+        membership = await user_service.associate_user_with_tenant(
+            user_id=user_id, tenant_id=tenant_id, role=role
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+    return {
+        "id": membership.id,
+        "user_id": membership.user_id,
+        "tenant_id": membership.tenant_id,
+        "role": membership.role.value,
+        "created_at": membership.created_at.isoformat(),
+        "updated_at": membership.updated_at.isoformat(),
+    }
+
+
+@api_router.delete("/tenants/{tenant_id}/memberships/{user_id}")
+async def delete_membership(
+    tenant_id: str,
+    user_id: str,
+    _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
+    membership_service: MembershipService = Depends(lambda: app_context.membership_service),
+) -> Dict[str, Any]:
+    """Remove a user's membership from a tenant.
+
+    Protected: requires the global ``membership:create`` permission
+    (PLATFORM_ADMINISTRATOR). Only an existing membership can be removed.
+    """
+    if not await membership_service.membership_exists(user_id, tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No membership found for user {user_id} in tenant {tenant_id}",
+        )
+
+    await membership_service.remove_membership(user_id, tenant_id)
+    return {"detail": "Membership removed"}
 
 
 @api_router.get("/users/{user_id}/tenants")
