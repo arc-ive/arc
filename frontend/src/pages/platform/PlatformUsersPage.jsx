@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { UserPlus, Users } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
@@ -54,11 +54,11 @@ function CreateUserDialog({ open, onClose }) {
     onError: (err) => setError(errorMessage(err)),
   })
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (mutation.isPending) return
     onClose()
     setError(null)
-  }
+  }, [mutation.isPending, onClose])
 
   const canSubmit =
     form.id.trim() && form.email.trim() && !mutation.isPending
@@ -133,6 +133,10 @@ function CreateUserDialog({ open, onClose }) {
 export function PlatformUsersPage() {
   const { isDemo } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
+
+  const handleCloseCreate = useCallback(() => {
+    setCreateOpen(false)
+  }, [])
 
   const users = useQuery({
     queryKey: queryKeys.platformUsers(),
@@ -259,7 +263,7 @@ export function PlatformUsersPage() {
 
       <CreateUserDialog
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={handleCloseCreate}
       />
     </div>
   )
