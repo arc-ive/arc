@@ -74,13 +74,15 @@ def _context(tenant_id: str = "tenant-1", user_id: str = "user-1") -> TenantCont
 def _config(
     tenant_id: str = "tenant-1",
     provider=ConnectorProvider.GITHUB,
-    name: str = "example/acme",
+    name: str = "acme-github",
+    target: str = "example/acme",
 ) -> ConnectorConfig:
     return ConnectorConfig(
         id=_unique("connector"),
         tenant_id=tenant_id,
         provider=provider,
         name=name,
+        target=target,
         status=ConnectorStatus.ACTIVE,
     )
 
@@ -247,7 +249,7 @@ class TestConnectorSyncFailurePaths:
         assert record.error_kind == expected_kind
 
     async def test_invalid_target_fails_closed(self, connector_repo, sync_repo, knowledge_service):
-        config = _config(name="not-a-valid-target")
+        config = _config(target="not-a-valid-target")
         connector_repo.get_by_id.return_value = config
         service = _service(connector_repo, sync_repo, knowledge_service)
 
