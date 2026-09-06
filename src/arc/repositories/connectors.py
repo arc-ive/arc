@@ -28,13 +28,14 @@ class PostgreSQLConnectorRepository:
                 await conn.execute(
                     """
                     INSERT INTO connector_configs
-                        (id, tenant_id, provider, name, status, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        (id, tenant_id, provider, name, target, status, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     """,
                     connector.id,
                     connector.tenant_id,
                     connector.provider.value,
                     connector.name,
+                    connector.target,
                     connector.status.value,
                     connector.created_at,
                     connector.updated_at,
@@ -53,7 +54,7 @@ class PostgreSQLConnectorRepository:
         async with self.db._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                SELECT id, tenant_id, provider, name, status, created_at, updated_at
+                SELECT id, tenant_id, provider, name, target, status, created_at, updated_at
                 FROM connector_configs
                 WHERE id = $1 AND tenant_id = $2
                 """,
@@ -67,6 +68,7 @@ class PostgreSQLConnectorRepository:
                 tenant_id=row["tenant_id"],
                 provider=ConnectorProvider(row["provider"]),
                 name=row["name"],
+                target=row["target"],
                 status=ConnectorStatus(row["status"]),
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
@@ -77,7 +79,7 @@ class PostgreSQLConnectorRepository:
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, tenant_id, provider, name, status, created_at, updated_at
+                SELECT id, tenant_id, provider, name, target, status, created_at, updated_at
                 FROM connector_configs
                 WHERE tenant_id = $1
                 ORDER BY created_at DESC
@@ -90,6 +92,7 @@ class PostgreSQLConnectorRepository:
                     tenant_id=row["tenant_id"],
                     provider=ConnectorProvider(row["provider"]),
                     name=row["name"],
+                    target=row["target"],
                     status=ConnectorStatus(row["status"]),
                     created_at=row["created_at"],
                     updated_at=row["updated_at"],

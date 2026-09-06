@@ -20,9 +20,9 @@ import { Dialog } from '../../components/ui/Dialog.jsx'
 import { errorMessage } from '../../api/errors.js'
 
 const PROVIDERS = [
-  { value: 'github', label: 'GitHub' },
-  { value: 'slack', label: 'Slack' },
-  { value: 'linear', label: 'Linear' },
+  { value: 'github', label: 'GitHub', targetHint: 'owner/repo (e.g. arc-ive/arc)' },
+  { value: 'slack', label: 'Slack', targetHint: 'channel name (e.g. general)' },
+  { value: 'linear', label: 'Linear', targetHint: 'team key (e.g. ENG)' },
 ]
 
 function CreateConnectorDialog({ open, onClose }) {
@@ -30,6 +30,7 @@ function CreateConnectorDialog({ open, onClose }) {
   const { tenantId } = useTenant()
   const [provider, setProvider] = useState('github')
   const [name, setName] = useState('')
+  const [target, setTarget] = useState('')
   const [error, setError] = useState(null)
 
   const createMutation = useMutation({
@@ -39,6 +40,7 @@ function CreateConnectorDialog({ open, onClose }) {
       onClose()
       setProvider('github')
       setName('')
+      setTarget('')
       setError(null)
     },
     onError: (err) => setError(err),
@@ -47,8 +49,10 @@ function CreateConnectorDialog({ open, onClose }) {
   const handleSubmit = (e) => {
     e.preventDefault()
     setError(null)
-    createMutation.mutate({ provider, name })
+    createMutation.mutate({ provider, name, target })
   }
+
+  const selectedProvider = PROVIDERS.find((p) => p.value === provider)
 
   if (!open) return null
 
@@ -88,11 +92,26 @@ function CreateConnectorDialog({ open, onClose }) {
                 disabled={createMutation.isPending}
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Target</label>
+              <input
+                type="text"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                placeholder={selectedProvider?.targetHint ?? 'Provider-specific target'}
+                required
+                disabled={createMutation.isPending}
+              />
+              {selectedProvider && (
+                <p className="mt-1 text-xs text-zinc-500">{selectedProvider.targetHint}</p>
+              )}
+            </div>
             <div className="flex justify-end gap-3">
               <Button variant="secondary" onClick={onClose} disabled={createMutation.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending || !name.trim()}>
+              <Button type="submit" disabled={createMutation.isPending || !name.trim() || !target.trim()}>
                 {createMutation.isPending ? 'Creating...' : 'Create'}
               </Button>
             </div>
@@ -192,6 +211,9 @@ export function ConnectorsPage() {
                 </Badge>
               </div>
               <p className="text-[13px] text-zinc-500">Provider: {connector.provider}</p>
+              {connector.target && (
+                <p className="font-mono text-xs text-zinc-400">Target: {connector.target}</p>
+              )}
               <p className="text-xs text-zinc-600">
                 Created: {new Date(connector.created_at).toLocaleDateString()}
               </p>

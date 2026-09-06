@@ -30,6 +30,7 @@ class ConnectorService:
         context: TenantContext,
         provider: ConnectorProvider,
         name: str,
+        target: str = "",
     ) -> ConnectorConfig:
         """Create a new connector configuration for a tenant.
 
@@ -45,6 +46,7 @@ class ConnectorService:
             tenant_id=context.tenant_id,
             provider=provider,
             name=name,
+            target=target,
             status=ConnectorStatus.ACTIVE,
             created_at=datetime.now(),
             updated_at=datetime.now(),

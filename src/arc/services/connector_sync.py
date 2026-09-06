@@ -130,7 +130,7 @@ class ConnectorSyncService:
 
         credential = ProviderCredential(provider=config.provider, token=token)
         try:
-            result = await adapter.fetch(credential, config.name)
+            result = await adapter.fetch(credential, config.target)
         except ProviderError as exc:
             error_kind = _ERROR_KINDS.get(type(exc), "provider_error")
             await self._record_failure(context, config, error_kind)

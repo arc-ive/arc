@@ -5,10 +5,11 @@ export async function listConnectors(tenantId) {
   return response.data
 }
 
-export async function createConnector(tenantId, { provider, name }) {
+export async function createConnector(tenantId, { provider, name, target }) {
   const response = await client.post(`/tenants/${tenantId}/connectors`, {
     provider,
     name,
+    target,
   })
   return response.data
 }
