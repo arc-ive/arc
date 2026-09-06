@@ -21,6 +21,7 @@ Privileged and identity-sensitive development endpoints (membership
 provisioning) are isolated in ``arc.api.dev_controllers``.
 """
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
@@ -340,14 +341,14 @@ async def update_tenant(
     updated = Tenant(
         id=existing.id,
         name=tenant_data.get("name", existing.name),
-        status=tenant_data.get("status", existing.status),
+        status=existing.status,
         industry=tenant_data.get("industry", existing.industry),
         address=tenant_data.get("address", existing.address),
         phone=tenant_data.get("phone", existing.phone),
         website=tenant_data.get("website", existing.website),
         logo_url=tenant_data.get("logo_url", existing.logo_url),
         created_at=existing.created_at,
-        updated_at=existing.updated_at,
+        updated_at=datetime.now(timezone.utc),
     )
     result = await tenant_service.update_tenant(updated)
     return {

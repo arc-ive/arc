@@ -237,3 +237,56 @@ class TestUpdateCompanyConfig:
         body = response.json()
         assert body["industry"] == ""
         assert body["phone"] == ""
+
+    async def test_status_mutation_is_rejected(
+        self, client, seeded, db, make_token, authorization_override
+    ):
+        """Client-supplied status must not modify tenant.status."""
+        tenant, user = seeded
+        original_status = tenant.status
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        # Attempt to mutate status via company configuration endpoint
+        response = _authed_request(
+            client,
+            "put",
+            f"/tenants/{tenant.id}",
+            token,
+            {"name": "Should Not Change Status", "status": "deleted"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        # Response must retain original status
+        assert body["status"] == original_status
+        # Persisted database row must also retain original status
+        tenants = PostgreSQLTenantRepository(db)
+        persisted = await tenants.get_by_id(tenant.id)
+        assert persisted.status == original_status
+
+    async def test_updated_at_is_refreshed_on_update(
+        self, client, seeded, db, make_token, authorization_override
+    ):
+        """Successful update must generate a new updated_at timestamp."""
+        tenant, user = seeded
+        original_updated_at = tenant.updated_at
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        response = _authed_request(
+            client,
+            "put",
+            f"/tenants/{tenant.id}",
+            token,
+            {"name": "Timestamp Test"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        # updated_at must differ from the original
+        assert body["updated_at"] != original_updated_at.isoformat()
+        # Persisted database row must match the API response
+        tenants = PostgreSQLTenantRepository(db)
+        persisted = await tenants.get_by_id(tenant.id)
+        assert persisted.updated_at.isoformat() == body["updated_at"]
+        # created_at must not change (compare datetime values, not string
+        # representations, because PostgreSQL returns timezone-aware
+        # timestamps while the original may be naive)
+        assert persisted.created_at.replace(tzinfo=None) == tenant.created_at.replace(tzinfo=None)
