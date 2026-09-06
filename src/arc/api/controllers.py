@@ -437,9 +437,7 @@ async def create_membership(
             user_id=user_id, tenant_id=tenant_id, role=role
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
     return {
         "id": membership.id,

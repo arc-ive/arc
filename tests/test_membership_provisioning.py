@@ -52,16 +52,12 @@ async def test_create_membership_requires_permission(
     await user_repo.delete(user.id)
 
 
-async def test_create_membership_success(
-    client, repositories, make_token, authorization_override
-):
+async def test_create_membership_success(client, repositories, make_token, authorization_override):
     """Platform administrator can create a membership."""
     admin = await _seed_user(repositories)
     target_user = await _seed_user(repositories)
     tenant = await _seed_tenant(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.post(
@@ -90,9 +86,7 @@ async def test_create_membership_duplicate_returns_409(
     """Creating a duplicate membership returns 409 Conflict."""
     tenant, user, membership = seeded
     admin = await _seed_user(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.post(
@@ -113,9 +107,7 @@ async def test_create_membership_missing_user_returns_409(
     """Creating a membership for a nonexistent user returns 409."""
     admin = await _seed_user(repositories)
     tenant = await _seed_tenant(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.post(
@@ -137,9 +129,7 @@ async def test_create_membership_missing_tenant_returns_409(
     """Creating a membership in a nonexistent tenant returns 409."""
     admin = await _seed_user(repositories)
     target_user = await _seed_user(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.post(
@@ -162,9 +152,7 @@ async def test_create_membership_invalid_role_returns_400(
     admin = await _seed_user(repositories)
     target_user = await _seed_user(repositories)
     tenant = await _seed_tenant(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.post(
@@ -187,9 +175,7 @@ async def test_create_membership_missing_user_id_returns_422(
     """A request without user_id returns 422 Unprocessable Entity."""
     admin = await _seed_user(repositories)
     tenant = await _seed_tenant(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.post(
@@ -212,9 +198,7 @@ async def test_create_membership_default_role(
     admin = await _seed_user(repositories)
     target_user = await _seed_user(repositories)
     tenant = await _seed_tenant(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.post(
@@ -257,9 +241,7 @@ async def test_delete_membership_success(
     """Platform administrator can delete a membership."""
     tenant, user, membership = seeded
     admin = await _seed_user(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.delete(
@@ -279,9 +261,7 @@ async def test_delete_membership_not_found_returns_404(
     """Deleting a nonexistent membership returns 404."""
     admin = await _seed_user(repositories)
     tenant = await _seed_tenant(repositories)
-    authorization_override(
-        {admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR}
-    )
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
     token = make_token(admin.id)
 
     response = client.delete(
