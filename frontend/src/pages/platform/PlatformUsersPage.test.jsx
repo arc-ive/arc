@@ -102,6 +102,7 @@ describe('PlatformUsersPage', () => {
   })
 
   it('disables New user button in demo mode', async () => {
+    vi.resetModules()
     vi.doMock('../../auth/useAuth.js', () => ({
       useAuth: () => ({
         principal: null,

@@ -32,7 +32,7 @@ def _unique(prefix: str) -> str:
 
 
 def _connector_payload(**overrides):
-    payload = dict(provider="github", name="example/acme")
+    payload = dict(provider="github", name="acme-github", target="example/acme")
     payload.update(overrides)
     return payload
 
@@ -164,7 +164,8 @@ class TestConnectorCreate:
         assert response.status_code == 200
         body = response.json()
         assert body["provider"] == "github"
-        assert body["name"] == "example/acme"
+        assert body["name"] == "acme-github"
+        assert body["target"] == "example/acme"
         assert body["tenant_id"] == tenant.id
         # No credential material is ever returned.
         assert "token" not in json.dumps(body)

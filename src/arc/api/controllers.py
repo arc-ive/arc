@@ -1193,6 +1193,7 @@ def _connector_payload(config) -> Dict[str, Any]:
         "tenant_id": config.tenant_id,
         "provider": config.provider.value,
         "name": config.name,
+        "target": config.target,
         "status": config.status.value,
         "created_at": config.created_at.isoformat(),
         "updated_at": config.updated_at.isoformat(),
@@ -1251,8 +1252,10 @@ async def create_connector(
             detail="Connector name cannot be empty",
         )
 
+    target = connector_data.get("target", "")
+
     try:
-        created = await connector_service.create_connector(context, provider, name)
+        created = await connector_service.create_connector(context, provider, name, target)
     except DuplicateKeyError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

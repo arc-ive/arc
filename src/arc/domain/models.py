@@ -209,6 +209,7 @@ class ConnectorConfig:
     tenant_id: str
     provider: ConnectorProvider
     name: str
+    target: str = ""
     status: ConnectorStatus = ConnectorStatus.ACTIVE
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
