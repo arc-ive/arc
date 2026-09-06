@@ -1,7 +1,7 @@
 import { AlertTriangle, ShieldX, WifiOff } from 'lucide-react'
 import { cn } from '../../lib/cn.js'
 import { Button } from './Button.jsx'
-import { ApiError } from '../../api/errors.js'
+import { toApiError } from '../../api/errors.js'
 
 export function ErrorState({
   title,
@@ -10,11 +10,16 @@ export function ErrorState({
   className,
   error,
 }) {
+  const apiError = error ? toApiError(error) : null
+
   let Icon = AlertTriangle
-  if (error instanceof ApiError) {
-    if (error.isForbidden) Icon = ShieldX
-    if (error.isNetwork) Icon = WifiOff
+  if (apiError) {
+    if (apiError.isForbidden) Icon = ShieldX
+    if (apiError.isNetwork) Icon = WifiOff
   }
+
+  const displayTitle = title ?? (apiError?.isForbidden ? 'Permission denied' : 'Something went wrong')
+  const displayMessage = message ?? apiError?.message ?? 'An unexpected error occurred.'
 
   return (
     <div
@@ -26,9 +31,9 @@ export function ErrorState({
       <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-red-900/60 bg-red-950/30 text-red-400">
         <Icon className="size-5" />
       </div>
-      <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+      <h3 className="text-sm font-semibold text-zinc-200">{displayTitle}</h3>
       <p className="max-w-sm text-[13px] leading-relaxed text-zinc-500">
-        {message}
+        {displayMessage}
       </p>
       {onRetry && (
         <div className="mt-2">
