@@ -353,15 +353,19 @@ class TestBulkExpiry:
     async def test_expire_stale_approvals_cross_tenant(self, db, two_tenants):
         repo = PostgreSQLApprovalRequestRepository(db)
         digests = ["a3" * 32, "a4" * 32]
+        requests = []
         for tenant, digest in zip(two_tenants, digests):
-            await repo.create(_request(tenant.id, arguments_digest=digest))
+            requests.append(await repo.create(_request(tenant.id, arguments_digest=digest)))
         async with db._connection_pool.acquire() as conn:
             await conn.execute(
                 """
                 UPDATE approval_requests
                 SET created_at = NOW() - INTERVAL '25 hours',
                     expires_at = NOW() - INTERVAL '1 hour'
-                """
+                WHERE id = $1 OR id = $2
+                """,
+                requests[0].id,
+                requests[1].id,
             )
         count = await repo.expire_stale_approvals()
         assert count == 2
