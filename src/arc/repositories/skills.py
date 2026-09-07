@@ -172,9 +172,7 @@ class PostgreSQLSkillRepository:
                     skill.tenant_id,
                 )
                 if not row:
-                    raise NotFoundError(
-                        f"Skill {skill.id} not found in tenant {skill.tenant_id}"
-                    )
+                    raise NotFoundError(f"Skill {skill.id} not found in tenant {skill.tenant_id}")
                 return self._from_row(row)
             except asyncpg.UniqueViolationError as e:
                 raise DuplicateKeyError(

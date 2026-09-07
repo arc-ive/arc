@@ -78,9 +78,7 @@ class SkillService:
             else None
         )
         sanitized_risk = (
-            self.pii_guard.sanitize(skill.risk).sanitized_text
-            if skill.risk is not None
-            else None
+            self.pii_guard.sanitize(skill.risk).sanitized_text if skill.risk is not None else None
         )
 
         trusted_skill = replace(
@@ -138,9 +136,7 @@ class SkillService:
             else None
         )
         sanitized_risk = (
-            self.pii_guard.sanitize(skill.risk).sanitized_text
-            if skill.risk is not None
-            else None
+            self.pii_guard.sanitize(skill.risk).sanitized_text if skill.risk is not None else None
         )
 
         trusted_skill = replace(

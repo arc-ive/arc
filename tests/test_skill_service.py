@@ -332,9 +332,7 @@ class TestSkillServiceUpdate:
     ):
         """Test that the repo receives the context tenant_id, not any malicious value."""
         skill = _skill(tenant_id="malicious-tenant", name="N", purpose="P")
-        skill_repo.update.return_value = _skill(
-            tenant_id="malicious-tenant", name="N", purpose="P"
-        )
+        skill_repo.update.return_value = _skill(tenant_id="malicious-tenant", name="N", purpose="P")
 
         await service.update_skill(tenant_context, skill)
         persisted = skill_repo.update.call_args[0][0]

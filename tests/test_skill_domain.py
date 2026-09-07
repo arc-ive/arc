@@ -158,9 +158,7 @@ class TestSkillModel:
 
     def test_skill_risk_field_optional(self):
         """Test that risk field defaults to None and accepts string values."""
-        skill_no_risk = Skill(
-            id="s1", tenant_id="t1", name="Recovery", purpose="Recover"
-        )
+        skill_no_risk = Skill(id="s1", tenant_id="t1", name="Recovery", purpose="Recover")
         assert skill_no_risk.risk is None
 
         skill_with_risk = Skill(
