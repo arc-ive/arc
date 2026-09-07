@@ -54,12 +54,13 @@ def test_application_roles_are_independent_of_membership_roles():
     assert application_values.isdisjoint(membership_values)
 
 
-def test_exactly_four_application_roles_exist():
+def test_exactly_five_application_roles_exist():
     assert set(ApplicationRole) == {
         ApplicationRole.PLATFORM_ADMINISTRATOR,
         ApplicationRole.COMPANY_ADMINISTRATOR,
         ApplicationRole.OPERATIONS_USER,
         ApplicationRole.EMPLOYEE,
+        ApplicationRole.WEBHOOK_PROCESSOR,
     }
 
 

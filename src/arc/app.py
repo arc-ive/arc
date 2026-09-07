@@ -40,6 +40,7 @@ from arc.services.skills import SkillService
 from arc.services.tools import ToolExecutionService, build_platform_tool_registry
 from arc.services.webhook_config import WebhookEndpointStore
 from arc.services.webhook_ingestion import WebhookIngestionService
+from arc.services.webhook_pipeline import WebhookPipelineService
 
 
 class Application:
@@ -200,9 +201,23 @@ class Application:
         # tenant binding and signing secret come exclusively from the
         # WEBHOOK_INGESTION_ENDPOINTS environment configuration; secrets
         # are never logged, returned, or persisted.
+        webhook_endpoint_store = WebhookEndpointStore()
         self.services["webhook_ingestion_service"] = WebhookIngestionService(
-            endpoint_store=WebhookEndpointStore(),
+            endpoint_store=webhook_endpoint_store,
             repository=self.repositories["webhook_events"],
+        )
+
+        # Initialize webhook downstream processing pipeline (Issue #102,
+        # PRD 16). Routes received webhook events through the existing
+        # SkillExecutionService. Shares the same WebhookEndpointStore
+        # instance with the ingestion service so configuration is loaded
+        # once. PII Guard is shared with KnowledgeService.
+        self.services["webhook_pipeline_service"] = WebhookPipelineService(
+            webhook_repository=self.repositories["webhook_events"],
+            endpoint_store=webhook_endpoint_store,
+            tenant_repository=self.repositories["tenant"],
+            skill_execution_service=self.services["skill_execution_service"],
+            pii_guard=pii_guard,
         )
 
         # Register services in app context

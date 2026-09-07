@@ -195,6 +195,32 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_events_tenant_id ON webhook_events(tenant_id);
+
+-- Webhook processing lifecycle (Issue #102): extend status to support
+-- downstream processing. The original CHECK constraint only allowed
+-- 'received'. Processing adds 'processing', 'processed', and 'failed'.
+-- These statements are idempotent and safe for both fresh and existing
+-- databases. On a fresh database the original constraint is immediately
+-- replaced. On an existing database it drops the old constraint and
+-- adds the new one.
+ALTER TABLE webhook_events
+    DROP CONSTRAINT IF EXISTS ck_webhook_events_status;
+
+ALTER TABLE webhook_events
+    ADD CONSTRAINT ck_webhook_events_status
+    CHECK (status IN ('received', 'processing', 'processed', 'failed'));
+
+-- error_kind: safe hardcoded error category for failed processing.
+-- NULL for non-failed events. VARCHAR(100) matches other error_kind
+-- columns in the schema.
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS error_kind VARCHAR(100);
+
+-- processed_at: timestamp when processing completed (success or failure).
+-- NULL for unprocessed events.
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS processed_at TIMESTAMP WITH TIME ZONE;
+
 -- Observability foundation (PRD 17, TRD 17/28/31): metadata-only HTTP
 -- telemetry owned by the Observability/API layer. This is NOT a generic
 -- event table and never duplicates subsystem records - tool executions,

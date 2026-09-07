@@ -339,6 +339,32 @@ class WebhookEventRepository(Protocol):
     async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[WebhookEvent]:
         """List the most recent webhook events for a tenant."""
 
+    async def claim_for_processing(self, event_id: str, tenant_id: str) -> WebhookEvent:
+        """Atomically transition an event from 'received' to 'processing'.
+
+        Returns the updated event. Raises ``NotFoundError`` if the event
+        does not exist, is not in 'received' status, or belongs to a
+        different tenant. At most one caller can successfully claim a
+        given event.
+        """
+        ...
+
+    async def mark_processed(self, event_id: str, tenant_id: str) -> None:
+        """Mark a 'processing' event as 'processed' with a timestamp.
+
+        The event must already be in 'processing' status for this tenant.
+        """
+        ...
+
+    async def mark_failed(self, event_id: str, tenant_id: str, error_kind: str) -> None:
+        """Mark a 'processing' event as 'failed' with an error category.
+
+        The event must already be in 'processing' status for this tenant.
+        The ``error_kind`` is a safe hardcoded string constant, never
+        user-provided text.
+        """
+        ...
+
 
 class ObservabilityRepository(Protocol):
     """Repository for Observability aggregates (PRD 17, TRD 17/28/31).

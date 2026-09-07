@@ -33,7 +33,7 @@ per tenant.
 import json
 import os
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 MIN_SECRET_LENGTH = 16
 MAX_ENDPOINT_ID_LENGTH = 255
@@ -41,6 +41,29 @@ MAX_ENDPOINT_ID_LENGTH = 255
 
 class WebhookConfigurationError(Exception):
     """Raised when the webhook endpoint configuration is missing or invalid."""
+
+
+@dataclass(frozen=True)
+class WebhookActionConfig:
+    """Downstream action configuration for a webhook endpoint.
+
+    Defines how a received webhook event is routed to an existing Skill.
+    The ``type`` field determines the routing strategy; only ``"skill"``
+    is supported in V1. The ``skill_id`` is resolved within the
+    endpoint's tenant via ``SkillService.get_skill()``. The
+    ``tool_calls`` and ``satisfied_conditions`` are passed directly to
+    ``SkillExecutionService.execute()`` which enforces all gates
+    (active status, preconditions, allowed tools, RBAC).
+
+    This configuration is platform-operator-controlled (environment
+    variable), not tenant-controlled. Tool calls are deterministic and
+    static — no LLM or arbitrary code execution.
+    """
+
+    type: str
+    skill_id: str
+    tool_calls: List[Dict[str, Any]]
+    satisfied_conditions: List[str]
 
 
 @dataclass(frozen=True)
@@ -53,6 +76,7 @@ class WebhookEndpointConfig:
     endpoint_id: str
     tenant_id: str
     secret: str
+    action: Optional[WebhookActionConfig] = None
 
     def __repr__(self) -> str:
         return (
@@ -105,12 +129,75 @@ def parse_webhook_endpoints(raw: str) -> Dict[str, WebhookEndpointConfig]:
                 f"Webhook endpoint '{endpoint_id}' must define a 'secret' of at "
                 f"least {MIN_SECRET_LENGTH} characters"
             )
+        action = _parse_action(entry.get("action"), endpoint_id)
         endpoints[endpoint_id] = WebhookEndpointConfig(
             endpoint_id=endpoint_id,
             tenant_id=tenant_id,
             secret=secret,
+            action=action,
         )
     return endpoints
+
+
+def _parse_action(raw: Any, endpoint_id: str) -> Optional[WebhookActionConfig]:
+    """Parse the optional ``action`` block from an endpoint entry.
+
+    Returns ``None`` when absent (ingestion-only endpoint). Fails closed
+    on malformed action configuration.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action must be a JSON object"
+        )
+    action_type = raw.get("type")
+    if not isinstance(action_type, str) or not action_type:
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action must define a non-empty 'type'"
+        )
+    if action_type != "skill":
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action type '{action_type}' is not "
+            f"supported; only 'skill' is supported in V1"
+        )
+    skill_id = raw.get("skill_id")
+    if not isinstance(skill_id, str) or not skill_id:
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action must define a non-empty 'skill_id'"
+        )
+    tool_calls = raw.get("tool_calls", [])
+    if not isinstance(tool_calls, list) or not tool_calls:
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action must define a non-empty 'tool_calls' list"
+        )
+    for i, call in enumerate(tool_calls):
+        if not isinstance(call, dict):
+            raise WebhookConfigurationError(
+                f"Webhook endpoint '{endpoint_id}' action tool_call {i} must be a JSON object"
+            )
+        tool_name = call.get("tool_name")
+        if not isinstance(tool_name, str) or not tool_name:
+            raise WebhookConfigurationError(
+                f"Webhook endpoint '{endpoint_id}' action tool_call {i} must "
+                f"define a non-empty 'tool_name'"
+            )
+        tool_input = call.get("input", {})
+        if not isinstance(tool_input, dict):
+            raise WebhookConfigurationError(
+                f"Webhook endpoint '{endpoint_id}' action tool_call {i} input must be a JSON object"
+            )
+    satisfied_conditions = raw.get("satisfied_conditions", [])
+    if not isinstance(satisfied_conditions, list):
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action 'satisfied_conditions' must be a list"
+        )
+    return WebhookActionConfig(
+        type=action_type,
+        skill_id=skill_id,
+        tool_calls=tool_calls,
+        satisfied_conditions=satisfied_conditions,
+    )
 
 
 class WebhookEndpointStore:

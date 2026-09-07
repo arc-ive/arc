@@ -68,6 +68,7 @@ from arc.security.authorization import (
     TOOL_READ,
     USER_CREATE,
     USER_READ,
+    WEBHOOK_PROCESS,
     WEBHOOK_READ,
     AuthorizationService,
 )
@@ -119,6 +120,10 @@ from arc.services.webhook_ingestion import (
     WebhookIngestionError,
     WebhookIngestionService,
     WebhookValidationError,
+)
+from arc.services.webhook_pipeline import (
+    WebhookPipelineService,
+    WebhookProcessingError,
 )
 
 
@@ -203,6 +208,10 @@ class ApplicationContext:
     @property
     def webhook_ingestion_service(self) -> WebhookIngestionService:
         return self.services.get("webhook_ingestion_service")
+
+    @property
+    def webhook_pipeline_service(self) -> WebhookPipelineService:
+        return self.services.get("webhook_pipeline_service")
 
     @property
     def observability_service(self):
@@ -1578,6 +1587,45 @@ async def list_webhook_events(
 
     events = await webhook_ingestion_service.list_events(context)
     return [_webhook_event_payload(event, False) for event in events]
+
+
+@api_router.post("/tenants/{tenant_id}/webhooks/process")
+async def process_webhook_event(
+    tenant_id: str,
+    event_id: str = Query(..., description="Sender-supplied event identifier"),
+    context: TenantContext = Depends(require_tenant_permission(WEBHOOK_PROCESS)),
+    webhook_pipeline_service: WebhookPipelineService = Depends(
+        lambda: app_context.webhook_pipeline_service
+    ),
+) -> Dict[str, Any]:
+    """Process a received webhook event through the downstream pipeline.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``webhook:process`` permission. The path ``tenant_id`` is validated
+    for consistency against the trusted context (403 on mismatch).
+
+    Atomically claims the event (received -> processing), resolves the
+    configured downstream Skill action, and executes it through the
+    existing SkillExecutionService. On success the event transitions
+    to ``processed``; on any failure it transitions to ``failed`` with
+    a safe error category. At most one caller can claim a given event.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        result = await webhook_pipeline_service.process(tenant_id, event_id)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook event not found or not in 'received' status",
+        )
+    except WebhookProcessingError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook processing failed",
+        )
+
+    return result
 
 
 @api_router.get("/tenants/{tenant_id}/observability/usage-summary")

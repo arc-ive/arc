@@ -44,6 +44,11 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   security boundary). There is deliberately no ``webhook:create``
   permission in this slice: ingestion endpoints are provisioned through
   environment configuration, not API requests.
+- ``webhook:process`` exists for webhook downstream processing (Issue
+  #102): PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and
+  OPERATIONS_USER may trigger processing of received webhook events.
+  Processing executes downstream Skill and Tool actions through the
+  existing authorization boundary; EMPLOYEE has none.
 - Observability permissions (PRD 17, TRD 17) follow the approved split:
   ``observability:read`` grants tenant-scoped usage summaries to
   PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and OPERATIONS_USER;
@@ -115,6 +120,7 @@ CONNECTOR_CREATE = Permission(resource="connector", action="create")
 CONNECTOR_READ = Permission(resource="connector", action="read")
 CONNECTOR_SYNC = Permission(resource="connector", action="sync")
 WEBHOOK_READ = Permission(resource="webhook", action="read")
+WEBHOOK_PROCESS = Permission(resource="webhook", action="process")
 OBSERVABILITY_READ = Permission(resource="observability", action="read")
 OBSERVABILITY_PLATFORM_READ = Permission(resource="observability", action="platform_read")
 AGENT_EXECUTE = Permission(resource="agent", action="execute")
@@ -146,6 +152,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_READ,
             CONNECTOR_SYNC,
             WEBHOOK_READ,
+            WEBHOOK_PROCESS,
             OBSERVABILITY_READ,
             OBSERVABILITY_PLATFORM_READ,
             APPROVAL_READ,
@@ -170,6 +177,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_READ,
             CONNECTOR_SYNC,
             WEBHOOK_READ,
+            WEBHOOK_PROCESS,
             OBSERVABILITY_READ,
             APPROVAL_READ,
             APPROVAL_DECIDE,
@@ -187,6 +195,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_READ,
             CONNECTOR_SYNC,
             WEBHOOK_READ,
+            WEBHOOK_PROCESS,
             OBSERVABILITY_READ,
         }
     ),
@@ -195,6 +204,13 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     # Self-scoped operations (for example listing the authenticated user's own
     # tenants) are always available through authenticated endpoints.
     ApplicationRole.EMPLOYEE: frozenset({KNOWLEDGE_READ}),
+    # WEBHOOK_PROCESSOR is the synthetic system role for webhook-triggered
+    # downstream execution. It holds ONLY the permissions required by
+    # SkillExecutionService → ToolExecutionService: skill:execute to enter
+    # the skill engine, and tool:execute to reach the single tool action
+    # boundary. This role does NOT hold webhook:read, webhook:process,
+    # tenant:create, or any other platform/tenant operations.
+    ApplicationRole.WEBHOOK_PROCESSOR: frozenset({SKILL_EXECUTE, TOOL_EXECUTE}),
 }
 
 

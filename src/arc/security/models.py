@@ -26,6 +26,7 @@ class ApplicationRole(str, Enum):
     COMPANY_ADMINISTRATOR = "company_administrator"
     OPERATIONS_USER = "operations_user"
     EMPLOYEE = "employee"
+    WEBHOOK_PROCESSOR = "webhook_processor"
 
 
 @dataclass(frozen=True)
