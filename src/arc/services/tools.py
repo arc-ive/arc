@@ -100,7 +100,16 @@ class ToolDeniedError(ToolError):
     Denial is fail-closed and happens before any handler can run:
     insufficient or invalid permission metadata, missing required
     permissions, or an execution policy that forbids direct execution.
+
+    When the denial is due to a REQUIRE_HUMAN_APPROVAL policy, the
+    ``approval_id`` attribute carries the ID of the newly created pending
+    approval request. Callers (e.g. SkillExecutionService) can use this
+    to propagate the approval context upward.
     """
+
+    def __init__(self, tool_name: str, *, approval_id: Optional[str] = None):
+        super().__init__(tool_name)
+        self.approval_id = approval_id
 
 
 class ToolExecutionError(ToolError):
@@ -660,8 +669,9 @@ class ToolExecutionService:
 
             else:
                 # --- CREATION PATH ---
+                new_approval_id = None
                 if self.approval_service is not None:
-                    await self.approval_service.record_required_approval(
+                    new_approval_id = await self.approval_service.record_required_approval(
                         tenant_id=context.tenant_id,
                         requester_user_id=principal.user_id,
                         tool_name=tool.name,
@@ -681,7 +691,7 @@ class ToolExecutionService:
                     input_summary=_summarize(raw_input),
                     error_kind="requires_human_approval",
                 )
-                raise ToolDeniedError(tool_name)
+                raise ToolDeniedError(tool.name, approval_id=new_approval_id)
 
         # Normal execution path (ALLOW policy, or post-consumption).
         # If we reached here with approval_id, consumption already

@@ -646,6 +646,414 @@ async def test_malformed_proposals_raise_value_error(repositories, db):
     assert env["calls"] == []
 
 
+# ---------------------------------------------------------------------------
+# Per-tool-call approval flow (REQUIRE_HUMAN_APPROVAL inside non-approval Skill)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingApprovalService:
+    """In-memory approval service for testing the per-tool-call approval flow."""
+
+    def __init__(self):
+        self.approvals = {}
+        self.consumed = []
+
+    async def record_required_approval(self, **kwargs):
+        from datetime import datetime, timedelta, timezone
+
+        from arc.domain.models import ApprovalRequest, ApprovalStatus
+
+        now = datetime.now(timezone.utc)
+        req = ApprovalRequest(
+            id=f"appr-{len(self.approvals)}",
+            tenant_id=kwargs["tenant_id"],
+            requester_user_id=kwargs["requester_user_id"],
+            tool_name=kwargs["tool_name"],
+            tool_version=kwargs["tool_version"],
+            risk_level=kwargs["risk_level"],
+            input_summary=kwargs["input_summary"],
+            arguments_digest=kwargs["arguments_digest"],
+            status=ApprovalStatus.PENDING,
+            created_at=now,
+            expires_at=now + timedelta(hours=24),
+        )
+        self.approvals[req.id] = req
+        return req.id
+
+    async def consume_approval(
+        self, context, approval_id, tool_name, tool_version, arguments_digest
+    ):
+        from arc.domain.models import ApprovalStatus
+        from arc.services.approvals import (
+            ApprovalBindingError,
+            ApprovalNotFoundError,
+            ApprovalStateError,
+        )
+
+        req = self.approvals.get(approval_id)
+        if req is None or req.tenant_id != context.tenant_id:
+            raise ApprovalNotFoundError(f"Approval {approval_id} not found")
+        if req.status != ApprovalStatus.APPROVED:
+            raise ApprovalStateError(f"Approval {approval_id} is '{req.status.value}'")
+        if (
+            req.tool_name != tool_name
+            or req.tool_version != tool_version
+            or req.arguments_digest != arguments_digest
+        ):
+            raise ApprovalBindingError(f"Approval {approval_id} binding mismatch")
+        self.approvals[approval_id].status = ApprovalStatus.CONSUMED
+        self.consumed.append(approval_id)
+        return self.approvals[approval_id]
+
+    async def decide_request(self, context, principal_user_id, approval_id, decision):
+        from datetime import datetime, timezone
+
+        from arc.services.approvals import ApprovalSelfDecisionError
+
+        req = self.approvals.get(approval_id)
+        if req is None:
+            raise Exception("not found")
+        if req.requester_user_id == principal_user_id:
+            raise ApprovalSelfDecisionError("self-approval")
+        req.status = decision
+        req.decided_by_user_id = principal_user_id
+        req.decided_at = datetime.now(timezone.utc)
+        return req
+
+
+async def _build_environment_with_approval(repositories, db):
+    """Wire the real service stack with an approval service for gated tools."""
+    tenant_repo, _, _ = repositories
+    tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Skill Execution"))
+
+    calls = []
+
+    def _echo_handler(input_data, tenant_id):
+        calls.append(("echo_tool", dict(input_data), tenant_id))
+        return {"tenant_id": tenant_id, "echo": input_data}
+
+    def _gated_handler(input_data, tenant_id):
+        calls.append(("gated_tool", dict(input_data), tenant_id))
+        return {"tenant_id": tenant_id}
+
+    def _tool(name, *, permissions=None, policy=None, handler=None):
+        return ToolDefinition(
+            name=name,
+            version="1",
+            description=f"Deterministic {name} test tool",
+            input_model=EchoInput,
+            output_model=EchoInput,
+            required_permissions=frozenset(permissions or {TOOL_EXECUTE}),
+            risk_level=ToolRiskLevel.LOW,
+            execution_policy=policy or ToolExecutionPolicy(),
+            audit_policy=ToolAuditPolicy(record_summary_only=True),
+            handler=handler or (lambda input_data, tenant_id: {"tenant_id": tenant_id}),
+        )
+
+    registry = ToolRegistry(
+        {
+            "check_service_health": SERVICE_HEALTH_TOOL,
+            "echo_tool": _tool("echo_tool", handler=_echo_handler),
+            "gated_tool": _tool(
+                "gated_tool",
+                policy=ToolExecutionPolicy(ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL),
+                handler=_gated_handler,
+            ),
+        }
+    )
+
+    skill_repo = PostgreSQLSkillRepository(db)
+    skill_service = SkillService(skill_repo)
+    record_repo = PostgreSQLToolExecutionRepository(db)
+    approval_service = _RecordingApprovalService()
+    tool_service = ToolExecutionService(registry, record_repo, approval_service=approval_service)
+    engine = SkillExecutionService(skill_service=skill_service, tool_service=tool_service)
+
+    context = _context(tenant.id)
+    return {
+        "engine": engine,
+        "skill_service": skill_service,
+        "record_repo": record_repo,
+        "approval_service": approval_service,
+        "tenant": tenant,
+        "context": context,
+        "principal": _principal(),
+        "authorization": _authorization(),
+        "calls": calls,
+    }
+
+
+async def test_gated_tool_creates_approval_and_returns_id(repositories, db):
+    """A gated tool inside a non-approval-required Skill creates an approval
+    and returns the approval_id in the result."""
+    env = await _build_environment_with_approval(repositories, db)
+    skill = await _create_skill(env, allowed_tools=["check_service_health", "gated_tool"])
+
+    result = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("gated_tool")],
+        [],
+        env["authorization"],
+    )
+
+    assert result.status is SkillExecutionStatus.APPROVAL_REQUIRED
+    assert result.error_kind == "approval_required"
+    assert result.approval_id is not None
+    assert result.approval_id.startswith("appr-")
+    assert len(result.steps) == 1
+    assert result.steps[0].error_kind == "approval_required"
+    # Handler must NOT have run.
+    assert env["calls"] == []
+    # Exactly one pending approval was created.
+    assert len(env["approval_service"].approvals) == 1
+
+
+async def test_resume_from_approval_gate_executes_handler(repositories, db):
+    """After approval is granted, passing approval_id resumes execution."""
+    env = await _build_environment_with_approval(repositories, db)
+    skill = await _create_skill(env, allowed_tools=["check_service_health", "gated_tool"])
+
+    # 1. First execution: creates approval.
+    initial = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("gated_tool")],
+        [],
+        env["authorization"],
+    )
+    assert initial.status is SkillExecutionStatus.APPROVAL_REQUIRED
+    approval_id = initial.approval_id
+
+    # 2. Approve it.
+    from arc.domain.models import ApprovalStatus
+
+    await env["approval_service"].decide_request(
+        env["context"], "approver-1", approval_id, ApprovalStatus.APPROVED
+    )
+
+    # 3. Resume: handler should run.
+    resumed = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("gated_tool")],
+        [],
+        env["authorization"],
+        approval_id=approval_id,
+        resume_from_step=0,
+        previous_steps=[],
+    )
+    assert resumed.status is SkillExecutionStatus.SUCCEEDED
+    assert len(env["calls"]) == 1
+    assert env["calls"][0][0] == "gated_tool"
+    assert approval_id in env["approval_service"].consumed
+
+
+async def test_resume_preserves_completed_steps(repositories, db):
+    """When resuming, previous_steps are included without re-execution."""
+    env = await _build_environment_with_approval(repositories, db)
+    skill = await _create_skill(
+        env, allowed_tools=["check_service_health", "echo_tool", "gated_tool"]
+    )
+
+    from arc.domain.models import SkillExecutionStepOutcome
+
+    # Simulate: echo_tool succeeded, gated_tool needs approval.
+    previous_steps = [
+        SkillExecutionStepOutcome(
+            sequence=0,
+            tool_name="echo_tool",
+            status=ToolExecutionStatus.SUCCESS,
+            tool_version="1",
+            output={"tenant_id": env["tenant"].id, "echo": {}},
+        )
+    ]
+
+    # Create approval for gated_tool at step 1.
+    initial = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("echo_tool"), _call("gated_tool")],
+        [],
+        env["authorization"],
+    )
+    # Step 0 (echo_tool) succeeds, step 1 (gated_tool) creates approval.
+    assert initial.status is SkillExecutionStatus.APPROVAL_REQUIRED
+    approval_id = initial.approval_id
+
+    # Approve.
+    from arc.domain.models import ApprovalStatus
+
+    await env["approval_service"].decide_request(
+        env["context"], "approver-1", approval_id, ApprovalStatus.APPROVED
+    )
+
+    # Resume from step 1 with previous_steps.
+    resumed = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("echo_tool"), _call("gated_tool")],
+        [],
+        env["authorization"],
+        approval_id=approval_id,
+        resume_from_step=1,
+        previous_steps=previous_steps,
+    )
+    assert resumed.status is SkillExecutionStatus.SUCCEEDED
+    assert len(resumed.steps) == 2
+    # Step 0 is from previous_steps (not re-executed).
+    assert resumed.steps[0].tool_name == "echo_tool"
+    assert resumed.steps[0].status is ToolExecutionStatus.SUCCESS
+    # Step 1 was executed.
+    assert resumed.steps[1].tool_name == "gated_tool"
+    assert resumed.steps[1].status is ToolExecutionStatus.SUCCESS
+    # echo_tool handler was NOT called again.
+    assert len(env["calls"]) == 1
+    assert env["calls"][0][0] == "gated_tool"
+
+
+async def test_resume_without_approval_id_raises_value_error(repositories, db):
+    """approval_id and resume_from_step must be provided together."""
+    env = await _build_environment_with_approval(repositories, db)
+    skill = await _create_skill(env)
+
+    with pytest.raises(ValueError, match="approval_id and resume_from_step"):
+        await env["engine"].execute(
+            env["context"],
+            env["principal"],
+            skill.id,
+            [_call("check_service_health")],
+            [],
+            env["authorization"],
+            approval_id="appr-0",
+        )
+
+    with pytest.raises(ValueError, match="approval_id and resume_from_step"):
+        await env["engine"].execute(
+            env["context"],
+            env["principal"],
+            skill.id,
+            [_call("check_service_health")],
+            [],
+            env["authorization"],
+            resume_from_step=0,
+        )
+
+
+async def test_resume_from_step_out_of_range_raises_value_error(repositories, db):
+    """resume_from_step must be within the tool_calls list."""
+    env = await _build_environment_with_approval(repositories, db)
+    skill = await _create_skill(env)
+
+    with pytest.raises(ValueError, match="resume_from_step out of range"):
+        await env["engine"].execute(
+            env["context"],
+            env["principal"],
+            skill.id,
+            [_call("check_service_health")],
+            [],
+            env["authorization"],
+            approval_id="appr-0",
+            resume_from_step=5,
+        )
+
+
+async def test_consumed_approval_cannot_be_replayed(repositories, db):
+    """Replaying a consumed approval_id fails at the ToolExecutionService level."""
+    env = await _build_environment_with_approval(repositories, db)
+    skill = await _create_skill(env, allowed_tools=["gated_tool"])
+
+    # Create and approve.
+    initial = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("gated_tool")],
+        [],
+        env["authorization"],
+    )
+    approval_id = initial.approval_id
+    from arc.domain.models import ApprovalStatus
+
+    await env["approval_service"].decide_request(
+        env["context"], "approver-1", approval_id, ApprovalStatus.APPROVED
+    )
+
+    # First resume succeeds.
+    await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("gated_tool")],
+        [],
+        env["authorization"],
+        approval_id=approval_id,
+        resume_from_step=0,
+        previous_steps=[],
+    )
+    assert len(env["calls"]) == 1
+
+    # Replay fails (approval already consumed).
+    replay = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("gated_tool")],
+        [],
+        env["authorization"],
+        approval_id=approval_id,
+        resume_from_step=0,
+        previous_steps=[],
+    )
+    assert replay.status is SkillExecutionStatus.FAILED
+    assert replay.error_kind == "tool_denied"
+    assert len(env["calls"]) == 1  # Handler must not have run again.
+
+
+async def test_agent_propagates_approval_id(repositories, db):
+    """Approval_id is propagated from SkillExecutionResult to AgentExecutionResult."""
+    from unittest.mock import MagicMock
+
+    from arc.services.agent import AgentExecutionService
+    from arc.services.llm import SkillSelectingLlm
+
+    env = await _build_environment_with_approval(repositories, db)
+    skill = await _create_skill(env, allowed_tools=["gated_tool"])
+
+    # Create a mock LLM provider that returns a decision for the gated tool.
+    mock_llm = MagicMock(spec=SkillSelectingLlm)
+    mock_llm.skill_decision_capable = True
+    mock_llm.propose_skill.return_value = {
+        "skill_id": skill.id,
+        "tool_calls": [_call("gated_tool")],
+        "satisfied_preconditions": [],
+    }
+
+    agent_service = AgentExecutionService(
+        skill_service=env["skill_service"],
+        skill_execution_service=env["engine"],
+        llm_provider=mock_llm,
+    )
+
+    result = await agent_service.run(
+        env["context"],
+        env["principal"],
+        "test goal",
+        env["authorization"],
+    )
+
+    assert result.status.value == "approval_required"
+    assert result.approval_id is not None
+    assert result.approval_id.startswith("appr-")
+    assert len(result.steps) == 1
+    assert result.steps[0].status.value == "approval_required"
+
+
 async def test_non_string_precondition_labels_rejected(repositories, db):
     env = await _build_environment(repositories, db)
     skill = await _create_skill(env)

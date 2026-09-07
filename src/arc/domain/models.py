@@ -1184,6 +1184,7 @@ class SkillExecutionResult:
     status: SkillExecutionStatus
     steps: List[SkillExecutionStepOutcome] = field(default_factory=list)
     error_kind: Optional[str] = None
+    approval_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):
@@ -1214,7 +1215,11 @@ class SkillExecutionResult:
             SkillExecutionStatus.PRECONDITION_FAILED,
             SkillExecutionStatus.APPROVAL_REQUIRED,
         ):
-            if self.steps:
+            if self.status is SkillExecutionStatus.APPROVAL_REQUIRED and self.approval_id:
+                # Per-tool-call approval: steps before the approval gate
+                # are permitted when an approval_id is present.
+                pass
+            elif self.steps:
                 raise ValueError("Blocked results cannot record steps")
             if not self.error_kind:
                 raise ValueError("Blocked results require an error kind")
@@ -1297,6 +1302,7 @@ class AgentExecutionResult:
     status: AgentRunStatus
     steps: List[AgentStepOutcome] = field(default_factory=list)
     error_kind: Optional[str] = None
+    approval_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):

@@ -37,9 +37,11 @@ from arc.domain.models import (
     KnowledgeSource,
     Skill,
     SkillExecutionResult,
+    SkillExecutionStepOutcome,
     SkillStatus,
     Tenant,
     TenantContext,
+    ToolExecutionStatus,
     User,
     UserRole,
     WebhookEvent,
@@ -701,7 +703,7 @@ def _skill_execution_response(result: SkillExecutionResult) -> Dict[str, Any]:
     safe ``error_kind``. No raw exceptions or internal details cross
     this boundary.
     """
-    return {
+    response = {
         "id": result.id,
         "tenant_id": result.tenant_id,
         "principal_id": result.principal_id,
@@ -723,6 +725,9 @@ def _skill_execution_response(result: SkillExecutionResult) -> Dict[str, Any]:
         ],
         "created_at": result.created_at.isoformat(),
     }
+    if result.approval_id is not None:
+        response["approval_id"] = result.approval_id
+    return response
 
 
 @api_router.post("/skills/{skill_id}/execute")
@@ -782,7 +787,7 @@ def _agent_run_response(result: AgentExecutionResult) -> Dict[str, Any]:
     Steps preserve the bounded orchestration outcomes; no raw model
     output, exceptions, or internal details cross this boundary.
     """
-    return {
+    response = {
         "id": result.id,
         "tenant_id": result.tenant_id,
         "principal_id": result.principal_id,
@@ -801,6 +806,9 @@ def _agent_run_response(result: AgentExecutionResult) -> Dict[str, Any]:
         ],
         "created_at": result.created_at.isoformat(),
     }
+    if result.approval_id is not None:
+        response["approval_id"] = result.approval_id
+    return response
 
 
 async def _require_tenant_permission_from_body(
@@ -1751,3 +1759,168 @@ async def decide_approval_request(
             detail="Approval decision failed",
         )
     return _approval_payload(approval)
+
+
+@api_router.post("/skills/{skill_id}/resume")
+async def resume_skill_execution(
+    skill_id: str,
+    tenant_id: str,
+    body: Optional[Any] = Body(default=None),
+    context: TenantContext = Depends(require_tenant_permission(SKILL_EXECUTE)),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization: AuthorizationService = Depends(get_authorization_service),
+    execution_service: SkillExecutionService = Depends(lambda: app_context.skill_execution_service),
+) -> Dict[str, Any]:
+    """Resume a Skill execution after human approval.
+
+    Accepts the ``approval_id`` returned by a previous execute/resume
+    call, along with the original ``tool_calls`` and the
+    ``resume_from_step`` index. The approval is atomically consumed by
+    ToolExecutionService before the gated tool handler runs. Steps before
+    ``resume_from_step`` are preserved from ``previous_steps`` without
+    re-execution.
+
+    Requires ``skill:execute`` and a trusted X-10 tenant context.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
+        )
+
+    approval_id = body.get("approval_id")
+    tool_calls = body.get("tool_calls")
+    resume_from_step = body.get("resume_from_step")
+    previous_steps_raw = body.get("previous_steps", [])
+
+    if not approval_id or not isinstance(approval_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="approval_id is required",
+        )
+    if not isinstance(tool_calls, list) or not tool_calls:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tool_calls is required and must be a non-empty list",
+        )
+    if not isinstance(resume_from_step, int) or resume_from_step < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="resume_from_step is required and must be a non-negative integer",
+        )
+
+    previous_steps = []
+    for raw_step in previous_steps_raw:
+        previous_steps.append(
+            SkillExecutionStepOutcome(
+                sequence=raw_step["sequence"],
+                tool_name=raw_step["tool_name"],
+                status=ToolExecutionStatus(raw_step["status"]),
+                tool_version=raw_step.get("tool_version"),
+                output=raw_step.get("output"),
+                error_kind=raw_step.get("error_kind"),
+            )
+        )
+
+    try:
+        result = await execution_service.execute(
+            context,
+            principal,
+            skill_id,
+            tool_calls,
+            body.get("satisfied_preconditions", []),
+            authorization,
+            approval_id=approval_id,
+            resume_from_step=resume_from_step,
+            previous_steps=previous_steps,
+        )
+    except NotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return _skill_execution_response(result)
+
+
+@api_router.post("/agent/runs/resume")
+async def resume_agent_execution(
+    body: Optional[Any] = Body(default=None),
+    context: TenantContext = Depends(_require_tenant_permission_from_body),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization: AuthorizationService = Depends(get_authorization_service),
+    execution_service: SkillExecutionService = Depends(lambda: app_context.skill_execution_service),
+) -> Dict[str, Any]:
+    """Resume an Agent execution after human approval.
+
+    Accepts the ``approval_id`` returned by a previous agent run, along
+    with the ``skill_id``, ``tool_calls``, and ``resume_from_step`` from
+    the original decision. The approval is atomically consumed before the
+    gated tool handler runs. The LLM decision step is skipped: the
+    original decision is replayed with the approval context.
+
+    Requires ``agent:execute`` and a trusted X-10 tenant context.
+    """
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
+        )
+
+    approval_id = body.get("approval_id")
+    skill_id = body.get("skill_id")
+    tool_calls = body.get("tool_calls")
+    resume_from_step = body.get("resume_from_step")
+    previous_steps_raw = body.get("previous_steps", [])
+
+    if not approval_id or not isinstance(approval_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="approval_id is required",
+        )
+    if not skill_id or not isinstance(skill_id, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="skill_id is required",
+        )
+    if not isinstance(tool_calls, list) or not tool_calls:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tool_calls is required and must be a non-empty list",
+        )
+    if not isinstance(resume_from_step, int) or resume_from_step < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="resume_from_step is required and must be a non-negative integer",
+        )
+
+    previous_steps = []
+    for raw_step in previous_steps_raw:
+        previous_steps.append(
+            SkillExecutionStepOutcome(
+                sequence=raw_step["sequence"],
+                tool_name=raw_step["tool_name"],
+                status=ToolExecutionStatus(raw_step["status"]),
+                tool_version=raw_step.get("tool_version"),
+                output=raw_step.get("output"),
+                error_kind=raw_step.get("error_kind"),
+            )
+        )
+
+    try:
+        result = await execution_service.execute(
+            context,
+            principal,
+            skill_id,
+            tool_calls,
+            body.get("satisfied_preconditions", []),
+            authorization,
+            approval_id=approval_id,
+            resume_from_step=resume_from_step,
+            previous_steps=previous_steps,
+        )
+    except NotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return _skill_execution_response(result)
