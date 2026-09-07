@@ -43,6 +43,7 @@ class PostgreSQLSkillRepository:
             "expected_output": skill.expected_output,
             "failure_behavior": skill.failure_behavior,
             "provenance": skill.provenance,
+            "risk": skill.risk,
         }
 
     @staticmethod
@@ -67,6 +68,7 @@ class PostgreSQLSkillRepository:
             expected_output=definition.get("expected_output"),
             failure_behavior=definition.get("failure_behavior"),
             provenance=definition.get("provenance"),
+            risk=definition.get("risk"),
         )
 
     async def create(self, skill: Skill) -> Skill:
@@ -138,6 +140,49 @@ class PostgreSQLSkillRepository:
             return True
         except NotFoundError:
             return False
+
+    async def update(self, skill: Skill) -> Skill:
+        """Update an existing skill, scoped to a tenant."""
+        async with self.db.transaction() as conn:
+            try:
+                await conn.execute(
+                    """
+                    UPDATE skills
+                    SET name = $3, version = $4, purpose = $5, status = $6,
+                        definition = $7, updated_at = $8
+                    WHERE id = $1 AND tenant_id = $2
+                    """,
+                    skill.id,
+                    skill.tenant_id,
+                    skill.name,
+                    skill.version,
+                    skill.purpose,
+                    skill.status.value,
+                    json.dumps(self._definition(skill)),
+                    skill.updated_at,
+                )
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, tenant_id, name, version, purpose, status,
+                           definition, created_at, updated_at
+                    FROM skills
+                    WHERE id = $1 AND tenant_id = $2
+                    """,
+                    skill.id,
+                    skill.tenant_id,
+                )
+                if not row:
+                    raise NotFoundError(f"Skill {skill.id} not found in tenant {skill.tenant_id}")
+                return self._from_row(row)
+            except asyncpg.UniqueViolationError as e:
+                raise DuplicateKeyError(
+                    f"Skill '{skill.name}' version '{skill.version}' already exists "
+                    f"in tenant {skill.tenant_id}"
+                ) from e
+            except NotFoundError:
+                raise
+            except Exception as e:
+                raise Exception(f"Failed to update skill: {e}") from e
 
     async def delete(self, skill_id: str, tenant_id: str) -> None:
         """Delete a skill, scoped to a tenant."""

@@ -41,6 +41,7 @@ class TestSkillModel:
             expected_output="service_healthy",
             failure_behavior="create_incident",
             provenance="ops-runbook-v1",
+            risk="low",
         )
         assert skill.id == "skill-1"
         assert skill.tenant_id == "tenant-1"
@@ -56,6 +57,7 @@ class TestSkillModel:
         assert skill.expected_output == "service_healthy"
         assert skill.failure_behavior == "create_incident"
         assert skill.provenance == "ops-runbook-v1"
+        assert skill.risk == "low"
         assert skill.status == SkillStatus.ACTIVE
 
     def test_skill_defaults(self):
@@ -76,6 +78,7 @@ class TestSkillModel:
         assert skill.expected_output is None
         assert skill.failure_behavior is None
         assert skill.provenance is None
+        assert skill.risk is None
         assert skill.status == SkillStatus.ACTIVE
 
     def test_skill_default_timestamps(self):
@@ -152,3 +155,18 @@ class TestSkillModel:
                 purpose="Recover",
                 allowed_tools="check_service_health",
             )
+
+    def test_skill_risk_field_optional(self):
+        """Test that risk field defaults to None and accepts string values."""
+        skill_no_risk = Skill(id="s1", tenant_id="t1", name="Recovery", purpose="Recover")
+        assert skill_no_risk.risk is None
+
+        skill_with_risk = Skill(
+            id="s2", tenant_id="t1", name="Deploy", purpose="Deploy code", risk="high"
+        )
+        assert skill_with_risk.risk == "high"
+
+        skill_low_risk = Skill(
+            id="s3", tenant_id="t1", name="Health Check", purpose="Check health", risk="low"
+        )
+        assert skill_low_risk.risk == "low"

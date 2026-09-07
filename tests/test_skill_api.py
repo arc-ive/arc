@@ -188,6 +188,13 @@ class TestSkillAuthentication:
             == 401
         )
         assert (
+            client.put(
+                f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}",
+                json={"name": "Updated"},
+            ).status_code
+            == 401
+        )
+        assert (
             client.delete(f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}").status_code
             == 401
         )
@@ -645,16 +652,17 @@ class TestSkillNegativeCases:
         assert response.status_code == 401
 
     @pytest.mark.parametrize(
-        "endpoint",
+        "endpoint,method",
         [
-            "/skills?tenant_id={tenant_id}",
-            "/skills/{skill_id}?tenant_id={tenant_id}",
-            "/skills?tenant_id={tenant_id}",  # POST
-            "/skills/{skill_id}?tenant_id={tenant_id}",  # DELETE
+            ("/skills?tenant_id={tenant_id}", "GET"),
+            ("/skills/{skill_id}?tenant_id={tenant_id}", "GET"),
+            ("/skills?tenant_id={tenant_id}", "POST"),
+            ("/skills/{skill_id}?tenant_id={tenant_id}", "PUT"),
+            ("/skills/{skill_id}?tenant_id={tenant_id}", "DELETE"),
         ],
     )
     async def test_employee_role_denied_on_all_endpoints(
-        self, client, repositories, make_token, authorization_override, endpoint
+        self, client, repositories, make_token, authorization_override, endpoint, method
     ):
         """EMPLOYEE (no matrix permissions) is denied on all Skills endpoints."""
         tenant = await _seed_tenant(repositories)
@@ -665,10 +673,12 @@ class TestSkillNegativeCases:
         headers = {"Authorization": f"Bearer {token}"}
 
         url = endpoint.format(tenant_id=tenant.id, skill_id=_unique("skill"))
-        if "POST" in endpoint or endpoint.endswith("/skills?tenant_id={tenant_id}"):
+        if method == "POST":
             response = client.post(url, headers=headers, json=_skill_payload())
-        elif "DELETE" in endpoint:
+        elif method == "DELETE":
             response = client.delete(url, headers=headers)
+        elif method == "PUT":
+            response = client.put(url, headers=headers, json={"name": "X"})
         else:
             response = client.get(url, headers=headers)
         assert response.status_code == 403
@@ -906,6 +916,229 @@ class TestSkillDuplicateCreation:
         assert fetched.json()["name"] == "stable-skill"
 
 
+class TestSkillUpdate:
+    """PUT /skills/{skill_id} endpoint tests."""
+
+    async def test_update_skill_succeeds(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A valid update returns 200 with the updated Skill."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        updated = client.put(
+            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            headers=headers,
+            json={"name": "Updated Skill", "purpose": "Updated purpose"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["name"] == "Updated Skill"
+        assert updated.json()["purpose"] == "Updated purpose"
+        assert updated.json()["id"] == skill_id
+
+    async def test_update_skill_preserves_unmodified_fields(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Fields not provided in the update body are preserved."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(name="Original", purpose="Original purpose", version="3"),
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        updated = client.put(
+            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            headers=headers,
+            json={"name": "Updated"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["name"] == "Updated"
+        assert updated.json()["purpose"] == "Original purpose"
+        assert updated.json()["version"] == "3"
+
+    async def test_update_skill_returns_404_for_missing_skill(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Updating a nonexistent Skill within the trusted tenant returns 404."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.put(
+            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "Updated"},
+        )
+        assert response.status_code == 404
+
+    async def test_update_skill_returns_403_for_unauthorized_user(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """OPERATIONS_USER cannot update Skills (no skill:update permission)."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.put(
+            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            headers=headers,
+            json={"name": "Updated"},
+        )
+        assert response.status_code == 403
+
+    async def test_update_skill_returns_403_for_employee(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """EMPLOYEE cannot update Skills."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+
+        response = client.put(
+            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "Updated"},
+        )
+        assert response.status_code == 403
+
+    async def test_update_skill_returns_403_for_mismatched_tenant(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A tenant_id mismatch between path and trusted context returns 403."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        mismatched_context = TenantContext(
+            tenant_id=_unique("other-tenant"),
+            tenant_name="Other Tenant",
+            user_id=user.id,
+            role=UserRole.MEMBER,
+        )
+        app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
+        try:
+            response = client.put(
+                f"/skills/{skill_id}?tenant_id={tenant.id}",
+                headers=headers,
+                json={"name": "Hacked"},
+            )
+            assert response.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_trusted_tenant_context, None)
+
+    async def test_update_skill_returns_401_without_credentials(self, client):
+        """PUT /skills/{skill_id} returns 401 without credentials."""
+        response = client.put(
+            f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}",
+            json={"name": "Updated"},
+        )
+        assert response.status_code == 401
+
+
+class TestSkillRiskField:
+    """Tests for the Skill risk field (Final PRD §11 Skill Model)."""
+
+    async def test_create_skill_with_risk(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Creating a Skill with a risk field persists it."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(risk="high"),
+        )
+        assert created.status_code == 200
+        assert created.json()["risk"] == "high"
+
+    async def test_create_skill_without_risk(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Creating a Skill without risk field defaults to null."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(),
+        )
+        assert created.status_code == 200
+        assert created.json()["risk"] is None
+
+    async def test_update_skill_risk(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Updating a Skill's risk field persists the change."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(),
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        updated = client.put(
+            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            headers=headers,
+            json={"risk": "medium"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["risk"] == "medium"
+
+
 class TestSkillRouteSurface:
     """Requirement 15: the API surface contains exactly the intended endpoints."""
 
@@ -925,6 +1158,7 @@ class TestSkillRouteSurface:
             "POST /skills",
             "GET /skills",
             "GET /skills/{skill_id}",
+            "PUT /skills/{skill_id}",
             "DELETE /skills/{skill_id}",
             "POST /skills/{skill_id}/execute",
         }

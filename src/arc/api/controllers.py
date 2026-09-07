@@ -61,6 +61,7 @@ from arc.security.authorization import (
     SKILL_DELETE,
     SKILL_EXECUTE,
     SKILL_READ,
+    SKILL_UPDATE,
     TENANT_CREATE,
     TENANT_READ,
     TENANT_UPDATE,
@@ -572,6 +573,7 @@ def _skill_response(skill: Skill) -> Dict[str, Any]:
         "expected_output": skill.expected_output,
         "failure_behavior": skill.failure_behavior,
         "provenance": skill.provenance,
+        "risk": skill.risk,
         "created_at": skill.created_at.isoformat(),
         "updated_at": skill.updated_at.isoformat(),
     }
@@ -616,6 +618,7 @@ async def create_skill(
         expected_output=skill_data.get("expected_output"),
         failure_behavior=skill_data.get("failure_behavior"),
         provenance=skill_data.get("provenance"),
+        risk=skill_data.get("risk"),
         status=status_value,
     )
     try:
@@ -669,6 +672,67 @@ async def get_skill(
     except NotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
     return _skill_response(skill)
+
+
+@api_router.put("/skills/{skill_id}")
+async def update_skill(
+    skill_id: str,
+    skill_data: Dict[str, Any],
+    tenant_id: str,
+    context: TenantContext = Depends(require_tenant_permission(SKILL_UPDATE)),
+    skill_service: SkillService = Depends(lambda: app_context.skill_service),
+) -> Dict[str, Any]:
+    """Update an existing Skill within the trusted tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``skill:update`` permission. The supplied ``tenant_id`` is explicitly
+    validated for consistency against the trusted context (403 on
+    mismatch). The trusted context remains authoritative for ownership
+    and persistence. A Skill outside the trusted tenant is
+    indistinguishable from a missing Skill (404): cross-tenant access
+    never reveals existence.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        existing = await skill_service.get_skill(context, skill_id)
+    except NotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+    try:
+        status_value = SkillStatus(skill_data.get("status", existing.status.value))
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill status")
+
+    from dataclasses import replace
+
+    updated_skill = replace(
+        existing,
+        name=skill_data.get("name", existing.name),
+        purpose=skill_data.get("purpose", existing.purpose),
+        version=skill_data.get("version", existing.version),
+        inputs=skill_data.get("inputs", existing.inputs),
+        preconditions=skill_data.get("preconditions", existing.preconditions),
+        steps=skill_data.get("steps", existing.steps),
+        constraints=skill_data.get("constraints", existing.constraints),
+        allowed_tools=skill_data.get("allowed_tools", existing.allowed_tools),
+        approval_required=skill_data.get("approval_required", existing.approval_required),
+        expected_output=skill_data.get("expected_output", existing.expected_output),
+        failure_behavior=skill_data.get("failure_behavior", existing.failure_behavior),
+        provenance=skill_data.get("provenance", existing.provenance),
+        risk=skill_data.get("risk", existing.risk),
+        status=status_value,
+    )
+
+    try:
+        result = await skill_service.update_skill(context, updated_skill)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Skill '{updated_skill.name}' version '{updated_skill.version}' "
+            f"already exists in this tenant.",
+        )
+    return _skill_response(result)
 
 
 @api_router.delete("/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)

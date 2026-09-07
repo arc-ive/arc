@@ -289,9 +289,12 @@ class SkillRepository(Protocol):
         """Check if a skill exists within a tenant."""
         ...
 
+    async def update(self, skill: Skill) -> Skill:
+        """Update an existing skill, scoped to a tenant."""
+        ...
+
     async def delete(self, skill_id: str, tenant_id: str) -> None:
         """Delete a skill, scoped to a tenant."""
-        ...
         ...
 
 
