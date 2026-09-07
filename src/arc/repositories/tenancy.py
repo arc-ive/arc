@@ -30,6 +30,25 @@ class PostgreSQLTenantRepository:
         """Get tenant by ID."""
         return await self.db.get_tenant(tenant_id)
 
+    async def list_all(self) -> List[Tenant]:
+        """List all tenants (platform-scoped, no membership filter)."""
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, name, status, industry, created_at, updated_at "
+                "FROM tenants ORDER BY created_at DESC"
+            )
+            return [
+                Tenant(
+                    id=row["id"],
+                    name=row["name"],
+                    status=row["status"],
+                    industry=row["industry"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+
     async def update(self, tenant: Tenant) -> Tenant:
         """Update tenant."""
         return await self.db.update_tenant(tenant)

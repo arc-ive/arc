@@ -36,6 +36,10 @@ class TenantRepository(Protocol):
         """Get tenant by ID."""
         ...
 
+    async def list_all(self) -> List[Tenant]:
+        """List all tenants (platform-scoped, no membership filter)."""
+        ...
+
     async def update(self, tenant: Tenant) -> Tenant:
         """Update tenant."""
         ...

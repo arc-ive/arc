@@ -30,6 +30,7 @@ from arc.security.authorization import (
     SKILL_READ,
     SKILL_UPDATE,
     TENANT_CREATE,
+    TENANT_LIST,
     TENANT_READ,
     TENANT_UPDATE,
     TOOL_EXECUTE,
@@ -72,6 +73,7 @@ def test_exactly_four_application_roles_exist():
                 AGENT_EXECUTE,
                 TENANT_CREATE,
                 TENANT_UPDATE,
+                TENANT_LIST,
                 USER_CREATE,
                 USER_READ,
                 MEMBERSHIP_CREATE,
@@ -119,7 +121,7 @@ def test_exactly_four_application_roles_exist():
                 APPROVAL_READ,
                 APPROVAL_DECIDE,
             ],
-            [TENANT_CREATE, USER_CREATE, USER_READ, MEMBERSHIP_CREATE],
+            [TENANT_CREATE, TENANT_LIST, USER_CREATE, USER_READ, MEMBERSHIP_CREATE],
         ),
         (
             ApplicationRole.OPERATIONS_USER,
@@ -138,6 +140,7 @@ def test_exactly_four_application_roles_exist():
             ],
             [
                 TENANT_CREATE,
+                TENANT_LIST,
                 TENANT_UPDATE,
                 USER_CREATE,
                 USER_READ,
@@ -157,6 +160,7 @@ def test_exactly_four_application_roles_exist():
             [
                 AGENT_EXECUTE,
                 TENANT_CREATE,
+                TENANT_LIST,
                 TENANT_UPDATE,
                 USER_CREATE,
                 USER_READ,

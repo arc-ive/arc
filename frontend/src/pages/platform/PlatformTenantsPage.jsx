@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Building2, Plus } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
-import { createTenant, getUserTenants } from '../../api/endpoints/tenants.js'
+import { createTenant, getPlatformTenants } from '../../api/endpoints/tenants.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { Button } from '../../components/ui/Button.jsx'
@@ -25,7 +25,7 @@ function CreateTenantDialog({ open, onClose }) {
   const mutation = useMutation({
     mutationFn: () => createTenant(form),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.userTenants })
+      queryClient.invalidateQueries({ queryKey: queryKeys.platformTenants })
       onClose()
       setForm({ id: '', name: '', status: 'active' })
     },
@@ -100,15 +100,15 @@ function CreateTenantDialog({ open, onClose }) {
 }
 
 export function PlatformTenantsPage() {
-  const { principal, isDemo } = useAuth()
+  const { isDemo } = useAuth()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
   const handleCloseCreate = useCallback(() => setCreateOpen(false), [])
 
   const userTenants = useQuery({
-    queryKey: queryKeys.userTenants(principal?.sub),
-    queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    queryKey: queryKeys.platformTenants,
+    queryFn: () => getPlatformTenants(),
+    enabled: !isDemo,
     staleTime: 30 * 1000,
   })
 
@@ -164,7 +164,7 @@ export function PlatformTenantsPage() {
           <EmptyState
             icon={Building2}
             title="No tenants yet"
-            description="You are not a member of any tenant. Create one, then provision memberships (development endpoint) for its users."
+            description="No tenants have been created yet. Create one to get started."
             action={
               <Button variant="secondary" onClick={() => setCreateOpen(true)}>
                 <Plus className="size-4" />

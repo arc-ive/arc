@@ -64,6 +64,7 @@ from arc.security.authorization import (
     SKILL_READ,
     SKILL_UPDATE,
     TENANT_CREATE,
+    TENANT_LIST,
     TENANT_READ,
     TENANT_UPDATE,
     TOOL_EXECUTE,
@@ -301,6 +302,31 @@ async def create_tenant(
         "created_at": created_tenant.created_at.isoformat(),
         "updated_at": created_tenant.updated_at.isoformat(),
     }
+
+
+@api_router.get("/platform/tenants")
+async def list_platform_tenants(
+    _: AuthenticatedPrincipal = Depends(require_permission(TENANT_LIST)),
+    tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
+) -> List[Dict[str, Any]]:
+    """List all tenants — PLATFORM_ADMINISTRATOR only.
+
+    Protected: requires the global ``tenant:list`` permission
+    (PLATFORM_ADMINISTRATOR). Returns all tenants regardless of membership.
+    No tenant context is required.
+    """
+    tenants = await tenant_service.list_all_tenants()
+    return [
+        {
+            "id": tenant.id,
+            "name": tenant.name,
+            "status": tenant.status,
+            "industry": tenant.industry,
+            "created_at": tenant.created_at.isoformat(),
+            "updated_at": tenant.updated_at.isoformat(),
+        }
+        for tenant in tenants
+    ]
 
 
 @api_router.get("/tenants/{tenant_id}")

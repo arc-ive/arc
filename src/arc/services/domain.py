@@ -52,6 +52,10 @@ class TenantService:
         """Get tenant by ID."""
         return await self.tenant_repo.get_by_id(tenant_id)
 
+    async def list_all_tenants(self) -> List[Tenant]:
+        """List all tenants (platform administrator operation)."""
+        return await self.tenant_repo.list_all()
+
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration."""
         if not tenant.id:

@@ -2,6 +2,7 @@ export const queryKeys = {
   health: ['health'],
   me: (userId) => ['auth', 'me', userId],
   platformUsers: () => ['platform', 'users'],
+  platformTenants: () => ['platform', 'tenants'],
   userTenants: (userId) => ['users', userId, 'tenants'],
   tenant: (tenantId) => ['tenants', tenantId],
   tenantUsers: (tenantId) => ['tenants', tenantId, 'users'],
