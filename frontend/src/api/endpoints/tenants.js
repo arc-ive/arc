@@ -5,6 +5,11 @@ export async function getUserTenants(userId) {
   return data
 }
 
+export async function getPlatformTenants() {
+  const { data } = await client.get('/platform/tenants')
+  return data
+}
+
 export async function getTenant(tenantId) {
   const { data } = await client.get(`/tenants/${encodeURIComponent(tenantId)}`)
   return data
