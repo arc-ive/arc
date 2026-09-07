@@ -22,6 +22,9 @@ from typing import Optional
 
 from arc.db.connection import ArcDatabase
 from arc.domain.models import (
+    AgentRunActivityMetrics,
+    AgentRunRecord,
+    AgentRunRecordStep,
     ApiRequestRecord,
     ApprovalActivityMetrics,
     ConnectorSyncActivityMetrics,
@@ -226,6 +229,158 @@ class PostgreSQLObservabilityRepository:
             expired=row["expired"],
             consumed=row["consumed"],
         )
+
+    # ------------------------------------------------------------------
+    # Agent execution trace (PRD 17 O-6)
+    # ------------------------------------------------------------------
+    async def create_agent_run_record(self, record: AgentRunRecord) -> AgentRunRecord:
+        """Persist one agent execution trace (best-effort callers only).
+
+        The ``agent_run_records`` table is the authoritative write path
+        for agent runs; no prior table persisted them.  Steps are stored
+        as a JSONB array so the trace is fully queryable.
+        """
+        import json
+
+        steps_json = json.dumps([step.to_dict() for step in record.steps])
+        async with self.db.transaction() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO agent_run_records
+                    (id, tenant_id, principal_id, goal, status, error_kind,
+                     steps, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+                RETURNING created_at
+                """,
+                record.id,
+                record.tenant_id,
+                record.principal_id,
+                record.goal,
+                record.status,
+                record.error_kind,
+                steps_json,
+                record.created_at,
+            )
+        record.created_at = row["created_at"]
+        return record
+
+    async def get_agent_run_record(self, record_id: str, tenant_id: str) -> AgentRunRecord:
+        """Read one agent run trace within the trusted tenant."""
+        import json
+
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, tenant_id, principal_id, goal, status, error_kind,
+                       steps, created_at
+                FROM agent_run_records
+                WHERE id = $1 AND tenant_id = $2
+                """,
+                record_id,
+                tenant_id,
+            )
+        if row is None:
+            from arc.db.connection import NotFoundError
+
+            raise NotFoundError(f"Agent run record {record_id} not found")
+        steps_raw = row["steps"]
+        if isinstance(steps_raw, str):
+            steps_raw = json.loads(steps_raw)
+        steps = [AgentRunRecordStep.from_dict(s) for s in steps_raw]
+        return AgentRunRecord(
+            id=row["id"],
+            tenant_id=row["tenant_id"],
+            principal_id=row["principal_id"],
+            goal=row["goal"],
+            status=row["status"],
+            error_kind=row["error_kind"],
+            steps=steps,
+            created_at=row["created_at"],
+        )
+
+    async def list_agent_run_records(self, tenant_id: str, hours: int = 24) -> list:
+        """List agent run traces for a tenant within a time window."""
+        import json
+
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT id, tenant_id, principal_id, goal, status, error_kind,
+                       steps, created_at
+                FROM agent_run_records
+                WHERE {self._scope_clause()}
+                ORDER BY created_at DESC
+                """,
+                tenant_id,
+                hours,
+            )
+        results = []
+        for row in rows:
+            steps_raw = row["steps"]
+            if isinstance(steps_raw, str):
+                steps_raw = json.loads(steps_raw)
+            steps = [AgentRunRecordStep.from_dict(s) for s in steps_raw]
+            results.append(
+                AgentRunRecord(
+                    id=row["id"],
+                    tenant_id=row["tenant_id"],
+                    principal_id=row["principal_id"],
+                    goal=row["goal"],
+                    status=row["status"],
+                    error_kind=row["error_kind"],
+                    steps=steps,
+                    created_at=row["created_at"],
+                )
+            )
+        return results
+
+    async def agent_run_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> AgentRunActivityMetrics:
+        """Aggregate authoritative agent run records in place."""
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'succeeded') AS succeeded,
+                       COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+                       COUNT(*) FILTER (WHERE status = 'approval_required') AS approval_required,
+                       COUNT(*) FILTER (WHERE status = 'max_steps_reached') AS max_steps_reached
+                FROM agent_run_records
+                WHERE {self._scope_clause()}
+                """,
+                tenant_id,
+                hours,
+            )
+        return AgentRunActivityMetrics(
+            total_runs=row["total"],
+            succeeded=row["succeeded"],
+            failed=row["failed"],
+            approval_required=row["approval_required"],
+            max_steps_reached=row["max_steps_reached"],
+        )
+
+    # ------------------------------------------------------------------
+    # Escalation count (PRD 17 O-7)
+    # ------------------------------------------------------------------
+    async def escalation_count(self, tenant_id: Optional[str], hours: int) -> int:
+        """Count human escalations (approved + rejected approvals).
+
+        Escalations are human decisions on approval requests: APPROVED
+        or REJECTED statuses indicate a human intervened.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT COUNT(*) AS cnt
+                FROM approval_requests
+                WHERE {self._scope_clause()}
+                  AND status IN ('approved', 'rejected')
+                """,
+                tenant_id,
+                hours,
+            )
+        return row["cnt"]
 
     async def database_reachable(self) -> bool:
         """Component health probe: true when the database answers."""

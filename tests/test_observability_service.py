@@ -10,6 +10,9 @@ labels without ever exposing configuration material.
 import pytest
 
 from arc.domain.models import (
+    AgentRunActivityMetrics,
+    AgentRunRecord,
+    AgentRunRecordStep,
     ApiRequestRecord,
     ApprovalActivityMetrics,
     ConnectorSyncActivityMetrics,
@@ -28,11 +31,18 @@ class FlakyRepository:
     def __init__(self, fail_writes: bool = False):
         self.fail_writes = fail_writes
         self.calls = 0
+        self.agent_run_calls = 0
 
     async def create_api_request_record(self, record):
         if self.fail_writes:
             raise RuntimeError("database exploded")
         self.calls += 1
+        return record
+
+    async def create_agent_run_record(self, record):
+        if self.fail_writes:
+            raise RuntimeError("database exploded")
+        self.agent_run_calls += 1
         return record
 
 
@@ -66,6 +76,17 @@ class RecordingRepository:
         return ApprovalActivityMetrics(
             total=3, pending=1, approved=1, rejected=0, expired=1, consumed=0
         )
+
+    async def escalation_count(self, tenant_id, hours):
+        return 2
+
+    async def agent_run_activity(self, tenant_id, hours):
+        return AgentRunActivityMetrics(
+            total_runs=5, succeeded=3, failed=1, approval_required=1, max_steps_reached=0
+        )
+
+    async def create_agent_run_record(self, record):
+        return record
 
 
 @pytest.mark.asyncio
@@ -147,6 +168,10 @@ async def test_platform_summary_is_strictly_tenant_agnostic():
         "webhook_source_available",
         "approval_activity_total",
         "approval_failures_total",
+        "escalation_count_total",
+        "agent_runs_total",
+        "agent_runs_succeeded",
+        "agent_runs_failed",
     }
     serialized = str(summary)
     assert "tenant_id" not in serialized
@@ -239,3 +264,70 @@ async def test_probe_catches_unexpected_exceptions(monkeypatch):
     assert health["components"]["llm_provider"]["status"] == "unhealthy"
     assert health["components"]["embeddings"]["status"] == "unhealthy"
     assert "database connection refused" not in str(health)
+
+
+# ------------------------------------------------------------------
+# Agent execution trace (PRD 17 O-6)
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_record_agent_run_persists_and_returns_true():
+    repo = FlakyRepository()
+    service = ObservabilityService(repository=repo)
+    record = AgentRunRecord(
+        id="run-1",
+        tenant_id="t-1",
+        principal_id="u-1",
+        goal="Do something",
+        status="succeeded",
+        steps=[
+            AgentRunRecordStep(sequence=0, skill_id="sk-1", skill_name="Echo", status="succeeded")
+        ],
+    )
+    assert await service.record_agent_run(record) is True
+    assert repo.agent_run_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_run_trace_write_failure_is_swallowed():
+    service = ObservabilityService(repository=FlakyRepository(fail_writes=True))
+    record = AgentRunRecord(
+        id="run-2",
+        tenant_id="t-1",
+        principal_id="u-1",
+        goal="Do something",
+        status="failed",
+        error_kind="tool_failure",
+    )
+    assert await service.record_agent_run(record) is False
+
+
+@pytest.mark.asyncio
+async def test_tenant_summary_includes_escalation_count():
+    service = ObservabilityService(repository=RecordingRepository())
+    summary = await service.get_tenant_usage_summary("tenant-1", 24)
+    assert "escalation_count" in summary
+    assert summary["escalation_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_tenant_summary_includes_agent_runs():
+    service = ObservabilityService(repository=RecordingRepository())
+    summary = await service.get_tenant_usage_summary("tenant-1", 24)
+    assert "agent_runs" in summary
+    assert summary["agent_runs"]["total_runs"] == 5
+    assert summary["agent_runs"]["succeeded"] == 3
+    assert summary["agent_runs"]["failed"] == 1
+    assert summary["agent_runs"]["approval_required"] == 1
+    assert summary["agent_runs"]["max_steps_reached"] == 0
+
+
+@pytest.mark.asyncio
+async def test_platform_summary_includes_escalation_and_agent_runs():
+    service = ObservabilityService(repository=RecordingRepository())
+    summary = await service.get_platform_summary(24)
+    assert summary["escalation_count_total"] == 2
+    assert summary["agent_runs_total"] == 5
+    assert summary["agent_runs_succeeded"] == 3
+    assert summary["agent_runs_failed"] == 1

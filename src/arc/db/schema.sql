@@ -265,3 +265,26 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_created_at
 CREATE UNIQUE INDEX IF NOT EXISTS uq_approval_requests_open_binding
     ON approval_requests(tenant_id, tool_name, tool_version, arguments_digest)
     WHERE status = 'pending';
+
+-- Agent execution trace (PRD 17 O-6): persisted run-level records.
+-- Observability is an aggregation/read layer (not a second source of
+-- truth) and this table IS the authoritative write path for agent runs
+-- because no prior table persisted them.
+CREATE TABLE IF NOT EXISTS agent_run_records (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    principal_id VARCHAR(255) NOT NULL,
+    goal TEXT NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    error_kind VARCHAR(100),
+    steps JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_agent_run_records_status
+        CHECK (status IN ('succeeded', 'failed', 'approval_required', 'max_steps_reached'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_run_records_tenant_id
+    ON agent_run_records(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_agent_run_records_created_at
+    ON agent_run_records(created_at);

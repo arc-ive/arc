@@ -22,7 +22,7 @@ webhook-configuration component joins once the Webhooks foundation
 import logging
 from typing import Any, Dict
 
-from arc.domain.models import ApiRequestRecord
+from arc.domain.models import AgentRunRecord, ApiRequestRecord
 from arc.services.embeddings import build_embedding_provider, get_embedding_settings
 from arc.services.llm import build_llm_provider, get_llm_settings
 
@@ -63,6 +63,39 @@ class ObservabilityService:
             return False
 
     # ------------------------------------------------------------------
+    # Agent execution trace write path (best effort; PRD 17 O-6)
+    # ------------------------------------------------------------------
+    async def record_agent_run(self, record: AgentRunRecord) -> bool:
+        """Persist one agent execution trace without ever raising.
+
+        Returns True when persisted, False when dropped. Follows the
+        approved best-effort telemetry write semantics: persistence
+        failure is logged safely and must never fail the caller.
+        """
+        try:
+            await self.repository.create_agent_run_record(record)
+            return True
+        except Exception:
+            logger.warning(
+                "agent_run_trace_dropped run_id=%s tenant=%s status=%s",
+                record.id,
+                record.tenant_id,
+                record.status,
+            )
+            return False
+
+    async def get_agent_run_trace(self, tenant_id: str, record_id: str) -> AgentRunRecord:
+        """Read one agent execution trace within the trusted tenant."""
+        return await self.repository.get_agent_run_record(record_id, tenant_id)
+
+    async def list_agent_run_traces(
+        self, tenant_id: str, hours: int = DEFAULT_WINDOW_HOURS
+    ) -> list:
+        """List agent run traces for a tenant within a time window."""
+        window = self._validated_window(hours)
+        return await self.repository.list_agent_run_records(tenant_id, window)
+
+    # ------------------------------------------------------------------
     # Aggregation reads
     # ------------------------------------------------------------------
     @staticmethod
@@ -85,6 +118,8 @@ class ObservabilityService:
         connectors = await self.repository.connector_sync_activity(tenant_id, window)
         webhooks = await self.repository.webhook_event_activity(tenant_id, window)
         approvals = await self.repository.approval_activity(tenant_id, window)
+        escalation_count = await self.repository.escalation_count(tenant_id, window)
+        agent_runs = await self.repository.agent_run_activity(tenant_id, window)
         return {
             "window_hours": window,
             "http": self._http_payload(http),
@@ -114,6 +149,14 @@ class ObservabilityService:
                 "expired": approvals.expired,
                 "consumed": approvals.consumed,
             },
+            "escalation_count": escalation_count,
+            "agent_runs": {
+                "total_runs": agent_runs.total_runs,
+                "succeeded": agent_runs.succeeded,
+                "failed": agent_runs.failed,
+                "approval_required": agent_runs.approval_required,
+                "max_steps_reached": agent_runs.max_steps_reached,
+            },
         }
 
     async def get_platform_summary(self, hours: int = DEFAULT_WINDOW_HOURS) -> Dict[str, Any]:
@@ -129,6 +172,8 @@ class ObservabilityService:
         connectors = await self.repository.connector_sync_activity(None, window)
         webhooks = await self.repository.webhook_event_activity(None, window)
         approvals = await self.repository.approval_activity(None, window)
+        escalation_count = await self.repository.escalation_count(None, window)
+        agent_runs = await self.repository.agent_run_activity(None, window)
         return {
             "window_hours": window,
             "http": self._http_payload(http),
@@ -140,6 +185,10 @@ class ObservabilityService:
             "webhook_source_available": webhooks.available,
             "approval_activity_total": approvals.total,
             "approval_failures_total": approvals.rejected + approvals.expired,
+            "escalation_count_total": escalation_count,
+            "agent_runs_total": agent_runs.total_runs,
+            "agent_runs_succeeded": agent_runs.succeeded,
+            "agent_runs_failed": agent_runs.failed,
         }
 
     @staticmethod
