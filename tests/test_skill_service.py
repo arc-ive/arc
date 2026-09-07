@@ -259,6 +259,88 @@ class TestSkillServiceTenantIsolation:
         assert skill_repo.delete.call_args[0] == ("s1", "tenant-B")
 
 
+class TestSkillServiceUpdate:
+    """Test update_skill delegation and validation."""
+
+    async def test_update_skill_delegates_to_repo(self, service, skill_repo, tenant_context):
+        """Test that update_skill calls repository update with trusted tenant_id."""
+        original = _skill(tenant_id=tenant_context.tenant_id)
+        skill_repo.get_by_id.return_value = original
+
+        updated = _skill(
+            id="skill-1",
+            tenant_id=tenant_context.tenant_id,
+            name="Updated Name",
+            purpose="Updated purpose",
+        )
+        skill_repo.update.return_value = updated
+
+        result = await service.update_skill(tenant_context, updated)
+
+        assert result == updated
+        skill_repo.update.assert_called_once()
+        call_args = skill_repo.update.call_args
+        persisted = call_args[0][0]
+        assert persisted.tenant_id == tenant_context.tenant_id
+
+    async def test_update_skill_overrides_caller_tenant_id(
+        self, service, skill_repo, tenant_context
+    ):
+        """Test that a caller-supplied tenant_id is never trusted."""
+        skill = _skill(tenant_id="malicious-tenant", name="S", purpose="P")
+        skill_repo.update.return_value = skill
+
+        await service.update_skill(tenant_context, skill)
+        persisted = skill_repo.update.call_args[0][0]
+        assert persisted.tenant_id == tenant_context.tenant_id
+
+    async def test_update_skill_validates_name(self, service, tenant_context):
+        """Test empty name raises ValueError (defense-in-depth)."""
+        skill = _skill(name="x", purpose="p")
+        # Bypass frozen dataclass to test service-level validation guard
+        object.__setattr__(skill, "name", "")
+        with pytest.raises(ValueError, match="Skill name cannot be empty"):
+            await service.update_skill(tenant_context, skill)
+
+    async def test_update_skill_validates_purpose(self, service, tenant_context):
+        """Test empty purpose raises ValueError (defense-in-depth)."""
+        skill = _skill(name="n", purpose="x")
+        object.__setattr__(skill, "purpose", "")
+        with pytest.raises(ValueError, match="Skill purpose cannot be empty"):
+            await service.update_skill(tenant_context, skill)
+
+    async def test_update_skill_propagates_not_found(self, service, skill_repo, tenant_context):
+        """Test that NotFoundError from repo propagates."""
+        skill = _skill(tenant_id=tenant_context.tenant_id, name="N", purpose="P")
+        skill_repo.update.side_effect = NotFoundError("not found")
+
+        with pytest.raises(NotFoundError):
+            await service.update_skill(tenant_context, skill)
+
+    async def test_update_skill_propagates_duplicate_error(
+        self, service, skill_repo, tenant_context
+    ):
+        """Test that DuplicateKeyError from repo propagates."""
+        skill = _skill(tenant_id=tenant_context.tenant_id, name="N", purpose="P")
+        skill_repo.update.side_effect = DuplicateKeyError("duplicate")
+
+        with pytest.raises(DuplicateKeyError):
+            await service.update_skill(tenant_context, skill)
+
+    async def test_update_skill_overrides_malicious_tenant_id(
+        self, service, skill_repo, tenant_context
+    ):
+        """Test that the repo receives the context tenant_id, not any malicious value."""
+        skill = _skill(tenant_id="malicious-tenant", name="N", purpose="P")
+        skill_repo.update.return_value = _skill(
+            tenant_id="malicious-tenant", name="N", purpose="P"
+        )
+
+        await service.update_skill(tenant_context, skill)
+        persisted = skill_repo.update.call_args[0][0]
+        assert persisted.tenant_id == tenant_context.tenant_id
+
+
 class TestSkillPreconditionValidation:
     """Skill-level precondition validation (TRD 25)."""
 
