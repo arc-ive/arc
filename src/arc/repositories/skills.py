@@ -43,6 +43,7 @@ class PostgreSQLSkillRepository:
             "expected_output": skill.expected_output,
             "failure_behavior": skill.failure_behavior,
             "provenance": skill.provenance,
+            "risk": skill.risk,
         }
 
     @staticmethod
@@ -67,6 +68,7 @@ class PostgreSQLSkillRepository:
             expected_output=definition.get("expected_output"),
             failure_behavior=definition.get("failure_behavior"),
             provenance=definition.get("provenance"),
+            risk=definition.get("risk"),
         )
 
     async def create(self, skill: Skill) -> Skill:

@@ -1070,6 +1070,75 @@ class TestSkillUpdate:
         assert response.status_code == 401
 
 
+class TestSkillRiskField:
+    """Tests for the Skill risk field (Final PRD §11 Skill Model)."""
+
+    async def test_create_skill_with_risk(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Creating a Skill with a risk field persists it."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(risk="high"),
+        )
+        assert created.status_code == 200
+        assert created.json()["risk"] == "high"
+
+    async def test_create_skill_without_risk(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Creating a Skill without risk field defaults to null."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(),
+        )
+        assert created.status_code == 200
+        assert created.json()["risk"] is None
+
+    async def test_update_skill_risk(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Updating a Skill's risk field persists the change."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(),
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        updated = client.put(
+            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            headers=headers,
+            json={"risk": "medium"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["risk"] == "medium"
+
+
 class TestSkillRouteSurface:
     """Requirement 15: the API surface contains exactly the intended endpoints."""
 

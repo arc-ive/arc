@@ -642,6 +642,7 @@ class Skill:
     expected_output: Optional[str] = None
     failure_behavior: Optional[str] = None
     provenance: Optional[str] = None
+    risk: Optional[str] = None
     status: SkillStatus = SkillStatus.ACTIVE
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)

@@ -503,6 +503,7 @@ def _skill_response(skill: Skill) -> Dict[str, Any]:
         "expected_output": skill.expected_output,
         "failure_behavior": skill.failure_behavior,
         "provenance": skill.provenance,
+        "risk": skill.risk,
         "created_at": skill.created_at.isoformat(),
         "updated_at": skill.updated_at.isoformat(),
     }
@@ -547,6 +548,7 @@ async def create_skill(
         expected_output=skill_data.get("expected_output"),
         failure_behavior=skill_data.get("failure_behavior"),
         provenance=skill_data.get("provenance"),
+        risk=skill_data.get("risk"),
         status=status_value,
     )
     try:
@@ -648,6 +650,7 @@ async def update_skill(
         expected_output=skill_data.get("expected_output", existing.expected_output),
         failure_behavior=skill_data.get("failure_behavior", existing.failure_behavior),
         provenance=skill_data.get("provenance", existing.provenance),
+        risk=skill_data.get("risk", existing.risk),
         status=status_value,
     )
 
