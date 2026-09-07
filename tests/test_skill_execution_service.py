@@ -912,9 +912,12 @@ async def test_resume_preserves_completed_steps(repositories, db):
     # Step 1 was executed.
     assert resumed.steps[1].tool_name == "gated_tool"
     assert resumed.steps[1].status is ToolExecutionStatus.SUCCESS
-    # echo_tool handler was NOT called again.
-    assert len(env["calls"]) == 1
-    assert env["calls"][0][0] == "gated_tool"
+    # echo_tool handler was called once during the initial run (step 0
+    # succeeded before step 1 blocked).  gated_tool was called once during
+    # resume (step 1).  No other handlers should have run.
+    assert len(env["calls"]) == 2
+    assert env["calls"][0][0] == "echo_tool"
+    assert env["calls"][1][0] == "gated_tool"
 
 
 async def test_resume_without_approval_id_raises_value_error(repositories, db):

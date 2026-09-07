@@ -425,8 +425,8 @@ class SkillExecutionService:
             SkillExecutionStatus.APPROVAL_REQUIRED,
             error_kind=_ERROR_APPROVAL_REQUIRED,
             steps=steps,
+            approval_id=approval_id,
         )
-        result.approval_id = approval_id
         return result
 
     @staticmethod
@@ -436,6 +436,8 @@ class SkillExecutionService:
         status: SkillExecutionStatus,
         error_kind: Optional[str],
         steps: List[SkillExecutionStepOutcome],
+        *,
+        approval_id: Optional[str] = None,
     ) -> SkillExecutionResult:
         """Assemble the structured execution result.
 
@@ -453,4 +455,5 @@ class SkillExecutionService:
             status=status,
             steps=steps,
             error_kind=error_kind,
+            approval_id=approval_id,
         )
