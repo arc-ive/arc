@@ -84,9 +84,7 @@ class ObservabilityService:
             )
             return False
 
-    async def get_agent_run_trace(
-        self, tenant_id: str, record_id: str
-    ) -> AgentRunRecord:
+    async def get_agent_run_trace(self, tenant_id: str, record_id: str) -> AgentRunRecord:
         """Read one agent execution trace within the trusted tenant."""
         return await self.repository.get_agent_run_record(record_id, tenant_id)
 

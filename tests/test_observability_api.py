@@ -240,8 +240,14 @@ class TestResponseContentSafety:
         token = make_token(user.id)
         body = _authed_get(client, _summary_url(tenant.id), token).json()
         assert set(body) == {
-            "window_hours", "http", "tools", "connectors", "webhooks",
-            "approvals", "escalation_count", "agent_runs",
+            "window_hours",
+            "http",
+            "tools",
+            "connectors",
+            "webhooks",
+            "approvals",
+            "escalation_count",
+            "agent_runs",
         }
         assert set(body["http"]) == {
             "total_requests",

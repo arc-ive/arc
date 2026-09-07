@@ -254,33 +254,23 @@ class TestAgentRunRecordStep:
 
     def test_negative_sequence_rejected(self):
         with pytest.raises(ValueError):
-            AgentRunRecordStep(
-                sequence=-1, skill_id="sk-1", skill_name="Echo", status="succeeded"
-            )
+            AgentRunRecordStep(sequence=-1, skill_id="sk-1", skill_name="Echo", status="succeeded")
 
     def test_empty_skill_id_rejected(self):
         with pytest.raises(ValueError):
-            AgentRunRecordStep(
-                sequence=0, skill_id="", skill_name="Echo", status="succeeded"
-            )
+            AgentRunRecordStep(sequence=0, skill_id="", skill_name="Echo", status="succeeded")
 
     def test_empty_skill_name_rejected(self):
         with pytest.raises(ValueError):
-            AgentRunRecordStep(
-                sequence=0, skill_id="sk-1", skill_name="", status="succeeded"
-            )
+            AgentRunRecordStep(sequence=0, skill_id="sk-1", skill_name="", status="succeeded")
 
     def test_empty_status_rejected(self):
         with pytest.raises(ValueError):
-            AgentRunRecordStep(
-                sequence=0, skill_id="sk-1", skill_name="Echo", status=""
-            )
+            AgentRunRecordStep(sequence=0, skill_id="sk-1", skill_name="Echo", status="")
 
     def test_non_integer_sequence_rejected(self):
         with pytest.raises(ValueError):
-            AgentRunRecordStep(
-                sequence="0", skill_id="sk-1", skill_name="Echo", status="succeeded"
-            )
+            AgentRunRecordStep(sequence="0", skill_id="sk-1", skill_name="Echo", status="succeeded")
 
     def test_boolean_sequence_rejected(self):
         with pytest.raises(ValueError):

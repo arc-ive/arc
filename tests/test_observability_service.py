@@ -282,9 +282,7 @@ async def test_record_agent_run_persists_and_returns_true():
         goal="Do something",
         status="succeeded",
         steps=[
-            AgentRunRecordStep(
-                sequence=0, skill_id="sk-1", skill_name="Echo", status="succeeded"
-            )
+            AgentRunRecordStep(sequence=0, skill_id="sk-1", skill_name="Echo", status="succeeded")
         ],
     )
     assert await service.record_agent_run(record) is True

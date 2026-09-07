@@ -264,9 +264,7 @@ class PostgreSQLObservabilityRepository:
         record.created_at = row["created_at"]
         return record
 
-    async def get_agent_run_record(
-        self, record_id: str, tenant_id: str
-    ) -> AgentRunRecord:
+    async def get_agent_run_record(self, record_id: str, tenant_id: str) -> AgentRunRecord:
         """Read one agent run trace within the trusted tenant."""
         import json
 
@@ -300,9 +298,7 @@ class PostgreSQLObservabilityRepository:
             created_at=row["created_at"],
         )
 
-    async def list_agent_run_records(
-        self, tenant_id: str, hours: int = 24
-    ) -> list:
+    async def list_agent_run_records(self, tenant_id: str, hours: int = 24) -> list:
         """List agent run traces for a tenant within a time window."""
         import json
 
@@ -367,9 +363,7 @@ class PostgreSQLObservabilityRepository:
     # ------------------------------------------------------------------
     # Escalation count (PRD 17 O-7)
     # ------------------------------------------------------------------
-    async def escalation_count(
-        self, tenant_id: Optional[str], hours: int
-    ) -> int:
+    async def escalation_count(self, tenant_id: Optional[str], hours: int) -> int:
         """Count human escalations (approved + rejected approvals).
 
         Escalations are human decisions on approval requests: APPROVED

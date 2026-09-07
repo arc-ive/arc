@@ -1486,13 +1486,16 @@ class AgentRunActivityMetrics:
     max_steps_reached: int
 
     def __post_init__(self):
-        if min(
-            self.total_runs,
-            self.succeeded,
-            self.failed,
-            self.approval_required,
-            self.max_steps_reached,
-        ) < 0:
+        if (
+            min(
+                self.total_runs,
+                self.succeeded,
+                self.failed,
+                self.approval_required,
+                self.max_steps_reached,
+            )
+            < 0
+        ):
             raise ValueError("Agent run activity counts cannot be negative")
         if (
             self.succeeded + self.failed + self.approval_required + self.max_steps_reached
