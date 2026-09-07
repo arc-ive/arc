@@ -24,7 +24,7 @@ Repository Layer (Protocol-based, tenant-scoped SQL)
 Database Layer (PostgreSQL + pgvector)
 ```
 
-Key architectural decisions (ADR-001 through ADR-008) are approved and documented in `docs/architecture/decisions/`. The architecture is framework-agnostic at the domain layer (ADR-001) with explicit boundaries for connectors, webhooks, AI tools, and unified intelligence.
+Key architectural decisions (ADR-001 through ADR-008) are documented in `docs/architecture/decisions/`. The architecture is framework-agnostic at the domain layer (ADR-001) with explicit boundaries for connectors, webhooks, AI tools, and unified intelligence.
 
 ---
 
@@ -240,7 +240,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 
 ## 5. Testing State
 
-68 test files in `tests/`. All backend tests run against real PostgreSQL (not mocked). Schema is dropped and recreated per test session.
+67 test files (`test_*.py`) in `tests/` plus 1 `conftest.py`. All backend tests run against real PostgreSQL (not mocked). Schema is dropped and recreated per test session.
 
 - CI: `.github/workflows/ci.yml` — GitHub Actions on ubuntu-latest: `docker compose build arc`, `ruff check`, `ruff format --check`, `python -m pytest -q`
 - Test infrastructure: `tests/conftest.py` — env pinning, TestClient lifecycle, DB fixtures, authorization overrides
@@ -345,9 +345,9 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 | ADR-002 | Connector Provider Selection | Approved |
 | ADR-003 | Company Brain Document Identity and Re-ingestion | Approved |
 | ADR-004 | Unified Intelligence Tool Calling Execution Contract | Approved |
-| ADR-005 | Human Intervention Approval Gate | Approved |
-| ADR-006 | Agent Skill Orchestration | Approved |
-| ADR-007 | Production Embedding Provider and Vector Representation | Approved |
+| ADR-005 | Human Intervention Approval Gate | Proposed |
+| ADR-006 | Agent Skill Orchestration | Draft / Proposed |
+| ADR-007 | Production Embedding Provider and Vector Representation | Proposed |
 | ADR-008 | Tenant Membership and Application RBAC Roles | Approved |
 
 ---
