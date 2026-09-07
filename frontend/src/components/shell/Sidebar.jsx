@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { cn } from '../../lib/cn.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { useCapabilities } from '../../auth/capabilities.js'
@@ -74,11 +74,9 @@ function Brand() {
  */
 export function Sidebar({ mobile = false, onNavigate }) {
   const { tenantId } = useTenant()
-  const location = useLocation()
   const { role, isPlatformAdministrator, isDemo } = useCapabilities()
 
   const tenantPrefix = tenantId ? `/app/t/${encodeURIComponent(tenantId)}` : null
-  const inPlatformContext = location.pathname.startsWith('/platform')
   const tenantNav = tenantNavForRole(role)
 
   return (
@@ -91,7 +89,7 @@ export function Sidebar({ mobile = false, onNavigate }) {
     >
       <Brand />
       <div className="flex flex-1 flex-col gap-6">
-        {isPlatformAdministrator || isDemo || inPlatformContext ? (
+        {isPlatformAdministrator || isDemo ? (
           <NavGroup title="Platform">
             {platformNav.map((item) => (
               <NavItem key={item.to} {...item} onNavigate={onNavigate} />

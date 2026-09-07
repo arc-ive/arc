@@ -1,5 +1,6 @@
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { RequireAuth } from './auth/RequireAuth.jsx'
+import { RequirePlatformAdmin } from './auth/RequirePlatformAdmin.jsx'
 import { useAuth } from './auth/useAuth.js'
 import { useCapabilities } from './auth/capabilities.js'
 import { AppShell } from './components/shell/AppShell.jsx'
@@ -137,8 +138,15 @@ export default function App() {
           </Route>
         </Route>
 
-        {/* Platform console */}
-        <Route path="/platform" element={<Outlet />}>
+        {/* Platform console — restricted to platform administrators */}
+        <Route
+          path="/platform"
+          element={
+            <RequirePlatformAdmin>
+              <Outlet />
+            </RequirePlatformAdmin>
+          }
+        >
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<PlatformDashboardPage />} />
           <Route path="tenants" element={<PlatformTenantsPage />} />
