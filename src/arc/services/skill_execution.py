@@ -137,6 +137,10 @@ class SkillExecutionService:
         tool_calls: List[Dict[str, Any]],
         satisfied_conditions: Iterable[str],
         authorization: AuthorizationService,
+        *,
+        approval_id: Optional[str] = None,
+        resume_from_step: Optional[int] = None,
+        previous_steps: Optional[List[SkillExecutionStepOutcome]] = None,
     ) -> SkillExecutionResult:
         """Execute a Skill within the trusted tenant.
 
@@ -159,6 +163,15 @@ class SkillExecutionService:
             authorization: the application ``AuthorizationService``,
                 passed through to ``ToolExecutionService`` unchanged so
                 per-tool authorization uses the single centralized matrix.
+            approval_id: when provided, authorises execution of exactly
+                one tool call (the one at ``resume_from_step``). The
+                approval is atomically consumed by ToolExecutionService.
+            resume_from_step: zero-based index of the tool call to
+                resume from after a prior approval gate. Must be used
+                together with ``approval_id`` and ``previous_steps``.
+            previous_steps: completed steps from the prior execution
+                attempt. These are included in the result without
+                re-execution.
 
         Returns:
             A structured :class:`SkillExecutionResult`. Controlled
@@ -178,6 +191,13 @@ class SkillExecutionService:
             raise ValueError("Invalid tenant context")
         self._validate_proposed_calls(tool_calls)
         conditions = self._validated_conditions(satisfied_conditions)
+
+        # Validate resume parameters are consistent.
+        if approval_id is not None or resume_from_step is not None:
+            if approval_id is None or resume_from_step is None:
+                raise ValueError("approval_id and resume_from_step must be provided together")
+            if resume_from_step < 0 or resume_from_step >= len(tool_calls):
+                raise ValueError("resume_from_step out of range")
 
         skill = await self.skill_service.get_skill(context, skill_id)
 
@@ -199,10 +219,10 @@ class SkillExecutionService:
                 steps=[],
             )
 
-        if skill.approval_required:
-            # Fail closed before any tool call: the Human Intervention
-            # capability is not implemented, so approval requirements can
-            # only ever stop an execution (TRD 17.3).
+        # Skill-level approval_required check: on first execution (no
+        # approval_id), stop before any tool call.  On resume, skip this
+        # gate — the approval was already granted.
+        if skill.approval_required and approval_id is None:
             return self._build_result(
                 context,
                 skill,
@@ -211,14 +231,19 @@ class SkillExecutionService:
                 steps=[],
             )
 
-        completed: List[SkillExecutionStepOutcome] = []
-        for sequence, call in enumerate(tool_calls):
+        # Collect completed steps: either from a fresh run or from the
+        # prior attempt when resuming.
+        completed: List[SkillExecutionStepOutcome] = list(previous_steps or [])
+
+        # Determine which tool calls to execute. When resuming, skip
+        # calls before resume_from_step (they already succeeded).
+        start = resume_from_step if resume_from_step is not None else 0
+        for sequence in range(start, len(tool_calls)):
+            call = tool_calls[sequence]
             tool_name = call["tool_name"]
             tool_input = call.get("input", {})
 
-            # Gate 1 — the Skill's own declared tool set. This check runs
-            # BEFORE the tool service: a proposal outside allowed_tools
-            # must never even reach the platform registry.
+            # Gate 1 — the Skill's own declared tool set.
             if not self.skill_service.is_tool_allowed(skill, tool_name):
                 return self._stopped_result(
                     context,
@@ -230,12 +255,39 @@ class SkillExecutionService:
                     tool_name,
                 )
 
-            # Gates 2..N — delegated entirely to the single controlled
-            # action boundary (registry whitelist, tool:execute, per-tool
-            # permissions, policy, schema validation, audit record).
+            # Gates 2..N — delegated to ToolExecutionService.
+            # When resuming the approval-gated step, pass the approval_id
+            # so the tool service atomically consumes it before executing.
+            call_approval_id = approval_id if sequence == start and approval_id else None
             try:
                 executed = await self.tool_service.execute_tool(
-                    context, principal, tool_name, tool_input, authorization
+                    context,
+                    principal,
+                    tool_name,
+                    tool_input,
+                    authorization,
+                    approval_id=call_approval_id,
+                )
+            except ToolDeniedError as exc:
+                # If the tool service created a new approval (REQUIRE_HUMAN_APPROVAL
+                # policy on a later tool call), propagate the approval_id upward.
+                if exc.approval_id is not None:
+                    return self._approval_required_result(
+                        context,
+                        skill,
+                        completed,
+                        sequence,
+                        tool_name,
+                        exc.approval_id,
+                    )
+                return self._stopped_result(
+                    context,
+                    skill,
+                    SkillExecutionStatus.FAILED,
+                    _ERROR_TOOL_DENIED,
+                    completed,
+                    sequence,
+                    tool_name,
                 )
             except ToolNotFoundError:
                 return self._stopped_result(
@@ -243,16 +295,6 @@ class SkillExecutionService:
                     skill,
                     SkillExecutionStatus.FAILED,
                     _ERROR_UNKNOWN_TOOL,
-                    completed,
-                    sequence,
-                    tool_name,
-                )
-            except ToolDeniedError:
-                return self._stopped_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.FAILED,
-                    _ERROR_TOOL_DENIED,
                     completed,
                     sequence,
                     tool_name,
@@ -351,6 +393,42 @@ class SkillExecutionService:
         )
         return self._build_result(context, skill, status, error_kind=error_kind, steps=steps)
 
+    def _approval_required_result(
+        self,
+        context: TenantContext,
+        skill: Skill,
+        completed: List[SkillExecutionStepOutcome],
+        failed_sequence: int,
+        failed_tool_name: str,
+        approval_id: str,
+    ) -> SkillExecutionResult:
+        """Build an APPROVAL_REQUIRED result carrying the approval_id.
+
+        Steps before the approval gate are preserved (they already
+        succeeded). The approval-gated step is recorded as
+        APPROVAL_REQUIRED so the caller knows which step needs human
+        approval. The ``approval_id`` is carried in the result for
+        downstream propagation.
+        """
+        steps = list(completed)
+        steps.append(
+            SkillExecutionStepOutcome(
+                sequence=failed_sequence,
+                tool_name=failed_tool_name,
+                status=ToolExecutionStatus.FAILED,
+                error_kind=_ERROR_APPROVAL_REQUIRED,
+            )
+        )
+        result = self._build_result(
+            context,
+            skill,
+            SkillExecutionStatus.APPROVAL_REQUIRED,
+            error_kind=_ERROR_APPROVAL_REQUIRED,
+            steps=steps,
+            approval_id=approval_id,
+        )
+        return result
+
     @staticmethod
     def _build_result(
         context: TenantContext,
@@ -358,6 +436,8 @@ class SkillExecutionService:
         status: SkillExecutionStatus,
         error_kind: Optional[str],
         steps: List[SkillExecutionStepOutcome],
+        *,
+        approval_id: Optional[str] = None,
     ) -> SkillExecutionResult:
         """Assemble the structured execution result.
 
@@ -375,4 +455,5 @@ class SkillExecutionService:
             status=status,
             steps=steps,
             error_kind=error_kind,
+            approval_id=approval_id,
         )

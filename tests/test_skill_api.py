@@ -1161,4 +1161,5 @@ class TestSkillRouteSurface:
             "PUT /skills/{skill_id}",
             "DELETE /skills/{skill_id}",
             "POST /skills/{skill_id}/execute",
+            "POST /skills/{skill_id}/resume",
         }

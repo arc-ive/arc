@@ -205,15 +205,18 @@ class AgentExecutionService:
             )
 
             if executed.status is SkillExecutionStatus.APPROVAL_REQUIRED:
-                # Human Intervention is not implemented: propagate the
-                # engine's fail-closed escalation state verbatim.
-                return self._build_result(
+                # Propagate the approval_id from the Skill layer so the
+                # caller (API, external orchestrator) can resume after
+                # human approval.
+                result = self._build_result(
                     context,
                     goal,
                     AgentRunStatus.APPROVAL_REQUIRED,
                     executed.error_kind,
                     completed,
                 )
+                result.approval_id = executed.approval_id
+                return result
             if executed.status is not SkillExecutionStatus.SUCCEEDED:
                 # ANY controlled failure stops the run immediately.
                 # There are no retries.
