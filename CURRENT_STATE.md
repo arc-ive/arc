@@ -337,7 +337,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 
 ---
 
-## 10. Approved Architecture Decisions
+## 10. Architecture Decision Records
 
 | ADR | Title | Status |
 |-----|-------|--------|
@@ -356,16 +356,15 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 
 Ordered by dependency and risk:
 
-1. **Update CURRENT_STATE.md** — This document (completed).
-2. **Migrate API endpoints to Pydantic models** — Replace `Dict[str, Any]` with typed request/response models for validation and OpenAPI documentation.
-3. **Standardize datetime handling** — Replace `datetime.now()` with `datetime.now(timezone.utc)` for consistency.
-4. **Add frontend component tests** — Critical user flows (membership management, tenant creation, skill execution) need regression protection.
+1. **Migrate API endpoints to Pydantic models** — Replace `Dict[str, Any]` with typed request/response models for validation and OpenAPI documentation.
+2. **Standardize datetime handling** — Replace `datetime.now()` with `datetime.now(timezone.utc)` for consistency.
+3. **Fix generic exception re-raise** — Preserve exception types in knowledge.py, connectors.py, skills.py.
+4. **Replace print() with logger** — Use structured logging for initialization.
 5. **Migrate to lifespan context manager** — Replace deprecated `@app.on_event("startup")`.
-6. **Replace print() with logger** — Use structured logging for initialization.
-7. **Fix generic exception re-raise** — Preserve exception types in knowledge.py, connectors.py, skills.py.
-8. **Production LLM provider** — Platform is architecturally ready but can only use deterministic local LLM.
-9. **Consider PostgreSQL RLS** — Defense-in-depth for tenant isolation.
-10. **Foundation completion review** — Verify all three developers can independently clone, configure, start, test, lint, and use the AI development workflow.
+6. **Add frontend component tests** — Critical user flows (membership management, tenant creation, skill execution) need regression protection.
+7. **Production LLM provider** — Platform is architecturally ready but can only use deterministic local LLM.
+8. **Consider PostgreSQL RLS** — Defense-in-depth for tenant isolation.
+9. **Foundation completion review** — Verify all three developers can independently clone, configure, start, test, lint, and use the AI development workflow.
 
 ---
 
