@@ -735,13 +735,24 @@ class ToolExecutionRecord:
 class WebhookEventStatus(str, Enum):
     """Lifecycle status of an ingested webhook event.
 
-    The Webhooks foundation slice establishes a single terminal state:
-    every accepted event is validated and recorded as ``received``
-    (PRD 16 processing status). Triggering downstream processing is a
-    future slice; new states are added only through approved decisions.
+    The status lifecycle is:
+
+    - ``received``: ingested and recorded, awaiting processing.
+    - ``processing``: claimed by a pipeline processor (atomic transition
+      from ``received``; at most one processor wins).
+    - ``processed``: downstream execution completed successfully.
+    - ``failed``: downstream execution failed; ``error_kind`` records
+      the safe error category.
+
+    ``processing``, ``processed``, and ``failed`` are terminal states
+    for the current processing attempt. A stuck ``processing`` event
+    (process crash) requires manual recovery.
     """
 
     RECEIVED = "received"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    FAILED = "failed"
 
 
 @dataclass
@@ -750,8 +761,7 @@ class WebhookEvent:
 
     The record is deliberately metadata-only: it never stores the raw
     external payload. Webhook payloads are untrusted external input
-    (ADR-001 webhook security boundary) and may contain PII; until an
-    approved PII/storage decision exists for event content, only safe
+    (ADR-001 webhook security boundary) and may contain PII; only safe
     envelope metadata is persisted:
 
     - which ingestion endpoint received the event (``endpoint_id``);
@@ -760,7 +770,7 @@ class WebhookEvent:
     - the sender-supplied unique event identifier (``event_id``), used
       for duplicate handling;
     - the event type label and payload size in bytes;
-    - the processing status and record timestamp.
+    - the processing status, optional error kind, and timestamps.
     """
 
     id: str
@@ -771,6 +781,8 @@ class WebhookEvent:
     status: WebhookEventStatus = WebhookEventStatus.RECEIVED
     payload_size_bytes: int = 0
     created_at: datetime = field(default_factory=datetime.now)
+    error_kind: Optional[str] = None
+    processed_at: Optional[datetime] = None
 
     def __post_init__(self):
         if not self.id:
