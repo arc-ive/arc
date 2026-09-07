@@ -20,7 +20,8 @@ Hard boundaries:
   every repository call is tenant-scoped and fails closed.
 - Expiry is LAZY (24 h V1 TTL): reads derive expiry from ``expires_at``
   without mutating; decision/consumption transitions past-due pending
-  rows to terminal ``expired`` atomically. No background infrastructure.
+  rows to terminal ``expired`` atomically.  A background sweep provides
+  persistence-level cleanup of stale pending rows (PRD §15).
 
 Creation is BEST-EFFORT from the caller's perspective: the denial that
 triggered it is fail-closed regardless, so a persistence failure is
@@ -264,3 +265,18 @@ class HumanApprovalService:
             f"Approval {approval_id} does not match the requested "
             "tool identity/version/arguments binding"
         )
+
+    # ------------------------------------------------------------------
+    # Background sweep (PRD §15) — persistence-level expiry cleanup
+    # ------------------------------------------------------------------
+    async def sweep_expired_approvals(self) -> int:
+        """Expire all stale pending requests in a single bulk UPDATE.
+
+        This is persistence-maintenance only: it does NOT execute tools,
+        grant/consume approvals, or modify authorization state.  Returns
+        the number of newly-expired rows for observability logging.
+        """
+        count = await self.repository.expire_stale_approvals()
+        if count > 0:
+            logger.info("approval_sweep_expired count=%d", count)
+        return count

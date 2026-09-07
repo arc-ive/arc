@@ -276,3 +276,99 @@ class TestRaceSafeCreation:
         await repo.create(r2)
         rows = await repo.list_for_tenant(two_tenants[0].id)
         assert len(rows) == 2
+
+
+class TestBulkExpiry:
+    async def test_expire_stale_approvals_transitions_past_due_pending(self, db, two_tenants):
+        repo = PostgreSQLApprovalRequestRepository(db)
+        due = _request(two_tenants[0].id, arguments_digest="e" * 64)
+        future = _request(
+            two_tenants[0].id,
+            arguments_digest="f" * 64,
+            expires_at=_NOW + timedelta(hours=48),
+        )
+        for r in (due, future):
+            await repo.create(r)
+
+        # Force due request to be past-due
+        async with db._connection_pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE approval_requests
+                SET created_at = NOW() - INTERVAL '25 hours',
+                    expires_at = NOW() - INTERVAL '1 hour'
+                WHERE id = $1
+                """,
+                due.id,
+            )
+
+        count = await repo.expire_stale_approvals()
+        assert count == 1
+
+        due_row = await repo.get_by_id(due.id, two_tenants[0].id)
+        assert due_row.status == ApprovalStatus.EXPIRED
+        future_row = await repo.get_by_id(future.id, two_tenants[0].id)
+        assert future_row.status == ApprovalStatus.PENDING
+
+        # Approved row is not affected by the sweep
+        approved_id = f"appr-approved-{uuid.uuid4().hex[:10]}"
+        async with db._connection_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO approval_requests
+                    (id, tenant_id, requester_user_id, tool_name, tool_version,
+                     risk_level, input_summary, arguments_digest, status,
+                     created_at, expires_at, decided_at, decided_by_user_id)
+                VALUES ($1, $2, 'u1', 'tool_a', '1', 'high', '{}', $3,
+                        'approved', NOW() - INTERVAL '2 hours',
+                        NOW() + INTERVAL '22 hours', NOW() - INTERVAL '1 hour',
+                        'approver-1')
+                """,
+                approved_id,
+                two_tenants[0].id,
+                "a1" * 32,
+            )
+        approved_row = await repo.get_by_id(approved_id, two_tenants[0].id)
+        assert approved_row.status == ApprovalStatus.APPROVED
+
+    async def test_expire_stale_approvals_is_idempotent(self, db, two_tenants):
+        repo = PostgreSQLApprovalRequestRepository(db)
+        due = _request(two_tenants[0].id, arguments_digest="a2" * 32)
+        await repo.create(due)
+        async with db._connection_pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE approval_requests
+                SET created_at = NOW() - INTERVAL '25 hours',
+                    expires_at = NOW() - INTERVAL '1 hour'
+                WHERE id = $1
+                """,
+                due.id,
+            )
+        count1 = await repo.expire_stale_approvals()
+        assert count1 == 1
+        count2 = await repo.expire_stale_approvals()
+        assert count2 == 0
+
+    async def test_expire_stale_approvals_cross_tenant(self, db, two_tenants):
+        repo = PostgreSQLApprovalRequestRepository(db)
+        digests = ["a3" * 32, "a4" * 32]
+        requests = []
+        for tenant, digest in zip(two_tenants, digests):
+            requests.append(await repo.create(_request(tenant.id, arguments_digest=digest)))
+        async with db._connection_pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE approval_requests
+                SET created_at = NOW() - INTERVAL '25 hours',
+                    expires_at = NOW() - INTERVAL '1 hour'
+                WHERE id = $1 OR id = $2
+                """,
+                requests[0].id,
+                requests[1].id,
+            )
+        count = await repo.expire_stale_approvals()
+        assert count == 2
+        for tenant in two_tenants:
+            rows = await repo.list_for_tenant(tenant.id)
+            assert all(r.status == ApprovalStatus.EXPIRED for r in rows)

@@ -166,6 +166,26 @@ class PostgreSQLApprovalRequestRepository:
             )
         return status.endswith("1")
 
+    async def expire_stale_approvals(self) -> int:
+        """Atomically expire ALL pending requests past their TTL.
+
+        Single bulk UPDATE — no SELECT+UPDATE N+1.  Safe under concurrency:
+        the WHERE clause only matches rows still in ``pending`` state, so
+        concurrent lazy-expiry or consumption naturally races without
+        double-transition.  Returns the count of newly-expired rows.
+        """
+        async with self.db.transaction() as conn:
+            result = await conn.execute(
+                """
+                UPDATE approval_requests
+                SET status = 'expired', decided_at = CURRENT_TIMESTAMP
+                WHERE status = 'pending'
+                  AND expires_at <= CURRENT_TIMESTAMP
+                """
+            )
+        # asyncpg execute returns "UPDATE N" — extract the count.
+        return int(result.split()[-1])
+
     async def decide(
         self,
         approval_id: str,

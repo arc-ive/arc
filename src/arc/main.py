@@ -13,6 +13,7 @@ from arc.api.middleware import RequestTelemetryMiddleware
 from arc.app import app as arc_app
 from arc.db.connection import DuplicateKeyError
 from arc.observability_logging import configure_observability_logging
+from arc.services.approval_sweep import ApprovalSweepRunner
 
 # Structured application logging (TRD 28): stdlib only, correlation-ID
 # filter, safe metadata content policy. Installed once at import time.
@@ -60,9 +61,19 @@ if os.getenv("APP_ENV") == "development":
 async def startup_event():
     """Initialize application on startup."""
     await arc_app.initialize()
+    # Start the background approval expiry sweep (PRD §15)
+    approval_service = arc_app.services.get("human_approval_service")
+    if approval_service is not None:
+        sweep_runner = ApprovalSweepRunner(approval_service)
+        await sweep_runner.start()
+        arc_app._sweep_runner = sweep_runner
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Shutdown application."""
+    # Stop the approval sweep before closing the database
+    sweep_runner = getattr(arc_app, "_sweep_runner", None)
+    if sweep_runner is not None:
+        await sweep_runner.stop()
     await arc_app.shutdown()
