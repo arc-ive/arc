@@ -239,7 +239,10 @@ class TestResponseContentSafety:
         authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
         token = make_token(user.id)
         body = _authed_get(client, _summary_url(tenant.id), token).json()
-        assert set(body) == {"window_hours", "http", "tools", "connectors", "webhooks", "approvals"}
+        assert set(body) == {
+            "window_hours", "http", "tools", "connectors", "webhooks",
+            "approvals", "escalation_count", "agent_runs",
+        }
         assert set(body["http"]) == {
             "total_requests",
             "error_count",
@@ -408,3 +411,63 @@ class TestCorrelationAndTelemetry:
             assert response.headers.get("x-request-id")
         finally:
             arc_application.services["observability_service"] = original
+
+
+# ------------------------------------------------------------------
+# Agent execution trace endpoints (PRD 17 O-6)
+# ------------------------------------------------------------------
+
+
+class TestAgentRunTraceEndpoints:
+    async def test_list_agent_runs_requires_authentication(self, client, two_tenants):
+        tenant, _ = two_tenants[0]
+        response = client.get(f"/tenants/{tenant.id}/observability/agent-runs")
+        assert response.status_code == 401
+
+    async def test_get_agent_run_trace_requires_authentication(self, client, two_tenants):
+        tenant, _ = two_tenants[0]
+        response = client.get(f"/tenants/{tenant.id}/observability/agent-runs/run-1")
+        assert response.status_code == 401
+
+    async def test_employee_denied_agent_run_endpoints(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        tenant, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+        list_url = f"/tenants/{tenant.id}/observability/agent-runs"
+        get_url = f"/tenants/{tenant.id}/observability/agent-runs/run-1"
+        assert _authed_get(client, list_url, token).status_code == 403
+        assert _authed_get(client, get_url, token).status_code == 403
+
+    async def test_cross_tenant_agent_run_list_isolated(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        tenant_a, user_a = two_tenants[0]
+        tenant_b, _ = two_tenants[1]
+        authorization_override({user_a.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user_a.id)
+        url = f"/tenants/{tenant_b.id}/observability/agent-runs"
+        response = _authed_get(client, url, token)
+        assert response.status_code == 403
+
+    async def test_list_agent_runs_returns_empty_for_fresh_db(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        tenant, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user.id)
+        url = f"/tenants/{tenant.id}/observability/agent-runs"
+        response = _authed_get(client, url, token)
+        assert response.status_code == 200
+        assert response.json() == []
+
+    async def test_get_nonexistent_agent_run_returns_404(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        tenant, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user.id)
+        url = f"/tenants/{tenant.id}/observability/agent-runs/nonexistent-id"
+        response = _authed_get(client, url, token)
+        assert response.status_code == 404

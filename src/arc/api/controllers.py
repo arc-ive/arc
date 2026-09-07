@@ -21,6 +21,7 @@ Privileged and identity-sensitive development endpoints (membership
 provisioning) are isolated in ``arc.api.dev_controllers``.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -120,6 +121,8 @@ from arc.services.webhook_ingestion import (
     WebhookIngestionService,
     WebhookValidationError,
 )
+
+logger = logging.getLogger("arc.api.controllers")
 
 
 class ServiceRegistry:
@@ -891,6 +894,34 @@ async def run_agent(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
+    # Best-effort agent execution trace persistence (PRD 17 O-6).
+    # A telemetry persistence failure must never fail the business response.
+    try:
+        from arc.domain.models import AgentRunRecord, AgentRunRecordStep
+
+        trace_record = AgentRunRecord(
+            id=result.id,
+            tenant_id=result.tenant_id,
+            principal_id=result.principal_id,
+            goal=result.goal,
+            status=result.status.value,
+            error_kind=result.error_kind,
+            steps=[
+                AgentRunRecordStep(
+                    sequence=step.sequence,
+                    skill_id=step.skill_id,
+                    skill_name=step.skill_name,
+                    status=step.status.value,
+                    error_kind=step.error_kind,
+                )
+                for step in result.steps
+            ],
+            created_at=result.created_at,
+        )
+        await app_context.observability_service.record_agent_run(trace_record)
+    except Exception:
+        logger.warning("agent_run_trace_persistence_failed run_id=%s", result.id)
+
     return _agent_run_response(result)
 
 
@@ -1635,6 +1666,74 @@ async def get_component_health(
     or configuration material.
     """
     return await observability_service.get_component_health()
+
+
+@api_router.get("/tenants/{tenant_id}/observability/agent-runs")
+async def list_agent_run_traces(
+    tenant_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+    context: TenantContext = Depends(require_tenant_permission(OBSERVABILITY_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> list:
+    """List persisted agent execution traces (PRD 17 O-6).
+
+    Requires authentication, the trusted tenant context, and
+    ``observability:read``; the path tenant must match the trusted
+    context (403 otherwise). Returns traces ordered by most recent first.
+    """
+    if tenant_id != context.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    records = await observability_service.list_agent_run_traces(context.tenant_id, hours)
+    return [_agent_run_trace_payload(r) for r in records]
+
+
+@api_router.get("/tenants/{tenant_id}/observability/agent-runs/{record_id}")
+async def get_agent_run_trace(
+    tenant_id: str,
+    record_id: str,
+    context: TenantContext = Depends(require_tenant_permission(OBSERVABILITY_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Read one persisted agent execution trace (PRD 17 O-6).
+
+    Requires authentication, the trusted tenant context, and
+    ``observability:read``; the path tenant must match the trusted
+    context (403 otherwise).
+    """
+    if tenant_id != context.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    try:
+        record = await observability_service.get_agent_run_trace(context.tenant_id, record_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return _agent_run_trace_payload(record)
+
+
+def _agent_run_trace_payload(record) -> Dict[str, Any]:
+    """Serialize an agent run trace for API responses."""
+    return {
+        "id": record.id,
+        "tenant_id": record.tenant_id,
+        "principal_id": record.principal_id,
+        "goal": record.goal,
+        "status": record.status,
+        "error_kind": record.error_kind,
+        "steps": [
+            {
+                "sequence": step.sequence,
+                "skill_id": step.skill_id,
+                "skill_name": step.skill_name,
+                "status": step.status,
+                "error_kind": step.error_kind,
+            }
+            for step in record.steps
+        ],
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+    }
 
 
 def _approval_payload(approval) -> Dict[str, Any]:

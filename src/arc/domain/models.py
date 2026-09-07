@@ -1385,3 +1385,117 @@ class AgentDecision:
             tool_calls=list(tool_calls),
             satisfied_preconditions=list(preconditions),
         )
+
+
+@dataclass
+class AgentRunRecordStep:
+    """One step within a persisted agent execution trace.
+
+    Stored as a JSONB array inside ``agent_run_records.steps``. Mirrors
+    the ``AgentStepOutcome`` in-memory model but is a separate,
+    persistence-oriented dataclass to keep the read/write models decoupled.
+    """
+
+    sequence: int
+    skill_id: str
+    skill_name: str
+    status: str
+    error_kind: Optional[str] = None
+
+    def __post_init__(self):
+        if not isinstance(self.sequence, int) or isinstance(self.sequence, bool):
+            raise ValueError("Agent run record step sequence must be an integer")
+        if self.sequence < 0:
+            raise ValueError("Agent run record step sequence cannot be negative")
+        if not isinstance(self.skill_id, str) or not self.skill_id:
+            raise ValueError("Agent run record step skill_id cannot be empty")
+        if not isinstance(self.skill_name, str) or not self.skill_name:
+            raise ValueError("Agent run record step skill_name cannot be empty")
+        if not isinstance(self.status, str) or not self.status:
+            raise ValueError("Agent run record step status cannot be empty")
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "sequence": self.sequence,
+            "skill_id": self.skill_id,
+            "skill_name": self.skill_name,
+            "status": self.status,
+        }
+        if self.error_kind is not None:
+            d["error_kind"] = self.error_kind
+        return d
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AgentRunRecordStep":
+        return cls(
+            sequence=data["sequence"],
+            skill_id=data["skill_id"],
+            skill_name=data["skill_name"],
+            status=data["status"],
+            error_kind=data.get("error_kind"),
+        )
+
+
+@dataclass
+class AgentRunRecord:
+    """Persisted agent execution trace (PRD 17 O-6).
+
+    Written by the Observability write path after each bounded Agent
+    run completes. Provides queryable audit of which tenant, principal,
+    goal, skill selections, tool invocations, and outcomes occurred.
+    """
+
+    id: str
+    tenant_id: str
+    principal_id: str
+    goal: str
+    status: str
+    error_kind: Optional[str] = None
+    steps: List[AgentRunRecordStep] = field(default_factory=list)
+    created_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Agent run record ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Agent run record tenant_id cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Agent run record principal_id cannot be empty")
+        if not isinstance(self.goal, str) or not self.goal.strip():
+            raise ValueError("Agent run record goal cannot be empty")
+        if not isinstance(self.status, str) or not self.status:
+            raise ValueError("Agent run record status cannot be empty")
+        if not isinstance(self.steps, list) or not all(
+            isinstance(step, AgentRunRecordStep) for step in self.steps
+        ):
+            raise ValueError("steps must be a list of AgentRunRecordStep instances")
+
+
+@dataclass
+class AgentRunActivityMetrics:
+    """Aggregate agent run activity read-model over agent_run_records.
+
+    Counts are derived from the authoritative ``agent_run_records``
+    table using DB-level status filtering.
+    """
+
+    total_runs: int
+    succeeded: int
+    failed: int
+    approval_required: int
+    max_steps_reached: int
+
+    def __post_init__(self):
+        if min(
+            self.total_runs,
+            self.succeeded,
+            self.failed,
+            self.approval_required,
+            self.max_steps_reached,
+        ) < 0:
+            raise ValueError("Agent run activity counts cannot be negative")
+        if (
+            self.succeeded + self.failed + self.approval_required + self.max_steps_reached
+            > self.total_runs
+        ):
+            raise ValueError("Status breakdown cannot exceed total runs")
