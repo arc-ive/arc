@@ -201,7 +201,7 @@ Platform-wide tenant administration for PLATFORM_ADMINISTRATOR. `GET /platform/t
 
 ### 2.16 Frontend — IMPLEMENTED
 
-React + React Query + React Router. Role-aware navigation with 4 persona levels. JWT authentication with session expiry handling. Tenant workspace (22 routes) and platform console (7 routes). Loading/error/empty states on all pages. Demo mode handling.
+React + React Query + React Router. Role-aware navigation with 4 persona levels. JWT authentication with session expiry handling. Tenant workspace (22 routes) and platform console (8 routes). Loading/error/empty states on all pages. Demo mode handling.
 
 - Source: `frontend/src/`
 - Routing: `frontend/src/App.jsx`
@@ -236,7 +236,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 
 ## 4. API Surface
 
-35+ production endpoints on `api_router`, 1 dev endpoint on `dev_router` (APP_ENV=development only).
+42 production endpoints on `api_router`, 1 dev endpoint on `dev_router` (APP_ENV=development only).
 
 | Category | Endpoints | Key Permissions |
 |----------|-----------|-----------------|
@@ -271,7 +271,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 - CI: `.github/workflows/ci.yml` — GitHub Actions on ubuntu-latest: `docker compose build arc`, `ruff check`, `ruff format --check`, `python -m pytest -q`
 - Test infrastructure: `tests/conftest.py` — env pinning, TestClient lifecycle, DB fixtures, authorization overrides
 
-**Last verified test count:** 1302 tests collected (Docker + real PostgreSQL), verified against `origin/main` at `63b527c`.
+**Last verified test count:** 1299 tests collected (Docker + real PostgreSQL), verified against `origin/main` at `63b527c`.
 
 **Test coverage observations:**
 - Exhaustive permission matrix test (4 roles × 26 permissions, parametrized)
