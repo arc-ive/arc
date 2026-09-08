@@ -287,5 +287,34 @@ async def test_tenant_isolation_after_creation(
     admin_membership = await membership_repo.get_by_user_and_tenant(admin.id, tenant_id)
     await membership_repo.delete(admin_membership.id)
     await user_repo.delete(admin.id)
-    await user_repo.delete(other.id)
-    await tenant_repo.delete(tenant_id)
+
+
+async def test_tenant_creation_returns_400_when_user_not_in_users_table(
+    client, repositories, make_token, authorization_override
+):
+    """POST /tenants returns 400 (not 500) when the authenticated user_id
+    does not exist in the users table (FK violation on memberships.user_id).
+
+    Regression test for Issue #116: the endpoint previously returned a raw
+    500 because the ForeignKeyViolation was wrapped in DatabaseError and not
+    caught by the controller.
+    """
+    tenant_repo, user_repo, membership_repo = repositories
+
+    # Pick a user_id that is guaranteed NOT to exist in the users table
+    ghost_id = f"ghost-{uuid.uuid4().hex[:10]}"
+    authorization_override({ghost_id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+    token = make_token(ghost_id)
+
+    tenant_id = _unique("tenant")
+    response = client.post(
+        "/tenants",
+        json={"id": tenant_id, "name": "Should Fail Tenant"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    # Must NOT be 500 — the FK violation should be caught and returned as 400
+    assert response.status_code == 400
+    body = response.json()
+    assert "detail" in body
+    assert "does not exist in the users table" in body["detail"]

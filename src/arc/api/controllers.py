@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
-from arc.db.connection import DuplicateKeyError, NotFoundError
+from arc.db.connection import DatabaseError, DuplicateKeyError, NotFoundError
 from arc.domain.models import (
     AgentExecutionResult,
     ApprovalStatus,
@@ -306,6 +306,17 @@ async def create_tenant(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tenant already exists",
         )
+    except DatabaseError as e:
+        # ForeignKeyViolation (user_id not in users table) surfaces here as
+        # DatabaseError. Return 400 so the caller gets an actionable message
+        # instead of a opaque 500.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Failed to create tenant: the authenticated user does not exist "
+                "in the users table. Create the user first."
+            ),
+        ) from e
     return {
         "id": created_tenant.id,
         "name": created_tenant.name,
