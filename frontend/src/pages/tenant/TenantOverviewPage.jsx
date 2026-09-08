@@ -38,9 +38,9 @@ function StatCard({ label, value, hint, to, icon: Icon }) {
         <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
           <Icon className="size-4.5" />
         </div>
-        <p className="mt-4 text-2xl font-semibold tracking-tight text-zinc-100">
+        <div className="mt-4 text-2xl font-semibold tracking-tight text-zinc-100">
           {value}
-        </p>
+        </div>
         <p className="mt-0.5 text-[13px] text-zinc-500">{label}</p>
       </div>
       {to ? (
@@ -102,6 +102,7 @@ export function TenantOverviewPage() {
   })
 
   const tenant = userTenants.data?.find((t) => t.id === tenantId)
+  const tenantPrefix = `/app/t/${encodeURIComponent(tenantId)}`
 
   return (
     <div className="flex flex-col gap-8">
@@ -158,7 +159,7 @@ export function TenantOverviewPage() {
               )
             }
             hint="Open Company Brain"
-            to="knowledge"
+            to={`${tenantPrefix}/knowledge`}
             icon={BookOpen}
           />
           <StatCard
@@ -171,7 +172,7 @@ export function TenantOverviewPage() {
               )
             }
             hint="View members"
-            to="users"
+            to={`${tenantPrefix}/users`}
             icon={Users}
           />
           <StatCard
@@ -222,7 +223,7 @@ export function TenantOverviewPage() {
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <ModuleLink
-            to="ask"
+            to={`${tenantPrefix}/ask`}
             label="Ask Arc"
             description="Ask questions grounded in the Company Brain."
             icon={Sparkles}
@@ -230,43 +231,43 @@ export function TenantOverviewPage() {
           {role !== 'employee' && (
             <>
               <ModuleLink
-                to="knowledge"
+                to={`${tenantPrefix}/knowledge`}
                 label="Company Brain"
                 description="Knowledge, policies, procedures, and solutions."
                 icon={BookOpen}
               />
               <ModuleLink
-                to="skills"
+                to={`${tenantPrefix}/skills`}
                 label="Skills"
                 description="Structured, reusable workflows for this tenant."
                 icon={Workflow}
               />
               <ModuleLink
-                to="tools"
+                to={`${tenantPrefix}/tools`}
                 label="Tools"
                 description="Platform-owned AI tools available for execution."
                 icon={Wrench}
               />
               <ModuleLink
-                to="connectors"
+                to={`${tenantPrefix}/connectors`}
                 label="Connectors"
                 description="External integrations — GitHub, Slack, Linear."
                 icon={Plug}
               />
               <ModuleLink
-                to="approvals"
+                to={`${tenantPrefix}/approvals`}
                 label="Approvals"
                 description="Human-in-the-loop approval requests."
                 icon={ShieldCheck}
               />
               <ModuleLink
-                to="observability"
+                to={`${tenantPrefix}/observability`}
                 label="Observability"
                 description="Usage metrics and operational telemetry."
                 icon={Activity}
               />
               <ModuleLink
-                to="users"
+                to={`${tenantPrefix}/users`}
                 label="Users"
                 description="Tenant members and access."
                 icon={Users}
