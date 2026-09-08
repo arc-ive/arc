@@ -39,13 +39,13 @@ JWT HS256 bearer authentication. Tokens carry only identity (`sub` claim). No ro
 
 ### 2.2 Authorization / RBAC — IMPLEMENTED
 
-24 permissions across 5 `ApplicationRole` values. Fail-closed default: unknown users, unknown roles, and unlisted permissions are always denied. Role assignments are environment-configured (`APPLICATION_ROLE_ASSIGNMENTS` JSON).
+26 permissions across 5 `ApplicationRole` values. Fail-closed default: unknown users, unknown roles, and unlisted permissions are always denied. Role assignments are environment-configured (`APPLICATION_ROLE_ASSIGNMENTS` JSON).
 
 | Role | Permissions | Notable |
 |------|-------------|---------|
-| PLATFORM_ADMINISTRATOR | 24 | Full access including platform-level operations |
-| COMPANY_ADMINISTRATOR | 19 | No TENANT_CREATE, USER_CREATE, USER_READ, OBSERVABILITY_PLATFORM_READ |
-| OPERATIONS_USER | 11 | Read + execute, no create/delete for tenants/users/skills |
+| PLATFORM_ADMINISTRATOR | 26 | Full access including platform-level operations |
+| COMPANY_ADMINISTRATOR | 20 | No TENANT_CREATE, TENANT_LIST, USER_CREATE, USER_READ, MEMBERSHIP_CREATE, OBSERVABILITY_PLATFORM_READ |
+| OPERATIONS_USER | 12 | Read + execute, no create/delete for tenants/users/skills |
 | EMPLOYEE | 1 | KNOWLEDGE_READ only (Ask Arc / Company Brain read) |
 | WEBHOOK_PROCESSOR | 2 | skill:execute + tool:execute (system-only, never assigned to real users) |
 
@@ -201,7 +201,7 @@ Platform-wide tenant administration for PLATFORM_ADMINISTRATOR. `GET /platform/t
 
 ### 2.16 Frontend — IMPLEMENTED
 
-React + React Query + React Router. Role-aware navigation with 4 persona levels. JWT authentication with session expiry handling. Tenant workspace (17 routes) and platform console (7 routes). Loading/error/empty states on all pages. Demo mode handling.
+React + React Query + React Router. Role-aware navigation with 4 persona levels. JWT authentication with session expiry handling. Tenant workspace (22 routes) and platform console (7 routes). Loading/error/empty states on all pages. Demo mode handling.
 
 - Source: `frontend/src/`
 - Routing: `frontend/src/App.jsx`
@@ -271,10 +271,10 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 - CI: `.github/workflows/ci.yml` — GitHub Actions on ubuntu-latest: `docker compose build arc`, `ruff check`, `ruff format --check`, `python -m pytest -q`
 - Test infrastructure: `tests/conftest.py` — env pinning, TestClient lifecycle, DB fixtures, authorization overrides
 
-**Last verified test count:** 1299 tests collected (Docker + real PostgreSQL), verified 2026-09-07 against `origin/main` at `63b527c`.
+**Last verified test count:** 1302 tests collected (Docker + real PostgreSQL), verified against `origin/main` at `63b527c`.
 
 **Test coverage observations:**
-- Exhaustive permission matrix test (4 roles × 24 permissions, parametrized)
+- Exhaustive permission matrix test (4 roles × 26 permissions, parametrized)
 - 18 API surface tests verifying production vs development OpenAPI
 - 12 tenant isolation tests (cross-tenant, missing membership, self-scoping)
 - Regression tests for Issues #58, #60, #70, #76
