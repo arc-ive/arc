@@ -76,6 +76,7 @@ from arc.services.approvals import (  # noqa: F401 -- re-exported for callers
     ApprovalSelfDecisionError,
     ApprovalStateError,
 )
+from arc.services.pii import PiiGuardError, PiiGuardService
 
 # ---------------------------------------------------------------------------
 # Controlled failure types
@@ -463,7 +464,13 @@ class ToolExecutionService:
     handler can run.
     """
 
-    def __init__(self, registry: ToolRegistry, record_repo, approval_service=None):
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        record_repo,
+        approval_service=None,
+        pii_guard: Optional[PiiGuardService] = None,
+    ):
         self.registry = registry
         self.record_repo = record_repo
         # Optional Human Intervention gate (V1 foundation). When wired, a
@@ -472,6 +479,13 @@ class ToolExecutionService:
         # unchanged. Consumption happens only via a later authorized
         # execute_tool call in a future integration slice.
         self.approval_service = approval_service
+        # Optional PII guard: when wired, tool output summaries are
+        # sanitized through Presidio before persistence. If unsupplied or
+        # if sanitization fails, the redacted/summarized values are
+        # persisted as-is (intentional fail-open for the audit trail:
+        # unlike Knowledge/Skill PII guards which fail closed, tool audit
+        # records must never be lost due to a PII processing error).
+        self.pii_guard = pii_guard
 
     def list_tools(self, context: TenantContext) -> List[ToolDefinition]:
         """Return the platform-owned AI Tool catalog for the trusted tenant.
@@ -775,6 +789,12 @@ class ToolExecutionService:
         input_summary: str,
         output_summary: str,
     ) -> None:
+        if self.pii_guard is not None:
+            try:
+                input_summary = self.pii_guard.sanitize(input_summary).sanitized_text
+                output_summary = self.pii_guard.sanitize(output_summary).sanitized_text
+            except PiiGuardError:
+                pass
         await self.record_repo.create_record(
             ToolExecutionRecord(
                 id=str(uuid.uuid4()),
@@ -801,6 +821,11 @@ class ToolExecutionService:
         input_summary: str,
         error_kind: str,
     ) -> None:
+        if self.pii_guard is not None:
+            try:
+                input_summary = self.pii_guard.sanitize(input_summary).sanitized_text
+            except PiiGuardError:
+                pass
         await self.record_repo.create_record(
             ToolExecutionRecord(
                 id=str(uuid.uuid4()),
