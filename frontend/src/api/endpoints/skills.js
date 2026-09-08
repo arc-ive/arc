@@ -21,6 +21,13 @@ export async function createSkill(tenantId, skill) {
   return response.data
 }
 
+export async function updateSkill(tenantId, skillId, data) {
+  const response = await client.put(`/skills/${skillId}`, data, {
+    params: { tenant_id: tenantId },
+  })
+  return response.data
+}
+
 export async function deleteSkill(tenantId, skillId) {
   await client.delete(`/skills/${skillId}`, {
     params: { tenant_id: tenantId },

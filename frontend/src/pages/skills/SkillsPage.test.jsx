@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const mockListSkills = vi.fn()
 const mockGetSkill = vi.fn()
 const mockCreateSkill = vi.fn()
+const mockUpdateSkill = vi.fn()
 const mockDeleteSkill = vi.fn()
 const mockExecuteSkill = vi.fn()
 
@@ -14,6 +15,7 @@ vi.mock('../../api/endpoints/skills.js', () => ({
   listSkills: (...args) => mockListSkills(...args),
   getSkill: (...args) => mockGetSkill(...args),
   createSkill: (...args) => mockCreateSkill(...args),
+  updateSkill: (...args) => mockUpdateSkill(...args),
   deleteSkill: (...args) => mockDeleteSkill(...args),
   executeSkill: (...args) => mockExecuteSkill(...args),
 }))
@@ -94,6 +96,7 @@ describe('SkillsPage — execution controls', () => {
     mockCan.mockImplementation((perm) => {
       if (perm === 'skill:execute') return true
       if (perm === 'skill:create') return true
+      if (perm === 'skill:update') return true
       if (perm === 'skill:delete') return true
       return false
     })
@@ -557,5 +560,133 @@ describe('SkillsPage — execution controls', () => {
     await user.click(screen.getByText('Execute'))
 
     expect(mockExecuteSkill).toHaveBeenCalledWith('t-123', 'skill-1', { tool_calls: [] })
+  })
+})
+
+describe('SkillsPage — edit flow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseAuth.mockReturnValue({
+      isDemo: false,
+      user: { user_id: 'test-user', role: 'platform_administrator', permissions: ['skill:update'] },
+    })
+    mockUseTenant.mockReturnValue({ tenantId: 't-123' })
+    mockCan.mockImplementation((perm) => {
+      if (perm === 'skill:update') return true
+      return false
+    })
+    mockListSkills.mockResolvedValue(MOCK_SKILLS)
+  })
+
+  it('renders Edit button for authorized users', async () => {
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const editButtons = await screen.findAllByTitle('Edit skill')
+    expect(editButtons.length).toBe(MOCK_SKILLS.length)
+  })
+
+  it('hides Edit button when skill:update is unavailable', async () => {
+    mockCan.mockImplementation(() => false)
+
+    renderWithProviders(<SkillsPage view="list" />)
+
+    await screen.findByText('2 skills')
+    expect(screen.queryByTitle('Edit skill')).not.toBeInTheDocument()
+  })
+
+  it('opens the edit dialog when Edit is clicked', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const editButtons = await screen.findAllByTitle('Edit skill')
+    await user.click(editButtons[0])
+
+    expect(screen.getByText('Edit skill')).toBeInTheDocument()
+    expect(screen.getByText('Save changes')).toBeInTheDocument()
+  })
+
+  it('pre-populates form fields from existing skill', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const editButtons = await screen.findAllByTitle('Edit skill')
+    await user.click(editButtons[0])
+
+    expect(screen.getByDisplayValue('Recover degraded service')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Check and restore service health')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('1')).toBeInTheDocument()
+  })
+
+  it('submits update and invalidates queries on success', async () => {
+    mockUpdateSkill.mockResolvedValue({ ...MOCK_SKILLS[0], name: 'Updated skill' })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const editButtons = await screen.findAllByTitle('Edit skill')
+    await user.click(editButtons[0])
+
+    const nameInput = screen.getByDisplayValue('Recover degraded service')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Updated skill')
+
+    await user.click(screen.getByText('Save changes'))
+
+    expect(await screen.findByText('2 skills')).toBeInTheDocument()
+    expect(mockUpdateSkill).toHaveBeenCalledWith(
+      't-123',
+      'skill-1',
+      expect.objectContaining({ name: 'Updated skill' }),
+    )
+  })
+
+  it('displays API error on update failure', async () => {
+    mockUpdateSkill.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 422, data: { detail: 'Name already exists' } },
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const editButtons = await screen.findAllByTitle('Edit skill')
+    await user.click(editButtons[0])
+
+    await user.click(screen.getByText('Save changes'))
+
+    expect(await screen.findByText('Name already exists')).toBeInTheDocument()
+  })
+
+  it('closes dialog on cancel without submitting', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const editButtons = await screen.findAllByTitle('Edit skill')
+    await user.click(editButtons[0])
+
+    expect(screen.getByText('Save changes')).toBeInTheDocument()
+
+    await user.click(screen.getByText('Cancel'))
+
+    expect(screen.queryByText('Save changes')).not.toBeInTheDocument()
+    expect(mockUpdateSkill).not.toHaveBeenCalled()
+  })
+
+  it('prevents duplicate submission while mutation is pending', async () => {
+    let resolveMutation
+    mockUpdateSkill.mockImplementation(() => new Promise((resolve) => { resolveMutation = resolve }))
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const editButtons = await screen.findAllByTitle('Edit skill')
+    await user.click(editButtons[0])
+
+    await user.click(screen.getByText('Save changes'))
+    expect(screen.getByText('Saving...')).toBeInTheDocument()
+    expect(screen.queryByText('Save changes')).not.toBeInTheDocument()
+
+    resolveMutation({ ...MOCK_SKILLS[0], name: 'Updated skill' })
+    expect(await screen.findByText('2 skills')).toBeInTheDocument()
   })
 })

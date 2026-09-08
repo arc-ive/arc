@@ -1,9 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Play, Plus, Trash2, Workflow, AlertTriangle, CheckCircle2, XCircle, ShieldAlert, Ban, Clock } from 'lucide-react'
+import { ArrowLeft, Edit, Play, Plus, Trash2, Workflow, AlertTriangle, CheckCircle2, XCircle, ShieldAlert, Ban, Clock } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
-import { listSkills, getSkill, createSkill, deleteSkill, executeSkill } from '../../api/endpoints/skills.js'
+import { listSkills, getSkill, createSkill, updateSkill, deleteSkill, executeSkill } from '../../api/endpoints/skills.js'
 import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
@@ -250,15 +250,198 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
   )
 }
 
+function EditSkillDialog({ open, skill, onClose }) {
+  const queryClient = useQueryClient()
+  const { tenantId } = useTenant()
+  const [form, setForm] = useState({
+    name: '',
+    purpose: '',
+    version: '',
+    inputs: '',
+    preconditions: '',
+    steps: '',
+    constraints: '',
+    allowed_tools: '',
+    approval_required: false,
+    expected_output: '',
+    failure_behavior: '',
+    provenance: '',
+    risk: '',
+  })
+  const [error, setError] = useState(null)
+
+  const updateMutation = useMutation({
+    mutationFn: (data) => updateSkill(tenantId, skill.id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.skills(tenantId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.skill(tenantId, skill.id) })
+      onClose()
+    },
+    onError: (err) => setError(err),
+  })
+
+  const prevSkillIdRef = useRef(null)
+  if (prevSkillIdRef.current !== skill?.id) {
+    prevSkillIdRef.current = skill?.id ?? null
+    if (skill) {
+      setForm({
+        name: skill.name || '',
+        purpose: skill.purpose || '',
+        version: skill.version || '1',
+        inputs: (skill.inputs || []).join(', '),
+        preconditions: (skill.preconditions || []).join('\n'),
+        steps: (skill.steps || []).join('\n'),
+        constraints: (skill.constraints || []).join('\n'),
+        allowed_tools: (skill.allowed_tools || []).join(', '),
+        approval_required: skill.approval_required || false,
+        expected_output: skill.expected_output || '',
+        failure_behavior: skill.failure_behavior || '',
+        provenance: skill.provenance || '',
+        risk: skill.risk || '',
+      })
+      setError(null)
+    }
+  }
+
+  const handleClose = useCallback(() => {
+    if (updateMutation.isPending) return
+    onClose()
+  }, [updateMutation.isPending, onClose])
+
+  if (!open || !skill) return null
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    setError(null)
+    const payload = {
+      name: form.name,
+      purpose: form.purpose,
+      version: form.version,
+      inputs: form.inputs ? form.inputs.split(',').map((s) => s.trim()).filter(Boolean) : [],
+      preconditions: form.preconditions ? form.preconditions.split('\n').filter(Boolean) : [],
+      steps: form.steps ? form.steps.split('\n').filter(Boolean) : [],
+      constraints: form.constraints ? form.constraints.split('\n').filter(Boolean) : [],
+      allowed_tools: form.allowed_tools ? form.allowed_tools.split(',').map((s) => s.trim()).filter(Boolean) : [],
+      approval_required: form.approval_required,
+      expected_output: form.expected_output || null,
+      failure_behavior: form.failure_behavior || null,
+      provenance: form.provenance || null,
+      risk: form.risk || null,
+    }
+    updateMutation.mutate(payload)
+  }
+
+  const inputClass = "mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+
+  return (
+    <Dialog open={open} onClose={handleClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex size-10 items-center justify-center rounded-lg bg-indigo-950/50 border border-indigo-900/50">
+              <Edit className="size-5 text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-100">Edit skill</h3>
+              <p className="text-xs text-zinc-500">{skill.name}</p>
+            </div>
+          </div>
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+              {errorMessage(error)}
+            </div>
+          )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Name *</label>
+              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Purpose *</label>
+              <textarea value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} className={inputClass} rows={3} required />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">Version</label>
+                <input type="text" value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">Risk</label>
+                <input type="text" value={form.risk} onChange={(e) => setForm({ ...form, risk: e.target.value })} className={inputClass} placeholder="e.g. low, medium, high" />
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">Provenance</label>
+                <input type="text" value={form.provenance} onChange={(e) => setForm({ ...form, provenance: e.target.value })} className={inputClass} placeholder="e.g. HR department" />
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <input
+                  type="checkbox"
+                  id="edit_approval_required"
+                  checked={form.approval_required}
+                  onChange={(e) => setForm({ ...form, approval_required: e.target.checked })}
+                  className="size-4 rounded border-zinc-700 bg-zinc-800"
+                />
+                <label htmlFor="edit_approval_required" className="text-sm text-zinc-300">Approval required</label>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Inputs (comma-separated)</label>
+              <input type="text" value={form.inputs} onChange={(e) => setForm({ ...form, inputs: e.target.value })} className={inputClass} placeholder="e.g. username, department" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Preconditions (one per line)</label>
+              <textarea value={form.preconditions} onChange={(e) => setForm({ ...form, preconditions: e.target.value })} className={inputClass} rows={3} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Steps (one per line)</label>
+              <textarea value={form.steps} onChange={(e) => setForm({ ...form, steps: e.target.value })} className={inputClass} rows={4} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Constraints (one per line)</label>
+              <textarea value={form.constraints} onChange={(e) => setForm({ ...form, constraints: e.target.value })} className={inputClass} rows={2} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300">Allowed Tools (comma-separated)</label>
+              <input type="text" value={form.allowed_tools} onChange={(e) => setForm({ ...form, allowed_tools: e.target.value })} className={inputClass} />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">Expected Output</label>
+                <input type="text" value={form.expected_output} onChange={(e) => setForm({ ...form, expected_output: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300">Failure Behavior</label>
+                <input type="text" value={form.failure_behavior} onChange={(e) => setForm({ ...form, failure_behavior: e.target.value })} className={inputClass} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" type="button" onClick={handleClose} disabled={updateMutation.isPending}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? 'Saving...' : 'Save changes'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 function SkillList() {
   const queryClient = useQueryClient()
   const { tenantId } = useTenant()
   const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const canCreate = can('skill:create')
+  const canUpdate = can('skill:update')
   const canDelete = can('skill:delete')
   const canExecute = can('skill:execute')
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [editTarget, setEditTarget] = useState(null)
   const [executeTarget, setExecuteTarget] = useState(null)
 
   const { data: skills, isLoading, error } = useQuery({
@@ -300,6 +483,11 @@ function SkillList() {
 
   return (
     <div className="space-y-3">
+      <EditSkillDialog
+        open={Boolean(editTarget)}
+        skill={editTarget}
+        onClose={() => setEditTarget(null)}
+      />
       <DeleteConfirmDialog
         open={Boolean(deleteTarget)}
         skillName={deleteTarget?.name}
@@ -353,6 +541,16 @@ function SkillList() {
                     <Play className="size-4 text-zinc-500" />
                   </Button>
                 )}
+                {canUpdate && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditTarget(skill)}
+                    title="Edit skill"
+                  >
+                    <Edit className="size-4 text-zinc-500" />
+                  </Button>
+                )}
                 {canDelete && (
                   <Button
                     variant="ghost"
@@ -375,6 +573,9 @@ function SkillList() {
 function SkillDetail({ skillId }) {
   const { tenantId } = useTenant()
   const { isDemo } = useAuth()
+  const { can } = useCapabilities()
+  const canUpdate = can('skill:update')
+  const [editTarget, setEditTarget] = useState(null)
   const { data: skill, isLoading, error } = useQuery({
     queryKey: queryKeys.skill(tenantId, skillId),
     queryFn: () => getSkill(tenantId, skillId),
@@ -387,8 +588,24 @@ function SkillDetail({ skillId }) {
 
   return (
     <div className="space-y-4">
+      <EditSkillDialog
+        open={Boolean(editTarget)}
+        skill={editTarget}
+        onClose={() => setEditTarget(null)}
+      />
       <Card>
-        <CardHeader title={skill.name} description={skill.purpose} />
+        <div className="flex items-center justify-between px-6 pt-6">
+          <div>
+            <h3 className="text-lg font-semibold text-zinc-100">{skill.name}</h3>
+            {skill.purpose && <p className="mt-1 text-sm text-zinc-500">{skill.purpose}</p>}
+          </div>
+          {canUpdate && (
+            <Button variant="secondary" size="sm" onClick={() => setEditTarget(skill)}>
+              <Edit className="size-4" />
+              Edit
+            </Button>
+          )}
+        </div>
         <CardContent>
           <dl className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -461,6 +678,12 @@ function SkillDetail({ skillId }) {
               <dt className="text-xs font-medium text-zinc-500">Approval Required</dt>
               <dd className="mt-1 text-sm text-zinc-300">{skill.approval_required ? 'Yes' : 'No'}</dd>
             </div>
+            {skill.risk && (
+              <div>
+                <dt className="text-xs font-medium text-zinc-500">Risk</dt>
+                <dd className="mt-1 text-sm text-zinc-300">{skill.risk}</dd>
+              </div>
+            )}
             {skill.expected_output && (
               <div className="sm:col-span-2">
                 <dt className="text-xs font-medium text-zinc-500">Expected Output</dt>
