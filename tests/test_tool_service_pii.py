@@ -151,6 +151,7 @@ class EchoInput(BaseModel):
 def _unique(prefix: str) -> str:
     """Return a unique identifier for test data."""
     import uuid
+
     return f"tool-pii-{prefix}-{uuid.uuid4().hex[:10]}"
 
 
@@ -184,9 +185,7 @@ async def _build_service(repositories, db, pii_guard=None):
     tenant_repo, _, _ = repositories
     record_repo = PostgreSQLToolExecutionRepository(db)
     tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Tool Service Tenant"))
-    service = ToolExecutionService(
-        build_platform_tool_registry(), record_repo, pii_guard=pii_guard
-    )
+    service = ToolExecutionService(build_platform_tool_registry(), record_repo, pii_guard=pii_guard)
     return service, record_repo, tenant
 
 
@@ -198,8 +197,8 @@ async def _build_service(repositories, db, pii_guard=None):
 async def test_pii_sanitized_on_success_output(repositories, db):
     """Success path: PII in tool output is sanitized before persistence."""
     pii_spans = [
-        ("EMAIL_ADDRESS", 26, 42, 0.9),   # alice@example.com
-        ("PHONE_NUMBER", 57, 68, 0.9),     # 555-1234567
+        ("EMAIL_ADDRESS", 26, 42, 0.9),  # alice@example.com
+        ("PHONE_NUMBER", 57, 68, 0.9),  # 555-1234567
     ]
     pii_guard = make_pii_guard(pii_spans)
 
@@ -267,9 +266,7 @@ async def test_pii_sanitized_on_multiple_pii_types(repositories, db):
     tenant_repo, _, _ = repositories
     tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Tool Service Tenant"))
 
-    await service.execute_tool(
-        _context(tenant.id), _principal(), "echo_tool", {}, _authorization()
-    )
+    await service.execute_tool(_context(tenant.id), _principal(), "echo_tool", {}, _authorization())
 
     records = await service.record_repo.list_for_tenant(tenant.id)
     assert len(records) == 1
@@ -281,9 +278,7 @@ async def test_pii_sanitized_on_multiple_pii_types(repositories, db):
     output = record.output_summary or ""
     # The original PII values should not all survive intact - at least one must be sanitized
     pii_removed = (
-        "John Doe" not in output
-        or "john@test.com" not in output
-        or "123-45-6789" not in output
+        "John Doe" not in output or "john@test.com" not in output or "123-45-6789" not in output
     )
     assert pii_removed, f"No PII was sanitized in output: {output}"
 
@@ -313,9 +308,7 @@ async def test_pii_guard_failure_does_not_block_persistence(repositories, db):
     context = _context(tenant.id)
 
     # Should NOT raise -- audit persistence must succeed
-    await service.execute_tool(
-        context, _principal(), "echo_tool", {}, _authorization()
-    )
+    await service.execute_tool(context, _principal(), "echo_tool", {}, _authorization())
 
     records = await service.record_repo.list_for_tenant(tenant.id)
     assert len(records) == 1
@@ -388,9 +381,7 @@ async def test_non_pii_output_unchanged_by_pii_guard(repositories, db):
     tenant_repo, _, _ = repositories
     tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Tool Service Tenant"))
 
-    await service.execute_tool(
-        _context(tenant.id), _principal(), "echo_tool", {}, _authorization()
-    )
+    await service.execute_tool(_context(tenant.id), _principal(), "echo_tool", {}, _authorization())
 
     records = await service.record_repo.list_for_tenant(tenant.id)
     assert len(records) == 1
@@ -409,7 +400,7 @@ async def test_failure_path_pii_sanitized(repositories, db):
     """
     pii_spans = [
         ("EMAIL_ADDRESS", 24, 38, 0.9),  # bob@test.com
-        ("US_SSN", 47, 58, 0.9),         # 987-65-4321
+        ("US_SSN", 47, 58, 0.9),  # 987-65-4321
     ]
     pii_guard = make_pii_guard(pii_spans)
 
@@ -453,9 +444,7 @@ async def test_no_pii_guard_wired_works_without_sanitization(repositories, db):
     service, record_repo, tenant = await _build_service(repositories, db, pii_guard=None)
     context = _context(tenant.id)
 
-    await service.execute_tool(
-        context, _principal(), "check_service_health", {}, _authorization()
-    )
+    await service.execute_tool(context, _principal(), "check_service_health", {}, _authorization())
 
     records = await record_repo.list_for_tenant(tenant.id)
     assert len(records) == 1
