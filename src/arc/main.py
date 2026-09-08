@@ -1,8 +1,9 @@
 """Main FastAPI application setup for Arc."""
 
+import logging
 import os
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from arc.api.controllers import api_router
@@ -14,6 +15,8 @@ from arc.app import app as arc_app
 from arc.db.connection import DuplicateKeyError
 from arc.observability_logging import configure_observability_logging
 from arc.services.approval_sweep import ApprovalSweepRunner
+
+logger = logging.getLogger(__name__)
 
 # Structured application logging (TRD 28): stdlib only, correlation-ID
 # filter, safe metadata content policy. Installed once at import time.
@@ -33,6 +36,31 @@ async def duplicate_key_error_handler(request: Request, exc: DuplicateKeyError):
     return JSONResponse(
         status_code=409,
         content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all handler for unhandled exceptions.
+
+    Preserves intentional HTTPException responses (4xx/5xx) by re-raising
+    them for FastAPI's built-in handler. For all other exceptions, logs the
+    full traceback server-side and returns a generic 500 to the client.
+    Never exposes class names, messages, traceback, SQL details, filesystem
+    paths, credentials, or other internal details.
+    """
+    if isinstance(exc, HTTPException):
+        raise exc
+
+    logger.error(
+        "Unhandled exception on %s %s",
+        request.method,
+        request.url.path,
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
     )
 
 
