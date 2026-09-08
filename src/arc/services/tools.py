@@ -482,7 +482,9 @@ class ToolExecutionService:
         # Optional PII guard: when wired, tool output summaries are
         # sanitized through Presidio before persistence. If unsupplied or
         # if sanitization fails, the redacted/summarized values are
-        # persisted as-is (graceful degradation: audit must never be lost).
+        # persisted as-is (intentional fail-open for the audit trail:
+        # unlike Knowledge/Skill PII guards which fail closed, tool audit
+        # records must never be lost due to a PII processing error).
         self.pii_guard = pii_guard
 
     def list_tools(self, context: TenantContext) -> List[ToolDefinition]:

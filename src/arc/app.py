@@ -127,9 +127,13 @@ class Application:
         # Initialize AI Tool execution service (platform-owned catalog)
         # BEFORE Unified Intelligence so the ADR-004 V1 contract can reuse
         # it as the single authorization/execution/audit choke point.
+        # Fail-open for PII guard: unlike Knowledge/Skill services which
+        # fail closed on PII errors, tool audit must never be lost. A
+        # PiiGuardError during sanitization preserves the redacted summary.
         self.services["tool_service"] = ToolExecutionService(
             build_platform_tool_registry(),
             self.repositories["tool_execution"],
+            pii_guard=pii_guard,
         )
 
         self.services["intelligence_service"] = UnifiedIntelligenceService(

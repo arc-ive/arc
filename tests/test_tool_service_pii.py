@@ -459,14 +459,15 @@ async def test_pii_guard_failure_on_failure_path_does_not_block(repositories, db
     When _record_failure is called with PII guard that fails, the audit
     record is still written with the original input_summary.
     """
-    pii_spans = [("EMAIL_ADDRESS", 16, 30, 0.9)]  # alice@test.com
-    # Analyzer fails on first call
-    analyzer = FakeAnalyzerFailOnSecondCall(pii_spans)
-    anonymizer = FakeAnonymizer()
+
+    class AlwaysFailingAnalyzer:
+        def analyze(self, text, language, entities=None):
+            raise RuntimeError("PII analysis failed")
+
     pii_guard = PiiGuardService(
         config=PiiGuardConfig(),
-        analyzer_engine=analyzer,
-        anonymizer_engine=anonymizer,
+        analyzer_engine=AlwaysFailingAnalyzer(),
+        anonymizer_engine=FakeAnonymizer(),
     )
     service = ToolExecutionService(
         build_platform_tool_registry(),
@@ -476,22 +477,6 @@ async def test_pii_guard_failure_on_failure_path_does_not_block(repositories, db
     tenant_repo, _, _ = repositories
     tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Tool Service Tenant"))
     context = _context(tenant.id)
-
-    # Use a PiiGuardService with an analyzer that always fails.
-    class AlwaysFailingAnalyzer:
-        def analyze(self, text, language, entities=None):
-            raise RuntimeError("PII analysis failed")
-
-    pii_guard_fail = PiiGuardService(
-        config=PiiGuardConfig(),
-        analyzer_engine=AlwaysFailingAnalyzer(),
-        anonymizer_engine=FakeAnonymizer(),
-    )
-    service = ToolExecutionService(
-        build_platform_tool_registry(),
-        PostgreSQLToolExecutionRepository(db),
-        pii_guard=pii_guard_fail,
-    )
 
     await service._record_failure(
         context=context,
@@ -510,3 +495,24 @@ async def test_pii_guard_failure_on_failure_path_does_not_block(repositories, db
     assert record.status == ToolExecutionStatus.FAILED
     # Record persisted even though PII guard failed
     assert record.input_summary is not None
+
+
+async def test_application_wiring_injects_pii_guard_into_tool_service(client):
+    """Runtime wiring: Application.initialize() injects PiiGuardService.
+
+    Regression test for Issue #111 blocking issue. After the app
+    lifecycle starts (via the ``client`` fixture), the production
+    ToolExecutionService must have a non-None pii_guard, proving that
+    Application.initialize() passed the shared PiiGuardService instance.
+    """
+    from arc.api.controllers import app_context
+    from arc.services.pii import PiiGuardService
+
+    tool_service = app_context.tool_service
+    assert tool_service.pii_guard is not None, (
+        "ToolExecutionService.pii_guard is None after application startup "
+        "— production wiring is not injecting PiiGuardService (Issue #111)"
+    )
+    assert isinstance(tool_service.pii_guard, PiiGuardService), (
+        "ToolExecutionService.pii_guard is not a PiiGuardService instance"
+    )
