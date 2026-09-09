@@ -6,10 +6,12 @@ These tests verify the route logic without requiring the full app state.
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from arc.api.auth_routes import auth_router, _get_current_user, _set_session_cookie, _clear_session_cookie
-from arc.security.google import GoogleOIDCService
+from arc.api.auth_routes import (
+    _clear_session_cookie,
+    _get_current_user,
+    _set_session_cookie,
+    auth_router,
+)
 from arc.security.session import SessionService
 
 

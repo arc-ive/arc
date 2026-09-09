@@ -4,11 +4,12 @@ Verifies that state-changing requests are protected by CSRF tokens,
 while Bearer token API clients remain compatible.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-from arc.api.csrf import CSRFMiddleware, STATE_CHANGING_METHODS, CSRF_EXEMPT_PATHS
-from arc.security.session import SESSION_COOKIE_NAME, CSRF_COOKIE_NAME
+import pytest
+
+from arc.api.csrf import CSRF_EXEMPT_PATHS, STATE_CHANGING_METHODS
+from arc.security.session import CSRF_COOKIE_NAME
 
 
 class TestCSRFMiddleware:
@@ -60,8 +61,9 @@ class TestCSRFCookieHandling:
 
     def test_csrf_cookie_not_http_only(self):
         """CSRF cookie should NOT be HttpOnly so JavaScript can read it."""
-        from arc.api.auth_routes import _set_csrf_cookie
         from fastapi import Response
+
+        from arc.api.auth_routes import _set_csrf_cookie
 
         response = Response()
         _set_csrf_cookie(response, "test-token", max_age=3600)
@@ -73,8 +75,9 @@ class TestCSRFCookieHandling:
 
     def test_csrf_cookie_secure(self):
         """CSRF cookie should be Secure."""
-        from arc.api.auth_routes import _set_csrf_cookie
         from fastapi import Response
+
+        from arc.api.auth_routes import _set_csrf_cookie
 
         response = Response()
         _set_csrf_cookie(response, "test-token", max_age=3600)
@@ -84,8 +87,9 @@ class TestCSRFCookieHandling:
 
     def test_csrf_cookie_same_site_strict(self):
         """CSRF cookie should have SameSite=Strict."""
-        from arc.api.auth_routes import _set_csrf_cookie
         from fastapi import Response
+
+        from arc.api.auth_routes import _set_csrf_cookie
 
         response = Response()
         _set_csrf_cookie(response, "test-token", max_age=3600)
@@ -106,6 +110,7 @@ class TestSessionCSRFToken:
     def service(self, db):
         """SessionService with mocked database."""
         from arc.security.session import SessionService
+
         return SessionService(db, expiry_hours=24)
 
     def test_generate_csrf_token_is_random(self, service):

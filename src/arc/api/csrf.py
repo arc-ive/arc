@@ -28,11 +28,13 @@ logger = logging.getLogger(__name__)
 STATE_CHANGING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 # Paths that are exempt from CSRF protection (authentication endpoints)
-CSRF_EXEMPT_PATHS = frozenset({
-    "/auth/google",
-    "/auth/callback",
-    "/health",
-})
+CSRF_EXEMPT_PATHS = frozenset(
+    {
+        "/auth/google",
+        "/auth/callback",
+        "/health",
+    }
+)
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

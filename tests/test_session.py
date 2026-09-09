@@ -4,7 +4,7 @@ Verifies session creation, validation, invalidation, and expiry behavior.
 Sessions are server-side only; no session ID is exposed to the client.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -148,7 +148,9 @@ class TestSessionValidation:
 
         assert result is None
 
-    async def test_validate_session_returns_none_for_inactive_user(self, service, db, inactive_user):
+    async def test_validate_session_returns_none_for_inactive_user(
+        self, service, db, inactive_user
+    ):
         """Session for inactive user returns None."""
         mock_session = MagicMock()
         mock_session.user_id = "user-456"

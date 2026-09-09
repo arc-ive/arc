@@ -170,6 +170,7 @@ class TestUserMapping:
         db.get_user_by_provider = AsyncMock(return_value=mock_user)
 
         from arc.security.google import GoogleIdentity
+
         identity = GoogleIdentity(
             sub="google-123",
             email="user@example.com",
@@ -186,6 +187,7 @@ class TestUserMapping:
         db.get_user_by_provider = AsyncMock(return_value=None)
 
         from arc.security.google import GoogleIdentity
+
         identity = GoogleIdentity(
             sub="unknown-google-user",
             email="unknown@example.com",
@@ -205,6 +207,7 @@ class TestUserMapping:
         db.get_user_by_provider = AsyncMock(return_value=mock_user)
 
         from arc.security.google import GoogleIdentity
+
         identity = GoogleIdentity(
             sub="google-456",
             email="inactive@example.com",
@@ -231,7 +234,7 @@ class TestConfiguration:
 
     def test_is_configured_property(self, config, db):
         """Service reports as configured when credentials are present."""
-        service = GoogleOIDCService(config, db)
+        GoogleOIDCService(config, db)
         # Check if config has non-empty client_id and client_secret
         assert config.client_id and config.client_secret
 

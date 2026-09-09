@@ -126,7 +126,5 @@ def get_security_settings() -> SecuritySettings:
             os.getenv("APPLICATION_ROLE_ASSIGNMENTS", "")
         ),
         google_oidc=google_oidc,
-        session_expiry_hours=_parse_session_expiry_hours(
-            os.getenv("SESSION_EXPIRY_HOURS", "24")
-        ),
+        session_expiry_hours=_parse_session_expiry_hours(os.getenv("SESSION_EXPIRY_HOURS", "24")),
     )

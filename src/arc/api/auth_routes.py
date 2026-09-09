@@ -216,8 +216,7 @@ async def google_callback(
         if user is None:
             # Unknown identity or disabled user — redirect with error
             logger.warning(
-                "Authentication failed: Google identity not linked to Arc user. "
-                "sub=%s email=%s",
+                "Authentication failed: Google identity not linked to Arc user. sub=%s email=%s",
                 identity.sub,
                 identity.email,
             )
@@ -339,11 +338,13 @@ async def get_workspaces(
     for m in memberships:
         tenant = tenant_map.get(m.tenant_id)
         if tenant:
-            workspaces.append({
-                "tenant_id": tenant.id,
-                "tenant_name": tenant.name,
-                "role": m.role.value,
-            })
+            workspaces.append(
+                {
+                    "tenant_id": tenant.id,
+                    "tenant_name": tenant.name,
+                    "role": m.role.value,
+                }
+            )
 
     return {
         "workspaces": workspaces,

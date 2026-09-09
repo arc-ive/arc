@@ -254,9 +254,9 @@ POSTGRESQL + PGVECTOR (12 tables)
 ```python
 @dataclass(frozen=True)
 class AuthenticatedPrincipal:
-    user_id: str        # JWT "sub" claim
-    tenant_id: str      # JWT "tenant_id" claim
-    roles: List[str]    # JWT "roles" claim
+    user_id: str  # JWT "sub" claim
+    tenant_id: str  # JWT "tenant_id" claim
+    roles: List[str]  # JWT "roles" claim
 ```
 
 ### Test Users
@@ -376,10 +376,16 @@ PiiGuardConfig:
 ### Default Enabled Categories
 
 ```python
-DEFAULT_ENABLED_CATEGORIES = frozenset({
-    "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER",
-    "CREDIT_CARD", "IBAN_CODE", "IP_ADDRESS",
-})
+DEFAULT_ENABLED_CATEGORIES = frozenset(
+    {
+        "PERSON",
+        "EMAIL_ADDRESS",
+        "PHONE_NUMBER",
+        "CREDIT_CARD",
+        "IBAN_CODE",
+        "IP_ADDRESS",
+    }
+)
 ```
 
 ### Anonymization Operators
@@ -451,7 +457,7 @@ class KnowledgeDocument:
     provenance: str
     version: int
     status: KnowledgeStatus
-    content: str          # Sanitized content (PII Guard applied)
+    content: str  # Sanitized content (PII Guard applied)
     external_id: Optional[str]
     created_at: datetime
     updated_at: datetime
@@ -920,17 +926,17 @@ Agent detects high-risk action
 
 ```python
 class ApprovalRequest:
-    id: str                    # "appr-{hex[:16]}"
+    id: str  # "appr-{hex[:16]}"
     tenant_id: str
     requested_by_user_id: str
     tool_name: str
     tool_version: str
     risk_level: str
-    input_summary: str         # Redacted, max 512 chars
-    arguments_digest: str      # SHA-256 of canonical serialized validated args
+    input_summary: str  # Redacted, max 512 chars
+    arguments_digest: str  # SHA-256 of canonical serialized validated args
     status: ApprovalStatus
     created_at: datetime
-    expires_at: datetime       # 24h TTL
+    expires_at: datetime  # 24h TTL
     decided_at: Optional[datetime]
     decided_by_user_id: Optional[str]
     consumed_at: Optional[datetime]
@@ -1180,11 +1186,17 @@ Results expose status labels only — never settings values, error details, or c
 class LlmProvider(Protocol):
     def complete(self, prompt: str) -> str: ...
 
+
 class ToolProposingLlm(Protocol):
-    def propose_tool(self, query: str, context_references: Sequence[str]) -> Optional[Mapping[str, Any]]: ...
+    def propose_tool(
+        self, query: str, context_references: Sequence[str]
+    ) -> Optional[Mapping[str, Any]]: ...
+
 
 class SkillSelectingLlm(Protocol):
-    def propose_skill(self, goal: str, catalog: Sequence[Mapping[str, Any]]) -> Optional[Mapping[str, Any]]: ...
+    def propose_skill(
+        self, goal: str, catalog: Sequence[Mapping[str, Any]]
+    ) -> Optional[Mapping[str, Any]]: ...
 ```
 
 ### Supported Providers

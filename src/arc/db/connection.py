@@ -432,8 +432,12 @@ class ArcDatabase:
             )
 
     async def link_user_provider(
-        self, user_id: str, auth_provider: str, provider_subject: str,
-        display_name: str | None = None, avatar_url: str | None = None,
+        self,
+        user_id: str,
+        auth_provider: str,
+        provider_subject: str,
+        display_name: str | None = None,
+        avatar_url: str | None = None,
     ) -> User:
         """Link an existing user to an external identity provider.
 
@@ -453,7 +457,11 @@ class ArcDatabase:
                         updated_at = NOW()
                     WHERE id = $1
                     """,
-                    user_id, auth_provider, provider_subject, display_name, avatar_url,
+                    user_id,
+                    auth_provider,
+                    provider_subject,
+                    display_name,
+                    avatar_url,
                 )
                 row = await conn.fetchrow(
                     """
@@ -486,7 +494,9 @@ class ArcDatabase:
             try:
                 await conn.execute(
                     """
-                    INSERT INTO sessions (id, user_id, csrf_token, created_at, expires_at, user_agent, ip_address)
+                    INSERT INTO sessions
+                        (id, user_id, csrf_token, created_at,
+                         expires_at, user_agent, ip_address)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                     """,
                     session.id,
