@@ -40,9 +40,9 @@ export function AuthProvider({ children }) {
 
   const signIn = useCallback(() => {
     // For Google OIDC, the user is redirected to /auth/google
-    // This function is kept for API compatibility but the actual
-    // sign-in happens via server redirect
-    window.location.href = '/api/auth/google'
+    // Derive the base URL from VITE_API_BASE_URL, defaulting to /api
+    const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
+    window.location.href = `${base}/auth/google`
   }, [])
 
   const signOut = useCallback(async () => {

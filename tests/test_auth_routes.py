@@ -112,11 +112,6 @@ class TestRouterSetup:
         routes = [route.path for route in auth_router.routes]
         assert "/auth/callback" in routes
 
-    def test_auth_router_has_me_route(self):
-        """Auth router has the /auth/me route."""
-        routes = [route.path for route in auth_router.routes]
-        assert "/auth/me" in routes
-
     def test_auth_router_has_workspaces_route(self):
         """Auth router has the workspaces route."""
         routes = [route.path for route in auth_router.routes]

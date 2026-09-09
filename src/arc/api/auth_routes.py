@@ -3,7 +3,6 @@
 Endpoints:
 - GET /auth/google — Redirect to Google OAuth2 authorization
 - GET /auth/callback — Handle Google OAuth2 callback
-- GET /auth/me — Return authenticated user's profile and memberships
 - GET /auth/workspaces — Return only authorized workspaces for the session user
 - POST /auth/logout — Invalidate session and clear cookie
 
@@ -25,8 +24,6 @@ from fastapi.responses import RedirectResponse
 
 from arc.db.connection import ArcDatabase
 from arc.domain.models import User
-from arc.security.authorization import ROLE_PERMISSIONS, AuthorizationService
-from arc.security.dependencies import get_authorization_service
 from arc.security.google import GoogleAuthError, GoogleOIDCService
 from arc.security.session import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, SessionService
 
@@ -282,48 +279,6 @@ async def google_callback(
         resp.delete_cookie("arc_oidc_state", path="/")
         resp.delete_cookie("arc_oidc_nonce", path="/")
         return resp
-
-
-@auth_router.get("/auth/me")
-async def get_auth_profile(
-    request: Request,
-    authorization_service: AuthorizationService = Depends(get_authorization_service),
-) -> Dict[str, Any]:
-    """Return the authenticated user's profile and memberships.
-
-    Identity comes exclusively from the server-side session cookie.
-    No client-supplied user ID is accepted.
-    """
-    user = await _get_current_user(request)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    db = _get_db(request)
-    role = authorization_service.role_for(user.id)
-    permissions = sorted(permission.value for permission in ROLE_PERMISSIONS.get(role, frozenset()))
-
-    memberships = await db.get_memberships_for_user(user.id)
-
-    return {
-        "user_id": user.id,
-        "email": user.email,
-        "display_name": user.display_name or user.username or user.email,
-        "avatar_url": user.avatar_url,
-        "role": role.value if role else None,
-        "permissions": permissions,
-        "memberships": [
-            {
-                "tenant_id": m.tenant_id,
-                "role": m.role.value,
-                "created_at": m.created_at.isoformat(),
-                "updated_at": m.updated_at.isoformat(),
-            }
-            for m in memberships
-        ],
-    }
 
 
 @auth_router.get("/auth/workspaces")

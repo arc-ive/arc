@@ -251,11 +251,11 @@ async def get_authenticated_profile(
 ) -> Dict[str, Any]:
     """Return the authenticated user's authorized profile.
 
-    Self-scoped: identity comes exclusively from the JWT ``sub``; no
-    client-supplied user ID or tenant context is accepted. The application
-    role is resolved server-side from the explicit X-11 role assignments,
-    and the role's permission matrix is returned so the frontend can render
-    capability-aware UI.
+    Self-scoped: identity comes exclusively from the validated session or
+    JWT ``sub``; no client-supplied user ID or tenant context is accepted.
+    The application role is resolved server-side from the explicit X-11
+    role assignments, and the role's permission matrix is returned so the
+    frontend can render capability-aware UI.
 
     The returned permissions are INFORMATIONAL (UX hints) only. The backend
     re-checks authentication, tenant membership, and permissions on every
@@ -264,8 +264,20 @@ async def get_authenticated_profile(
     role = authorization_service.role_for(principal.user_id)
     permissions = sorted(permission.value for permission in ROLE_PERMISSIONS.get(role, frozenset()))
     memberships = await membership_service.get_memberships_for_user(principal.user_id)
+
+    # Fetch the full user profile for email/display_name/avatar_url.
+    # Falls back gracefully if user is not in the database (JWT-only flow).
+    user = None
+    try:
+        user = await app_context.user_service.get_user(principal.user_id)
+    except NotFoundError:
+        pass
+
     return {
         "user_id": principal.user_id,
+        "email": user.email if user else None,
+        "display_name": user.display_name if user else None,
+        "avatar_url": user.avatar_url if user else None,
         "role": role.value if role else None,
         "permissions": permissions,
         "memberships": [

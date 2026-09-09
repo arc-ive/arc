@@ -234,8 +234,9 @@ class ArcDatabase:
         """Get user by ID."""
         async with self._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, email, username, status, created_at, "
-                "updated_at FROM users WHERE id = $1",
+                "SELECT id, email, username, status, auth_provider, "
+                "provider_subject, display_name, avatar_url, "
+                "created_at, updated_at FROM users WHERE id = $1",
                 user_id,
             )
             if not row:
@@ -245,6 +246,10 @@ class ArcDatabase:
                 email=row["email"],
                 username=row["username"],
                 status=row["status"],
+                auth_provider=row["auth_provider"],
+                provider_subject=row["provider_subject"],
+                display_name=row["display_name"],
+                avatar_url=row["avatar_url"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
             )

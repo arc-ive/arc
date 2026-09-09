@@ -396,3 +396,67 @@ class TestConfiguration:
         )
         # Empty client_id means not configured
         assert not config.client_id
+
+
+class TestPyJWIIssuerList:
+    """Regression: PyJWT issuer parameter accepts a list/sequence.
+
+    Google issues tokens with either ``accounts.google.com`` or
+    ``https://accounts.google.com`` as the issuer. The code passes
+    both forms as a list. This test verifies PyJWT 2.x accepts that
+    without mocking jwt.decode.
+    """
+
+    def test_pyjwt_accepts_list_issuer(self):
+        """PyJWT decode() accepts a list for the issuer parameter."""
+        import jwt as pyjwt
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_key = private_key.public_key()
+
+        payload = {
+            "sub": "test-user",
+            "iss": "accounts.google.com",
+            "aud": "test-client.apps.googleusercontent.com",
+            "exp": 9999999999,
+        }
+        token = pyjwt.encode(payload, private_key, algorithm="RS256")
+
+        # Should succeed with a list containing the exact issuer
+        decoded = pyjwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            audience="test-client.apps.googleusercontent.com",
+            issuer=["accounts.google.com", "https://accounts.google.com"],
+        )
+        assert decoded["sub"] == "test-user"
+        assert decoded["iss"] == "accounts.google.com"
+
+    def test_pyjwt_rejects_unlisted_issuer(self):
+        """PyJWT rejects a token whose issuer is not in the list."""
+        import jwt as pyjwt
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_key = private_key.public_key()
+
+        payload = {
+            "sub": "test-user",
+            "iss": "evil-issuer.com",
+            "aud": "test-client.apps.googleusercontent.com",
+            "exp": 9999999999,
+        }
+        token = pyjwt.encode(payload, private_key, algorithm="RS256")
+
+        from jwt.exceptions import InvalidIssuerError
+
+        with pytest.raises(InvalidIssuerError):
+            pyjwt.decode(
+                token,
+                public_key,
+                algorithms=["RS256"],
+                audience="test-client.apps.googleusercontent.com",
+                issuer=["accounts.google.com", "https://accounts.google.com"],
+            )
