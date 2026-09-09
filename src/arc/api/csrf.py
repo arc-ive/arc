@@ -7,13 +7,13 @@ Implements the Double-Submit Cookie Pattern for CSRF protection:
 - Client sends the CSRF token in a custom header (X-CSRF-Token)
 - Server validates the token matches what's stored in the session
 
-Bearer token clients are exempt from CSRF validation because:
-- Bearer tokens are not automatically attached by the browser
-- Bearer tokens must be explicitly set in the Authorization header
-- This prevents CSRF attacks that rely on automatic cookie attachment
+Bearer token clients are exempt from CSRF validation only when no
+session cookie is present. If a session cookie exists, the request
+must pass CSRF validation regardless of any Authorization header.
 """
 
 import logging
+import secrets
 from typing import Callable
 
 from fastapi import Request, Response
@@ -45,7 +45,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     2. Client sends the CSRF token in the X-CSRF-Token header
     3. Server validates the token matches what's stored in the session
 
-    Bearer token clients are exempt from CSRF validation.
+    Bearer token clients without a session cookie are exempt from CSRF
+    validation. If a session cookie is present, CSRF validation is
+    mandatory regardless of any Authorization header.
     """
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -57,17 +59,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if request.url.path in CSRF_EXEMPT_PATHS:
             return await call_next(request)
 
-        # Check if this is a Bearer token request (API client)
-        authorization = request.headers.get("authorization", "")
-        if authorization.lower().startswith("bearer "):
-            # Bearer token clients are exempt from CSRF validation
-            return await call_next(request)
-
-        # Get the session ID from the cookie
+        # Check for session cookie — if present, CSRF validation is mandatory
+        # regardless of any Authorization header.
         session_id = request.cookies.get(SESSION_COOKIE_NAME)
         if not session_id:
-            # No session cookie - not authenticated, CSRF doesn't apply
+            # No session cookie: check for Bearer-only request (API client)
+            authorization = request.headers.get("authorization", "")
+            if authorization.lower().startswith("bearer "):
+                # Bearer token client with no session — exempt from CSRF
+                return await call_next(request)
+            # No session cookie and no Bearer token — not authenticated,
+            # CSRF doesn't apply
             return await call_next(request)
+
+        # Session cookie present — enforce CSRF validation
+        # (Bearer header does NOT bypass CSRF when a session is active)
 
         # Get the CSRF token from the cookie
         csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
@@ -95,8 +101,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 content={"detail": "CSRF token header missing"},
             )
 
-        # Validate that the cookie and header match
-        if csrf_cookie != csrf_header:
+        # Validate that the cookie and header match (constant-time)
+        if not secrets.compare_digest(csrf_cookie, csrf_header):
             logger.warning(
                 "csrf_token_mismatch session=%s ip=%s",
                 session_id[:8],

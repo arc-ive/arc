@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'

@@ -6,6 +6,9 @@ These tests verify the route logic without requiring the full app state.
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from arc.api.auth_routes import (
     _clear_session_cookie,
     _get_current_user,
@@ -135,11 +138,6 @@ class TestGoogleLoginUnconfigured:
 
     async def test_returns_503_when_google_service_is_none(self):
         """GET /auth/google returns 503 when Google OIDC service is not initialized."""
-        from fastapi import FastAPI
-        from fastapi.testclient import TestClient
-
-        from arc.api.auth_routes import auth_router
-
         app = FastAPI()
         app.include_router(auth_router)
 
@@ -152,3 +150,86 @@ class TestGoogleLoginUnconfigured:
 
         assert response.status_code == 503
         assert response.json()["detail"] == "Google authentication is not configured"
+
+
+class TestCallbackStateValidation:
+    """Test callback state parameter validation (F7)."""
+
+    def _make_callback_app(self, google_service=None, session_service=None):
+        """Create a test app with mocked services."""
+        app = FastAPI()
+        app.include_router(auth_router)
+        app.state.google_oidc_service = google_service or MagicMock()
+        app.state.session_service = session_service or MagicMock()
+        return app
+
+    def test_missing_state_cookie_rejected(self):
+        """Callback with missing state cookie returns 400."""
+        app = self._make_callback_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            "/auth/callback",
+            params={"code": "auth-code", "state": "state-from-google"},
+        )
+        assert response.status_code == 400
+
+    def test_mismatched_state_rejected(self):
+        """Callback with mismatched state returns 400."""
+        app = self._make_callback_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            "/auth/callback",
+            params={"code": "auth-code", "state": "state-from-google"},
+            cookies={"arc_oidc_state": "different-state"},
+        )
+        assert response.status_code == 400
+
+
+class TestCallbackNonceValidation:
+    """Test callback nonce validation — fail-closed (F6)."""
+
+    def _make_callback_app(self, google_service=None, session_service=None):
+        """Create a test app with mocked services."""
+        app = FastAPI()
+        app.include_router(auth_router)
+        app.state.google_oidc_service = google_service or MagicMock()
+        app.state.session_service = session_service or MagicMock()
+        return app
+
+    def test_missing_nonce_cookie_rejected(self):
+        """Callback with matching state but missing nonce → MUST NOT succeed."""
+        app = self._make_callback_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            "/auth/callback",
+            params={"code": "auth-code", "state": "state-value"},
+            cookies={"arc_oidc_state": "state-value"},
+            # No arc_oidc_nonce cookie
+        )
+        assert response.status_code == 400
+
+    def test_missing_code_rejected(self):
+        """Callback with missing code returns 400."""
+        app = self._make_callback_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            "/auth/callback",
+            params={"state": "state-value"},
+            cookies={"arc_oidc_state": "state-value"},
+        )
+        assert response.status_code == 400
+
+    def test_error_param_rejected(self):
+        """Callback with error param returns 400."""
+        app = self._make_callback_app()
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get(
+            "/auth/callback",
+            params={"error": "access_denied", "state": "state-value"},
+        )
+        assert response.status_code == 400

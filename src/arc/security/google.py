@@ -126,12 +126,12 @@ class GoogleOIDCService:
                 logger.error("Google token exchange error: %s", e)
                 raise GoogleAuthError("Token exchange unavailable") from e
 
-    async def verify_id_token(self, id_token: str, nonce: Optional[str] = None) -> GoogleIdentity:
+    async def verify_id_token(self, id_token: str, nonce: str) -> GoogleIdentity:
         """Verify a Google ID token and extract the identity.
 
         Args:
             id_token: The raw ID token from Google.
-            nonce: The nonce to validate against (from session).
+            nonce: The expected nonce from the session (required).
 
         Returns:
             Verified Google identity.
@@ -157,8 +157,8 @@ class GoogleOIDCService:
                 options={"require": ["sub", "email", "iss", "aud", "exp"]},
             )
 
-            # Validate nonce if provided
-            if nonce and payload.get("nonce") != nonce:
+            # Validate nonce (required — fail closed)
+            if payload.get("nonce") != nonce:
                 raise GoogleAuthError("Invalid nonce")
 
             return GoogleIdentity(
@@ -209,10 +209,10 @@ class GoogleOIDCService:
         )
         return None
 
-    async def generate_state(self) -> str:
+    def generate_state(self) -> str:
         """Generate a CSRF-prevention state token."""
         return secrets.token_urlsafe(32)
 
-    async def generate_nonce(self) -> str:
+    def generate_nonce(self) -> str:
         """Generate a nonce for ID token replay prevention."""
         return secrets.token_urlsafe(32)

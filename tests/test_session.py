@@ -209,3 +209,34 @@ class TestSessionExpiry:
         # Verify different expiry times are used
         assert service_1h._expiry_hours == 1
         assert service_48h._expiry_hours == 48
+
+    async def test_is_expired_uses_utc_now(self):
+        """is_expired compares timezone-aware UTC timestamps.
+
+        Regression test: datetime.now() (naive) must not be compared
+        with a timezone-aware expires_at from PostgreSQL/asyncpg.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from arc.domain.models import Session
+
+        # Create a session that expires 1 hour from now (UTC-aware)
+        now = datetime.now(timezone.utc)
+        future_session = Session(
+            id="test",
+            user_id="user-1",
+            csrf_token="csrf",
+            created_at=now,
+            expires_at=now + timedelta(hours=1),
+        )
+        assert future_session.is_expired is False
+
+        # Create a session that expired 1 hour ago (UTC-aware)
+        past_session = Session(
+            id="test",
+            user_id="user-1",
+            csrf_token="csrf",
+            created_at=now - timedelta(hours=2),
+            expires_at=now - timedelta(hours=1),
+        )
+        assert past_session.is_expired is True

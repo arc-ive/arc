@@ -17,6 +17,7 @@ Security properties:
 """
 
 import logging
+import secrets
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -132,8 +133,8 @@ async def google_login(request: Request) -> RedirectResponse:
             detail="Google authentication is not configured",
         )
 
-    state = await google_service.generate_state()
-    nonce = await google_service.generate_nonce()
+    state = google_service.generate_state()
+    nonce = google_service.generate_nonce()
 
     auth_url = google_service.build_authorization_url(state, nonce)
 
@@ -193,15 +194,21 @@ async def google_callback(
 
     # Validate state (CSRF protection)
     stored_state = request.cookies.get("arc_oidc_state")
-    if not stored_state or stored_state != state:
+    if not stored_state or not secrets.compare_digest(stored_state, state):
         logger.warning("State mismatch: possible CSRF attack")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid authentication state",
         )
 
-    # Get nonce for validation
+    # Get nonce for validation (MUST exist — fail closed if missing)
     nonce = request.cookies.get("arc_oidc_nonce")
+    if not nonce:
+        logger.warning("Missing OIDC nonce cookie — possible replay attack")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid authentication state",
+        )
 
     google_service = _get_google_service(request)
     session_service = _get_session_service(request)
@@ -253,8 +260,11 @@ async def google_callback(
 
         # Set session cookie and CSRF cookie, then redirect to app
         resp = RedirectResponse(url="/app", status_code=status.HTTP_302_FOUND)
-        _set_session_cookie(resp, session.id, max_age=24 * 60 * 60)  # 24 hours
-        _set_csrf_cookie(resp, session.csrf_token, max_age=24 * 60 * 60)  # 24 hours
+        # Derive cookie max_age from the actual session lifetime so cookies
+        # cannot disagree with the server-side session expiry.
+        session_max_age = int((session.expires_at - session.created_at).total_seconds())
+        _set_session_cookie(resp, session.id, max_age=session_max_age)
+        _set_csrf_cookie(resp, session.csrf_token, max_age=session_max_age)
 
         # Clear OIDC cookies
         resp.delete_cookie("arc_oidc_state", path="/")

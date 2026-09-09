@@ -1,7 +1,7 @@
 """Domain models for multi-tenancy foundation."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -183,7 +183,7 @@ class Session:
 
     @property
     def is_expired(self) -> bool:
-        return datetime.now() >= self.expires_at
+        return datetime.now(timezone.utc) >= self.expires_at
 
 
 @dataclass

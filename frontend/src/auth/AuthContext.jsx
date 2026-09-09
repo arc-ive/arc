@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { clearAuthState, enterDemoMode, exitDemoMode, isDemoMode } from './token.js'
+import client from '../api/client.js'
+import { clearAuthState, enterDemoMode, isDemoMode } from './token.js'
 import { SESSION_EXPIRED_EVENT } from '../api/client.js'
 import { AuthContext } from './context.js'
 
@@ -51,7 +52,7 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+      await client.post('/auth/logout')
     } catch {
       // Ignore errors — clear client state regardless
     }

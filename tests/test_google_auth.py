@@ -84,6 +84,30 @@ class TestAuthorizationURL:
         url = service.build_authorization_url(state, nonce)
         assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth")
 
+    def test_generate_state_is_sync(self, service):
+        """generate_state returns a string directly (not a coroutine)."""
+        result = service.generate_state()
+        assert isinstance(result, str)
+        assert len(result) >= 32
+
+    def test_generate_nonce_is_sync(self, service):
+        """generate_nonce returns a string directly (not a coroutine)."""
+        result = service.generate_nonce()
+        assert isinstance(result, str)
+        assert len(result) >= 32
+
+    def test_generate_state_is_random(self, service):
+        """generate_state produces unique values."""
+        s1 = service.generate_state()
+        s2 = service.generate_state()
+        assert s1 != s2
+
+    def test_generate_nonce_is_random(self, service):
+        """generate_nonce produces unique values."""
+        n1 = service.generate_nonce()
+        n2 = service.generate_nonce()
+        assert n1 != n2
+
 
 class TestCodeExchange:
     """Test authorization code exchange for tokens."""
@@ -127,7 +151,6 @@ class TestIDTokenVerification:
         """Valid ID token returns verified GoogleIdentity."""
         from arc.security.google import GoogleIdentity
 
-        # Mock PyJWKClient to return a mock key
         mock_client = MagicMock()
         mock_key = MagicMock()
         mock_client.get_signing_key_from_jwt.return_value = mock_key
@@ -140,9 +163,10 @@ class TestIDTokenVerification:
                     "name": "Test User",
                     "picture": "https://example.com/photo.jpg",
                     "email_verified": True,
+                    "nonce": "expected-nonce",
                 }
 
-                identity = await service.verify_id_token("mock-id-token")
+                identity = await service.verify_id_token("mock-id-token", "expected-nonce")
 
         assert identity is not None
         assert isinstance(identity, GoogleIdentity)
@@ -155,7 +179,95 @@ class TestIDTokenVerification:
             mock_client.side_effect = Exception("Invalid token")
 
             with pytest.raises(GoogleAuthError):
-                await service.verify_id_token("invalid-token")
+                await service.verify_id_token("invalid-token", "some-nonce")
+
+    async def test_verify_id_token_rejects_wrong_nonce(self, service):
+        """ID token with wrong nonce is rejected."""
+        mock_client = MagicMock()
+        mock_key = MagicMock()
+        mock_client.get_signing_key_from_jwt.return_value = mock_key
+
+        with patch("jwt.PyJWKClient", return_value=mock_client):
+            with patch("jwt.decode") as mock_decode:
+                mock_decode.return_value = {
+                    "sub": "google-user-123",
+                    "email": "user@example.com",
+                    "email_verified": True,
+                    "nonce": "token-nonce",
+                }
+
+                with pytest.raises(GoogleAuthError, match="Invalid nonce"):
+                    await service.verify_id_token("mock-id-token", "expected-nonce")
+
+    async def test_verify_id_token_rejects_missing_nonce_in_token(self, service):
+        """ID token missing nonce claim is rejected when nonce is expected."""
+        mock_client = MagicMock()
+        mock_key = MagicMock()
+        mock_client.get_signing_key_from_jwt.return_value = mock_key
+
+        with patch("jwt.PyJWKClient", return_value=mock_client):
+            with patch("jwt.decode") as mock_decode:
+                mock_decode.return_value = {
+                    "sub": "google-user-123",
+                    "email": "user@example.com",
+                    "email_verified": True,
+                    # No nonce claim
+                }
+
+                with pytest.raises(GoogleAuthError, match="Invalid nonce"):
+                    await service.verify_id_token("mock-id-token", "expected-nonce")
+
+    async def test_verify_id_token_rejects_wrong_issuer(self, service):
+        """ID token with wrong issuer is rejected."""
+        mock_client = MagicMock()
+        mock_key = MagicMock()
+        mock_client.get_signing_key_from_jwt.return_value = mock_key
+
+        with patch("jwt.PyJWKClient", return_value=mock_client):
+            with patch("jwt.decode") as mock_decode:
+                mock_decode.side_effect = Exception("Invalid issuer")
+
+                with pytest.raises(GoogleAuthError):
+                    await service.verify_id_token("mock-id-token", "some-nonce")
+
+    async def test_verify_id_token_rejects_wrong_audience(self, service):
+        """ID token with wrong audience is rejected."""
+        mock_client = MagicMock()
+        mock_key = MagicMock()
+        mock_client.get_signing_key_from_jwt.return_value = mock_key
+
+        with patch("jwt.PyJWKClient", return_value=mock_client):
+            with patch("jwt.decode") as mock_decode:
+                mock_decode.side_effect = Exception("Invalid audience")
+
+                with pytest.raises(GoogleAuthError):
+                    await service.verify_id_token("mock-id-token", "some-nonce")
+
+    async def test_verify_id_token_rejects_bad_signature(self, service):
+        """ID token with bad signature is rejected."""
+        mock_client = MagicMock()
+        mock_key = MagicMock()
+        mock_client.get_signing_key_from_jwt.return_value = mock_key
+
+        with patch("jwt.PyJWKClient", return_value=mock_client):
+            with patch("jwt.decode") as mock_decode:
+                mock_decode.side_effect = Exception("Signature verification failed")
+
+                with pytest.raises(GoogleAuthError):
+                    await service.verify_id_token("mock-id-token", "some-nonce")
+
+    async def test_verify_id_token_rejects_expired_token(self, service):
+        """Expired ID token is rejected."""
+        mock_client = MagicMock()
+        mock_key = MagicMock()
+        mock_client.get_signing_key_from_jwt.return_value = mock_key
+
+        with patch("jwt.PyJWKClient", return_value=mock_client):
+            with patch("jwt.decode") as mock_decode:
+                mock_decode.side_effect = Exception("Token has expired")
+
+                with pytest.raises(GoogleAuthError):
+                    await service.verify_id_token("mock-id-token", "some-nonce")
 
 
 class TestUserMapping:
@@ -217,6 +329,43 @@ class TestUserMapping:
         user = await service.find_or_link_user(identity)
 
         assert user is None
+
+    async def test_sub_identity_immutable_across_email_changes(self, service, db):
+        """Same provider_subject with different email maps to same Arc user.
+
+        The durable identity is provider + provider_subject, NOT email.
+        """
+        mock_user = MagicMock(spec=User)
+        mock_user.id = "user-789"
+        mock_user.status = "active"
+
+        db.get_user_by_provider = AsyncMock(return_value=mock_user)
+
+        from arc.security.google import GoogleIdentity
+
+        # First login with original email
+        identity_v1 = GoogleIdentity(
+            sub="google-sub-789",
+            email="alice@acme-corp.example",
+            email_verified=True,
+        )
+        user_v1 = await service.find_or_link_user(identity_v1)
+
+        # Second login with changed email (same sub)
+        identity_v2 = GoogleIdentity(
+            sub="google-sub-789",
+            email="alice.new@acme-corp.example",
+            email_verified=True,
+        )
+        user_v2 = await service.find_or_link_user(identity_v2)
+
+        # Both resolve to the same Arc user
+        assert user_v1 is not None
+        assert user_v2 is not None
+        assert user_v1.id == user_v2.id
+
+        # The lookup was by provider_subject, not email
+        db.get_user_by_provider.assert_called_with("google", "google-sub-789")
 
 
 class TestConfiguration:
