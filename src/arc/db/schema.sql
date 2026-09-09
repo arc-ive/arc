@@ -343,7 +343,21 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- Idempotent migration for existing databases: add csrf_token column
 -- if it doesn't exist. For fresh databases, the column is already
 -- included in the CREATE TABLE statement above.
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS csrf_token VARCHAR(255) NOT NULL DEFAULT '';
+--
+-- The column is added as NULLABLE first so the cleanup DELETE can run
+-- without constraint conflicts. All legacy sessions (which lack a
+-- valid CSRF token) are removed — users can simply re-authenticate.
+-- After cleanup, NOT NULL is enforced.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS csrf_token VARCHAR(255);
+
+-- Remove all legacy sessions without a valid CSRF token.
+-- These are unusable because Session.__post_init__ rejects empty tokens.
+DELETE FROM sessions WHERE csrf_token IS NULL OR csrf_token = '';
+
+-- Enforce NOT NULL after legacy rows are handled.
+-- Safe on fresh databases (all rows already have non-empty csrf_token)
+-- and on existing databases (legacy rows deleted above).
+ALTER TABLE sessions ALTER COLUMN csrf_token SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);

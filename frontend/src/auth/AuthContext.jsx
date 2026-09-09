@@ -16,16 +16,11 @@ export function AuthProvider({ children }) {
       return
     }
 
-    // Check if we have a session by calling /auth/me
-    fetch('/api/auth/me', { credentials: 'same-origin' })
+    // Check if we have a session by calling /auth/me via the shared API client
+    // which uses the configured VITE_API_BASE_URL and withCredentials.
+    client.get('/auth/me')
       .then((res) => {
-        if (res.ok) {
-          return res.json()
-        }
-        throw new Error('Not authenticated')
-      })
-      .then((data) => {
-        setSession(data)
+        setSession(res.data)
         setLoading(false)
       })
       .catch(() => {

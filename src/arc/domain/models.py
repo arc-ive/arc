@@ -167,9 +167,9 @@ class Session:
 
     id: str
     user_id: str
-    csrf_token: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
-    expires_at: datetime = field(default_factory=datetime.now)
+    csrf_token: str
+    created_at: datetime
+    expires_at: datetime
     user_agent: Optional[str] = None
     ip_address: Optional[str] = None
 
