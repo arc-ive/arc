@@ -67,12 +67,8 @@ async def main() -> None:
         tenant_count = await conn.fetchval("SELECT count(*) FROM tenants")
         user_count = await conn.fetchval("SELECT count(*) FROM users")
         membership_count = await conn.fetchval("SELECT count(*) FROM memberships")
-        connector_count = await conn.fetchval(
-            "SELECT count(*) FROM connector_configs"
-        )
-        knowledge_count = await conn.fetchval(
-            "SELECT count(*) FROM knowledge_documents"
-        )
+        connector_count = await conn.fetchval("SELECT count(*) FROM connector_configs")
+        knowledge_count = await conn.fetchval("SELECT count(*) FROM knowledge_documents")
         skill_count = await conn.fetchval("SELECT count(*) FROM skills")
 
         print()

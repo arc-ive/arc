@@ -341,12 +341,8 @@ async def seed_reference_data(conn: asyncpg.Connection) -> None:
                 "tenant_id": tenant["id"],
                 "source": doc_def["source"],
                 "external_id": doc_def["external_id_suffix"],
-                "provenance": doc_def["provenance"].replace(
-                    "Acme Technologies", tenant["name"]
-                ),
-                "content": doc_def["content"].replace(
-                    "Acme Technologies", tenant["name"]
-                ),
+                "provenance": doc_def["provenance"].replace("Acme Technologies", tenant["name"]),
+                "content": doc_def["content"].replace("Acme Technologies", tenant["name"]),
             }
             await conn.execute(_insert_knowledge_sql(doc))
 

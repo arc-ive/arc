@@ -134,12 +134,8 @@ async def test_provisioning_is_idempotent(db):
     await _seed(db)
 
     async with db._connection_pool.acquire() as conn:
-        tenant_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM tenants WHERE id LIKE 'ref-%'"
-        )
-        user_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM users WHERE id LIKE 'ref-%'"
-        )
+        tenant_count = await conn.fetchval("SELECT COUNT(*) FROM tenants WHERE id LIKE 'ref-%'")
+        user_count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE id LIKE 'ref-%'")
         membership_count = await conn.fetchval(
             "SELECT COUNT(*) FROM memberships WHERE user_id LIKE 'ref-%'"
         )
@@ -205,9 +201,7 @@ async def test_demo_records_not_created(db):
         demo_tenant = await conn.fetchval(
             "SELECT COUNT(*) FROM tenants WHERE id = $1", "demo-tenant"
         )
-        demo_user = await conn.fetchval(
-            "SELECT COUNT(*) FROM users WHERE id = $1", "demo-user"
-        )
+        demo_user = await conn.fetchval("SELECT COUNT(*) FROM users WHERE id = $1", "demo-user")
         demo_membership = await conn.fetchval(
             "SELECT COUNT(*) FROM memberships WHERE id = $1", "demo-membership"
         )
