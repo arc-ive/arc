@@ -140,30 +140,6 @@ def setup_database(database_url: str) -> None:
 
     CREATE INDEX IF NOT EXISTS idx_users_email
         ON users(email);
-
-    -- Insert a demo tenant if none exists.
-    INSERT INTO tenants (id, name, status)
-    SELECT 'demo-tenant', 'Demo Tenant', 'active'
-    WHERE NOT EXISTS (
-        SELECT 1 FROM tenants
-    );
-
-    -- Insert a demo user if none exists.
-    INSERT INTO users (id, email, username, status)
-    SELECT 'demo-user', 'demo@example.com', 'demo_user', 'active'
-    WHERE NOT EXISTS (
-        SELECT 1 FROM users
-    );
-
-    -- Create demo membership if it doesn't exist.
-    INSERT INTO memberships (id, user_id, tenant_id, role)
-    SELECT 'demo-membership', 'demo-user', 'demo-tenant', 'owner'
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM memberships
-        WHERE user_id = 'demo-user'
-          AND tenant_id = 'demo-tenant'
-    );
     """
 
     run_command(
@@ -184,10 +160,7 @@ if __name__ == "__main__":
     try:
         setup_database(database_url)
         print("\n✓ Database setup completed successfully!")
-        print("\nDemo data created:")
-        print("- Tenant: demo-tenant (Demo Tenant)")
-        print("- User: demo-user (demo@example.com)")
-        print("- Membership: demo-user -> demo-tenant (owner)")
+        print("\nSchema initialized. Reference data will be seeded on application startup.")
     except Exception as e:
         print(f"\n✗ Database setup failed: {e}")
         sys.exit(1)
