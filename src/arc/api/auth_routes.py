@@ -126,6 +126,11 @@ async def google_login(request: Request) -> RedirectResponse:
     stores them in a short-lived cookie, and redirects to Google.
     """
     google_service = _get_google_service(request)
+    if google_service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google authentication is not configured",
+        )
 
     state = await google_service.generate_state()
     nonce = await google_service.generate_nonce()

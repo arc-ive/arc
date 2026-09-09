@@ -128,3 +128,27 @@ class TestRouterSetup:
         """Auth router has the logout-all route."""
         routes = [route.path for route in auth_router.routes]
         assert "/auth/logout-all" in routes
+
+
+class TestGoogleLoginUnconfigured:
+    """Test /auth/google returns 503 when Google OIDC is not configured."""
+
+    async def test_returns_503_when_google_service_is_none(self):
+        """GET /auth/google returns 503 when Google OIDC service is not initialized."""
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from arc.api.auth_routes import auth_router
+
+        app = FastAPI()
+        app.include_router(auth_router)
+
+        # Simulate startup where google_oidc_service is None
+        app.state.google_oidc_service = None
+        app.state.session_service = MagicMock()
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/auth/google")
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Google authentication is not configured"
