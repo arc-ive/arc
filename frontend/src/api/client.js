@@ -1,25 +1,40 @@
 import axios from 'axios'
-import { getToken, clearToken } from '../auth/token.js'
 
 export const SESSION_EXPIRED_EVENT = 'arc:session-expired'
 
 /**
- * CSRF note: Bearer tokens are NOT automatically attached by the browser
- * to cross-origin requests. CSRF relies on automatic credential attachment
- * (cookies). The Authorization header must be explicitly set by JavaScript,
- * making CSRF inapplicable to the current authentication model.
+ * CSRF protection: With HttpOnly cookie-based sessions, the browser
+ * automatically attaches cookies to same-origin requests. The CSRF
+ * token is stored in a non-HttpOnly cookie and sent in a custom header
+ * for state-changing requests. Bearer token clients are exempt.
  */
+
+function getCsrfToken() {
+  // Read the CSRF token from the non-HttpOnly cookie
+  const cookies = document.cookie.split(';')
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split('=')
+    if (name === 'arc_csrf_token') {
+      return value
+    }
+  }
+  return null
+}
 
 const client = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true, // Important: sends cookies with requests
 })
 
+// Add CSRF token header for state-changing requests
 client.interceptors.request.use((config) => {
-  const token = getToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  if (['post', 'put', 'patch', 'delete'].includes(config.method)) {
+    const csrfToken = getCsrfToken()
+    if (csrfToken) {
+      config.headers['X-CSRF-Token'] = csrfToken
+    }
   }
   return config
 })
@@ -28,7 +43,6 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error?.response?.status === 401) {
-      clearToken()
       window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
     }
     return Promise.reject(error)

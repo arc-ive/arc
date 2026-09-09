@@ -147,6 +147,10 @@ class User:
     email: str
     username: Optional[str] = None
     status: str = "active"
+    auth_provider: str = "local"
+    provider_subject: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -155,6 +159,31 @@ class User:
             raise ValueError("User ID cannot be empty")
         if not self.email:
             raise ValueError("User email cannot be empty")
+
+
+@dataclass
+class Session:
+    """Server-side session for authenticated users."""
+
+    id: str
+    user_id: str
+    csrf_token: str = ""
+    created_at: datetime = field(default_factory=datetime.now)
+    expires_at: datetime = field(default_factory=datetime.now)
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Session ID cannot be empty")
+        if not self.user_id:
+            raise ValueError("Session user_id cannot be empty")
+        if not self.csrf_token:
+            raise ValueError("Session csrf_token cannot be empty")
+
+    @property
+    def is_expired(self) -> bool:
+        return datetime.now() >= self.expires_at
 
 
 @dataclass

@@ -27,6 +27,15 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE(email)
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(50) DEFAULT 'local';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_subject VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_provider_subject
+    ON users (auth_provider, provider_subject)
+    WHERE provider_subject IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS memberships (
     id VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
@@ -314,3 +323,27 @@ CREATE INDEX IF NOT EXISTS idx_agent_run_records_tenant_id
     ON agent_run_records(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_agent_run_records_created_at
     ON agent_run_records(created_at);
+
+-- Server-side session storage for Google OIDC authentication.
+-- Session IDs are opaque, cryptographically random, and stored in an
+-- HttpOnly cookie. The session record maps the session to a user and
+-- enforces expiry. No signing secret is needed: the session ID is a
+-- random token looked up directly in the database.
+CREATE TABLE IF NOT EXISTS sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    csrf_token VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    user_agent TEXT,
+    ip_address VARCHAR(45),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Idempotent migration for existing databases: add csrf_token column
+-- if it doesn't exist. For fresh databases, the column is already
+-- included in the CREATE TABLE statement above.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS csrf_token VARCHAR(255) NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);

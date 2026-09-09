@@ -6,7 +6,9 @@ import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from arc.api.auth_routes import auth_router
 from arc.api.controllers import api_router
+from arc.api.csrf import CSRFMiddleware
 from arc.api.dev_controllers import dev_router
 from arc.api.middleware import RequestTelemetryMiddleware
 
@@ -14,6 +16,9 @@ from arc.api.middleware import RequestTelemetryMiddleware
 from arc.app import app as arc_app
 from arc.db.connection import DuplicateKeyError
 from arc.observability_logging import configure_observability_logging
+from arc.security.google import GoogleConfig, GoogleOIDCService
+from arc.security.session import SessionService
+from arc.security.settings import get_security_settings
 from arc.services.approval_sweep import ApprovalSweepRunner
 
 logger = logging.getLogger(__name__)
@@ -73,8 +78,15 @@ app.add_middleware(
     service_provider=lambda: arc_app.services.get("observability_service"),
 )
 
+# CSRF protection for state-changing requests (Double-Submit Cookie Pattern).
+# Bearer token clients are exempt from CSRF validation.
+app.add_middleware(CSRFMiddleware)
+
 # Include API router
 app.include_router(api_router)
+
+# Include auth routes (Google OIDC + session management)
+app.include_router(auth_router)
 
 # Development-only endpoints (membership provisioning and tenant-context
 # scaffolding) are mounted ONLY when APP_ENV is explicitly set to
@@ -89,6 +101,28 @@ if os.getenv("APP_ENV") == "development":
 async def startup_event():
     """Initialize application on startup."""
     await arc_app.initialize()
+
+    # Initialize Google OIDC service (if configured)
+    settings = get_security_settings()
+    if settings.google_oidc.is_configured:
+        google_config = GoogleConfig(
+            client_id=settings.google_oidc.client_id,
+            client_secret=settings.google_oidc.client_secret,
+            redirect_uri=settings.google_oidc.redirect_uri,
+        )
+        app.state.google_oidc_service = GoogleOIDCService(google_config, arc_app.db)
+        logger.info("Google OIDC authentication enabled")
+    else:
+        app.state.google_oidc_service = None
+        logger.info("Google OIDC not configured — using JWT authentication only")
+
+    # Initialize session service
+    app.state.session_service = SessionService(
+        arc_app.db,
+        expiry_hours=settings.session_expiry_hours,
+    )
+    app.state.db = arc_app.db
+
     # Start the background approval expiry sweep (PRD §15)
     approval_service = arc_app.services.get("human_approval_service")
     if approval_service is not None:

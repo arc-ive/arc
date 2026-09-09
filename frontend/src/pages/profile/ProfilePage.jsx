@@ -1,27 +1,11 @@
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/useAuth.js'
 import { useMe } from '../../auth/useMe.js'
-import { decodeJwt } from '../../auth/jwt.js'
 import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Avatar } from '../../components/ui/Avatar.jsx'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
-import { formatDateTime, relativeTime } from '../../lib/format.js'
-
-function ClaimRow({ label, value, mono = true }) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-1.5">
-      <dt className="shrink-0 text-[13px] text-zinc-500">{label}</dt>
-      <dd
-        className={mono ? 'truncate font-mono text-xs text-zinc-300' : 'text-right text-xs text-zinc-300'}
-      >
-        {value ?? '—'}
-      </dd>
-    </div>
-  )
-}
 
 const ROLE_LABELS = {
   platform_administrator: 'Platform Administrator',
@@ -31,15 +15,8 @@ const ROLE_LABELS = {
 }
 
 export function ProfilePage() {
-  const { token, principal, isDemo, signOut } = useAuth()
-  const navigate = useNavigate()
+  const { principal, isDemo, signOut } = useAuth()
   const me = useMe()
-  const claims = token ? decodeJwt(token) : null
-
-  const handleSignOut = () => {
-    signOut()
-    navigate('/login', { replace: true })
-  }
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
@@ -61,11 +38,14 @@ export function ProfilePage() {
         />
         <CardContent>
           <div className="flex items-center gap-3">
-            <Avatar name={principal?.sub} size="lg" />
+            <Avatar name={me.data?.display_name || principal?.sub} size="lg" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-zinc-100">
-                {principal?.sub}
+                {me.data?.display_name || principal?.sub}
               </p>
+              {me.data?.email && (
+                <p className="mt-0.5 text-xs text-zinc-500">{me.data.email}</p>
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 {isDemo && (
                   <Badge variant="cyan" dot>
@@ -73,7 +53,7 @@ export function ProfilePage() {
                   </Badge>
                 )}
                 <Badge variant="neutral" size="sm">
-                  From JWT sub claim
+                  Server-managed session
                 </Badge>
               </div>
             </div>
@@ -168,18 +148,28 @@ export function ProfilePage() {
       <Card>
         <CardHeader
           title="Session"
-          description="Unverified token claims, decoded client-side. The backend validates signatures and permissions on every request."
+          description="Server-managed session for your authenticated identity."
         />
         <CardContent>
           <dl className="divide-y divide-zinc-800/60">
-            <ClaimRow label="Expires" value={principal?.exp ? formatDateTime(principal.exp) : '—'} />
-            {principal?.exp && (
-              <ClaimRow label="Time remaining" value={relativeTime(principal.exp)} mono={false} />
-            )}
-            <ClaimRow label="Issued at (iat)" value={claims?.iat ? formatDateTime(claims.iat * 1000) : '—'} />
-            <ClaimRow label="Issuer (iss)" value={claims?.iss ?? '—'} />
-            <ClaimRow label="Audience (aud)" value={claims?.aud ?? '—'} />
-            <ClaimRow label="Stored in" value="sessionStorage (browser session)" mono={false} />
+            <div className="flex items-start justify-between gap-4 py-1.5">
+              <dt className="shrink-0 text-[13px] text-zinc-500">Session type</dt>
+              <dd className="text-right text-xs text-zinc-300">
+                HttpOnly secure cookie
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-4 py-1.5">
+              <dt className="shrink-0 text-[13px] text-zinc-500">Session storage</dt>
+              <dd className="text-right text-xs text-zinc-300">
+                Server-side (PostgreSQL)
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-4 py-1.5">
+              <dt className="shrink-0 text-[13px] text-zinc-500">Cookie attributes</dt>
+              <dd className="text-right text-xs text-zinc-300">
+                HttpOnly, Secure, SameSite=Lax
+              </dd>
+            </div>
           </dl>
         </CardContent>
       </Card>
@@ -187,16 +177,16 @@ export function ProfilePage() {
       <Card>
         <CardHeader
           title="Session controls"
-          description="End your session and clear the stored token."
+          description="End your session and clear the server-side session."
         />
         <CardContent>
           <p className="mb-4 text-[13px] leading-relaxed text-zinc-500">
-            Signing out removes the access token from this browser session
-            and returns you to the login page. The backend does not have a
-            revocation endpoint yet, so sign-out is local.
+            Signing out invalidates your server-side session and clears the
+            session cookie. You will need to authenticate again to access
+            the platform.
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="danger" onClick={handleSignOut}>
+            <Button variant="danger" onClick={signOut}>
               Sign out
             </Button>
           </div>

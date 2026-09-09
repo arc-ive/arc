@@ -1,25 +1,34 @@
 /**
- * JWT bearer-token storage.
+ * Session management for Google OIDC authentication.
  *
- * Storage: sessionStorage — cleared when the browser tab closes, not
- * persisted across sessions. Accessible to JavaScript (XSS risk), but
- * the backend remains the authentication and authorization authority on
- * every request. This token is a session credential only.
+ * Server-side sessions are managed via HttpOnly cookies. This module
+ * provides helper functions for session state management on the client.
+ * The actual session cookie is set by the server and is not accessible
+ * to JavaScript (HttpOnly).
  *
- * Alternative: HttpOnly cookies would prevent JS access but introduce
- * CSRF surface and require SameSite/CSRF-token infrastructure not
- * present in the current bearer-token architecture.
+ * Previous JWT-in-sessionStorage architecture has been removed in favor
+ * of secure server-side sessions.
  */
-const TOKEN_KEY = 'arc.accessToken'
 
-export function getToken() {
-  return sessionStorage.getItem(TOKEN_KEY)
+const DEMO_KEY = 'arc.demoMode'
+
+export function isDemoMode() {
+  return import.meta.env.DEV && sessionStorage.getItem(DEMO_KEY) === '1'
 }
 
-export function setToken(token) {
-  sessionStorage.setItem(TOKEN_KEY, token)
+export function enterDemoMode() {
+  if (!import.meta.env.DEV) return
+  sessionStorage.setItem(DEMO_KEY, '1')
 }
 
-export function clearToken() {
-  sessionStorage.removeItem(TOKEN_KEY)
+export function exitDemoMode() {
+  sessionStorage.removeItem(DEMO_KEY)
+}
+
+/**
+ * Clear all client-side auth state.
+ * The server-side session is invalidated separately via POST /auth/logout.
+ */
+export function clearAuthState() {
+  sessionStorage.removeItem(DEMO_KEY)
 }

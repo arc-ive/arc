@@ -6,7 +6,7 @@ permission checks WITHOUT knowing anything about JWT parsing, the JWT
 secret, token validation internals, or credential storage.
 
 Responsibilities are separated:
-- ``get_authenticated_principal`` — authentication only (JWT bearer).
+- ``get_authenticated_principal`` — authentication (session cookie OR JWT bearer).
 - ``get_trusted_tenant_context`` — X-10 tenant boundary only.
 - ``require_permission`` / ``require_tenant_permission`` — authorization only.
 """
@@ -14,14 +14,15 @@ Responsibilities are separated:
 from functools import lru_cache
 from typing import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from arc.db.connection import NotFoundError
-from arc.domain.models import TenantContext
+from arc.domain.models import TenantContext, User
 from arc.security.authorization import AuthorizationService
 from arc.security.jwt import AuthenticationError, JwtService
 from arc.security.models import AuthenticatedPrincipal, Permission
+from arc.security.session import SESSION_COOKIE_NAME, SessionService
 from arc.security.settings import SecurityConfigurationError
 from arc.security.settings import get_security_settings as load_security_settings
 
@@ -66,17 +67,31 @@ def _forbidden(detail: str = "Access denied") -> HTTPException:
 
 
 async def get_authenticated_principal(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthenticatedPrincipal:
     """Authenticate the request and return the authenticated principal.
 
-    The principal's ``user_id`` comes exclusively from the validated JWT
-    ``sub`` claim. Missing, malformed, or invalid credentials produce a
-    generic 401.
+    Supports two authentication methods:
+    1. Server-side session cookie (primary for browser UX)
+    2. Bearer JWT token (backward compatibility for API clients/tests)
+
+    The principal's ``user_id`` comes exclusively from the validated
+    session or JWT ``sub`` claim. Missing, malformed, or invalid
+    credentials produce a generic 401.
 
     Raises:
         HTTPException 401: when credentials are missing or invalid.
     """
+    # Try session cookie first (browser UX)
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        session_service: SessionService = request.app.state.session_service
+        user: User | None = await session_service.validate_session(session_id)
+        if user is not None:
+            return AuthenticatedPrincipal(user_id=user.id)
+
+    # Fall back to Bearer token (API clients, tests)
     if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise _unauthorized()
 
