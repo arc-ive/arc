@@ -20,6 +20,19 @@ class SecurityConfigurationError(Exception):
 
 
 @dataclass(frozen=True)
+class GoogleOIDCSettings:
+    """Google OAuth2/OIDC configuration."""
+
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = ""
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.client_id and self.client_secret and self.redirect_uri)
+
+
+@dataclass(frozen=True)
 class SecuritySettings:
     """Security configuration derived from the environment."""
 
@@ -29,6 +42,8 @@ class SecuritySettings:
     jwt_audience: str = "arc-api"
     jwt_expiry_seconds: int = 3600
     application_role_assignments: Dict[str, ApplicationRole] = field(default_factory=dict)
+    google_oidc: GoogleOIDCSettings = field(default_factory=GoogleOIDCSettings)
+    session_expiry_hours: int = 24
 
     def __post_init__(self) -> None:
         if not self.jwt_secret or len(self.jwt_secret) < JWT_SECRET_MIN_LENGTH:
@@ -81,12 +96,26 @@ def _parse_expiry_seconds(raw: str) -> int:
         raise SecurityConfigurationError("JWT_EXPIRY_SECONDS must be a valid integer") from exc
 
 
+def _parse_session_expiry_hours(raw: str) -> int:
+    """Parse session expiry hours and fail closed on invalid values."""
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise SecurityConfigurationError("SESSION_EXPIRY_HOURS must be a valid integer") from exc
+
+
 def get_security_settings() -> SecuritySettings:
     """Build security settings from the environment.
 
     Role assignments default to an empty mapping, which means every user is
     denied by default (fail closed).
     """
+    google_oidc = GoogleOIDCSettings(
+        client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
+        client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
+        redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", ""),
+    )
+
     return SecuritySettings(
         jwt_secret=os.getenv("JWT_SECRET", ""),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
@@ -96,4 +125,6 @@ def get_security_settings() -> SecuritySettings:
         application_role_assignments=_parse_role_assignments(
             os.getenv("APPLICATION_ROLE_ASSIGNMENTS", "")
         ),
+        google_oidc=google_oidc,
+        session_expiry_hours=_parse_session_expiry_hours(os.getenv("SESSION_EXPIRY_HOURS", "24")),
     )

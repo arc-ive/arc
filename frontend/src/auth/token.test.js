@@ -1,29 +1,29 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getToken, setToken, clearToken } from './token.js'
+import { isDemoMode, enterDemoMode, exitDemoMode, clearAuthState } from './token.js'
 
 describe('token storage', () => {
   beforeEach(() => {
     sessionStorage.clear()
   })
 
-  it('returns null when no token is stored', () => {
-    expect(getToken()).toBeNull()
+  it('returns false when no demo mode is set', () => {
+    expect(isDemoMode()).toBe(false)
   })
 
-  it('stores and retrieves a token', () => {
-    setToken('test-jwt-token')
-    expect(getToken()).toBe('test-jwt-token')
+  it('enters demo mode', () => {
+    enterDemoMode()
+    expect(isDemoMode()).toBe(true)
   })
 
-  it('clears the stored token', () => {
-    setToken('test-jwt-token')
-    clearToken()
-    expect(getToken()).toBeNull()
+  it('exits demo mode', () => {
+    enterDemoMode()
+    exitDemoMode()
+    expect(isDemoMode()).toBe(false)
   })
 
-  it('overwrites an existing token', () => {
-    setToken('token-1')
-    setToken('token-2')
-    expect(getToken()).toBe('token-2')
+  it('clearAuthState removes demo mode', () => {
+    enterDemoMode()
+    clearAuthState()
+    expect(isDemoMode()).toBe(false)
   })
 })

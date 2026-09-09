@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 
 import asyncpg
 
-from arc.domain.models import Membership, Tenant, User, UserRole
+from arc.domain.models import Membership, Session, Tenant, User, UserRole
 
 
 class DatabaseError(Exception):
@@ -234,8 +234,9 @@ class ArcDatabase:
         """Get user by ID."""
         async with self._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, email, username, status, created_at, "
-                "updated_at FROM users WHERE id = $1",
+                "SELECT id, email, username, status, auth_provider, "
+                "provider_subject, display_name, avatar_url, "
+                "created_at, updated_at FROM users WHERE id = $1",
                 user_id,
             )
             if not row:
@@ -245,6 +246,10 @@ class ArcDatabase:
                 email=row["email"],
                 username=row["username"],
                 status=row["status"],
+                auth_provider=row["auth_provider"],
+                provider_subject=row["provider_subject"],
+                display_name=row["display_name"],
+                avatar_url=row["avatar_url"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
             )
@@ -399,6 +404,160 @@ class ArcDatabase:
                     )
                 )
             return memberships
+
+    async def get_user_by_provider(self, auth_provider: str, provider_subject: str) -> User | None:
+        """Look up a user by their external identity provider and subject.
+
+        Returns None if no matching user exists (does NOT auto-provision).
+        """
+        async with self._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, email, username, status, auth_provider, provider_subject,
+                       display_name, avatar_url, created_at, updated_at
+                FROM users
+                WHERE auth_provider = $1 AND provider_subject = $2
+                """,
+                auth_provider,
+                provider_subject,
+            )
+            if not row:
+                return None
+            return User(
+                id=row["id"],
+                email=row["email"],
+                username=row["username"],
+                status=row["status"],
+                auth_provider=row["auth_provider"],
+                provider_subject=row["provider_subject"],
+                display_name=row["display_name"],
+                avatar_url=row["avatar_url"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+
+    async def link_user_provider(
+        self,
+        user_id: str,
+        auth_provider: str,
+        provider_subject: str,
+        display_name: str | None = None,
+        avatar_url: str | None = None,
+    ) -> User:
+        """Link an existing user to an external identity provider.
+
+        This binds the durable provider_subject to the Arc user. The user
+        MUST already exist; this does NOT create users. Email is NOT
+        updated from the provider to prevent account-takeover via email
+        reassignment.
+        """
+        async with self.transaction() as conn:
+            try:
+                await conn.execute(
+                    """
+                    UPDATE users
+                    SET auth_provider = $2, provider_subject = $3,
+                        display_name = COALESCE($4, display_name),
+                        avatar_url = COALESCE($5, avatar_url),
+                        updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    user_id,
+                    auth_provider,
+                    provider_subject,
+                    display_name,
+                    avatar_url,
+                )
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, email, username, status, auth_provider, provider_subject,
+                           display_name, avatar_url, created_at, updated_at
+                    FROM users WHERE id = $1
+                    """,
+                    user_id,
+                )
+                if not row:
+                    raise NotFoundError(f"User with id {user_id} not found")
+                return User(
+                    id=row["id"],
+                    email=row["email"],
+                    username=row["username"],
+                    status=row["status"],
+                    auth_provider=row["auth_provider"],
+                    provider_subject=row["provider_subject"],
+                    display_name=row["display_name"],
+                    avatar_url=row["avatar_url"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+            except Exception as e:
+                raise DatabaseError(f"Failed to link user provider: {e}") from e
+
+    async def create_session(self, session: Session) -> Session:
+        """Create a new server-side session."""
+        async with self.transaction() as conn:
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO sessions
+                        (id, user_id, csrf_token, created_at,
+                         expires_at, user_agent, ip_address)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    session.id,
+                    session.user_id,
+                    session.csrf_token,
+                    session.created_at,
+                    session.expires_at,
+                    session.user_agent,
+                    session.ip_address,
+                )
+                return session
+            except asyncpg.UniqueViolationError as e:
+                raise DuplicateKeyError(f"Session with id {session.id} already exists") from e
+            except Exception as e:
+                raise DatabaseError(f"Failed to create session: {e}") from e
+
+    async def get_session(self, session_id: str) -> Session | None:
+        """Get a session by ID. Returns None if not found or expired."""
+        async with self._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, user_id, csrf_token, created_at, expires_at, user_agent, ip_address
+                FROM sessions
+                WHERE id = $1 AND expires_at > NOW()
+                """,
+                session_id,
+            )
+            if not row:
+                return None
+            return Session(
+                id=row["id"],
+                user_id=row["user_id"],
+                csrf_token=row["csrf_token"],
+                created_at=row["created_at"],
+                expires_at=row["expires_at"],
+                user_agent=row["user_agent"],
+                ip_address=row["ip_address"],
+            )
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete a session. Returns True if a session was deleted."""
+        async with self._connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM sessions WHERE id = $1",
+                session_id,
+            )
+            return result.endswith("1")
+
+    async def delete_sessions_for_user(self, user_id: str) -> int:
+        """Delete all sessions for a user. Returns count of deleted sessions."""
+        async with self._connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM sessions WHERE user_id = $1",
+                user_id,
+            )
+            return int(result.split()[-1])
 
 
 # Global database instance

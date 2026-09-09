@@ -79,7 +79,22 @@ async def test_me_lists_persisted_memberships(
     assert response.status_code == 200
     body = response.json()
     assert body["user_id"] == user.id
+    assert body["email"] == user.email
+    assert body["display_name"] == user.display_name
+    assert body["avatar_url"] == user.avatar_url
     assert len(body["memberships"]) >= 1
     matching = [m for m in body["memberships"] if m["tenant_id"] == tenant.id]
     assert len(matching) == 1
     assert matching[0]["role"] == membership.role.value
+
+
+def test_me_returns_null_profile_fields_for_unpersisted_user(client, make_token):
+    """JWT-only users not in the database get null email/display_name/avatar_url."""
+    token = make_token("unpersisted-user")
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user_id"] == "unpersisted-user"
+    assert body["email"] is None
+    assert body["display_name"] is None
+    assert body["avatar_url"] is None
