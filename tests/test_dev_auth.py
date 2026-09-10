@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from arc.api.dev_auth import (
     _ALLOWED_USER_IDS,
+    _DEV_PERSONAS,
     _REFERENCE_USERS,
     dev_auth_router,
 )
@@ -252,6 +253,67 @@ class TestReferenceUsersEndpoint:
             assert "tenants" in user
 
 
+class TestReferencePersonasEndpoint:
+    """Test the GET /internal/dev/auth/reference-personas endpoint."""
+
+    def test_returns_personas(self):
+        """Returns the role-level personas for dev login."""
+        app = FastAPI()
+        app.include_router(dev_auth_router)
+
+        client = TestClient(app)
+        response = client.get("/internal/dev/auth/reference-personas")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "personas" in data
+        assert len(data["personas"]) == 4
+
+    def test_personas_have_correct_structure(self):
+        """Each persona has the expected fields."""
+        app = FastAPI()
+        app.include_router(dev_auth_router)
+
+        client = TestClient(app)
+        response = client.get("/internal/dev/auth/reference-personas")
+
+        for persona in response.json()["personas"]:
+            assert "persona" in persona
+            assert "description" in persona
+            assert "user_id" in persona
+
+    def test_all_persona_user_ids_are_in_allowlist(self):
+        """Each persona's user_id is a valid seeded reference user."""
+        for persona in _DEV_PERSONAS:
+            assert persona["user_id"] in _ALLOWED_USER_IDS, (
+                f"Persona '{persona['persona']}' maps to unknown user_id '{persona['user_id']}'"
+            )
+
+    def test_persona_user_ids_are_distinct(self):
+        """Each persona maps to a different reference user."""
+        user_ids = [p["user_id"] for p in _DEV_PERSONAS]
+        assert len(user_ids) == len(set(user_ids))
+
+    def test_persona_roles_cover_key_roles(self):
+        """Personas cover platform admin, tenant admin, employee, and viewer."""
+        persona_names = {p["persona"] for p in _DEV_PERSONAS}
+        assert "Platform Admin" in persona_names
+        assert "Tenant Admin" in persona_names
+        assert "Employee" in persona_names
+        assert "Viewer" in persona_names
+
+    def test_reference_users_endpoint_still_works(self):
+        """The original reference-users endpoint is preserved for advanced use."""
+        app = FastAPI()
+        app.include_router(dev_auth_router)
+
+        client = TestClient(app)
+        response = client.get("/internal/dev/auth/reference-users")
+
+        assert response.status_code == 200
+        assert len(response.json()["users"]) == 17
+
+
 class TestCSRFExemption:
     """Test that the dev auth login endpoint is CSRF-exempt."""
 
@@ -269,6 +331,50 @@ class TestCSRFExemption:
         client = TestClient(app)
         response = client.get("/internal/dev/auth/reference-users")
         assert response.status_code == 200
+
+    def test_reference_personas_get_not_affected_by_csrf(self):
+        """GET personas endpoint is not affected by CSRF middleware."""
+        app = FastAPI()
+        app.include_router(dev_auth_router)
+
+        client = TestClient(app)
+        response = client.get("/internal/dev/auth/reference-personas")
+        assert response.status_code == 200
+
+    def test_all_persona_user_ids_can_login(self):
+        """Each persona's user_id can create a real session."""
+        from datetime import datetime, timedelta, timezone
+
+        db = MagicMock()
+        mock_user = MagicMock()
+        mock_user.status = "active"
+        db.get_user = AsyncMock(return_value=mock_user)
+
+        mock_session = MagicMock()
+        mock_session.id = "test-session"
+        mock_session.csrf_token = "test-csrf"
+        now = datetime.now(timezone.utc)
+        mock_session.created_at = now
+        mock_session.expires_at = now + timedelta(hours=24)
+
+        session_service = MagicMock()
+        session_service.create_session = AsyncMock(return_value=mock_session)
+
+        app = FastAPI()
+        app.include_router(dev_auth_router)
+        app.state.db = db
+        app.state.session_service = session_service
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        for persona in _DEV_PERSONAS:
+            response = client.post(
+                "/internal/dev/auth/login",
+                json={"user_id": persona["user_id"]},
+            )
+            assert response.status_code == 200, (
+                f"Persona '{persona['persona']}' failed to login: {response.json()}"
+            )
 
 
 class TestDevAuthNotMountedInProduction:
