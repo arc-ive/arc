@@ -1,4 +1,4 @@
-# ARC V2 — ARCHITECTURE DECISION RECORDS (ADR)
+# ARC V2 — ARCHITECTURE DECISION RECORDS (V2-ADR)
 
 **Status:** Proposed Final / Governing V2 Decisions  
 **Version:** 2.0  
@@ -6,11 +6,11 @@
 
 This document consolidates the V2 architectural decisions resulting from the reconciled Bala/Bharath audits and the product direction agreed for Arc.
 
-When this ADR conflicts with an older draft ADR, this V2 ADR is authoritative for V2 implementation.
+All decisions in this document are numbered V2-ADR-001 through V2-ADR-028. When this V2-ADR set conflicts with an older draft ADR or with the historical ADRs under `docs/architecture/decisions/`, this V2-ADR set is authoritative for V2 implementation.
 
 ---
 
-# ADR-001 — Modular Monolith
+# V2-ADR-001 — Modular Monolith
 
 **Status:** Accepted
 
@@ -43,7 +43,7 @@ Microservices are not a V2 requirement.
 
 ---
 
-# ADR-002 — Tenant Isolation Through Trusted TenantContext
+# V2-ADR-002 — Tenant Isolation Through Trusted TenantContext
 
 **Status:** Accepted
 
@@ -63,7 +63,7 @@ All domain services receiving tenant-scoped data must either receive TenantConte
 
 ---
 
-# ADR-003 — Platform Admin Is a Separate Control Plane
+# V2-ADR-003 — Platform Admin Is a Separate Control Plane
 
 **Status:** Accepted
 
@@ -83,7 +83,7 @@ Tenant data access requires its own explicit authorization model.
 
 ---
 
-# ADR-004 — Capability, Entitlement, Tenant Configuration, RBAC
+# V2-ADR-004 — Capability, Entitlement, Tenant Configuration, RBAC
 
 **Status:** Accepted
 
@@ -117,7 +117,7 @@ Billing implementation is outside the current V2 scope.
 
 ---
 
-# ADR-005 — Employee Execution Model
+# V2-ADR-005 — Employee Execution Model
 
 **Status:** Accepted
 
@@ -129,47 +129,80 @@ Bharath identified that SkillExecutionService and ToolExecutionService independe
 
 Giving Employee no execution permissions would make permitted low-risk workflows impossible through the current service contracts.
 
+A prior interpretation of the C-1 wording concluded that Employee should receive only `knowledge:read`. That interpretation is superseded by this final stakeholder decision.
+
 ## Decision
+
+### Final Employee Permission Model
 
 Employee receives:
 
 ```text
 knowledge:read
 agent:execute
+```
+
+Employee must **NOT** receive:
+
+```text
 skill:execute
 tool:execute
 ```
 
-but employee execution is constrained by deterministic execution policy.
+### Rationale
 
-The preferred product path is:
+1. **Employee needs `agent:execute`** to initiate permitted Agent workflows. Without it, employees cannot interact with Unified Intelligence / Agent at all, making the primary product UX non-functional for the most common user role.
+
+2. **Direct `skill:execute` / `tool:execute` creates a second execution path** that bypasses the intended Agent boundary. If Employee holds both `skill:execute` and `tool:execute`, the execution model becomes:
+
+```text
+Path A (intended):   Employee → Agent → SkillExecutionService → ToolExecutionService
+Path B (bypass):     Employee → SkillExecutionService → ToolExecutionService
+```
+
+   Two parallel execution paths for the same principal make the security model harder to reason about, harder to audit, and more likely to contain inconsistencies.
+
+3. **Agent-mediated execution gives Arc one controlled execution boundary.** The Agent enforces step bounds, decision schema, skill allowlisting, authorization at every step, and execution persistence. Direct skill/tool invocation skips these controls.
+
+4. **SkillExecutionService and ToolExecutionService remain independently authorization-aware.** They enforce deterministic execution policy regardless of who calls them. This is a defense-in-depth property, not a reason to grant direct permissions.
+
+5. **High-risk actions remain subject to the approval lifecycle.** The approval gate (`REQUIRE_HUMAN_APPROVAL`) is orthogonal to base permissions. An Employee with `agent:execute` cannot bypass approval requirements.
+
+6. **This keeps the security model simpler.** One execution path, one set of controls, one audit trail. Multiple employee execution paths create unnecessary complexity.
+
+### Intended Execution Path
 
 ```text
 Employee
- ↓
-Unified Intelligence / Agent
- ↓
-Skill
- ↓
-Tool
+  ↓
+Agent (bounded max 3 steps, decision schema, skill allowlisting)
+  ↓
+SkillExecutionService (preconditions, principal policy, allowed tools)
+  ↓
+ToolExecutionService (authorization, policy, validation, execution, audit)
 ```
 
-Direct skill/tool calls remain subject to principal-aware policy and cannot execute high-risk operations without approval.
+The Employee must not directly invoke arbitrary Skills or Tools. SkillExecutionService and ToolExecutionService remain responsible for lower-level authorization and policy enforcement independently.
 
 ## Consequences
 
 This preserves:
 
 - Bala's bounded AI workflow model
-- Bharath's lower-layer authorization requirements
+- One controlled execution boundary for all Employee-initiated work
+- Bharath's lower-layer authorization requirements (SkillExecutionService and ToolExecutionService are still authorization-aware)
 
-while avoiding an authorization bypass.
+while avoiding:
+
+- a dual execution path for the same principal
+- unnecessary complexity in the security model
+- a second avenue for potential policy bypass
 
 No employee receives approval-decision authority merely from these permissions.
 
 ---
 
-# ADR-006 — Production LLM Provider
+# V2-ADR-006 — Production LLM Provider
 
 **Status:** Accepted
 
@@ -206,7 +239,7 @@ OpenRouter is the initial production provider without coupling Arc's domain laye
 
 ---
 
-# ADR-007 — Hybrid Retrieval Without Reranking
+# V2-ADR-007 — Hybrid Retrieval Without Reranking
 
 **Status:** Accepted
 
@@ -232,13 +265,13 @@ Extend `RetrievalService`.
 
 ## Rationale
 
-The reconciled architecture and existing ADR direction do not require reranking for V2.
+The reconciled architecture and existing V2-ADR direction do not require reranking for V2.
 
 Avoid additional model latency, infrastructure, dependency, and evaluation burden until retrieval evaluation demonstrates that RRF is insufficient.
 
 ---
 
-# ADR-008 — ApprovedContext as the LLM Boundary
+# V2-ADR-008 — ApprovedContext as the LLM Boundary
 
 **Status:** Accepted
 
@@ -256,7 +289,7 @@ No-match conditions produce no fabricated grounded answer.
 
 ---
 
-# ADR-009 — AI Proposal Is Not Authorization
+# V2-ADR-009 — AI Proposal Is Not Authorization
 
 **Status:** Accepted
 
@@ -282,7 +315,7 @@ Tool arguments from the model are treated as untrusted input.
 
 ---
 
-# ADR-010 — ToolExecutionService Is the Execution Boundary
+# V2-ADR-010 — ToolExecutionService Is the Execution Boundary
 
 **Status:** Accepted
 
@@ -305,7 +338,7 @@ No Agent, Skill, webhook, controller, or background job may directly invoke tool
 
 ---
 
-# ADR-011 — Separate Skill Approval and Tool Human Approval
+# V2-ADR-011 — Separate Skill Approval and Tool Human Approval
 
 **Status:** Accepted
 
@@ -335,7 +368,7 @@ The two concepts must not be merged in future implementation.
 
 ---
 
-# ADR-012 — Approval Is Not Authorization
+# V2-ADR-012 — Approval Is Not Authorization
 
 **Status:** Accepted
 
@@ -355,7 +388,7 @@ Approval permits continuation past the human gate. It does not replace authoriza
 
 ---
 
-# ADR-013 — Agent Remains Bounded
+# V2-ADR-013 — Agent Remains Bounded
 
 **Status:** Accepted
 
@@ -378,7 +411,7 @@ Long-term memory is deferred.
 
 ---
 
-# ADR-014 — Reuse Existing Agent Run Persistence
+# V2-ADR-014 — Reuse Existing Agent Run Persistence
 
 **Status:** Accepted
 
@@ -416,7 +449,7 @@ tool_execution_records
 
 ---
 
-# ADR-015 — Tenant-Isolated Connector Credentials
+# V2-ADR-015 — Tenant-Isolated Connector Credentials
 
 **Status:** Accepted
 
@@ -451,7 +484,7 @@ This decision must be implemented before production connector use.
 
 ---
 
-# ADR-016 — Existing Connector Adapter Architecture Is Retained
+# V2-ADR-016 — Existing Connector Adapter Architecture Is Retained
 
 **Status:** Accepted
 
@@ -467,7 +500,7 @@ Do not replace the architecture merely because the default local mode is simulat
 
 ---
 
-# ADR-017 — Webhook Processing Does Not Route Through Agent in V2
+# V2-ADR-017 — Webhook Processing Does Not Route Through Agent in V2
 
 **Status:** Accepted
 
@@ -493,7 +526,7 @@ Agent routing may be evaluated later.
 
 ---
 
-# ADR-018 — Webhook Configuration Supports DB + Environment
+# V2-ADR-018 — Webhook Configuration Supports DB + Environment
 
 **Status:** Accepted
 
@@ -516,7 +549,7 @@ Platform/tenant administration can eventually manage webhook configuration at ru
 
 ---
 
-# ADR-019 — Webhook Reliability Is First-Class
+# V2-ADR-019 — Webhook Reliability Is First-Class
 
 **Status:** Accepted
 
@@ -538,7 +571,7 @@ State-changing actions require idempotency guarantees before retry.
 
 ---
 
-# ADR-020 — Reranking Is Deferred
+# V2-ADR-020 — Reranking Is Deferred
 
 **Status:** Accepted
 
@@ -555,7 +588,7 @@ Reranking can be reconsidered when:
 
 ---
 
-# ADR-021 — No Dedicated Incident Entity for V2
+# V2-ADR-021 — No Dedicated Incident Entity for V2
 
 **Status:** Accepted
 
@@ -576,7 +609,7 @@ A first-class incident entity requires a separate product requirement.
 
 ---
 
-# ADR-022 — Pagination Is Standard
+# V2-ADR-022 — Pagination Is Standard
 
 **Status:** Accepted
 
@@ -590,7 +623,7 @@ Use offset/page pagination initially unless a specific endpoint requires cursor 
 
 ---
 
-# ADR-023 — AI Evaluation Is a Release Requirement
+# V2-ADR-023 — AI Evaluation Is a Release Requirement
 
 **Status:** Accepted
 
@@ -639,7 +672,7 @@ No AI feature is considered production-ready solely because unit tests pass.
 
 ---
 
-# ADR-024 — AI Observability Includes Usage and Cost Signals
+# V2-ADR-024 — AI Observability Includes Usage and Cost Signals
 
 **Status:** Accepted
 
@@ -662,7 +695,7 @@ Cost is calculated from provider/model pricing configuration rather than hardcod
 
 ---
 
-# ADR-025 — PII Guard Is a Cross-Domain Boundary
+# V2-ADR-025 — PII Guard Is a Cross-Domain Boundary
 
 **Status:** Accepted
 
@@ -684,7 +717,7 @@ No domain may silently create a new path around PII controls.
 
 ---
 
-# ADR-026 — No Unnecessary Enterprise Infrastructure
+# V2-ADR-026 — No Unnecessary Enterprise Infrastructure
 
 **Status:** Accepted
 
@@ -706,7 +739,7 @@ The architecture must remain understandable by the team.
 
 ---
 
-# ADR-027 — V2 PR Discipline
+# V2-ADR-027 — V2 PR Discipline
 
 **Status:** Accepted
 
@@ -736,7 +769,7 @@ Do not combine unrelated refactors with V2 feature work.
 
 ---
 
-# ADR-028 — V2 Definition of Production-Ready
+# V2-ADR-028 — V2 Definition of Production-Ready
 
 **Status:** Accepted
 
@@ -760,7 +793,7 @@ A feature is production-ready only when:
 When documents disagree:
 
 ```text
-V2 ADR
+V2-ADR (this document)
   ↓
 V2 TRD
   ↓
@@ -771,7 +804,7 @@ Current implementation
 
 The current implementation is evidence of what exists, not permission to preserve a broken behavior.
 
-If a new repository fact contradicts these documents, stop the affected implementation and create/update an ADR before silently changing architecture.
+If a new repository fact contradicts these documents, stop the affected implementation and create/update a V2-ADR before silently changing architecture.
 
 ---
 

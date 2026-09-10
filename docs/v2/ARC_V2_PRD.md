@@ -760,4 +760,4 @@ AI domains must meet production-grade standards.
 
 Non-AI domains must be correct, secure, maintainable, and appropriately engineered without unnecessary complexity.
 
-This PRD governs product scope. The TDR governs implementation architecture. ADRs govern binding architectural decisions.
+This PRD governs product scope. The TRD governs implementation architecture. V2-ADRs govern binding architectural decisions.

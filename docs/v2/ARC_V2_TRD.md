@@ -124,16 +124,31 @@ Employee receives:
 
 - `knowledge:read`
 - `agent:execute`
+
+Employee must **NOT** receive:
+
 - `skill:execute`
 - `tool:execute`
 
-but direct execution remains constrained by deterministic policy.
+This is the final stakeholder architecture decision, superseding the prior C-1 interpretation that concluded Employee should receive only `knowledge:read`. See V2-ADR-005 for full rationale.
 
-Employee-facing workflows should primarily use Unified Intelligence/Agent.
+Employee-facing workflows use Unified Intelligence / Agent as the single execution boundary. The Employee initiates an Agent workflow; the Agent orchestrates Skills and Tools through SkillExecutionService and ToolExecutionService. Direct skill/tool invocation is not available to Employee.
 
-Direct skill/tool execution for employees is permitted only when the skill/tool policy classifies the operation as permitted for the principal. High-risk actions cannot become executable merely because the employee has the base permission.
+SkillExecutionService and ToolExecutionService remain independently authorization-aware and enforce deterministic execution policy. High-risk actions require human approval regardless of the requesting principal's base permissions.
 
-This resolves the Bala/Bharath conflict by preserving Bala's preferred user experience and execution architecture while satisfying Bharath's technical requirement that the lower execution services receive the permissions they independently enforce.
+### Security Model
+
+```text
+Employee
+  ↓
+Agent (bounded, decision schema, skill allowlisting)
+  ↓
+SkillExecutionService (preconditions, principal policy, allowed tools)
+  ↓
+ToolExecutionService (authorization, policy, validation, execution, audit)
+```
+
+One execution path. One set of controls. One audit trail.
 
 ## 6. Execution Policy
 
