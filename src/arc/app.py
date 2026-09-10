@@ -224,10 +224,10 @@ class Application:
             pii_guard=pii_guard,
         )
 
-        # Seed reference data (production-like multi-tenant environment).
-        # Idempotent: uses WHERE NOT EXISTS so re-runs after fresh DB,
-        # existing data, or partial state are all safe.
-        await self._seed_reference_data()
+        # Seed bootstrap data (PRD §6 demo users). Idempotent: uses
+        # WHERE NOT EXISTS so re-runs after fresh DB, existing data,
+        # or partial state are all safe.
+        await self._seed_bootstrap_data()
 
         # Register services in app context
         from arc.api.controllers import app_context
@@ -237,19 +237,40 @@ class Application:
         self._is_initialized = True
         print("Application initialized successfully!")
 
-    async def _seed_reference_data(self) -> None:
-        """Idempotent reference data provisioning.
+    async def _seed_bootstrap_data(self) -> None:
+        """Idempotent bootstrap provisioning (PRD §6 Test Users).
 
-        Seeds a production-like multi-tenant reference environment with
-        4 tenants, 17 users, 17 memberships, connectors, knowledge
-        documents, and skills. Uses ``WHERE NOT EXISTS`` guards so the
+        Seeds the documented demo user, tenant, and membership if they
+        do not already exist. Uses ``WHERE NOT EXISTS`` guards so the
         operation is safe on fresh databases, databases with existing
         data, or repeated startups.
         """
-        from arc.setup.reference_data import seed_reference_data
-
         async with self.db._connection_pool.acquire() as conn:
-            await seed_reference_data(conn)
+            await conn.execute(
+                """
+                INSERT INTO users (id, email, username, status, created_at, updated_at)
+                SELECT 'demo-user', 'demo@example.com', 'demo_user', 'active',
+                       NOW(), NOW()
+                WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = 'demo-user')
+                """
+            )
+            await conn.execute(
+                """
+                INSERT INTO tenants (id, name, status, created_at, updated_at)
+                SELECT 'demo-tenant', 'Demo Tenant', 'active', NOW(), NOW()
+                WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE id = 'demo-tenant')
+                """
+            )
+            await conn.execute(
+                """
+                INSERT INTO memberships (id, user_id, tenant_id, role, created_at, updated_at)
+                SELECT 'demo-membership', 'demo-user', 'demo-tenant', 'owner', NOW(), NOW()
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM memberships
+                    WHERE user_id = 'demo-user' AND tenant_id = 'demo-tenant'
+                )
+                """
+            )
 
     async def shutdown(self) -> None:
         """Shutdown the application."""

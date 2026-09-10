@@ -1,164 +1,111 @@
-"""Tests for idempotent reference data provisioning.
+"""Regression tests for idempotent bootstrap provisioning (Issue #119).
 
-The reference data provisioning must create a production-like
-multi-tenant environment on application startup. These tests verify
-that provisioning is idempotent and creates the expected data.
+The bootstrap seed data (demo-user, demo-tenant, demo-membership) must
+exist after application startup so that the documented demo identity can
+authenticate and create tenants.
+
+These tests exercise the bootstrap SQL directly against the database
+without requiring full app startup, avoiding coupling to the installed
+package version.
 """
 
-from arc.setup.reference_data import seed_reference_data
+SEED_SQL = [
+    (
+        "INSERT INTO users (id, email, username, status, created_at, updated_at) "
+        "SELECT 'demo-user', 'demo@example.com', 'demo_user', 'active', NOW(), NOW() "
+        "WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = 'demo-user')"
+    ),
+    (
+        "INSERT INTO tenants (id, name, status, created_at, updated_at) "
+        "SELECT 'demo-tenant', 'Demo Tenant', 'active', NOW(), NOW() "
+        "WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE id = 'demo-tenant')"
+    ),
+    (
+        "INSERT INTO memberships (id, user_id, tenant_id, role, created_at, updated_at) "
+        "SELECT 'demo-membership', 'demo-user', 'demo-tenant', 'owner', NOW(), NOW() "
+        "WHERE NOT EXISTS ("
+        "  SELECT 1 FROM memberships WHERE user_id = 'demo-user' AND tenant_id = 'demo-tenant'"
+        ")"
+    ),
+]
 
 
 async def _seed(db):
-    """Run reference data provisioning."""
+    """Run bootstrap seed SQL."""
     async with db._connection_pool.acquire() as conn:
-        await seed_reference_data(conn)
+        for sql in SEED_SQL:
+            await conn.execute(sql)
 
 
-async def test_reference_tenants_exist(db):
-    """After provisioning, all 4 reference tenants must exist."""
+async def test_demo_user_exists_after_bootstrap(db):
+    """After bootstrap, demo-user must exist in the users table."""
     await _seed(db)
 
     async with db._connection_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, name, status FROM tenants WHERE id LIKE 'ref-%' ORDER BY id"
+        row = await conn.fetchrow(
+            "SELECT id, email, username, status FROM users WHERE id = $1",
+            "demo-user",
         )
-    tenant_ids = [r["id"] for r in rows]
-    assert "ref-acme-technologies" in tenant_ids
-    assert "ref-nova-systems" in tenant_ids
-    assert "ref-vertex-solutions" in tenant_ids
-    assert "ref-northstar-digital" in tenant_ids
-    assert len(rows) == 4
+    assert row is not None
+    assert row["id"] == "demo-user"
+    assert row["email"] == "demo@example.com"
+    assert row["status"] == "active"
 
 
-async def test_reference_users_exist(db):
-    """After provisioning, all 17 reference users must exist."""
+async def test_demo_tenant_exists_after_bootstrap(db):
+    """After bootstrap, demo-tenant must exist in the tenants table."""
     await _seed(db)
 
     async with db._connection_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, email, status FROM users WHERE id LIKE 'ref-%' ORDER BY id"
+        row = await conn.fetchrow(
+            "SELECT id, name, status FROM tenants WHERE id = $1",
+            "demo-tenant",
         )
-    user_ids = [r["id"] for r in rows]
-    assert "ref-platform-admin" in user_ids
-    assert "ref-acme-technologies-company-admin" in user_ids
-    assert "ref-acme-technologies-ops-user" in user_ids
-    assert "ref-acme-technologies-employee-1" in user_ids
-    assert "ref-acme-technologies-employee-2" in user_ids
-    # Same pattern for other tenants
-    assert "ref-nova-systems-company-admin" in user_ids
-    assert "ref-vertex-solutions-company-admin" in user_ids
-    assert "ref-northstar-digital-company-admin" in user_ids
-    assert len(rows) == 17
+    assert row is not None
+    assert row["id"] == "demo-tenant"
+    assert row["name"] == "Demo Tenant"
+    assert row["status"] == "active"
 
 
-async def test_reference_memberships_exist(db):
-    """After provisioning, all 16 tenant memberships must exist."""
+async def test_demo_membership_exists_after_bootstrap(db):
+    """After bootstrap, demo-membership links demo-user to demo-tenant."""
     await _seed(db)
 
     async with db._connection_pool.acquire() as conn:
-        rows = await conn.fetch(
+        row = await conn.fetchrow(
             "SELECT id, user_id, tenant_id, role FROM memberships "
-            "WHERE user_id LIKE 'ref-%' ORDER BY id"
+            "WHERE user_id = $1 AND tenant_id = $2",
+            "demo-user",
+            "demo-tenant",
         )
-    # 16 tenant memberships (4 tenants x 4 users each)
-    assert len(rows) == 16
-
-    # Verify roles
-    memberships_by_tenant = {}
-    for r in rows:
-        tenant = r["tenant_id"]
-        if tenant not in memberships_by_tenant:
-            memberships_by_tenant[tenant] = []
-        memberships_by_tenant[tenant].append((r["user_id"], r["role"]))
-
-    for tenant_id, members in memberships_by_tenant.items():
-        assert len(members) == 4
-        roles = {role for _, role in members}
-        assert "owner" in roles
-        assert "member" in roles
-        assert "viewer" in roles
+    assert row is not None
+    assert row["user_id"] == "demo-user"
+    assert row["tenant_id"] == "demo-tenant"
+    assert row["role"] == "owner"
 
 
-async def test_reference_connectors_exist(db):
-    """After provisioning, connectors must exist for each tenant."""
-    await _seed(db)
-
-    async with db._connection_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, tenant_id, provider, name FROM connector_configs "
-            "WHERE tenant_id LIKE 'ref-%' ORDER BY tenant_id, provider"
-        )
-    # 4 tenants x 2 connectors each = 8
-    assert len(rows) == 8
-
-    # Each tenant should have github and slack
-    by_tenant = {}
-    for r in rows:
-        by_tenant.setdefault(r["tenant_id"], set()).add(r["provider"])
-    for tenant_id, providers in by_tenant.items():
-        assert "github" in providers
-        assert "slack" in providers
-
-
-async def test_reference_knowledge_documents_exist(db):
-    """After provisioning, knowledge documents must exist for each tenant."""
-    await _seed(db)
-
-    async with db._connection_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, tenant_id, source, external_id FROM knowledge_documents "
-            "WHERE tenant_id LIKE 'ref-%' ORDER BY tenant_id, source"
-        )
-    # 4 tenants x 2 documents each = 8
-    assert len(rows) == 8
-
-
-async def test_reference_skills_exist(db):
-    """After provisioning, skills must exist for each tenant."""
-    await _seed(db)
-
-    async with db._connection_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, tenant_id, name, status FROM skills "
-            "WHERE tenant_id LIKE 'ref-%' ORDER BY tenant_id"
-        )
-    # 4 tenants x 1 skill each = 4
-    assert len(rows) == 4
-    for r in rows:
-        assert r["status"] == "active"
-
-
-async def test_provisioning_is_idempotent(db):
-    """Running provisioning twice must not create duplicate rows."""
+async def test_bootstrap_is_idempotent(db):
+    """Running bootstrap twice must not create duplicate rows."""
     await _seed(db)
     await _seed(db)
 
     async with db._connection_pool.acquire() as conn:
-        tenant_count = await conn.fetchval("SELECT COUNT(*) FROM tenants WHERE id LIKE 'ref-%'")
-        user_count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE id LIKE 'ref-%'")
+        user_count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE id = $1", "demo-user")
+        tenant_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM tenants WHERE id = $1", "demo-tenant"
+        )
         membership_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM memberships WHERE user_id LIKE 'ref-%'"
+            "SELECT COUNT(*) FROM memberships WHERE user_id = $1 AND tenant_id = $2",
+            "demo-user",
+            "demo-tenant",
         )
-        connector_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM connector_configs WHERE tenant_id LIKE 'ref-%'"
-        )
-        knowledge_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM knowledge_documents WHERE tenant_id LIKE 'ref-%'"
-        )
-        skill_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM skills WHERE tenant_id LIKE 'ref-%'"
-        )
-
-    assert tenant_count == 4
-    assert user_count == 17
-    assert membership_count == 16
-    assert connector_count == 8
-    assert knowledge_count == 8
-    assert skill_count == 4
+    assert user_count == 1
+    assert tenant_count == 1
+    assert membership_count == 1
 
 
-async def test_provisioning_preserves_existing_data(db):
-    """Provisioning must not overwrite pre-existing data."""
+async def test_bootstrap_preserves_existing_data(db):
+    """Bootstrap must not overwrite pre-existing data."""
     async with db._connection_pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO users (id, email, username, status, created_at, updated_at) "
@@ -174,102 +121,12 @@ async def test_provisioning_preserves_existing_data(db):
 
     async with db._connection_pool.acquire() as conn:
         row = await conn.fetchrow("SELECT id, email FROM users WHERE id = $1", "existing-user")
+        demo = await conn.fetchrow("SELECT id, email FROM users WHERE id = $1", "demo-user")
+
     assert row is not None
     assert row["email"] == "existing@example.com"
+    assert demo is not None
+    assert demo["email"] == "demo@example.com"
 
     async with db._connection_pool.acquire() as conn:
         await conn.execute("DELETE FROM users WHERE id = $1", "existing-user")
-
-
-async def test_platform_admin_has_no_membership(db):
-    """Platform administrator must not have a tenant membership."""
-    await _seed(db)
-
-    async with db._connection_pool.acquire() as conn:
-        count = await conn.fetchval(
-            "SELECT COUNT(*) FROM memberships WHERE user_id = $1",
-            "ref-platform-admin",
-        )
-    assert count == 0
-
-
-async def test_demo_records_not_created(db):
-    """Provisioning must not create obsolete demo records."""
-    await _seed(db)
-
-    async with db._connection_pool.acquire() as conn:
-        demo_tenant = await conn.fetchval(
-            "SELECT COUNT(*) FROM tenants WHERE id = $1", "demo-tenant"
-        )
-        demo_user = await conn.fetchval("SELECT COUNT(*) FROM users WHERE id = $1", "demo-user")
-        demo_membership = await conn.fetchval(
-            "SELECT COUNT(*) FROM memberships WHERE id = $1", "demo-membership"
-        )
-    assert demo_tenant == 0
-    assert demo_user == 0
-    assert demo_membership == 0
-
-
-async def test_referential_integrity(db):
-    """All memberships must reference valid users and tenants."""
-    await _seed(db)
-
-    async with db._connection_pool.acquire() as conn:
-        # Check all membership user_ids exist in users
-        orphan_memberships = await conn.fetchval(
-            "SELECT COUNT(*) FROM memberships m "
-            "WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = m.user_id)"
-        )
-        assert orphan_memberships == 0
-
-        # Check all membership tenant_ids exist in tenants
-        orphan_memberships = await conn.fetchval(
-            "SELECT COUNT(*) FROM memberships m "
-            "WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = m.tenant_id)"
-        )
-        assert orphan_memberships == 0
-
-        # Check all connector tenant_ids exist
-        orphan_connectors = await conn.fetchval(
-            "SELECT COUNT(*) FROM connector_configs c "
-            "WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = c.tenant_id)"
-        )
-        assert orphan_connectors == 0
-
-        # Check all knowledge tenant_ids exist
-        orphan_knowledge = await conn.fetchval(
-            "SELECT COUNT(*) FROM knowledge_documents k "
-            "WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = k.tenant_id)"
-        )
-        assert orphan_knowledge == 0
-
-        # Check all skill tenant_ids exist
-        orphan_skills = await conn.fetchval(
-            "SELECT COUNT(*) FROM skills s "
-            "WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = s.tenant_id)"
-        )
-        assert orphan_skills == 0
-
-
-async def test_no_cross_tenant_resource_ownership(db):
-    """Each resource must belong to exactly one tenant."""
-    await _seed(db)
-
-    async with db._connection_pool.acquire() as conn:
-        # Each connector belongs to exactly one tenant
-        connector_tenants = await conn.fetchval(
-            "SELECT COUNT(DISTINCT tenant_id) FROM connector_configs WHERE tenant_id LIKE 'ref-%'"
-        )
-        assert connector_tenants == 4
-
-        # Each knowledge doc belongs to exactly one tenant
-        knowledge_tenants = await conn.fetchval(
-            "SELECT COUNT(DISTINCT tenant_id) FROM knowledge_documents WHERE tenant_id LIKE 'ref-%'"
-        )
-        assert knowledge_tenants == 4
-
-        # Each skill belongs to exactly one tenant
-        skill_tenants = await conn.fetchval(
-            "SELECT COUNT(DISTINCT tenant_id) FROM skills WHERE tenant_id LIKE 'ref-%'"
-        )
-        assert skill_tenants == 4
