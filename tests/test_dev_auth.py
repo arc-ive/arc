@@ -11,13 +11,14 @@ Verifies the dev auth endpoint:
 
 from unittest.mock import AsyncMock, MagicMock
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from arc.api.dev_auth import (
     _ALLOWED_USER_IDS,
     _REFERENCE_USERS,
     dev_auth_router,
 )
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 
 class TestReferenceUserAllowlist:
