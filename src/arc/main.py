@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from arc.api.auth_routes import auth_router
 from arc.api.controllers import api_router
 from arc.api.csrf import CSRFMiddleware
+from arc.api.dev_auth import dev_auth_router
 from arc.api.dev_controllers import dev_router
 from arc.api.middleware import RequestTelemetryMiddleware
 
@@ -95,6 +96,7 @@ app.include_router(auth_router)
 # with endpoints backed by an authenticated principal.
 if os.getenv("APP_ENV") == "development":
     app.include_router(dev_router)
+    app.include_router(dev_auth_router)
 
 
 @app.on_event("startup")

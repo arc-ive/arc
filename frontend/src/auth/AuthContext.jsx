@@ -45,6 +45,29 @@ export function AuthProvider({ children }) {
     window.location.href = `${base}/auth/google`
   }, [])
 
+  const devSignIn = useCallback(async (userId) => {
+    // Development-only: authenticate as a reference user via dev auth endpoint.
+    // The POST creates a real server-side session and sets cookies.
+    // Then we call /auth/me to populate the session state.
+    const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
+    const res = await fetch(`${base}/internal/dev/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const detail = (await res.json().catch(() => ({}))).detail || 'Login failed'
+      throw new Error(detail)
+    }
+    // Session cookies are now set — fetch the canonical /auth/me response
+    const meRes = await fetch(`${base}/auth/me`, { credentials: 'include' })
+    if (!meRes.ok) throw new Error('Failed to load profile')
+    const sessionData = await meRes.json()
+    setSession(sessionData)
+    setLoading(false)
+  }, [])
+
   const signOut = useCallback(async () => {
     try {
       await client.post('/auth/logout')
@@ -85,10 +108,11 @@ export function AuthProvider({ children }) {
       isDemo: demo,
       isLoading: loading,
       signIn,
+      devSignIn,
       signOut,
       enterDemo,
     }),
-    [session, principal, demo, loading, signIn, signOut, enterDemo],
+    [session, principal, demo, loading, signIn, devSignIn, signOut, enterDemo],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
