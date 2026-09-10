@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from arc.api.auth_routes import _set_csrf_cookie, _set_session_cookie
+from arc.db.connection import NotFoundError
 from arc.security.session import SessionService
 
 logger = logging.getLogger(__name__)
@@ -205,8 +206,9 @@ async def dev_login(
 
     # Look up the user in the database (must exist from reference data seeding)
     db = request.app.state.db
-    user = await db.get_user(user_id)
-    if user is None:
+    try:
+        user = await db.get_user(user_id)
+    except NotFoundError:
         logger.error(
             "dev_auth_login_error user_id=%s reason=user_not_in_database",
             user_id,

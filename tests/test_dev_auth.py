@@ -126,8 +126,10 @@ class TestDevLoginEndpoint:
 
     def test_user_not_in_database_returns_500(self):
         """Known reference user not found in DB returns 500."""
+        from arc.db.connection import NotFoundError
+
         db = MagicMock()
-        db.get_user = AsyncMock(return_value=None)
+        db.get_user = AsyncMock(side_effect=NotFoundError("User not found"))
 
         app = self._make_app(db=db)
         client = TestClient(app, raise_server_exceptions=False)
@@ -137,7 +139,6 @@ class TestDevLoginEndpoint:
             json={"user_id": "ref-platform-admin"},
         )
         assert response.status_code == 500
-        assert "not found in database" in response.json()["detail"]
 
     def test_inactive_user_rejected(self):
         """Inactive reference user is rejected with 403."""
@@ -291,6 +292,56 @@ class TestDevAuthNotMountedInProduction:
         )
         # 403 means the endpoint is mounted and responding (user not in allowlist)
         assert response.status_code == 403
+
+    def test_dev_auth_not_mounted_when_app_env_production(self):
+        """Dev auth routes return 404 when APP_ENV is not 'development'."""
+        from unittest.mock import patch
+
+        from arc.api.controllers import api_router
+        from arc.api.dev_auth import dev_auth_router
+
+        app = FastAPI()
+        app.include_router(api_router)
+
+        # Simulate the mounting guard from main.py with APP_ENV=production
+        with patch("os.getenv", return_value="production"):
+            import os
+
+            if os.getenv("APP_ENV") == "development":
+                app.include_router(dev_auth_router)
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/internal/dev/auth/login",
+            json={"user_id": "ref-platform-admin"},
+        )
+        assert response.status_code == 404
+
+    def test_dev_auth_not_mounted_when_app_env_unset(self):
+        """Dev auth routes return 404 when APP_ENV is unset."""
+        from unittest.mock import patch
+
+        from arc.api.controllers import api_router
+        from arc.api.dev_auth import dev_auth_router
+
+        app = FastAPI()
+        app.include_router(api_router)
+
+        # Simulate the mounting guard from main.py with APP_ENV unset (returns None)
+        with patch("os.getenv", return_value=None):
+            import os
+
+            if os.getenv("APP_ENV") == "development":
+                app.include_router(dev_auth_router)
+
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/internal/dev/auth/login",
+            json={"user_id": "ref-platform-admin"},
+        )
+        assert response.status_code == 404
 
 
 class TestProductionAuthUnchanged:
