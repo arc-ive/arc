@@ -9,13 +9,19 @@ Endpoints:
 Security properties:
 - State parameter validated on callback (CSRF protection)
 - Nonce validated on ID token verification (replay protection)
-- Session cookie is HttpOnly, Secure, SameSite=Lax
+- Session cookie is HttpOnly, SameSite=Lax
+- Cookie Secure attribute is derived from APP_ENV:
+    APP_ENV=development → Secure=False (allows HTTP local development)
+    any other value or unset → Secure=True (production default)
+- Post-authentication redirects use FRONTEND_URL (backend origin differs
+  from frontend origin in development)
 - Unknown Google identities are NOT auto-provisioned
 - Disabled users are rejected
 - Session invalidation on logout
 """
 
 import logging
+import os
 import secrets
 from typing import Any, Dict, Optional
 
@@ -30,6 +36,39 @@ from arc.security.session import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, SessionS
 logger = logging.getLogger(__name__)
 
 auth_router = APIRouter()
+
+
+def _cookie_secure() -> bool:
+    """Derive the Secure cookie attribute from the runtime environment.
+
+    HTTP (development) requires Secure=False so browsers actually store
+    the cookie.  HTTPS (production) requires Secure=True to prevent
+    network-level interception.
+
+    The decision is based on ``APP_ENV`` — the same signal already used
+    in ``main.py`` to gate development-only routes.  An explicit
+    ``APP_ENV=development`` disables Secure; every other value (including
+    unset) keeps Secure enabled.
+    """
+    return os.getenv("APP_ENV") != "development"
+
+
+_FRONTEND_URL_DEFAULT = "http://localhost:5173"
+
+
+def _frontend_url() -> str:
+    """Return the frontend base URL for browser redirects after authentication.
+
+    After successful authentication, the backend redirects the browser to
+    ``{FRONTEND_URL}/app``. On authentication failure, the redirect goes
+    to ``{FRONTEND_URL}/login?error=...``.
+
+    The backend runs on a different origin (port 8000) than the frontend
+    (port 5173), so relative URLs like ``/app`` would resolve to the
+    backend which has no frontend routes.
+    """
+    return os.getenv("FRONTEND_URL", _FRONTEND_URL_DEFAULT)
+
 
 # Google OIDC session cookie keys (stored in the session cookie, not DB)
 _STATE_KEY = "google_state"
@@ -58,7 +97,7 @@ def _set_session_cookie(response: Response, session_id: str, max_age: int) -> No
         value=session_id,
         max_age=max_age,
         httponly=True,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="lax",
         path="/",
     )
@@ -75,7 +114,7 @@ def _set_csrf_cookie(response: Response, csrf_token: str, max_age: int) -> None:
         value=csrf_token,
         max_age=max_age,
         httponly=False,  # JavaScript needs to read this
-        secure=True,
+        secure=_cookie_secure(),
         samesite="strict",  # CSRF token should only be sent on same-site
         path="/",
     )
@@ -86,7 +125,7 @@ def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         httponly=True,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="lax",
         path="/",
     )
@@ -97,7 +136,7 @@ def _clear_csrf_cookie(response: Response) -> None:
     response.delete_cookie(
         key=CSRF_COOKIE_NAME,
         httponly=False,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="strict",
         path="/",
     )
@@ -144,7 +183,7 @@ async def google_login(request: Request) -> RedirectResponse:
         value=state,
         max_age=cookie_max_age,
         httponly=True,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="lax",
         path="/",
     )
@@ -153,7 +192,7 @@ async def google_login(request: Request) -> RedirectResponse:
         value=nonce,
         max_age=cookie_max_age,
         httponly=True,
-        secure=True,
+        secure=_cookie_secure(),
         samesite="lax",
         path="/",
     )
@@ -230,12 +269,24 @@ async def google_callback(
                 identity.email,
             )
             # Redirect to login with error message
-            error_url = "/login?error=access_denied"
+            error_url = f"{_frontend_url()}/login?error=access_denied"
             resp = RedirectResponse(url=error_url, status_code=status.HTTP_302_FOUND)
             _clear_session_cookie(resp)
             # Clear OIDC cookies
-            resp.delete_cookie("arc_oidc_state", path="/")
-            resp.delete_cookie("arc_oidc_nonce", path="/")
+            resp.delete_cookie(
+                "arc_oidc_state",
+                httponly=True,
+                secure=_cookie_secure(),
+                samesite="lax",
+                path="/",
+            )
+            resp.delete_cookie(
+                "arc_oidc_nonce",
+                httponly=True,
+                secure=_cookie_secure(),
+                samesite="lax",
+                path="/",
+            )
             return resp
 
         # Create server-side session
@@ -256,7 +307,7 @@ async def google_callback(
         )
 
         # Set session cookie and CSRF cookie, then redirect to app
-        resp = RedirectResponse(url="/app", status_code=status.HTTP_302_FOUND)
+        resp = RedirectResponse(url=f"{_frontend_url()}/app", status_code=status.HTTP_302_FOUND)
         # Derive cookie max_age from the actual session lifetime so cookies
         # cannot disagree with the server-side session expiry.
         session_max_age = int((session.expires_at - session.created_at).total_seconds())
@@ -264,8 +315,20 @@ async def google_callback(
         _set_csrf_cookie(resp, session.csrf_token, max_age=session_max_age)
 
         # Clear OIDC cookies
-        resp.delete_cookie("arc_oidc_state", path="/")
-        resp.delete_cookie("arc_oidc_nonce", path="/")
+        resp.delete_cookie(
+            "arc_oidc_state",
+            httponly=True,
+            secure=_cookie_secure(),
+            samesite="lax",
+            path="/",
+        )
+        resp.delete_cookie(
+            "arc_oidc_nonce",
+            httponly=True,
+            secure=_cookie_secure(),
+            samesite="lax",
+            path="/",
+        )
 
         return resp
 
@@ -273,11 +336,23 @@ async def google_callback(
         # Structured security event: failed authentication
         ip = request.client.host if request.client else "unknown"
         logger.warning("auth_login_failed error=%s ip=%s", type(e).__name__, ip)
-        error_url = "/login?error=auth_failed"
+        error_url = f"{_frontend_url()}/login?error=auth_failed"
         resp = RedirectResponse(url=error_url, status_code=status.HTTP_302_FOUND)
         _clear_session_cookie(resp)
-        resp.delete_cookie("arc_oidc_state", path="/")
-        resp.delete_cookie("arc_oidc_nonce", path="/")
+        resp.delete_cookie(
+            "arc_oidc_state",
+            httponly=True,
+            secure=_cookie_secure(),
+            samesite="lax",
+            path="/",
+        )
+        resp.delete_cookie(
+            "arc_oidc_nonce",
+            httponly=True,
+            secure=_cookie_secure(),
+            samesite="lax",
+            path="/",
+        )
         return resp
 
 

@@ -4,7 +4,8 @@ Verifies that state-changing requests are protected by CSRF tokens,
 while Bearer token API clients remain compatible.
 """
 
-from unittest.mock import AsyncMock, MagicMock
+import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -73,16 +74,17 @@ class TestCSRFCookieHandling:
         assert "httponly" not in cookie_header.lower() or "httponly=false" in cookie_header.lower()
 
     def test_csrf_cookie_secure(self):
-        """CSRF cookie should be Secure."""
+        """CSRF cookie should be Secure in production."""
         from fastapi import Response
 
         from arc.api.auth_routes import _set_csrf_cookie
 
-        response = Response()
-        _set_csrf_cookie(response, "test-token", max_age=3600)
+        with patch.dict(os.environ, {"APP_ENV": "production"}):
+            response = Response()
+            _set_csrf_cookie(response, "test-token", max_age=3600)
 
-        cookie_header = response.headers.get("set-cookie", "")
-        assert "secure" in cookie_header.lower()
+            cookie_header = response.headers.get("set-cookie", "")
+            assert "secure" in cookie_header.lower()
 
     def test_csrf_cookie_same_site_strict(self):
         """CSRF cookie should have SameSite=Strict."""
