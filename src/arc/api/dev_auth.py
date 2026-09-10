@@ -150,6 +150,34 @@ _ALLOWED_USER_IDS = frozenset(u["user_id"] for u in _REFERENCE_USERS)
 
 
 # ---------------------------------------------------------------------------
+# Dev login personas (role-level selector)
+# ---------------------------------------------------------------------------
+
+_DEV_PERSONAS: List[Dict[str, Any]] = [
+    {
+        "persona": "Platform Admin",
+        "description": "Global platform administrator with full permissions",
+        "user_id": "ref-platform-admin",
+    },
+    {
+        "persona": "Tenant Admin",
+        "description": "Company administrator for Acme Technologies",
+        "user_id": "ref-acme-technologies-company-admin",
+    },
+    {
+        "persona": "Employee",
+        "description": "Employee with knowledge:read access at Acme Technologies",
+        "user_id": "ref-acme-technologies-employee-1",
+    },
+    {
+        "persona": "Viewer",
+        "description": "Viewer with read-only access at Acme Technologies",
+        "user_id": "ref-acme-technologies-employee-2",
+    },
+]
+
+
+# ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
 
@@ -171,6 +199,17 @@ async def list_reference_users() -> Dict[str, Any]:
     memberships so the frontend can render a useful selector.
     """
     return {"users": _REFERENCE_USERS}
+
+
+@dev_auth_router.get("/reference-personas")
+async def list_reference_personas() -> Dict[str, Any]:
+    """List role-level personas for the primary dev login selector.
+
+    Returns a small set of role-level personas, each mapped to a
+    representative seeded reference user. The frontend displays these
+    as the primary development login options.
+    """
+    return {"personas": _DEV_PERSONAS}
 
 
 @dev_auth_router.post("/login")

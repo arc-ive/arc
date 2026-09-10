@@ -52,16 +52,16 @@ function GoogleIcon() {
 
 function DevUserSelector() {
   const { devSignIn } = useAuth()
-  const [users, setUsers] = useState([])
+  const [personas, setPersonas] = useState([])
   const [selected, setSelected] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
-    fetch(`${base}/internal/dev/auth/reference-users`, { credentials: 'include' })
+    fetch(`${base}/internal/dev/auth/reference-personas`, { credentials: 'include' })
       .then((r) => r.json())
-      .then((data) => setUsers(data.users || []))
+      .then((data) => setPersonas(data.personas || []))
       .catch(() => {})
   }, [])
 
@@ -77,7 +77,7 @@ function DevUserSelector() {
     }
   }
 
-  if (users.length === 0) return null
+  if (personas.length === 0) return null
 
   return (
     <div className="mt-3 border-t border-zinc-800 pt-4">
@@ -89,11 +89,10 @@ function DevUserSelector() {
         value={selected}
         onChange={(e) => { setSelected(e.target.value); setError(null) }}
       >
-        <option value="">Select a reference user…</option>
-        {users.map((u) => (
-          <option key={u.user_id} value={u.user_id}>
-            {u.display_name} — {u.role.replace(/_/g, ' ')}
-            {u.tenants.length > 0 ? ` (${u.tenants[0].tenant_name})` : ''}
+        <option value="">Select a role persona…</option>
+        {personas.map((p) => (
+          <option key={p.user_id} value={p.user_id}>
+            {p.persona} — {p.description}
           </option>
         ))}
       </Select>
