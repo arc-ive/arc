@@ -4,6 +4,7 @@ Verifies Google OIDC flow, session management, and logout endpoints.
 These tests verify the route logic without requiring the full app state.
 """
 
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -22,32 +23,34 @@ class TestSessionCookieHelpers:
     """Test session cookie helper functions."""
 
     def test_set_session_cookie_sets_correct_attributes(self):
-        """Session cookie has correct security attributes."""
-        response = MagicMock()
-        _set_session_cookie(response, "test-session-id", max_age=86400)
+        """Session cookie has correct security attributes in production."""
+        with patch.dict(os.environ, {"APP_ENV": "production"}):
+            response = MagicMock()
+            _set_session_cookie(response, "test-session-id", max_age=86400)
 
-        response.set_cookie.assert_called_once()
-        call_kwargs = response.set_cookie.call_args[1]
-        assert call_kwargs["key"] == "arc_session"
-        assert call_kwargs["value"] == "test-session-id"
-        assert call_kwargs["max_age"] == 86400
-        assert call_kwargs["httponly"] is True
-        assert call_kwargs["secure"] is True
-        assert call_kwargs["samesite"] == "lax"
-        assert call_kwargs["path"] == "/"
+            response.set_cookie.assert_called_once()
+            call_kwargs = response.set_cookie.call_args[1]
+            assert call_kwargs["key"] == "arc_session"
+            assert call_kwargs["value"] == "test-session-id"
+            assert call_kwargs["max_age"] == 86400
+            assert call_kwargs["httponly"] is True
+            assert call_kwargs["secure"] is True
+            assert call_kwargs["samesite"] == "lax"
+            assert call_kwargs["path"] == "/"
 
     def test_clear_session_cookie_deletes_cookie(self):
-        """Clearing session cookie deletes it with correct attributes."""
-        response = MagicMock()
-        _clear_session_cookie(response)
+        """Clearing session cookie deletes it with correct attributes in production."""
+        with patch.dict(os.environ, {"APP_ENV": "production"}):
+            response = MagicMock()
+            _clear_session_cookie(response)
 
-        response.delete_cookie.assert_called_once()
-        call_kwargs = response.delete_cookie.call_args[1]
-        assert call_kwargs["key"] == "arc_session"
-        assert call_kwargs["httponly"] is True
-        assert call_kwargs["secure"] is True
-        assert call_kwargs["samesite"] == "lax"
-        assert call_kwargs["path"] == "/"
+            response.delete_cookie.assert_called_once()
+            call_kwargs = response.delete_cookie.call_args[1]
+            assert call_kwargs["key"] == "arc_session"
+            assert call_kwargs["httponly"] is True
+            assert call_kwargs["secure"] is True
+            assert call_kwargs["samesite"] == "lax"
+            assert call_kwargs["path"] == "/"
 
 
 class TestGetCurrentUser:
