@@ -33,6 +33,7 @@ CSRF_EXEMPT_PATHS = frozenset(
         "/auth/google",
         "/auth/callback",
         "/health",
+        "/internal/dev/auth/login",
     }
 )
 

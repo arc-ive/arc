@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { ShieldCheck } from 'lucide-react'
+import { ShieldCheck, Users } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
+import { Select } from '../../components/ui/Select.jsx'
 
 function Brand() {
   return (
@@ -48,6 +50,69 @@ function GoogleIcon() {
   )
 }
 
+function DevUserSelector() {
+  const { devSignIn } = useAuth()
+  const [users, setUsers] = useState([])
+  const [selected, setSelected] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
+    fetch(`${base}/internal/dev/auth/reference-users`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setUsers(data.users || []))
+      .catch(() => {})
+  }, [])
+
+  const handleLogin = async () => {
+    if (!selected) return
+    setLoading(true)
+    setError(null)
+    try {
+      await devSignIn(selected)
+    } catch (e) {
+      setError(e.message)
+      setLoading(false)
+    }
+  }
+
+  if (users.length === 0) return null
+
+  return (
+    <div className="mt-3 border-t border-zinc-800 pt-4">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+        <Users className="size-3" />
+        Development Login
+      </div>
+      <Select
+        value={selected}
+        onChange={(e) => { setSelected(e.target.value); setError(null) }}
+      >
+        <option value="">Select a reference user…</option>
+        {users.map((u) => (
+          <option key={u.user_id} value={u.user_id}>
+            {u.display_name} — {u.role.replace(/_/g, ' ')}
+            {u.tenants.length > 0 ? ` (${u.tenants[0].tenant_name})` : ''}
+          </option>
+        ))}
+      </Select>
+      {error && (
+        <p className="mt-1.5 text-xs text-red-400">{error}</p>
+      )}
+      <Button
+        onClick={handleLogin}
+        disabled={!selected || loading}
+        variant="secondary"
+        size="sm"
+        className="mt-2 w-full"
+      >
+        {loading ? 'Signing in…' : 'Sign in as reference user'}
+      </Button>
+    </div>
+  )
+}
+
 export function LoginPage() {
   const { isAuthenticated, signIn, isLoading } = useAuth()
   const [searchParams] = useSearchParams()
@@ -89,6 +154,8 @@ export function LoginPage() {
               <GoogleIcon />
               Sign in with Google
             </Button>
+
+            {import.meta.env.DEV && <DevUserSelector />}
           </div>
         </Card>
 
