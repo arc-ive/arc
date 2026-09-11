@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from arc.db.connection import DuplicateKeyError
 from arc.domain.models import (
     ConnectorCredential,
     ConnectorCredentialAudit,
@@ -74,7 +75,12 @@ class ConnectorCredentialService:
             key_version=key_version,
             created_at=datetime.now(timezone.utc),
         )
-        await self._repo.create(credential)
+        try:
+            await self._repo.create(credential)
+        except DuplicateKeyError:
+            raise ConnectorCredentialError(
+                f"Credential already exists for provider {provider.value}. Use rotate to update."
+            )
 
         await self._record_audit(
             context.tenant_id,

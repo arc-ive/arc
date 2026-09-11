@@ -692,6 +692,43 @@ class TestRaceSafety:
         with pytest.raises(ConnectorCredentialError, match="already exists"):
             await svc.create_credential(ctx, ConnectorProvider.GITHUB, "token2")
 
+    @pytest.mark.asyncio
+    async def test_duplicate_key_error_from_repo_translated_to_credential_error(self):
+        """DuplicateKeyError from repository (race condition) becomes 409, not 500.
+
+        Simulates the TOCTOU race: two requests pass the existence pre-check,
+        the second insert hits the DB UNIQUE constraint. The service must
+        translate DuplicateKeyError into ConnectorCredentialError so the
+        controller returns 409 Conflict.
+        """
+        from arc.db.connection import DuplicateKeyError
+
+        class RaceConditionRepository(FakeConnectorCredentialRepository):
+            """Repository that raises DuplicateKeyError on second create (simulates race)."""
+
+            def __init__(self):
+                super().__init__()
+                self._create_count = 0
+
+            async def create(self, credential):
+                self._create_count += 1
+                if self._create_count > 1:
+                    raise DuplicateKeyError("simulated race condition")
+                return await super().create(credential)
+
+        repo = RaceConditionRepository()
+        enc = _make_encryption_service()
+        svc = ConnectorCredentialService(credential_repo=repo, encryption_service=enc)
+
+        ctx = _context()
+        # First create succeeds
+        await svc.create_credential(ctx, ConnectorProvider.GITHUB, "token1")
+
+        # Second create: pre-check passes (fake repo has it), but create raises DuplicateKeyError
+        # Service must translate this to ConnectorCredentialError
+        with pytest.raises(ConnectorCredentialError, match="already exists"):
+            await svc.create_credential(ctx, ConnectorProvider.GITHUB, "token2")
+
 
 # ---------------------------------------------------------------------------
 # O. Integration — PostgreSQL repository contract
