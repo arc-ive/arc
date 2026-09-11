@@ -273,7 +273,7 @@ class TestSearchInputValidation:
             headers={"Authorization": f"Bearer {token}"},
             params={"query": ""},
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_blank_query_is_rejected(
         self, client, seeded, make_token, authorization_override
@@ -302,7 +302,7 @@ class TestSearchInputValidation:
                 headers={"Authorization": f"Bearer {token}"},
                 params={"query": "remote", "limit": invalid},
             )
-            assert response.status_code == 400, f"limit={invalid}"
+            assert response.status_code == 422, f"limit={invalid}"
 
 
 class TestSearchPiiBoundary:
@@ -563,7 +563,7 @@ class TestSearchSourceFiltering:
         await user_repo.delete(user_b.id)
         await tenant_repo.delete(tenant_b.id)
 
-    async def test_invalid_source_type_returns_400(
+    async def test_invalid_source_type_returns_422(
         self, client, seeded, make_token, authorization_override
     ):
         tenant, user, _ = seeded
@@ -575,8 +575,8 @@ class TestSearchSourceFiltering:
             headers={"Authorization": f"Bearer {token}"},
             params={"query": "remote", "source_type": "invalid_source"},
         )
-        assert response.status_code == 400
-        assert "Invalid source_type" in response.json()["detail"]
+        assert response.status_code == 422
+        assert any("source_type" in e["loc"] for e in response.json()["detail"])
 
     async def test_multiple_source_types_isolated_from_each_other(
         self, client, seeded, make_token, authorization_override

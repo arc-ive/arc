@@ -293,7 +293,7 @@ class TestSkillExecutionValidation:
 
         assert response.status_code == 400
 
-    async def test_non_object_body_is_400(
+    async def test_non_object_body_is_422(
         self, client, repositories, make_token, authorization_override
     ):
         tenant, token = await self._setup(client, repositories, make_token, authorization_override)
@@ -305,4 +305,4 @@ class TestSkillExecutionValidation:
             json=["not", "an", "object"],
         )
 
-        assert response.status_code == 400
+        assert response.status_code == 422

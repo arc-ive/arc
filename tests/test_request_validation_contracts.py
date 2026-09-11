@@ -1,0 +1,226 @@
+"""Request-contract validation tests (Issue #135).
+
+Derived from the issue's Definition of Done — "Invalid requests receive 422
+with structured error details" — not from the models that implement it.
+
+Every assertion here describes behaviour a caller can observe: a status code,
+and for 422s the fact that ``detail`` is a structured list rather than a bare
+string. Before this issue's change, the payloads below produced 400, 500, or a
+silent 200 instead.
+"""
+
+import pytest
+
+from arc.security.models import ApplicationRole
+
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _assert_structured_422(response):
+    """A 422 must carry FastAPI's structured per-field detail, not a string."""
+    assert response.status_code == 422, (
+        f"expected 422, got {response.status_code}: {response.text[:200]}"
+    )
+    detail = response.json()["detail"]
+    assert isinstance(detail, list), f"detail must be a structured list, got {type(detail)}"
+    assert detail, "detail list must not be empty"
+    assert "loc" in detail[0], f"each error must identify the offending field: {detail[0]}"
+
+
+@pytest.fixture
+def admin(seeded, make_token, authorization_override):
+    """Platform administrator principal for the seeded tenant."""
+    tenant, user, _ = seeded
+    authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+    return tenant, user, make_token(user.id)
+
+
+class TestMissingRequiredFieldsReturn422:
+    """R3: inputs that previously produced an unhandled 500 now return 422."""
+
+    async def test_create_tenant_with_empty_body(self, client, admin):
+        _, _, token = admin
+        response = client.post("/tenants", json={}, headers=_auth(token))
+        _assert_structured_422(response)
+
+    async def test_create_user_with_empty_body(self, client, admin):
+        _, _, token = admin
+        response = client.post("/users", json={}, headers=_auth(token))
+        _assert_structured_422(response)
+
+    async def test_create_skill_with_empty_body(self, client, admin):
+        tenant, _, token = admin
+        response = client.post(f"/skills?tenant_id={tenant.id}", json={}, headers=_auth(token))
+        _assert_structured_422(response)
+
+    async def test_create_tenant_with_empty_string_id(self, client, admin):
+        """An explicitly empty string is as invalid as a missing key."""
+        _, _, token = admin
+        response = client.post(
+            "/tenants", json={"id": "", "name": "Valid Name"}, headers=_auth(token)
+        )
+        _assert_structured_422(response)
+
+    async def test_update_tenant_with_empty_string_name(self, client, admin):
+        tenant, _, token = admin
+        response = client.put(f"/tenants/{tenant.id}", json={"name": ""}, headers=_auth(token))
+        _assert_structured_422(response)
+
+
+class TestResumeStepsReturn422:
+    """R3: a malformed ``previous_steps`` entry produced an unhandled 500.
+
+    The entries were read by direct dictionary indexing with an unwrapped enum
+    parse, outside the handler's try/except. Body validation now runs before
+    the handler, so the skill need not exist for the request to be rejected.
+    """
+
+    async def test_skill_resume_with_missing_step_key(self, client, admin):
+        tenant, _, token = admin
+        response = client.post(
+            f"/skills/does-not-matter/resume?tenant_id={tenant.id}",
+            json={
+                "approval_id": "a-1",
+                "tool_calls": [{"tool": "x"}],
+                "resume_from_step": 0,
+                "previous_steps": [{"tool_name": "x", "status": "success"}],
+            },
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_agent_resume_with_invalid_step_status(self, client, admin):
+        tenant, _, token = admin
+        response = client.post(
+            "/agent/runs/resume",
+            json={
+                "tenant_id": tenant.id,
+                "approval_id": "a-1",
+                "skill_id": "s-1",
+                "tool_calls": [{"tool": "x"}],
+                "resume_from_step": 0,
+                "previous_steps": [
+                    {"sequence": 1, "tool_name": "x", "status": "not-a-real-status"}
+                ],
+            },
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+
+class TestWrongTypesReturn422:
+    """R1/R2: a field of the wrong type is rejected with structured detail."""
+
+    async def test_create_tenant_with_non_string_id(self, client, admin):
+        _, _, token = admin
+        response = client.post(
+            "/tenants", json={"id": 12345, "name": "Valid Name"}, headers=_auth(token)
+        )
+        _assert_structured_422(response)
+
+    async def test_create_tenant_with_list_body(self, client, admin):
+        _, _, token = admin
+        response = client.post("/tenants", json=["not", "an", "object"], headers=_auth(token))
+        _assert_structured_422(response)
+
+
+class TestInvalidEnumValuesReturn422:
+    """R4: fields backed by a domain enum reject unknown values."""
+
+    async def test_membership_role(self, client, admin):
+        tenant, user, token = admin
+        response = client.post(
+            f"/tenants/{tenant.id}/memberships",
+            json={"user_id": user.id, "role": "emperor"},
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_skill_status(self, client, admin):
+        tenant, _, token = admin
+        response = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            json={"name": "S", "purpose": "P", "status": "banana"},
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_knowledge_source(self, client, admin):
+        tenant, _, token = admin
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            json={"title": "T", "content": "C", "source": "hearsay"},
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_connector_provider(self, client, admin):
+        tenant, _, token = admin
+        response = client.post(
+            f"/tenants/{tenant.id}/connectors",
+            json={"name": "C", "provider": "myspace"},
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+
+class TestQueryParameterBounds:
+    """R5: query parameters are bounded declaratively, so violations are 422."""
+
+    async def test_knowledge_search_limit_above_maximum(self, client, admin):
+        tenant, _, token = admin
+        response = client.get(
+            f"/tenants/{tenant.id}/knowledge/search?query=anything&limit=9999",
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_knowledge_search_limit_below_minimum(self, client, admin):
+        tenant, _, token = admin
+        response = client.get(
+            f"/tenants/{tenant.id}/knowledge/search?query=anything&limit=0",
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_knowledge_search_invalid_source_type(self, client, admin):
+        tenant, _, token = admin
+        response = client.get(
+            f"/tenants/{tenant.id}/knowledge/search?query=anything&source_type=gossip",
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_approvals_invalid_status_filter(self, client, admin):
+        tenant, _, token = admin
+        response = client.get(
+            f"/tenants/{tenant.id}/approvals?status=nonsense",
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+
+class TestValidRequestsAreUnaffected:
+    """R8: the contract only tightens for invalid input, never for valid input."""
+
+    async def test_valid_knowledge_search_still_succeeds(self, client, admin):
+        tenant, _, token = admin
+        response = client.get(
+            f"/tenants/{tenant.id}/knowledge/search?query=anything&limit=5",
+            headers=_auth(token),
+        )
+        assert response.status_code == 200
+
+    async def test_valid_approvals_listing_still_succeeds(self, client, admin):
+        tenant, _, token = admin
+        response = client.get(
+            f"/tenants/{tenant.id}/approvals?status=pending", headers=_auth(token)
+        )
+        assert response.status_code == 200
+
+    async def test_approvals_listing_without_filter_still_succeeds(self, client, admin):
+        tenant, _, token = admin
+        response = client.get(f"/tenants/{tenant.id}/approvals", headers=_auth(token))
+        assert response.status_code == 200

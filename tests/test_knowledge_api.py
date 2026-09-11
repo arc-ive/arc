@@ -231,7 +231,7 @@ class TestKnowledgePiiBoundary:
             headers={"Authorization": f"Bearer {token}"},
             json=_knowledge_payload(source="not-a-source"),
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_missing_content_is_rejected(
         self, client, seeded, make_token, authorization_override
@@ -245,7 +245,7 @@ class TestKnowledgePiiBoundary:
             headers={"Authorization": f"Bearer {token}"},
             json=_knowledge_payload(content=""),
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
 
 class TestKnowledgePathTenantConsistency:

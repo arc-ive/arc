@@ -17,10 +17,10 @@ endpoints now build trusted tenant context from that principal.
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 
 from arc.api.controllers import app_context
-from arc.domain.models import UserRole
+from arc.api.schemas import DevMembershipCreateRequest
 from arc.security.authorization import MEMBERSHIP_CREATE
 from arc.security.dependencies import require_permission
 from arc.security.models import AuthenticatedPrincipal
@@ -33,7 +33,7 @@ dev_router = APIRouter(prefix="/internal/dev")
 async def create_membership(
     user_id: str,
     tenant_id: str,
-    membership_data: Dict[str, Any],
+    membership_data: DevMembershipCreateRequest,
     _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
     user_service: UserService = Depends(lambda: app_context.user_service),
 ) -> Dict[str, Any]:
@@ -47,16 +47,11 @@ async def create_membership(
     membership role; tenant-context role derivation never trusts caller
     input.
     """
-    role_str = membership_data.get("role", "member")
-    try:
-        role = UserRole(role_str)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid role: {role_str}"
-        )
-
     membership = await user_service.associate_user_with_tenant(
-        user_id=user_id, tenant_id=tenant_id, role=role, membership_id=membership_data.get("id")
+        user_id=user_id,
+        tenant_id=tenant_id,
+        role=membership_data.role,
+        membership_id=membership_data.id,
     )
 
     return {

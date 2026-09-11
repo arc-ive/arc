@@ -25,9 +25,26 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from arc.api.pagination import PaginationParams, paginate
+from arc.api.schemas import (
+    AgentResumeRequest,
+    AgentRunRequest,
+    ApprovalDecisionRequest,
+    ConnectorCreateRequest,
+    IntelligenceQueryRequest,
+    KnowledgeCreateRequest,
+    MembershipCreateRequest,
+    SkillCreateRequest,
+    SkillExecuteRequest,
+    SkillResumeRequest,
+    SkillUpdateRequest,
+    TenantCreateRequest,
+    TenantUpdateRequest,
+    ToolExecuteRequest,
+    UserCreateRequest,
+)
 from arc.db.connection import DatabaseError, DuplicateKeyError, NotFoundError
 from arc.domain.models import (
     AgentExecutionResult,
@@ -40,13 +57,9 @@ from arc.domain.models import (
     Skill,
     SkillExecutionResult,
     SkillExecutionStepOutcome,
-    SkillRiskLevel,
-    SkillStatus,
     Tenant,
     TenantContext,
-    ToolExecutionStatus,
     User,
-    UserRole,
     WebhookEvent,
 )
 from arc.security.authorization import (
@@ -305,7 +318,7 @@ async def get_authenticated_profile(
 
 @api_router.post("/tenants")
 async def create_tenant(
-    tenant_data: Dict[str, Any],
+    tenant_data: TenantCreateRequest,
     principal: AuthenticatedPrincipal = Depends(require_permission(TENANT_CREATE)),
     tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
 ) -> Dict[str, Any]:
@@ -318,9 +331,9 @@ async def create_tenant(
     for the new tenant. The tenant and membership are created atomically.
     """
     tenant = Tenant(
-        id=tenant_data.get("id"),
-        name=tenant_data.get("name"),
-        status=tenant_data.get("status", "active"),
+        id=tenant_data.id,
+        name=tenant_data.name,
+        status=tenant_data.status,
     )
     try:
         created_tenant = await tenant_service.create_tenant_with_owner(tenant, principal.user_id)
@@ -411,7 +424,7 @@ async def get_tenant(
 @api_router.put("/tenants/{tenant_id}")
 async def update_tenant(
     tenant_id: str,
-    tenant_data: Dict[str, Any],
+    tenant_data: TenantUpdateRequest,
     context: TenantContext = Depends(require_tenant_permission(TENANT_UPDATE)),
     tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
 ) -> Dict[str, Any]:
@@ -422,15 +435,19 @@ async def update_tenant(
     Cross-tenant access and missing membership are denied.
     """
     existing = await tenant_service.get_tenant(tenant_id)
+    # Only keys the caller actually sent may override stored values; an omitted
+    # key must leave the existing value untouched, while an explicit empty
+    # string clears the field.
+    provided = tenant_data.model_dump(exclude_unset=True)
     updated = Tenant(
         id=existing.id,
-        name=tenant_data.get("name", existing.name),
+        name=provided.get("name", existing.name),
         status=existing.status,
-        industry=tenant_data.get("industry", existing.industry),
-        address=tenant_data.get("address", existing.address),
-        phone=tenant_data.get("phone", existing.phone),
-        website=tenant_data.get("website", existing.website),
-        logo_url=tenant_data.get("logo_url", existing.logo_url),
+        industry=provided.get("industry", existing.industry),
+        address=provided.get("address", existing.address),
+        phone=provided.get("phone", existing.phone),
+        website=provided.get("website", existing.website),
+        logo_url=provided.get("logo_url", existing.logo_url),
         created_at=existing.created_at,
         updated_at=datetime.now(timezone.utc),
     )
@@ -451,7 +468,7 @@ async def update_tenant(
 
 @api_router.post("/users")
 async def create_user(
-    user_data: Dict[str, Any],
+    user_data: UserCreateRequest,
     _: AuthenticatedPrincipal = Depends(require_permission(USER_CREATE)),
     user_service: UserService = Depends(lambda: app_context.user_service),
 ) -> Dict[str, Any]:
@@ -461,10 +478,10 @@ async def create_user(
     (PLATFORM_ADMINISTRATOR). No tenant context is required.
     """
     user = User(
-        id=user_data.get("id"),
-        email=user_data.get("email"),
-        username=user_data.get("username"),
-        status=user_data.get("status", "active"),
+        id=user_data.id,
+        email=user_data.email,
+        username=user_data.username,
+        status=user_data.status,
     )
     try:
         created_user = await user_service.create_user(user)
@@ -552,7 +569,7 @@ async def get_users_for_tenant(
 @api_router.post("/tenants/{tenant_id}/memberships")
 async def create_membership(
     tenant_id: str,
-    membership_data: Dict[str, Any],
+    membership_data: MembershipCreateRequest,
     _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
     user_service: UserService = Depends(lambda: app_context.user_service),
 ) -> Dict[str, Any]:
@@ -563,24 +580,9 @@ async def create_membership(
     provisioning inputs, not the caller's identity. The caller's identity
     comes from the authenticated principal (JWT ``sub``).
     """
-    user_id = membership_data.get("user_id")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="user_id is required",
-        )
-
-    role_str = membership_data.get("role", "member")
-    try:
-        role = UserRole(role_str)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid role: {role_str}"
-        )
-
     try:
         membership = await user_service.associate_user_with_tenant(
-            user_id=user_id, tenant_id=tenant_id, role=role
+            user_id=membership_data.user_id, tenant_id=tenant_id, role=membership_data.role
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
@@ -687,7 +689,7 @@ def _skill_response(skill: Skill) -> Dict[str, Any]:
 
 @api_router.post("/skills")
 async def create_skill(
-    skill_data: Dict[str, Any],
+    skill_data: SkillCreateRequest,
     tenant_id: str,
     context: TenantContext = Depends(require_tenant_permission(SKILL_CREATE)),
     skill_service: SkillService = Depends(lambda: app_context.skill_service),
@@ -704,37 +706,23 @@ async def create_skill(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    try:
-        status_value = SkillStatus(skill_data.get("status", "active"))
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill status")
-
-    risk_value = skill_data.get("risk")
-    if risk_value is not None:
-        try:
-            risk_value = SkillRiskLevel(risk_value)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill risk level"
-            )
-
     skill = Skill(
         id="unassigned",
         tenant_id=context.tenant_id,
-        name=skill_data.get("name"),
-        purpose=skill_data.get("purpose"),
-        version=skill_data.get("version", "1"),
-        inputs=skill_data.get("inputs", []),
-        preconditions=skill_data.get("preconditions", []),
-        steps=skill_data.get("steps", []),
-        constraints=skill_data.get("constraints", []),
-        allowed_tools=skill_data.get("allowed_tools", []),
-        approval_required=skill_data.get("approval_required", False),
-        expected_output=skill_data.get("expected_output"),
-        failure_behavior=skill_data.get("failure_behavior"),
-        provenance=skill_data.get("provenance"),
-        risk=risk_value,
-        status=status_value,
+        name=skill_data.name,
+        purpose=skill_data.purpose,
+        version=skill_data.version,
+        inputs=skill_data.inputs,
+        preconditions=skill_data.preconditions,
+        steps=skill_data.steps,
+        constraints=skill_data.constraints,
+        allowed_tools=skill_data.allowed_tools,
+        approval_required=skill_data.approval_required,
+        expected_output=skill_data.expected_output,
+        failure_behavior=skill_data.failure_behavior,
+        provenance=skill_data.provenance,
+        risk=skill_data.risk,
+        status=skill_data.status,
     )
     try:
         created_skill = await skill_service.create_skill(context, skill)
@@ -795,7 +783,7 @@ async def get_skill(
 @api_router.put("/skills/{skill_id}")
 async def update_skill(
     skill_id: str,
-    skill_data: Dict[str, Any],
+    skill_data: SkillUpdateRequest,
     tenant_id: str,
     context: TenantContext = Depends(require_tenant_permission(SKILL_UPDATE)),
     skill_service: SkillService = Depends(lambda: app_context.skill_service),
@@ -817,38 +805,26 @@ async def update_skill(
     except NotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
 
-    try:
-        status_value = SkillStatus(skill_data.get("status", existing.status.value))
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill status")
-
-    risk_value = skill_data.get("risk", existing.risk)
-    if risk_value is not None and not isinstance(risk_value, SkillRiskLevel):
-        try:
-            risk_value = SkillRiskLevel(risk_value)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill risk level"
-            )
-
     from dataclasses import replace
 
+    # Only keys the caller actually sent may override stored values.
+    provided = skill_data.model_dump(exclude_unset=True)
     updated_skill = replace(
         existing,
-        name=skill_data.get("name", existing.name),
-        purpose=skill_data.get("purpose", existing.purpose),
-        version=skill_data.get("version", existing.version),
-        inputs=skill_data.get("inputs", existing.inputs),
-        preconditions=skill_data.get("preconditions", existing.preconditions),
-        steps=skill_data.get("steps", existing.steps),
-        constraints=skill_data.get("constraints", existing.constraints),
-        allowed_tools=skill_data.get("allowed_tools", existing.allowed_tools),
-        approval_required=skill_data.get("approval_required", existing.approval_required),
-        expected_output=skill_data.get("expected_output", existing.expected_output),
-        failure_behavior=skill_data.get("failure_behavior", existing.failure_behavior),
-        provenance=skill_data.get("provenance", existing.provenance),
-        risk=risk_value,
-        status=status_value,
+        name=provided.get("name", existing.name),
+        purpose=provided.get("purpose", existing.purpose),
+        version=provided.get("version", existing.version),
+        inputs=provided.get("inputs", existing.inputs),
+        preconditions=provided.get("preconditions", existing.preconditions),
+        steps=provided.get("steps", existing.steps),
+        constraints=provided.get("constraints", existing.constraints),
+        allowed_tools=provided.get("allowed_tools", existing.allowed_tools),
+        approval_required=provided.get("approval_required", existing.approval_required),
+        expected_output=provided.get("expected_output", existing.expected_output),
+        failure_behavior=provided.get("failure_behavior", existing.failure_behavior),
+        provenance=provided.get("provenance", existing.provenance),
+        risk=provided.get("risk", existing.risk),
+        status=provided.get("status", existing.status),
     )
 
     try:
@@ -923,7 +899,7 @@ def _skill_execution_response(result: SkillExecutionResult) -> Dict[str, Any]:
 async def execute_skill(
     skill_id: str,
     tenant_id: str,
-    body: Optional[Any] = Body(default=None),
+    body: SkillExecuteRequest,
     context: TenantContext = Depends(require_tenant_permission(SKILL_EXECUTE)),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
@@ -948,18 +924,13 @@ async def execute_skill(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
-        )
-
     try:
         result = await execution_service.execute(
             context,
             principal,
             skill_id,
-            body.get("tool_calls"),
-            body.get("satisfied_preconditions", []),
+            body.tool_calls,
+            body.satisfied_preconditions,
             authorization,
         )
     except NotFoundError:
@@ -1001,7 +972,7 @@ def _agent_run_response(result: AgentExecutionResult) -> Dict[str, Any]:
 
 
 async def _require_tenant_permission_from_body(
-    body: Optional[Any] = Body(default=None),
+    request: Request,
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
 ) -> TenantContext:
@@ -1010,7 +981,17 @@ async def _require_tenant_permission_from_body(
     Reads ``tenant_id`` from the JSON request body instead of query params,
     then delegates to the trusted tenant context service and checks the
     ``AGENT_EXECUTE`` permission.
+
+    The body is read from the request rather than declared as a ``Body``
+    parameter: the routes using this dependency declare their own typed body
+    model, and two body declarations on one route would make FastAPI embed
+    both under their parameter names, changing the wire contract.
     """
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+
     if not isinstance(body, dict):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
@@ -1046,7 +1027,7 @@ async def _require_tenant_permission_from_body(
 
 @api_router.post("/agent/runs")
 async def run_agent(
-    body: Optional[Any] = Body(default=None),
+    body: AgentRunRequest,
     context: TenantContext = Depends(_require_tenant_permission_from_body),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
@@ -1075,14 +1056,14 @@ async def run_agent(
     max_steps_reached) are returned as structured 200 responses;
     malformed request metadata is rejected with 400.
     """
-    tenant_id = body.get("tenant_id")
+    tenant_id = body.tenant_id
     _require_path_tenant_matches_context(tenant_id, context)
 
     try:
         result = await agent_service.run(
             context,
             principal,
-            body.get("goal"),
+            body.goal,
             authorization,
         )
     except ValueError as exc:
@@ -1174,9 +1155,9 @@ def _knowledge_match_response(match: KnowledgeMatch) -> Dict[str, Any]:
 @api_router.get("/tenants/{tenant_id}/knowledge/search")
 async def search_knowledge(
     tenant_id: str,
-    query: str,
-    limit: int = 5,
-    source_type: Optional[str] = Query(default=None),
+    query: str = Query(min_length=1),
+    limit: int = Query(default=5, ge=1, le=50),
+    source_type: Optional[KnowledgeSource] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
     retrieval_service: RetrievalService = Depends(lambda: app_context.retrieval_service),
 ):
@@ -1198,31 +1179,15 @@ async def search_knowledge(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    if not query or not query.strip():
+    if not query.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Search query cannot be empty",
         )
-    if limit < 1 or limit > 50:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Search limit must be between 1 and 50",
-        )
-
-    resolved_source_type: Optional[KnowledgeSource] = None
-    if source_type is not None:
-        try:
-            resolved_source_type = KnowledgeSource(source_type)
-        except ValueError:
-            valid_values = [s.value for s in KnowledgeSource]
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid source_type. Must be one of: {', '.join(valid_values)}",
-            )
 
     try:
         matches = await retrieval_service.search(
-            context, query, limit=limit, source_type=resolved_source_type
+            context, query, limit=limit, source_type=source_type
         )
     except EmbeddingError:
         raise HTTPException(
@@ -1256,7 +1221,7 @@ def _intelligence_answer_response(answer: IntelligenceAnswer) -> Dict[str, Any]:
 @api_router.post("/tenants/{tenant_id}/intelligence/query")
 async def query_unified_intelligence(
     tenant_id: str,
-    body: Optional[Any] = Body(default=None),
+    body: IntelligenceQueryRequest,
     context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
@@ -1285,27 +1250,8 @@ async def query_unified_intelligence(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    if body is None or not isinstance(body, dict):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Request body must be a JSON object",
-        )
-
-    query = body.get("query")
-    limit = body.get("limit", 5)
-
-    if not isinstance(query, str) or not query.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Query must be a non-empty string",
-        )
-    # bool is a subclass of int: a boolean limit must be rejected
-    # explicitly, never accepted as an integer.
-    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 50:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Limit must be an integer between 1 and 50",
-        )
+    query = body.query
+    limit = body.limit
 
     try:
         answer = await intelligence_service.answer_query(
@@ -1328,7 +1274,7 @@ async def query_unified_intelligence(
 @api_router.post("/tenants/{tenant_id}/knowledge")
 async def create_knowledge_document(
     tenant_id: str,
-    knowledge_data: Dict[str, Any],
+    knowledge_data: KnowledgeCreateRequest,
     context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_CREATE)),
     knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
 ) -> Dict[str, Any]:
@@ -1356,18 +1302,11 @@ async def create_knowledge_document(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    source_value = knowledge_data.get("source")
-    try:
-        source = KnowledgeSource(source_value)
-    except (TypeError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid knowledge source"
-        )
-
-    provenance = knowledge_data.get("provenance")
-    content = knowledge_data.get("content")
-    version = knowledge_data.get("version", 1)
-    external_id = knowledge_data.get("external_id")
+    source = knowledge_data.source
+    provenance = knowledge_data.provenance
+    content = knowledge_data.content
+    version = knowledge_data.version
+    external_id = knowledge_data.external_id
 
     try:
         document = await knowledge_service.ingest_document(
@@ -1504,7 +1443,7 @@ async def list_tools(
 async def execute_tool(
     tenant_id: str,
     name: str,
-    body: Dict[str, Any],
+    body: ToolExecuteRequest,
     context: TenantContext = Depends(require_tenant_permission(TOOL_EXECUTE)),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
@@ -1524,8 +1463,8 @@ async def execute_tool(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    raw_input = body.get("input", {})
-    approval_id = body.get("approval_id")
+    raw_input = body.input
+    approval_id = body.approval_id
 
     try:
         result = await tool_service.execute_tool(
@@ -1599,7 +1538,7 @@ async def list_connectors(
 
 @api_router.post("/tenants/{tenant_id}/connectors")
 async def create_connector(
-    connector_data: Dict[str, Any],
+    connector_data: ConnectorCreateRequest,
     tenant_id: str,
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_CREATE)),
     connector_service: ConnectorService = Depends(lambda: app_context.connector_service),
@@ -1615,24 +1554,9 @@ async def create_connector(
     _require_path_tenant_matches_context(tenant_id, context)
 
     try:
-        provider = ConnectorProvider(connector_data.get("provider"))
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid connector provider",
+        created = await connector_service.create_connector(
+            context, connector_data.provider, connector_data.name, connector_data.target
         )
-
-    name = connector_data.get("name")
-    if not isinstance(name, str) or not name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Connector name cannot be empty",
-        )
-
-    target = connector_data.get("target", "")
-
-    try:
-        created = await connector_service.create_connector(context, provider, name, target)
     except DuplicateKeyError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -2337,7 +2261,7 @@ def _approval_payload(approval) -> Dict[str, Any]:
 @api_router.get("/tenants/{tenant_id}/approvals")
 async def list_approval_requests(
     tenant_id: str,
-    status_filter: Optional[str] = Query(default=None, alias="status"),
+    status_filter: Optional[ApprovalStatus] = Query(default=None, alias="status"),
     limit: Optional[int] = Query(default=None),
     offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
@@ -2351,17 +2275,9 @@ async def list_approval_requests(
     pending rows are reported as ``expired`` (lazy derivation). Responses
     contain redacted summaries only -- never raw tool arguments.
     """
-    status_value: Optional[ApprovalStatus] = None
-    if status_filter is not None:
-        try:
-            status_value = ApprovalStatus(status_filter)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status filter"
-            )
     params = PaginationParams.from_query(limit, offset)
     approvals, total = await human_approval_service.list_requests_paginated(
-        context, params.limit, params.offset, status_value
+        context, params.limit, params.offset, status_filter
     )
     return paginate([_approval_payload(a) for a in approvals], total, params)
 
@@ -2389,7 +2305,7 @@ async def get_approval_request(
 async def decide_approval_request(
     tenant_id: str,
     approval_id: str,
-    decision_data: Dict[str, Any],
+    decision_data: ApprovalDecisionRequest,
     context: TenantContext = Depends(require_tenant_permission(APPROVAL_DECIDE)),
     human_approval_service: HumanApprovalService = Depends(
         lambda: app_context.human_approval_service
@@ -2403,13 +2319,9 @@ async def decide_approval_request(
     terminal ``expired``. Execution never happens here: consuming an
     approved request remains an authorized ToolExecutionService flow.
     """
-    decision_raw = decision_data.get("decision")
-    if decision_raw not in ("approve", "reject"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="decision must be 'approve' or 'reject'",
-        )
-    decision = ApprovalStatus.APPROVED if decision_raw == "approve" else ApprovalStatus.REJECTED
+    decision = (
+        ApprovalStatus.APPROVED if decision_data.decision == "approve" else ApprovalStatus.REJECTED
+    )
     try:
         approval = await human_approval_service.decide_request(
             context, context.user_id, approval_id, decision
@@ -2436,7 +2348,7 @@ async def decide_approval_request(
 async def resume_skill_execution(
     skill_id: str,
     tenant_id: str,
-    body: Optional[Any] = Body(default=None),
+    body: SkillResumeRequest,
     context: TenantContext = Depends(require_tenant_permission(SKILL_EXECUTE)),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
@@ -2455,44 +2367,21 @@ async def resume_skill_execution(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
-        )
+    approval_id = body.approval_id
+    tool_calls = body.tool_calls
+    resume_from_step = body.resume_from_step
 
-    approval_id = body.get("approval_id")
-    tool_calls = body.get("tool_calls")
-    resume_from_step = body.get("resume_from_step")
-    previous_steps_raw = body.get("previous_steps", [])
-
-    if not approval_id or not isinstance(approval_id, str):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="approval_id is required",
+    previous_steps = [
+        SkillExecutionStepOutcome(
+            sequence=step.sequence,
+            tool_name=step.tool_name,
+            status=step.status,
+            tool_version=step.tool_version,
+            output=step.output,
+            error_kind=step.error_kind,
         )
-    if not isinstance(tool_calls, list) or not tool_calls:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="tool_calls is required and must be a non-empty list",
-        )
-    if not isinstance(resume_from_step, int) or resume_from_step < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="resume_from_step is required and must be a non-negative integer",
-        )
-
-    previous_steps = []
-    for raw_step in previous_steps_raw:
-        previous_steps.append(
-            SkillExecutionStepOutcome(
-                sequence=raw_step["sequence"],
-                tool_name=raw_step["tool_name"],
-                status=ToolExecutionStatus(raw_step["status"]),
-                tool_version=raw_step.get("tool_version"),
-                output=raw_step.get("output"),
-                error_kind=raw_step.get("error_kind"),
-            )
-        )
+        for step in body.previous_steps
+    ]
 
     try:
         result = await execution_service.execute(
@@ -2500,7 +2389,7 @@ async def resume_skill_execution(
             principal,
             skill_id,
             tool_calls,
-            body.get("satisfied_preconditions", []),
+            body.satisfied_preconditions,
             authorization,
             approval_id=approval_id,
             resume_from_step=resume_from_step,
@@ -2516,7 +2405,7 @@ async def resume_skill_execution(
 
 @api_router.post("/agent/runs/resume")
 async def resume_agent_execution(
-    body: Optional[Any] = Body(default=None),
+    body: AgentResumeRequest,
     context: TenantContext = Depends(_require_tenant_permission_from_body),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization: AuthorizationService = Depends(get_authorization_service),
@@ -2532,50 +2421,22 @@ async def resume_agent_execution(
 
     Requires ``agent:execute`` and a trusted X-10 tenant context.
     """
-    if not isinstance(body, dict):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Request body must be an object"
-        )
+    approval_id = body.approval_id
+    skill_id = body.skill_id
+    tool_calls = body.tool_calls
+    resume_from_step = body.resume_from_step
 
-    approval_id = body.get("approval_id")
-    skill_id = body.get("skill_id")
-    tool_calls = body.get("tool_calls")
-    resume_from_step = body.get("resume_from_step")
-    previous_steps_raw = body.get("previous_steps", [])
-
-    if not approval_id or not isinstance(approval_id, str):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="approval_id is required",
+    previous_steps = [
+        SkillExecutionStepOutcome(
+            sequence=step.sequence,
+            tool_name=step.tool_name,
+            status=step.status,
+            tool_version=step.tool_version,
+            output=step.output,
+            error_kind=step.error_kind,
         )
-    if not skill_id or not isinstance(skill_id, str):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="skill_id is required",
-        )
-    if not isinstance(tool_calls, list) or not tool_calls:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="tool_calls is required and must be a non-empty list",
-        )
-    if not isinstance(resume_from_step, int) or resume_from_step < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="resume_from_step is required and must be a non-negative integer",
-        )
-
-    previous_steps = []
-    for raw_step in previous_steps_raw:
-        previous_steps.append(
-            SkillExecutionStepOutcome(
-                sequence=raw_step["sequence"],
-                tool_name=raw_step["tool_name"],
-                status=ToolExecutionStatus(raw_step["status"]),
-                tool_version=raw_step.get("tool_version"),
-                output=raw_step.get("output"),
-                error_kind=raw_step.get("error_kind"),
-            )
-        )
+        for step in body.previous_steps
+    ]
 
     try:
         result = await execution_service.execute(
@@ -2583,7 +2444,7 @@ async def resume_agent_execution(
             principal,
             skill_id,
             tool_calls,
-            body.get("satisfied_preconditions", []),
+            body.satisfied_preconditions,
             authorization,
             approval_id=approval_id,
             resume_from_step=resume_from_step,

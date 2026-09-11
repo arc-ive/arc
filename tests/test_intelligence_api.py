@@ -238,7 +238,7 @@ class TestIntelligenceValidation:
             headers={"Authorization": f"Bearer {token}"},
             json=_query_payload(query=""),
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_missing_body_is_rejected(
         self, client, seeded, make_token, authorization_override
@@ -251,7 +251,7 @@ class TestIntelligenceValidation:
             f"/tenants/{tenant.id}/intelligence/query",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_limit_out_of_range_is_rejected(
         self, client, seeded, make_token, authorization_override
@@ -266,7 +266,7 @@ class TestIntelligenceValidation:
                 headers={"Authorization": f"Bearer {token}"},
                 json=_query_payload(limit=bad_limit),
             )
-            assert response.status_code == 400, bad_limit
+            assert response.status_code == 422, bad_limit
 
     async def test_non_string_query_is_rejected(
         self, client, seeded, make_token, authorization_override
@@ -281,8 +281,8 @@ class TestIntelligenceValidation:
                 headers={"Authorization": f"Bearer {token}"},
                 json=_query_payload(query=bad_query),
             )
-            assert response.status_code == 400, bad_query
-            assert response.json()["detail"] == "Query must be a non-empty string"
+            assert response.status_code == 422, bad_query
+            assert any("query" in error["loc"] for error in response.json()["detail"])
 
     async def test_boolean_limit_is_rejected(
         self, client, seeded, make_token, authorization_override
@@ -299,8 +299,8 @@ class TestIntelligenceValidation:
                 headers={"Authorization": f"Bearer {token}"},
                 json=_query_payload(limit=bad_limit),
             )
-            assert response.status_code == 400, bad_limit
-            assert response.json()["detail"] == "Limit must be an integer between 1 and 50"
+            assert response.status_code == 422, bad_limit
+            assert any("limit" in error["loc"] for error in response.json()["detail"])
 
     async def test_valid_integer_limit_is_accepted(
         self, client, seeded, make_token, authorization_override
@@ -330,8 +330,8 @@ class TestIntelligenceValidation:
                 headers={"Authorization": f"Bearer {token}"},
                 json=bad_body,
             )
-            assert response.status_code == 400, bad_body
-            assert response.json()["detail"] == "Request body must be a JSON object"
+            assert response.status_code == 422, bad_body
+            assert isinstance(response.json()["detail"], list)
 
 
 class TestIntelligencePiiBoundary:
