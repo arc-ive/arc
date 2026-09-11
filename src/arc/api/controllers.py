@@ -1907,8 +1907,12 @@ async def ingest_webhook_event(
     webhook_ingestion_service: WebhookIngestionService = Depends(
         lambda: app_context.webhook_ingestion_service
     ),
+    webhook_pipeline_service: WebhookPipelineService = Depends(
+        lambda: app_context.webhook_pipeline_service
+    ),
 ) -> Dict[str, Any]:
-    """Receive one inbound webhook delivery (machine-to-machine).
+    """Receive one inbound webhook delivery and automatically dispatch
+    to the downstream Skill pipeline (Issue #138, V2-ADR-017, PRD 17).
 
     NOT RBAC-gated by design (ADR-001 webhook security boundary):
     external senders hold no Arc identity. Authentication is per-endpoint
@@ -1921,12 +1925,11 @@ async def ingest_webhook_event(
     they return the original record with ``duplicate=true`` instead of
     creating a second row. Raw payloads are never persisted or returned.
 
-    Deliberate precedence: bodies larger than MAX_BODY_BYTES are rejected
-    BEFORE authentication/timestamp verification (controlled 400). This
-    prevents excessive unauthenticated buffering — an aborted read cannot
-    be HMAC-verified at all. Authentication behavior for bodies within
-    the limit is unchanged, and the oversize rejection is endpoint-
-    independent (it reveals nothing about endpoint validity).
+    After successful ingestion, the event is automatically dispatched
+    through the configured Skill pipeline (WebhookPipelineService).
+    Pipeline failures are non-blocking: the ingestion returns 201 with
+    the event in ``received`` status and the error is logged for manual
+    retry via ``POST /tenants/{tenant_id}/webhooks/process``.
     """
     body = await _read_capped_body(request, MAX_BODY_BYTES)
     timestamp_header = request.headers.get("X-Arc-Timestamp", "")
@@ -1951,6 +1954,34 @@ async def ingest_webhook_event(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook ingestion failed",
         )
+
+    # Automatic dispatch (Issue #138, V2-ADR-017): route non-duplicate
+    # events through the Skill pipeline immediately after ingestion.
+    # Duplicate deliveries are already recorded; pipeline processing
+    # is NOT re-triggered to avoid duplicate downstream execution.
+    if not result.duplicate:
+        try:
+            await webhook_pipeline_service.process(
+                result.event.tenant_id, result.event.event_id
+            )
+            # Refresh the event to reflect processed status.
+            result.event = await webhook_ingestion_service._repository.get_by_event_id(
+                result.event.event_id, result.event.tenant_id
+            )
+        except Exception:
+            # Pipeline failure is non-blocking: the event remains in
+            # ``received`` status for manual retry via the /process
+            # endpoint. Ingestion still returns 201.
+            logger.warning(
+                "Webhook auto-dispatch failed; event remains in 'received' "
+                "status for manual retry",
+                extra={
+                    "endpoint_id": endpoint_id,
+                    "event_id": result.event.event_id,
+                    "tenant_id": result.event.tenant_id,
+                },
+                exc_info=True,
+            )
 
     return _webhook_event_payload(result.event, result.duplicate)
 
