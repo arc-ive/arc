@@ -130,8 +130,9 @@ class SkillExecutionService:
     adds ONLY orchestration: ordering, gating, and structured outcomes.
     """
 
-    def __init__(self, skill_service: SkillService, tool_service: ToolExecutionService,
-                 record_repo=None):
+    def __init__(
+        self, skill_service: SkillService, tool_service: ToolExecutionService, record_repo=None
+    ):
         self.skill_service = skill_service
         self.tool_service = tool_service
         self.record_repo = record_repo
@@ -226,34 +227,43 @@ class SkillExecutionService:
         await self._persist_record(record)
 
         if skill.status is not SkillStatus.ACTIVE:
-            return await self._finalize(record, self._build_result(
-                context,
-                skill,
-                SkillExecutionStatus.FAILED,
-                error_kind=_ERROR_INACTIVE_SKILL,
-                steps=[],
-            ))
+            return await self._finalize(
+                record,
+                self._build_result(
+                    context,
+                    skill,
+                    SkillExecutionStatus.FAILED,
+                    error_kind=_ERROR_INACTIVE_SKILL,
+                    steps=[],
+                ),
+            )
 
         if not self.skill_service.preconditions_met(skill, conditions):
-            return await self._finalize(record, self._build_result(
-                context,
-                skill,
-                SkillExecutionStatus.PRECONDITION_FAILED,
-                error_kind=_ERROR_PRECONDITION_FAILED,
-                steps=[],
-            ))
+            return await self._finalize(
+                record,
+                self._build_result(
+                    context,
+                    skill,
+                    SkillExecutionStatus.PRECONDITION_FAILED,
+                    error_kind=_ERROR_PRECONDITION_FAILED,
+                    steps=[],
+                ),
+            )
 
         # Skill-level approval_required check: on first execution (no
         # approval_id), stop before any tool call.  On resume, skip this
         # gate — the approval was already granted.
         if skill.approval_required and approval_id is None:
-            return await self._finalize(record, self._build_result(
-                context,
-                skill,
-                SkillExecutionStatus.APPROVAL_REQUIRED,
-                error_kind=_ERROR_APPROVAL_REQUIRED,
-                steps=[],
-            ))
+            return await self._finalize(
+                record,
+                self._build_result(
+                    context,
+                    skill,
+                    SkillExecutionStatus.APPROVAL_REQUIRED,
+                    error_kind=_ERROR_APPROVAL_REQUIRED,
+                    steps=[],
+                ),
+            )
 
         # Collect completed steps: either from a fresh run or from the
         # prior attempt when resuming.
@@ -269,15 +279,18 @@ class SkillExecutionService:
 
             # Gate 1 — the Skill's own declared tool set.
             if not self.skill_service.is_tool_allowed(skill, tool_name):
-                return await self._finalize(record, self._stopped_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.DENIED,
-                    _ERROR_DISALLOWED_TOOL,
-                    completed,
-                    sequence,
-                    tool_name,
-                ))
+                return await self._finalize(
+                    record,
+                    self._stopped_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.DENIED,
+                        _ERROR_DISALLOWED_TOOL,
+                        completed,
+                        sequence,
+                        tool_name,
+                    ),
+                )
 
             # Gates 2..N — delegated to ToolExecutionService.
             # When resuming the approval-gated step, pass the approval_id
@@ -296,53 +309,68 @@ class SkillExecutionService:
                 # If the tool service created a new approval (REQUIRE_HUMAN_APPROVAL
                 # policy on a later tool call), propagate the approval_id upward.
                 if exc.approval_id is not None:
-                    return await self._finalize(record, self._approval_required_result(
+                    return await self._finalize(
+                        record,
+                        self._approval_required_result(
+                            context,
+                            skill,
+                            completed,
+                            sequence,
+                            tool_name,
+                            exc.approval_id,
+                        ),
+                    )
+                return await self._finalize(
+                    record,
+                    self._stopped_result(
                         context,
                         skill,
+                        SkillExecutionStatus.FAILED,
+                        _ERROR_TOOL_DENIED,
                         completed,
                         sequence,
                         tool_name,
-                        exc.approval_id,
-                    ))
-                return await self._finalize(record, self._stopped_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.FAILED,
-                    _ERROR_TOOL_DENIED,
-                    completed,
-                    sequence,
-                    tool_name,
-                ))
+                    ),
+                )
             except ToolNotFoundError:
-                return await self._finalize(record, self._stopped_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.FAILED,
-                    _ERROR_UNKNOWN_TOOL,
-                    completed,
-                    sequence,
-                    tool_name,
-                ))
+                return await self._finalize(
+                    record,
+                    self._stopped_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.FAILED,
+                        _ERROR_UNKNOWN_TOOL,
+                        completed,
+                        sequence,
+                        tool_name,
+                    ),
+                )
             except ToolValidationError:
-                return await self._finalize(record, self._stopped_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.FAILED,
-                    _ERROR_INVALID_INPUT,
-                    completed,
-                    sequence,
-                    tool_name,
-                ))
+                return await self._finalize(
+                    record,
+                    self._stopped_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.FAILED,
+                        _ERROR_INVALID_INPUT,
+                        completed,
+                        sequence,
+                        tool_name,
+                    ),
+                )
             except ToolExecutionError:
-                return await self._finalize(record, self._stopped_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.FAILED,
-                    _ERROR_EXECUTION_FAILED,
-                    completed,
-                    sequence,
-                    tool_name,
-                ))
+                return await self._finalize(
+                    record,
+                    self._stopped_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.FAILED,
+                        _ERROR_EXECUTION_FAILED,
+                        completed,
+                        sequence,
+                        tool_name,
+                    ),
+                )
 
             completed.append(
                 SkillExecutionStepOutcome(
@@ -354,13 +382,16 @@ class SkillExecutionService:
                 )
             )
 
-        return await self._finalize(record, self._build_result(
-            context,
-            skill,
-            SkillExecutionStatus.SUCCEEDED,
-            error_kind=None,
-            steps=completed,
-        ))
+        return await self._finalize(
+            record,
+            self._build_result(
+                context,
+                skill,
+                SkillExecutionStatus.SUCCEEDED,
+                error_kind=None,
+                steps=completed,
+            ),
+        )
 
     # -- internals -----------------------------------------------------
 

@@ -480,9 +480,7 @@ async def test_ddl_is_idempotent(repositories, db):
 
     # Verify skill_execution_records still exists and is queryable
     async with db._connection_pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT to_regclass('public.skill_execution_records') AS rel"
-        )
+        row = await conn.fetchrow("SELECT to_regclass('public.skill_execution_records') AS rel")
         assert row["rel"] is not None
 
 

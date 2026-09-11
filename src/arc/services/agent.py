@@ -152,7 +152,11 @@ class AgentExecutionService:
                 # delegated Skill execution actually succeeded.
                 if any(step.status is SkillExecutionStatus.SUCCEEDED for step in completed):
                     return self._build_result(
-                        context, goal, AgentRunStatus.SUCCEEDED, None, completed,
+                        context,
+                        goal,
+                        AgentRunStatus.SUCCEEDED,
+                        None,
+                        completed,
                         run_id=run_id,
                     )
                 return self._build_result(
@@ -168,13 +172,21 @@ class AgentExecutionService:
             if decision is None:
                 # Unusable model output: stop without executing anything.
                 return self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_INVALID_DECISION, run_id=run_id,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_INVALID_DECISION,
+                    run_id=run_id,
                 )
             if decision.skill_id not in catalog_by_id:
                 # Outside the trusted tenant's own catalog (unknown,
                 # cross-tenant, or deleted): fail closed, execute nothing.
                 return self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE, run_id=run_id,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_SKILL_NOT_AVAILABLE,
+                    run_id=run_id,
                 )
 
             try:
@@ -191,14 +203,22 @@ class AgentExecutionService:
                 # Deleted between listing and execution: indistinguishable
                 # from unavailable, and nothing executed.
                 return self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE, run_id=run_id,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_SKILL_NOT_AVAILABLE,
+                    run_id=run_id,
                 )
             except ValueError:
                 # Deep proposal validation is owned by the execution
                 # engine; its rejection means the decision was unusable.
                 # Nothing executed.
                 return self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_INVALID_DECISION, run_id=run_id,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_INVALID_DECISION,
+                    run_id=run_id,
                 )
 
             completed.append(
@@ -229,7 +249,11 @@ class AgentExecutionService:
                 # ANY controlled failure stops the run immediately.
                 # There are no retries.
                 return self._build_result(
-                    context, goal, AgentRunStatus.FAILED, executed.error_kind, completed,
+                    context,
+                    goal,
+                    AgentRunStatus.FAILED,
+                    executed.error_kind,
+                    completed,
                     run_id=run_id,
                 )
 
@@ -277,7 +301,12 @@ class AgentExecutionService:
         preserved.
         """
         return self._build_result(
-            context, goal, AgentRunStatus.FAILED, error_kind, completed, run_id=run_id,
+            context,
+            goal,
+            AgentRunStatus.FAILED,
+            error_kind,
+            completed,
+            run_id=run_id,
         )
 
     @staticmethod
