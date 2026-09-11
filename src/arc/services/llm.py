@@ -1,12 +1,5 @@
 """Configurable, provider-agnostic LLM abstraction (Unified Intelligence).
 
-The abstraction must not hard-code any production provider (OpenRouter,
-OmniRoute, OpenAI, or any other). Production LLM provider/model selection
-is a deferred decision (ADR-001: exact AI model remains open; TRD 34:
-OpenRouter is the primary configurable AI provider and the model must
-remain configurable). This foundation ships with a deterministic local
-provider that is suitable for service and API tests.
-
 Provider selection is environment-driven (``LLM_PROVIDER`` /
 ``LLM_MODEL``, documented in ``.env.example``) and fails closed: an
 unknown provider or an invalid configuration raises
@@ -17,12 +10,21 @@ receive only the prompt text assembled by UnifiedIntelligenceService
 exclusively from the Approved Context Contract (sanitized content and
 citation references). They never receive repository access, vectors, raw
 documents, or authorization state.
+
+V2-ADR-006: production routing is Arc -> OmniRoute -> OpenRouter ->
+configured model. Provider protocols remain a domain abstraction; the
+OpenRouter provider is one concrete implementation.
 """
 
+import json
 import os
+import random
 import re
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime_checkable
+
+import httpx
 
 
 class LlmError(Exception):
@@ -38,6 +40,15 @@ class LlmConfigurationError(Exception):
 
     Configuration failures fail closed: the application refuses to start
     with an unsupported provider or an invalid value.
+    """
+
+
+class LlmRetryableError(LlmError):
+    """Raised for transient LLM failures that are safe to retry.
+
+    Subclass of ``LlmError`` so callers that catch ``LlmError`` still
+    see transient failures. The retry loop in ``OpenRouterProvider._post``
+    catches this specifically to decide whether to retry.
     """
 
 
@@ -173,23 +184,339 @@ class DeterministicLlmProvider:
         return "Deterministic response using 0 approved context item(s)."
 
 
+_OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+_OPENROUTER_DEFAULT_TIMEOUT = httpx.Timeout(60.0)
+_DEFAULT_MAX_RETRIES = 3
+_DEFAULT_BASE_DELAY = 0.5
+_DEFAULT_MAX_DELAY = 4.0
+
+
+class OpenRouterProvider:
+    """Production LLM provider via OpenRouter / OmniRoute (V2-ADR-006).
+
+    Implements all three LLM protocols (``LlmProvider``,
+    ``ToolProposingLlm``, ``SkillSelectingLlm``) by calling the
+    OpenAI-compatible chat completions endpoint exposed by OpenRouter.
+
+    Routing: Arc -> OmniRoute -> OpenRouter -> configured model.
+    The provider never receives repository access, vectors, raw
+    documents, or authorization state (TRD 10.3, ADR-001).
+
+    Bounded retry (V2-ADR-006): transient/retry-safe failures (429,
+    5xx, timeouts, connection errors) are retried with exponential
+    backoff up to ``max_retries`` attempts. Permanent failures (401,
+    403, other 4xx) and application errors (no choices) fail
+    immediately without retry.
+
+    Structured output validation (V2-ADR-006): ``propose_tool`` and
+    ``propose_skill`` perform lightweight structural validation of
+    the raw model output before returning it. The domain layer
+    (``ToolProposal.parse``, ``AgentDecision.parse``) retains full
+    strict validation. Malformed output never reaches tool/skill
+    execution as a valid decision.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str = _OPENROUTER_DEFAULT_BASE_URL,
+        timeout: httpx.Timeout = _OPENROUTER_DEFAULT_TIMEOUT,
+        client: Optional[httpx.Client] = None,
+        max_retries: int = _DEFAULT_MAX_RETRIES,
+        base_delay: float = _DEFAULT_BASE_DELAY,
+        max_delay: float = _DEFAULT_MAX_DELAY,
+    ) -> None:
+        if not api_key or not api_key.strip():
+            raise LlmConfigurationError("OPENROUTER_API_KEY must not be empty")
+        if not model or not model.strip():
+            raise LlmConfigurationError("LLM_MODEL must not be empty when using OpenRouter")
+        if max_retries < 0:
+            raise LlmConfigurationError("max_retries must be non-negative")
+        self._api_key = api_key
+        self._model = model
+        self._base_url = base_url.rstrip("/")
+        self._timeout = timeout
+        self._client = client
+        self._max_retries = max_retries
+        self._base_delay = base_delay
+        self._max_delay = max_delay
+
+    def _execute_request(
+        self, client: httpx.Client, url: str, body: dict, headers: dict
+    ) -> str:
+        """Execute a single HTTP request and return assistant content.
+
+        Raises ``LlmConfigurationError`` for permanent auth failures and
+        ``LlmError`` for all other errors. Never retries.
+        """
+        response = client.post(url, json=body, headers=headers)
+        _raise_for_status(response)
+        data = response.json()
+        choices = data.get("choices", [])
+        if not choices:
+            raise LlmError("OpenRouter returned no choices")
+        return choices[0]["message"]["content"]
+
+    def _post(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
+        """POST to the chat completions endpoint with bounded retry.
+
+        Transient failures (429, 5xx, timeouts, connection errors) are
+        retried up to ``max_retries`` times with exponential backoff.
+        Permanent failures (401, 403, other 4xx) and application errors
+        fail immediately.
+        """
+        url = f"{self._base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        body: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            **kwargs,
+        }
+
+        owned_client = self._client is None
+        client = self._client or httpx.Client(timeout=self._timeout)
+        last_error: Optional[Exception] = None
+        try:
+            for attempt in range(1 + self._max_retries):
+                try:
+                    return self._execute_request(client, url, body, headers)
+                except LlmConfigurationError:
+                    raise
+                except LlmRetryableError as exc:
+                    last_error = exc
+                    if attempt < self._max_retries:
+                        delay = min(
+                            self._max_delay,
+                            self._base_delay * (2 ** attempt)
+                            + random.uniform(0, self._base_delay),
+                        )
+                        time.sleep(delay)
+                        continue
+                except LlmError:
+                    raise
+                except httpx.TimeoutException as exc:
+                    last_error = LlmRetryableError(
+                        f"OpenRouter request timed out: {exc}"
+                    )
+                    if attempt < self._max_retries:
+                        delay = min(
+                            self._max_delay,
+                            self._base_delay * (2 ** attempt)
+                            + random.uniform(0, self._base_delay),
+                        )
+                        time.sleep(delay)
+                        continue
+                except httpx.HTTPError as exc:
+                    last_error = LlmRetryableError(
+                        f"OpenRouter HTTP error: {exc}"
+                    )
+                    if attempt < self._max_retries:
+                        delay = min(
+                            self._max_delay,
+                            self._base_delay * (2 ** attempt)
+                            + random.uniform(0, self._base_delay),
+                        )
+                        time.sleep(delay)
+                        continue
+            raise last_error  # type: ignore[misc]
+        finally:
+            if owned_client:
+                client.close()
+
+    # -- LlmProvider -------------------------------------------------------
+
+    def complete(self, prompt: str) -> str:
+        """Return the completion for ``prompt``."""
+        if not prompt or not prompt.strip():
+            raise ValueError("Prompt cannot be empty")
+        return self._post([{"role": "user", "content": prompt}])
+
+    # -- ToolProposingLlm ---------------------------------------------------
+
+    def propose_tool(
+        self, query: str, context_references: Sequence[str] = ()
+    ) -> Optional[Mapping[str, Any]]:
+        """Return raw untrusted proposal output, or ``None``.
+
+        Performs lightweight structural validation: a valid tool proposal
+        must be a JSON object with ``tool_name`` (non-empty string) and
+        ``arguments`` (mapping). Malformed output returns ``None`` — the
+        domain layer (``ToolProposal.parse``) retains full strict
+        validation. Malformed output can never reach execution as a valid
+        decision.
+        """
+        prompt = _build_tool_proposal_prompt(query)
+        raw = self._post([{"role": "user", "content": prompt}])
+        parsed = _parse_json_response(raw)
+        if parsed is not None and not _validate_tool_proposal(parsed):
+            return None
+        return parsed
+
+    # -- SkillSelectingLlm --------------------------------------------------
+
+    def propose_skill(
+        self, goal: str, catalog: Sequence[Mapping[str, Any]] = ()
+    ) -> Optional[Mapping[str, Any]]:
+        """Return raw untrusted decision output for ``goal``, or ``None``.
+
+        Performs lightweight structural validation: a valid skill decision
+        must be a JSON object with ``skill_id`` (non-empty string),
+        ``tool_calls`` (list), and ``satisfied_preconditions`` (list).
+        Malformed output returns ``None`` — the domain layer
+        (``AgentDecision.parse``) retains full strict validation.
+        Malformed output can never reach execution as a valid decision.
+        """
+        prompt = _build_skill_proposal_prompt(goal, list(catalog))
+        raw = self._post([{"role": "user", "content": prompt}])
+        parsed = _parse_json_response(raw)
+        if parsed is not None and not _validate_skill_proposal(parsed):
+            return None
+        return parsed
+
+
+def _raise_for_status(response: httpx.Response) -> None:
+    """Translate HTTP errors into domain exceptions.
+
+    Retryable transient failures (429, 5xx) raise ``LlmRetryableError``.
+    Permanent failures (401, 403, other 4xx) raise ``LlmError`` or
+    ``LlmConfigurationError`` and must never be retried.
+    """
+    if response.status_code == 200:
+        return
+    if response.status_code in (401, 403):
+        raise LlmConfigurationError(
+            f"OpenRouter authentication failed (HTTP {response.status_code}): "
+            "check OPENROUTER_API_KEY"
+        )
+    if response.status_code == 429:
+        raise LlmRetryableError("OpenRouter rate limit exceeded (HTTP 429)")
+    if response.status_code >= 500:
+        raise LlmRetryableError(f"OpenRouter server error (HTTP {response.status_code})")
+    raise LlmError(f"OpenRouter error (HTTP {response.status_code})")
+
+
+def _parse_json_response(raw: str) -> Optional[Mapping[str, Any]]:
+    """Best-effort extraction of a JSON object from LLM output.
+
+    Returns ``None`` when the response is not a valid JSON object, which
+    is the correct fail-closed behavior: no proposal is emitted.
+    """
+    text = raw.strip()
+    # Strip markdown code fences if present
+    if text.startswith("```"):
+        lines = text.splitlines()
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if isinstance(parsed, dict):
+        return parsed
+    return None
+
+
+def _validate_tool_proposal(raw: Mapping[str, Any]) -> bool:
+    """Lightweight structural check for a tool proposal.
+
+    A valid proposal must have ``tool_name`` (non-empty string) and
+    ``arguments`` (mapping). This catches obviously malformed output at
+    the provider level. The domain layer (``ToolProposal.parse``) retains
+    full strict validation including exact-key checks and length limits.
+    """
+    tool_name = raw.get("tool_name")
+    arguments = raw.get("arguments")
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        return False
+    if not isinstance(arguments, dict):
+        return False
+    return True
+
+
+def _validate_skill_proposal(raw: Mapping[str, Any]) -> bool:
+    """Lightweight structural check for a skill decision.
+
+    A valid decision must have ``skill_id`` (non-empty string),
+    ``tool_calls`` (list), and ``satisfied_preconditions`` (list). This
+    catches obviously malformed output at the provider level. The domain
+    layer (``AgentDecision.parse``) retains full strict validation
+    including exact-key checks and element-type checks.
+    """
+    skill_id = raw.get("skill_id")
+    tool_calls = raw.get("tool_calls")
+    preconditions = raw.get("satisfied_preconditions")
+    if not isinstance(skill_id, str) or not skill_id.strip():
+        return False
+    if not isinstance(tool_calls, list):
+        return False
+    if not isinstance(preconditions, list):
+        return False
+    return True
+
+
+def _build_tool_proposal_prompt(query: str) -> str:
+    """Build a prompt that asks the LLM to propose a tool action."""
+    return (
+        "You are an AI assistant that proposes tool actions when appropriate.\n"
+        "Given the user query below, decide whether a tool action is needed.\n"
+        "If yes, return EXACTLY a JSON object with keys 'tool_name' and 'arguments'.\n"
+        "If no tool is appropriate, return exactly the string NONE.\n\n"
+        "Available tools: check_service_health (checks health of an external service)\n\n"
+        f"User query: {query}\n\n"
+        "Response (JSON object or NONE):"
+    )
+
+
+def _build_skill_proposal_prompt(
+    goal: str, catalog: list[Mapping[str, Any]]
+) -> str:
+    """Build a prompt that asks the LLM to select a Skill from the catalog."""
+    catalog_text = json.dumps(catalog, indent=2) if catalog else "[]"
+    return (
+        "You are an AI agent that selects the next bounded step (Skill) "
+        "to accomplish a goal.\n"
+        "Given the goal and the available Skill catalog below, decide "
+        "whether a Skill should be executed.\n"
+        "If yes, return EXACTLY a JSON object with keys 'skill_name' and "
+        "'arguments'.\n"
+        "If no Skill is appropriate, return exactly the string NONE.\n\n"
+        f"Goal: {goal}\n\n"
+        f"Available Skills:\n{catalog_text}\n\n"
+        "Response (JSON object or NONE):"
+    )
+
+
 @dataclass(frozen=True)
 class LlmSettings:
     """LLM configuration derived from the environment.
 
-    ``provider`` selects the LLM implementation. Only ``deterministic``
-    is currently supported; any other value fails closed at
-    configuration time (a production provider such as OpenRouter is a
-    deferred decision, not silently substituted). ``model`` is metadata
-    for future providers and has no effect on the deterministic provider.
+    ``provider`` selects the LLM implementation. Supported values:
+    ``deterministic`` (development/tests) and ``openrouter``
+    (production, V2-ADR-006). Unknown values fail closed at
+    configuration time.
     """
 
     provider: str = "deterministic"
     model: Optional[str] = None
+    api_key: Optional[str] = field(default=None, repr=False)
+    base_url: str = _OPENROUTER_DEFAULT_BASE_URL
 
     def __post_init__(self) -> None:
         if not self.provider or not self.provider.strip():
             raise LlmConfigurationError("LLM_PROVIDER must not be empty")
+        if self.provider == "openrouter":
+            if not self.api_key or not self.api_key.strip():
+                raise LlmConfigurationError(
+                    "OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter"
+                )
+            if not self.model or not self.model.strip():
+                raise LlmConfigurationError(
+                    "LLM_MODEL is required when LLM_PROVIDER=openrouter"
+                )
 
 
 def get_llm_settings() -> LlmSettings:
@@ -201,6 +528,8 @@ def get_llm_settings() -> LlmSettings:
     return LlmSettings(
         provider=os.getenv("LLM_PROVIDER", "deterministic"),
         model=os.getenv("LLM_MODEL") or None,
+        api_key=os.getenv("OPENROUTER_API_KEY") or None,
+        base_url=os.getenv("OMNIROUTE_BASE_URL") or _OPENROUTER_DEFAULT_BASE_URL,
     )
 
 
@@ -208,13 +537,19 @@ def build_llm_provider(settings: LlmSettings) -> LlmProvider:
     """Build the configured LLM provider.
 
     Raises:
-        LlmConfigurationError: for any provider other than
-            ``deterministic``. Fail closed: a production provider is a
-            deferred decision and must never be silently substituted.
+        LlmConfigurationError: for unknown providers or missing required
+            configuration. Fail closed: a production provider is never
+            silently substituted.
     """
     if settings.provider == "deterministic":
         return DeterministicLlmProvider()
+    if settings.provider == "openrouter":
+        return OpenRouterProvider(
+            api_key=settings.api_key,  # type: ignore[arg-type]
+            model=settings.model,  # type: ignore[arg-type]
+            base_url=settings.base_url,
+        )
     raise LlmConfigurationError(
         f"Unsupported LLM_PROVIDER: {settings.provider!r} "
-        "(supported providers: deterministic; a production provider is a deferred decision)"
+        "(supported providers: deterministic, openrouter)"
     )
