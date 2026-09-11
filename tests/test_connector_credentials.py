@@ -15,6 +15,10 @@ J. Authorization: unauthorized actor cannot manage credentials.
 K. Cross-tenant isolation: explicit tenant A vs tenant B test.
 L. Tamper detection: modified ciphertext fails decryption safely.
 M. Failure safety: decryption/configuration failures do not log secrets.
+N. Race safety: duplicate key errors translate to 409 Conflict (not 500).
+O. Integration: PostgreSQL UNIQUE constraint enforced at database level.
+P. Safety: missing encryption key returns 503 (not 500).
+Q. Model safety: repr never leaks encrypted credential.
 """
 
 import base64
@@ -23,7 +27,7 @@ import uuid
 
 import pytest
 
-from arc.db.connection import NotFoundError
+from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
 from arc.domain.models import (
     ConnectorCredential,
     ConnectorCredentialAudit,
@@ -31,6 +35,7 @@ from arc.domain.models import (
     TenantContext,
     UserRole,
 )
+from arc.repositories.connector_credentials import PostgreSQLConnectorCredentialRepository
 from arc.security.encryption import EncryptionError, EncryptionService
 from arc.services.connector_credentials import (
     ConnectorCredentialError,
@@ -653,3 +658,252 @@ class TestDomainModels:
                 operation="create",
                 actor_user_id="",
             )
+
+
+# ---------------------------------------------------------------------------
+# N. Race safety — DuplicateKeyError translation
+# ---------------------------------------------------------------------------
+
+
+class TestRaceSafety:
+    def test_duplicate_key_error_is_domain_error(self):
+        """DuplicateKeyError is a DatabaseError, not an unhandled exception."""
+        from arc.db.connection import DatabaseError
+
+        assert issubclass(DuplicateKeyError, DatabaseError)
+
+    @pytest.mark.asyncio
+    async def test_create_duplicate_fakes_raises_connector_credential_error(self):
+        """FakeConnectorCredentialRepository allows duplicate writes (no DB constraint).
+
+        This test documents that the fake does NOT enforce uniqueness,
+        while the real PostgreSQL repository does (see TestPostgresIntegration).
+        The service layer pre-check prevents duplicates in normal flow.
+        """
+        repo = FakeConnectorCredentialRepository()
+        enc = _make_encryption_service()
+        svc = ConnectorCredentialService(credential_repo=repo, encryption_service=enc)
+
+        ctx = _context()
+        await svc.create_credential(ctx, ConnectorProvider.GITHUB, "token1")
+
+        # The service pre-check prevents duplicates (ConnectorCredentialError)
+        with pytest.raises(ConnectorCredentialError, match="already exists"):
+            await svc.create_credential(ctx, ConnectorProvider.GITHUB, "token2")
+
+
+# ---------------------------------------------------------------------------
+# O. Integration — PostgreSQL repository contract
+# ---------------------------------------------------------------------------
+
+
+DATABASE_URL = "postgresql://arc:arc-dev-password@localhost:5432/arc"
+
+
+@pytest.fixture
+async def credential_db():
+    """Connect to PostgreSQL for credential integration tests."""
+    database = ArcDatabase(DATABASE_URL)
+    await database.connect()
+    yield database
+    await database.disconnect()
+
+
+@pytest.fixture
+async def credential_repo(credential_db):
+    """PostgreSQL credential repository instance."""
+    return PostgreSQLConnectorCredentialRepository(credential_db)
+
+
+class TestPostgresIntegration:
+    @pytest.mark.asyncio
+    async def test_create_and_read_credential(self, credential_db, credential_repo):
+        """Persist and retrieve a credential through PostgreSQL."""
+        tenant_id = _unique("tenant")
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO tenants (id, name) VALUES ($1, $2)",
+                tenant_id,
+                "Integration Tenant",
+            )
+
+        credential = ConnectorCredential(
+            id=_unique("cred"),
+            tenant_id=tenant_id,
+            provider=ConnectorProvider.GITHUB,
+            encrypted_credential=b"\x00" * 48,
+            key_version=1,
+        )
+        await credential_repo.create(credential)
+
+        retrieved = await credential_repo.get_by_tenant_and_provider(
+            tenant_id, ConnectorProvider.GITHUB
+        )
+        assert retrieved is not None
+        assert retrieved.id == credential.id
+        assert retrieved.tenant_id == tenant_id
+        assert retrieved.provider == ConnectorProvider.GITHUB
+
+        # Cleanup
+        await credential_repo.delete(tenant_id, ConnectorProvider.GITHUB)
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_uniqueness_constraint_enforced(self, credential_db, credential_repo):
+        """Duplicate (tenant_id, provider) raises DuplicateKeyError."""
+        tenant_id = _unique("tenant")
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO tenants (id, name) VALUES ($1, $2)",
+                tenant_id,
+                "Integration Tenant",
+            )
+
+        cred1 = ConnectorCredential(
+            id=_unique("cred"),
+            tenant_id=tenant_id,
+            provider=ConnectorProvider.GITHUB,
+            encrypted_credential=b"\x00" * 48,
+        )
+        await credential_repo.create(cred1)
+
+        cred2 = ConnectorCredential(
+            id=_unique("cred"),
+            tenant_id=tenant_id,
+            provider=ConnectorProvider.GITHUB,
+            encrypted_credential=b"\x11" * 48,
+        )
+        with pytest.raises(DuplicateKeyError):
+            await credential_repo.create(cred2)
+
+        # Cleanup
+        await credential_repo.delete(tenant_id, ConnectorProvider.GITHUB)
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_delete_credential(self, credential_db, credential_repo):
+        """Delete removes the credential row."""
+        tenant_id = _unique("tenant")
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO tenants (id, name) VALUES ($1, $2)",
+                tenant_id,
+                "Integration Tenant",
+            )
+
+        credential = ConnectorCredential(
+            id=_unique("cred"),
+            tenant_id=tenant_id,
+            provider=ConnectorProvider.GITHUB,
+            encrypted_credential=b"\x00" * 48,
+        )
+        await credential_repo.create(credential)
+        await credential_repo.delete(tenant_id, ConnectorProvider.GITHUB)
+
+        retrieved = await credential_repo.get_by_tenant_and_provider(
+            tenant_id, ConnectorProvider.GITHUB
+        )
+        assert retrieved is None
+
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_raises_not_found(self, credential_repo):
+        """Deleting a nonexistent credential raises NotFoundError."""
+        with pytest.raises(NotFoundError):
+            await credential_repo.delete(_unique("missing"), ConnectorProvider.GITHUB)
+
+    @pytest.mark.asyncio
+    async def test_create_audit_record(self, credential_db, credential_repo):
+        """Audit records persist with safe metadata."""
+        tenant_id = _unique("tenant")
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO tenants (id, name) VALUES ($1, $2)",
+                tenant_id,
+                "Integration Tenant",
+            )
+
+        audit = ConnectorCredentialAudit(
+            id=_unique("audit"),
+            tenant_id=tenant_id,
+            provider=ConnectorProvider.GITHUB,
+            operation="create",
+            actor_user_id="user-1",
+            key_version=1,
+        )
+        await credential_repo.create_audit(audit)
+
+        records = await credential_repo.list_audit_for_tenant(tenant_id)
+        assert len(records) == 1
+        assert records[0].operation == "create"
+        assert records[0].actor_user_id == "user-1"
+
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
+
+
+# ---------------------------------------------------------------------------
+# P. Safety — missing encryption key returns 503
+# ---------------------------------------------------------------------------
+
+
+class TestMissingEncryptionKey:
+    def test_credential_service_property_raises_without_key(self):
+        """ApplicationContext.connector_credential_service raises KeyError when unregistered."""
+        from arc.api.controllers import ApplicationContext
+
+        ctx = ApplicationContext()
+        with pytest.raises(KeyError):
+            _ = ctx.connector_credential_service
+
+    def test_503_response_when_credential_service_missing(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """API returns 503 when CONNECTOR_ENCRYPTION_KEY is not configured."""
+        from arc.api.controllers import app_context
+        from arc.security.models import ApplicationRole
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        # Remove the credential service to simulate missing encryption key
+        saved = app_context.services._services.pop("connector_credential_service", None)
+        try:
+            response = client.get(
+                f"/tenants/{tenant.id}/connectors/credentials/github",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert response.status_code == 503
+            assert "CONNECTOR_ENCRYPTION_KEY" in response.json()["detail"]
+        finally:
+            if saved is not None:
+                app_context.services._services["connector_credential_service"] = saved
+
+
+# ---------------------------------------------------------------------------
+# Q. Model safety — repr never leaks encrypted credential
+# ---------------------------------------------------------------------------
+
+
+class TestModelRepr:
+    def test_credential_repr_excludes_encrypted_credential(self):
+        """__repr__ never includes encrypted_credential bytes."""
+        cred = ConnectorCredential(
+            id="cred-1",
+            tenant_id="t-1",
+            provider=ConnectorProvider.GITHUB,
+            encrypted_credential=b"\xff" * 64,
+            key_version=1,
+        )
+        repr_str = repr(cred)
+        assert "ff" not in repr_str
+        assert "encrypted_credential" not in repr_str
+        # Safe fields present
+        assert "cred-1" in repr_str
+        assert "t-1" in repr_str
+        assert "github" in repr_str

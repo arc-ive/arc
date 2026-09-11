@@ -6,7 +6,9 @@ plaintext credentials. Every query is tenant-scoped to enforce isolation.
 
 from typing import List, Optional
 
-from arc.db.connection import ArcDatabase, NotFoundError
+import asyncpg
+
+from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
 from arc.domain.models import (
     ConnectorCredential,
     ConnectorCredentialAudit,
@@ -40,23 +42,34 @@ class PostgreSQLConnectorCredentialRepository:
         return self._from_row(row)
 
     async def create(self, credential: ConnectorCredential) -> ConnectorCredential:
-        """Persist a new encrypted credential."""
+        """Persist a new encrypted credential.
+
+        Raises ``DuplicateKeyError`` when a credential already exists for
+        the same ``(tenant_id, provider)`` pair.  Callers must translate
+        this into a domain-appropriate 409 Conflict.
+        """
         async with self._db._connection_pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO connector_credentials
-                    (id, tenant_id, provider, encrypted_credential,
-                     key_version, created_at, rotated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                """,
-                credential.id,
-                credential.tenant_id,
-                credential.provider.value,
-                credential.encrypted_credential,
-                credential.key_version,
-                credential.created_at,
-                credential.rotated_at,
-            )
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO connector_credentials
+                        (id, tenant_id, provider, encrypted_credential,
+                         key_version, created_at, rotated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """,
+                    credential.id,
+                    credential.tenant_id,
+                    credential.provider.value,
+                    credential.encrypted_credential,
+                    credential.key_version,
+                    credential.created_at,
+                    credential.rotated_at,
+                )
+            except asyncpg.UniqueViolationError as exc:
+                raise DuplicateKeyError(
+                    f"Credential already exists for tenant "
+                    f"{credential.tenant_id} provider {credential.provider.value}"
+                ) from exc
         return credential
 
     async def update(self, credential: ConnectorCredential) -> ConnectorCredential:

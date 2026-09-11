@@ -334,6 +334,13 @@ class ConnectorCredential:
         if not isinstance(self.key_version, int) or self.key_version < 1:
             raise ValueError("Key version must be a positive integer")
 
+    def __repr__(self) -> str:
+        """Exclude encrypted_credential from repr to prevent accidental leakage."""
+        return (
+            f"ConnectorCredential(id={self.id!r}, tenant_id={self.tenant_id!r}, "
+            f"provider={self.provider!r}, key_version={self.key_version!r})"
+        )
+
 
 @dataclass
 class ConnectorCredentialAudit:

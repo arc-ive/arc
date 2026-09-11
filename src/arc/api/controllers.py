@@ -1084,6 +1084,30 @@ def _knowledge_document_payload(document: KnowledgeDocument) -> Dict[str, Any]:
     }
 
 
+def _get_credential_service_or_503() -> ConnectorCredentialService:
+    """Resolve the credential management service or return 503.
+
+    The credential management service requires CONNECTOR_ENCRYPTION_KEY
+    to be configured. When it is absent the service is intentionally
+    unavailable: ENV-only credential mode remains active for connector
+    sync, but credential management API operations cannot function
+    without encryption.  This dependency returns 503 instead of leaking
+    an internal KeyError as 500.
+    """
+    try:
+        service = app_context.connector_credential_service
+    except KeyError:
+        service = None
+    if service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Connector credential management requires CONNECTOR_ENCRYPTION_KEY to be configured"
+            ),
+        )
+    return service
+
+
 def _require_path_tenant_matches_context(path_tenant_id: str, context: TenantContext) -> None:
     """Reject a request whose path tenant does not match the trusted context.
 
@@ -1631,9 +1655,7 @@ async def get_credential_metadata(
     tenant_id: str,
     provider: str,
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
-    credential_service: ConnectorCredentialService = Depends(
-        lambda: app_context.connector_credential_service
-    ),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
     """Return safe metadata for a connector credential (never the secret).
 
@@ -1667,9 +1689,7 @@ async def create_credential(
     provider: str,
     body: Dict[str, Any],
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
-    credential_service: ConnectorCredentialService = Depends(
-        lambda: app_context.connector_credential_service
-    ),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
     """Create a connector credential for the trusted tenant.
 
@@ -1715,9 +1735,7 @@ async def rotate_credential(
     provider: str,
     body: Dict[str, Any],
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
-    credential_service: ConnectorCredentialService = Depends(
-        lambda: app_context.connector_credential_service
-    ),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
     """Rotate a connector credential for the trusted tenant.
 
@@ -1762,9 +1780,7 @@ async def delete_credential(
     tenant_id: str,
     provider: str,
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
-    credential_service: ConnectorCredentialService = Depends(
-        lambda: app_context.connector_credential_service
-    ),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> None:
     """Delete a connector credential for the trusted tenant.
 
@@ -1797,9 +1813,7 @@ async def list_credential_audit(
     tenant_id: str,
     provider: str,
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
-    credential_service: ConnectorCredentialService = Depends(
-        lambda: app_context.connector_credential_service
-    ),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> List[Dict[str, Any]]:
     """List credential audit records for a tenant/provider.
 
