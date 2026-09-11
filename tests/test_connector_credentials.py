@@ -23,6 +23,7 @@ Q. Model safety: repr never leaks encrypted credential.
 
 import base64
 import logging
+import os
 import uuid
 
 import pytest
@@ -697,7 +698,10 @@ class TestRaceSafety:
 # ---------------------------------------------------------------------------
 
 
-DATABASE_URL = "postgresql://arc:arc-dev-password@localhost:5432/arc"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://arc:arc-dev-password@localhost:5432/arc",
+)
 
 
 @pytest.fixture
