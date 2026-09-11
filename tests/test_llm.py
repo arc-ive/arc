@@ -187,9 +187,7 @@ class TestOpenRouterProviderProtocolCompliance:
 
 class TestOpenRouterProviderComplete:
     def test_complete_returns_content(self):
-        provider = _make_provider(
-            lambda r: httpx.Response(200, json=_chat_response("Hello world"))
-        )
+        provider = _make_provider(lambda r: httpx.Response(200, json=_chat_response("Hello world")))
         assert provider.complete("test prompt") == "Hello world"
 
     def test_complete_empty_prompt_rejected(self):
@@ -305,9 +303,7 @@ class TestOpenRouterProviderProposeSkill:
         provider = _make_provider(
             lambda r: httpx.Response(200, json=_chat_response(json.dumps(decision)))
         )
-        result = provider.propose_skill(
-            "summarize the text", [{"name": "summarize"}]
-        )
+        result = provider.propose_skill("summarize the text", [{"name": "summarize"}])
         assert result == decision
 
     def test_returns_none_for_none_response(self):
@@ -347,7 +343,7 @@ class TestParseJsonResponse:
         assert _parse_json_response('```\n{"key": "value"}\n```') == {"key": "value"}
 
     def test_non_dict_returns_none(self):
-        assert _parse_json_response('[1, 2, 3]') is None
+        assert _parse_json_response("[1, 2, 3]") is None
 
     def test_invalid_json_returns_none(self):
         assert _parse_json_response("not json") is None
@@ -600,9 +596,7 @@ class TestValidateToolProposal:
         assert not _validate_tool_proposal({"tool_name": "x", "arguments": "bad"})
 
     def test_extra_keys_pass_lightweight_check(self):
-        assert _validate_tool_proposal(
-            {"tool_name": "x", "arguments": {}, "extra": True}
-        )
+        assert _validate_tool_proposal({"tool_name": "x", "arguments": {}, "extra": True})
 
 
 class TestValidateSkillProposal:
@@ -616,9 +610,7 @@ class TestValidateSkillProposal:
         )
 
     def test_missing_skill_id(self):
-        assert not _validate_skill_proposal(
-            {"tool_calls": [], "satisfied_preconditions": []}
-        )
+        assert not _validate_skill_proposal({"tool_calls": [], "satisfied_preconditions": []})
 
     def test_empty_skill_id(self):
         assert not _validate_skill_proposal(
@@ -631,9 +623,7 @@ class TestValidateSkillProposal:
         )
 
     def test_missing_tool_calls(self):
-        assert not _validate_skill_proposal(
-            {"skill_id": "s1", "satisfied_preconditions": []}
-        )
+        assert not _validate_skill_proposal({"skill_id": "s1", "satisfied_preconditions": []})
 
     def test_tool_calls_not_list(self):
         assert not _validate_skill_proposal(
@@ -641,9 +631,7 @@ class TestValidateSkillProposal:
         )
 
     def test_missing_preconditions(self):
-        assert not _validate_skill_proposal(
-            {"skill_id": "s1", "tool_calls": []}
-        )
+        assert not _validate_skill_proposal({"skill_id": "s1", "tool_calls": []})
 
     def test_preconditions_not_list(self):
         assert not _validate_skill_proposal(
@@ -653,24 +641,18 @@ class TestValidateSkillProposal:
 
 class TestProposeToolValidation:
     def test_malformed_json_returns_none(self):
-        provider = _make_provider(
-            lambda r: httpx.Response(200, json=_chat_response("not json"))
-        )
+        provider = _make_provider(lambda r: httpx.Response(200, json=_chat_response("not json")))
         assert provider.propose_tool("query") is None
 
     def test_json_without_tool_name_returns_none(self):
         provider = _make_provider(
-            lambda r: httpx.Response(
-                200, json=_chat_response(json.dumps({"arguments": {}}))
-            )
+            lambda r: httpx.Response(200, json=_chat_response(json.dumps({"arguments": {}})))
         )
         assert provider.propose_tool("query") is None
 
     def test_json_without_arguments_returns_none(self):
         provider = _make_provider(
-            lambda r: httpx.Response(
-                200, json=_chat_response(json.dumps({"tool_name": "x"}))
-            )
+            lambda r: httpx.Response(200, json=_chat_response(json.dumps({"tool_name": "x"})))
         )
         assert provider.propose_tool("query") is None
 
@@ -682,26 +664,20 @@ class TestProposeToolValidation:
         assert provider.propose_tool("query") == proposal
 
     def test_none_response_passes_through(self):
-        provider = _make_provider(
-            lambda r: httpx.Response(200, json=_chat_response("NONE"))
-        )
+        provider = _make_provider(lambda r: httpx.Response(200, json=_chat_response("NONE")))
         assert provider.propose_tool("query") is None
 
 
 class TestProposeSkillValidation:
     def test_malformed_json_returns_none(self):
-        provider = _make_provider(
-            lambda r: httpx.Response(200, json=_chat_response("random"))
-        )
+        provider = _make_provider(lambda r: httpx.Response(200, json=_chat_response("random")))
         assert provider.propose_skill("goal", []) is None
 
     def test_json_without_skill_id_returns_none(self):
         provider = _make_provider(
             lambda r: httpx.Response(
                 200,
-                json=_chat_response(
-                    json.dumps({"tool_calls": [], "satisfied_preconditions": []})
-                ),
+                json=_chat_response(json.dumps({"tool_calls": [], "satisfied_preconditions": []})),
             )
         )
         assert provider.propose_skill("goal", []) is None
@@ -731,9 +707,7 @@ class TestProposeSkillValidation:
         assert provider.propose_skill("goal", []) == decision
 
     def test_none_response_passes_through(self):
-        provider = _make_provider(
-            lambda r: httpx.Response(200, json=_chat_response("NONE"))
-        )
+        provider = _make_provider(lambda r: httpx.Response(200, json=_chat_response("NONE")))
         assert provider.propose_skill("goal", []) is None
 
 

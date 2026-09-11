@@ -242,9 +242,7 @@ class OpenRouterProvider:
         self._base_delay = base_delay
         self._max_delay = max_delay
 
-    def _execute_request(
-        self, client: httpx.Client, url: str, body: dict, headers: dict
-    ) -> str:
+    def _execute_request(self, client: httpx.Client, url: str, body: dict, headers: dict) -> str:
         """Execute a single HTTP request and return assistant content.
 
         Raises ``LlmConfigurationError`` for permanent auth failures and
@@ -291,34 +289,27 @@ class OpenRouterProvider:
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
-                            self._base_delay * (2 ** attempt)
-                            + random.uniform(0, self._base_delay),
+                            self._base_delay * (2**attempt) + random.uniform(0, self._base_delay),
                         )
                         time.sleep(delay)
                         continue
                 except LlmError:
                     raise
                 except httpx.TimeoutException as exc:
-                    last_error = LlmRetryableError(
-                        f"OpenRouter request timed out: {exc}"
-                    )
+                    last_error = LlmRetryableError(f"OpenRouter request timed out: {exc}")
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
-                            self._base_delay * (2 ** attempt)
-                            + random.uniform(0, self._base_delay),
+                            self._base_delay * (2**attempt) + random.uniform(0, self._base_delay),
                         )
                         time.sleep(delay)
                         continue
                 except httpx.HTTPError as exc:
-                    last_error = LlmRetryableError(
-                        f"OpenRouter HTTP error: {exc}"
-                    )
+                    last_error = LlmRetryableError(f"OpenRouter HTTP error: {exc}")
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
-                            self._base_delay * (2 ** attempt)
-                            + random.uniform(0, self._base_delay),
+                            self._base_delay * (2**attempt) + random.uniform(0, self._base_delay),
                         )
                         time.sleep(delay)
                         continue
@@ -471,9 +462,7 @@ def _build_tool_proposal_prompt(query: str) -> str:
     )
 
 
-def _build_skill_proposal_prompt(
-    goal: str, catalog: list[Mapping[str, Any]]
-) -> str:
+def _build_skill_proposal_prompt(goal: str, catalog: list[Mapping[str, Any]]) -> str:
     """Build a prompt that asks the LLM to select a Skill from the catalog."""
     catalog_text = json.dumps(catalog, indent=2) if catalog else "[]"
     return (
@@ -514,9 +503,7 @@ class LlmSettings:
                     "OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter"
                 )
             if not self.model or not self.model.strip():
-                raise LlmConfigurationError(
-                    "LLM_MODEL is required when LLM_PROVIDER=openrouter"
-                )
+                raise LlmConfigurationError("LLM_MODEL is required when LLM_PROVIDER=openrouter")
 
 
 def get_llm_settings() -> LlmSettings:
