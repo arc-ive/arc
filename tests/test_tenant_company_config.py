@@ -29,6 +29,28 @@ def _authed_request(http_client, method, url, token, json=None):
     return getattr(http_client, method)(url, **kwargs)
 
 
+COMPANY_PROFILE = {
+    "industry": "Technology",
+    "address": "1 Market Street",
+    "phone": "+1-555-0400",
+    "website": "https://acme.example.com",
+    "logo_url": "https://acme.example.com/logo.png",
+}
+
+TENANT_RESPONSE_KEYS = {
+    "id",
+    "name",
+    "status",
+    "industry",
+    "address",
+    "phone",
+    "website",
+    "logo_url",
+    "created_at",
+    "updated_at",
+}
+
+
 @pytest.fixture
 async def seeded(db):
     """Provision a tenant, user, and membership for testing."""
@@ -294,3 +316,96 @@ class TestUpdateCompanyConfig:
 
         body_created = datetime.fromisoformat(body["created_at"])
         assert body_created == persisted.created_at
+
+
+class TestUserTenantListCompanyFields:
+    """Issue #128: the tenant list endpoint must carry company profile fields.
+
+    ``GET /users/{user_id}/tenants`` publishes the same profile keys as
+    ``GET /tenants/{tenant_id}``.  It previously selected only five columns,
+    so every profile field was served as ``null`` for data that existed.
+    """
+
+    async def test_list_returns_stored_profile_values(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        update = _authed_request(
+            client, "put", f"/tenants/{tenant.id}", token, dict(COMPANY_PROFILE)
+        )
+        assert update.status_code == 200
+
+        response = _authed_request(client, "get", f"/users/{user.id}/tenants", token)
+        assert response.status_code == 200
+        entry = next(item for item in response.json() if item["id"] == tenant.id)
+        for field, expected in COMPANY_PROFILE.items():
+            assert entry[field] == expected, f"{field} was {entry[field]!r}"
+
+    async def test_list_profile_matches_single_tenant_endpoint(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        update = _authed_request(
+            client, "put", f"/tenants/{tenant.id}", token, dict(COMPANY_PROFILE)
+        )
+        assert update.status_code == 200
+
+        listed = next(
+            item
+            for item in _authed_request(client, "get", f"/users/{user.id}/tenants", token).json()
+            if item["id"] == tenant.id
+        )
+        single = _authed_request(client, "get", f"/tenants/{tenant.id}", token).json()
+        for field in COMPANY_PROFILE:
+            # Assert the value is really there: two nulls would compare equal
+            # and the parity check would hold vacuously.
+            assert single[field] == COMPANY_PROFILE[field]
+            assert listed[field] == single[field], f"{field} differs between endpoints"
+
+    async def test_list_entry_shape_is_unchanged(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user = seeded
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+
+        response = _authed_request(client, "get", f"/users/{user.id}/tenants", token)
+        assert response.status_code == 200
+        entry = next(item for item in response.json() if item["id"] == tenant.id)
+        assert set(entry) == TENANT_RESPONSE_KEYS
+
+    async def test_list_returns_null_profile_when_unset(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """An unpopulated profile still reports null — absence is not invented."""
+        tenant, user = seeded
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+
+        response = _authed_request(client, "get", f"/users/{user.id}/tenants", token)
+        entry = next(item for item in response.json() if item["id"] == tenant.id)
+        for field in COMPANY_PROFILE:
+            assert entry[field] is None
+
+    async def test_platform_listing_carries_profile_fields(
+        self, client, db, seeded, make_token, authorization_override
+    ):
+        """The platform-wide listing must carry the profile too.
+
+        ``/platform/tenants`` publishes a narrower key set today, so this is
+        asserted at the repository boundary: the omission would otherwise stay
+        invisible until someone widens that endpoint.
+        """
+        tenant, user = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        _authed_request(client, "put", f"/tenants/{tenant.id}", token, dict(COMPANY_PROFILE))
+
+        listed = await PostgreSQLTenantRepository(db).list_all()
+        found = next(item for item in listed if item.id == tenant.id)
+        for field, expected in COMPANY_PROFILE.items():
+            assert getattr(found, field) == expected, f"{field} was {getattr(found, field)!r}"

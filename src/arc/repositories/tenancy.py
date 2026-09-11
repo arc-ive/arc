@@ -32,22 +32,7 @@ class PostgreSQLTenantRepository:
 
     async def list_all(self) -> List[Tenant]:
         """List all tenants (platform-scoped, no membership filter)."""
-        async with self.db._connection_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT id, name, status, industry, created_at, updated_at "
-                "FROM tenants ORDER BY created_at DESC"
-            )
-            return [
-                Tenant(
-                    id=row["id"],
-                    name=row["name"],
-                    status=row["status"],
-                    industry=row["industry"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                )
-                for row in rows
-            ]
+        return await self.db.list_tenants()
 
     async def list_all_paginated(self, limit: int, offset: int) -> Tuple[List[Tenant], int]:
         """List tenants with LIMIT/OFFSET and total count."""
