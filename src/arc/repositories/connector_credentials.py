@@ -95,9 +95,7 @@ class PostgreSQLConnectorCredentialRepository:
                 provider,
             )
             if result == "DELETE 0":
-                raise NotFoundError(
-                    f"No credential for tenant {tenant_id} provider {provider}"
-                )
+                raise NotFoundError(f"No credential for tenant {tenant_id} provider {provider}")
 
     async def create_audit(self, audit: ConnectorCredentialAudit) -> ConnectorCredentialAudit:
         """Persist a credential lifecycle audit record."""

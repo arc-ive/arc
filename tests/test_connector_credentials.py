@@ -72,9 +72,7 @@ class FakeConnectorCredentialRepository:
         self._credentials: dict[tuple[str, str], ConnectorCredential] = {}
         self._audit: list[ConnectorCredentialAudit] = []
 
-    async def get_by_tenant_and_provider(
-        self, tenant_id: str, provider: str
-    ):
+    async def get_by_tenant_and_provider(self, tenant_id: str, provider: str):
         return self._credentials.get((tenant_id, provider))
 
     async def create(self, credential: ConnectorCredential):
@@ -101,7 +99,8 @@ class FakeConnectorCredentialRepository:
 
     async def list_audit_for_tenant(self, tenant_id, provider=None):
         return [
-            a for a in self._audit
+            a
+            for a in self._audit
             if a.tenant_id == tenant_id and (provider is None or a.provider.value == provider)
         ]
 
@@ -203,9 +202,7 @@ class TestApiResponseSecurity:
         svc = ConnectorCredentialService(credential_repo=repo, encryption_service=enc)
 
         ctx = _context()
-        result = await svc.create_credential(
-            ctx, ConnectorProvider.GITHUB, "ghp_secret123"
-        )
+        result = await svc.create_credential(ctx, ConnectorProvider.GITHUB, "ghp_secret123")
 
         assert "ghp_secret123" not in str(result)
         assert "encrypted_credential" not in result
@@ -442,9 +439,7 @@ class TestDBPrecedence:
         await svc.create_credential(ctx, ConnectorProvider.GITHUB, "db_token")
 
         # ENV has a different token
-        env_store = ConnectorCredentialStore(
-            raw='{"tenant-1": {"github": "env_token"}}'
-        )
+        env_store = ConnectorCredentialStore(raw='{"tenant-1": {"github": "env_token"}}')
 
         # DB credential service resolves the DB token
         db_token = await svc.resolve_credential("tenant-1", ConnectorProvider.GITHUB)
@@ -603,50 +598,58 @@ class TestDomainModels:
         """ConnectorCredential validates required fields."""
         with pytest.raises(ValueError, match="ID cannot be empty"):
             ConnectorCredential(
-                id="", tenant_id="t", provider=ConnectorProvider.GITHUB,
-                encrypted_credential=b"x"
+                id="", tenant_id="t", provider=ConnectorProvider.GITHUB, encrypted_credential=b"x"
             )
 
         with pytest.raises(ValueError, match="Tenant ID cannot be empty"):
             ConnectorCredential(
-                id="1", tenant_id="", provider=ConnectorProvider.GITHUB,
-                encrypted_credential=b"x"
+                id="1", tenant_id="", provider=ConnectorProvider.GITHUB, encrypted_credential=b"x"
             )
 
         with pytest.raises(ValueError, match="Invalid connector provider"):
             ConnectorCredential(
-                id="1", tenant_id="t", provider="invalid",
-                encrypted_credential=b"x"
+                id="1", tenant_id="t", provider="invalid", encrypted_credential=b"x"
             )
 
         with pytest.raises(ValueError, match="non-empty bytes"):
             ConnectorCredential(
-                id="1", tenant_id="t", provider=ConnectorProvider.GITHUB,
-                encrypted_credential=b""
+                id="1", tenant_id="t", provider=ConnectorProvider.GITHUB, encrypted_credential=b""
             )
 
         with pytest.raises(ValueError, match="positive integer"):
             ConnectorCredential(
-                id="1", tenant_id="t", provider=ConnectorProvider.GITHUB,
-                encrypted_credential=b"x", key_version=0
+                id="1",
+                tenant_id="t",
+                provider=ConnectorProvider.GITHUB,
+                encrypted_credential=b"x",
+                key_version=0,
             )
 
     def test_audit_model_validation(self):
         """ConnectorCredentialAudit validates required fields."""
         with pytest.raises(ValueError, match="ID cannot be empty"):
             ConnectorCredentialAudit(
-                id="", tenant_id="t", provider=ConnectorProvider.GITHUB,
-                operation="create", actor_user_id="u"
+                id="",
+                tenant_id="t",
+                provider=ConnectorProvider.GITHUB,
+                operation="create",
+                actor_user_id="u",
             )
 
         with pytest.raises(ValueError, match="Invalid audit operation"):
             ConnectorCredentialAudit(
-                id="1", tenant_id="t", provider=ConnectorProvider.GITHUB,
-                operation="invalid", actor_user_id="u"
+                id="1",
+                tenant_id="t",
+                provider=ConnectorProvider.GITHUB,
+                operation="invalid",
+                actor_user_id="u",
             )
 
         with pytest.raises(ValueError, match="Actor user ID cannot be empty"):
             ConnectorCredentialAudit(
-                id="1", tenant_id="t", provider=ConnectorProvider.GITHUB,
-                operation="create", actor_user_id=""
+                id="1",
+                tenant_id="t",
+                provider=ConnectorProvider.GITHUB,
+                operation="create",
+                actor_user_id="",
             )

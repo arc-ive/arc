@@ -58,13 +58,10 @@ class ConnectorCredentialService:
 
         Returns safe metadata only (never the plaintext or encrypted credential).
         """
-        existing = await self._repo.get_by_tenant_and_provider(
-            context.tenant_id, provider.value
-        )
+        existing = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
         if existing is not None:
             raise ConnectorCredentialError(
-                f"Credential already exists for provider {provider.value}. "
-                "Use rotate to update."
+                f"Credential already exists for provider {provider.value}. Use rotate to update."
             )
 
         encrypted, key_version = self._encryption.encrypt(plaintext_credential)
@@ -106,13 +103,10 @@ class ConnectorCredentialService:
         Decrypts with existing key version, encrypts with current key version,
         and updates the stored credential. Returns safe metadata only.
         """
-        existing = await self._repo.get_by_tenant_and_provider(
-            context.tenant_id, provider.value
-        )
+        existing = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
         if existing is None:
             raise ConnectorCredentialError(
-                f"No credential found for provider {provider.value}. "
-                "Use create to add one."
+                f"No credential found for provider {provider.value}. Use create to add one."
             )
 
         encrypted, key_version = self._encryption.encrypt(new_plaintext)
@@ -150,13 +144,9 @@ class ConnectorCredentialService:
         provider: ConnectorProvider,
     ) -> None:
         """Delete a connector credential for a tenant/provider."""
-        existing = await self._repo.get_by_tenant_and_provider(
-            context.tenant_id, provider.value
-        )
+        existing = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
         if existing is None:
-            raise ConnectorCredentialError(
-                f"No credential found for provider {provider.value}"
-            )
+            raise ConnectorCredentialError(f"No credential found for provider {provider.value}")
 
         await self._repo.delete(context.tenant_id, provider.value)
 
@@ -180,9 +170,7 @@ class ConnectorCredentialService:
         provider: ConnectorProvider,
     ) -> Optional[dict]:
         """Return safe metadata for a credential (never the secret)."""
-        credential = await self._repo.get_by_tenant_and_provider(
-            context.tenant_id, provider.value
-        )
+        credential = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
         if credential is None:
             return None
         return self._safe_metadata(credential)
@@ -198,9 +186,7 @@ class ConnectorCredentialService:
         in-memory, return to caller, caller discards after use.
         Used only by ConnectorSyncService; never exposed through APIs.
         """
-        credential = await self._repo.get_by_tenant_and_provider(
-            tenant_id, provider.value
-        )
+        credential = await self._repo.get_by_tenant_and_provider(tenant_id, provider.value)
         if credential is None:
             return None
         try:

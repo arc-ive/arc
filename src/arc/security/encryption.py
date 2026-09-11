@@ -87,9 +87,7 @@ def _load_key_from_env() -> bytes:
     """
     raw = os.getenv("CONNECTOR_ENCRYPTION_KEY", "")
     if not raw:
-        raise EncryptionError(
-            "CONNECTOR_ENCRYPTION_KEY environment variable is required"
-        )
+        raise EncryptionError("CONNECTOR_ENCRYPTION_KEY environment variable is required")
     try:
         key = base64.b64decode(raw)
     except Exception as exc:
