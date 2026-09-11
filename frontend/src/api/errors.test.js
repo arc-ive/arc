@@ -34,7 +34,59 @@ describe('ApiError', () => {
 
   it('identifies validation errors', () => {
     expect(new ApiError('bad request', { status: 400 }).isValidation).toBe(true)
+    expect(new ApiError('unprocessable', { status: 422 }).isValidation).toBe(true)
     expect(new ApiError('server error', { status: 500 }).isValidation).toBe(false)
+  })
+})
+
+describe('structured 422 validation detail', () => {
+  const validationResponse = (detail) => ({
+    isAxiosError: true,
+    response: { status: 422, data: { detail } },
+  })
+
+  it('names the offending field instead of reporting only the status', () => {
+    const message = errorMessage(
+      validationResponse([
+        { loc: ['body', 'name'], msg: 'Field required', type: 'missing' },
+      ]),
+    )
+    expect(message).toBe('name: Field required')
+    expect(message).not.toContain('status 422')
+  })
+
+  it('joins multiple field errors', () => {
+    const message = errorMessage(
+      validationResponse([
+        { loc: ['body', 'id'], msg: 'Field required' },
+        { loc: ['body', 'role'], msg: 'Input should be one of owner, member' },
+      ]),
+    )
+    expect(message).toBe('id: Field required; role: Input should be one of owner, member')
+  })
+
+  it('reports nested locations with a path', () => {
+    const message = errorMessage(
+      validationResponse([
+        { loc: ['body', 'previous_steps', 0, 'status'], msg: 'Input should be valid' },
+      ]),
+    )
+    expect(message).toBe('previous_steps.0.status: Input should be valid')
+  })
+
+  it('falls back to the status when the list carries nothing usable', () => {
+    expect(errorMessage(validationResponse([]))).toBe('Request failed with status 422')
+    expect(errorMessage(validationResponse([{ loc: ['body'] }]))).toBe(
+      'Request failed with status 422',
+    )
+  })
+
+  it('still prefers a plain string detail when the API sends one', () => {
+    const message = errorMessage({
+      isAxiosError: true,
+      response: { status: 403, data: { detail: 'Access denied' } },
+    })
+    expect(message).toBe('Access denied')
   })
 })
 
