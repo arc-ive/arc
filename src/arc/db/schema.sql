@@ -324,6 +324,42 @@ CREATE INDEX IF NOT EXISTS idx_agent_run_records_tenant_id
 CREATE INDEX IF NOT EXISTS idx_agent_run_records_created_at
     ON agent_run_records(created_at);
 
+-- Skill execution persistence (V2-ADR-014): completes the execution
+-- hierarchy (Agent -> Skill -> Tool). One row per
+-- SkillExecutionService.execute() call, including controlled failures
+-- and approval-required outcomes. agent_run_id links to the owning
+-- agent_run_records row when invoked by an Agent (NULL for direct calls).
+CREATE TABLE IF NOT EXISTS skill_execution_records (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    skill_id VARCHAR(255) NOT NULL,
+    skill_version VARCHAR(50) NOT NULL,
+    principal_id VARCHAR(255) NOT NULL,
+    agent_run_id VARCHAR(255),
+    status VARCHAR(30) NOT NULL,
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    failure_code VARCHAR(100),
+    failure_message TEXT,
+    metadata_json JSONB,
+    result_summary TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE,
+    CONSTRAINT ck_skill_execution_records_status
+        CHECK (status IN ('succeeded', 'failed', 'precondition_failed', 'approval_required', 'denied'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_skill_execution_records_tenant_id
+    ON skill_execution_records(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_skill_execution_records_skill_id
+    ON skill_execution_records(skill_id);
+CREATE INDEX IF NOT EXISTS idx_skill_execution_records_created_at
+    ON skill_execution_records(created_at);
+CREATE INDEX IF NOT EXISTS idx_skill_execution_records_agent_run_id
+    ON skill_execution_records(agent_run_id)
+    WHERE agent_run_id IS NOT NULL;
+
 -- Server-side session storage for Google OIDC authentication.
 -- Session IDs are opaque, cryptographically random, and stored in an
 -- HttpOnly cookie. The session record maps the session to a user and

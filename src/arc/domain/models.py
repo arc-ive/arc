@@ -1227,6 +1227,7 @@ class SkillExecutionResult:
     steps: List[SkillExecutionStepOutcome] = field(default_factory=list)
     error_kind: Optional[str] = None
     approval_id: Optional[str] = None
+    agent_run_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):
@@ -1485,6 +1486,52 @@ class AgentRunRecordStep:
 
 
 @dataclass
+class SkillExecutionRecord:
+    """Tenant-scoped audit record for one Skill execution (V2-ADR-014).
+
+    Persisted for every ``SkillExecutionService.execute()`` call,
+    including controlled failures and approval-required outcomes. The
+    record completes the execution hierarchy:
+
+        Agent -> agent_run_records
+        Skill -> skill_execution_records
+        Tool  -> tool_execution_records
+
+    ``agent_run_id`` links to the owning ``agent_run_records.id`` when
+    the skill was invoked by an Agent; NULL for direct execution.
+    """
+
+    id: str
+    tenant_id: str
+    skill_id: str
+    skill_version: str
+    principal_id: str
+    agent_run_id: Optional[str] = None
+    status: SkillExecutionStatus = SkillExecutionStatus.SUCCEEDED
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    failure_code: Optional[str] = None
+    failure_message: Optional[str] = None
+    metadata_json: Optional[str] = None
+    result_summary: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Skill execution record ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Skill execution record tenant_id cannot be empty")
+        if not self.skill_id:
+            raise ValueError("Skill execution record skill_id cannot be empty")
+        if not self.skill_version:
+            raise ValueError("Skill execution record skill_version cannot be empty")
+        if not self.principal_id:
+            raise ValueError("Skill execution record principal_id cannot be empty")
+        if not isinstance(self.status, SkillExecutionStatus):
+            raise ValueError(f"Invalid skill execution status: {self.status!r}")
+
+
+@dataclass
 class AgentRunRecord:
     """Persisted agent execution trace (PRD 17 O-6).
 
@@ -1550,3 +1597,36 @@ class AgentRunActivityMetrics:
             > self.total_runs
         ):
             raise ValueError("Status breakdown cannot exceed total runs")
+
+
+@dataclass
+class SkillExecutionActivityMetrics:
+    """Aggregate skill execution activity read-model over skill_execution_records.
+
+    Counts are derived from the authoritative ``skill_execution_records``
+    table using DB-level status filtering.
+    """
+
+    total_executions: int
+    succeeded: int
+    failed: int
+    approval_required: int
+    denied: int
+
+    def __post_init__(self):
+        if (
+            min(
+                self.total_executions,
+                self.succeeded,
+                self.failed,
+                self.approval_required,
+                self.denied,
+            )
+            < 0
+        ):
+            raise ValueError("Skill execution activity counts cannot be negative")
+        if (
+            self.succeeded + self.failed + self.approval_required + self.denied
+            > self.total_executions
+        ):
+            raise ValueError("Status breakdown cannot exceed total executions")

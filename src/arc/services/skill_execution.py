@@ -74,11 +74,14 @@ TRD 37 leaves the observability implementation open). Tool-level audit
 rows ARE persisted for every executed call by ``ToolExecutionService``.
 """
 
+import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from arc.domain.models import (
     Skill,
+    SkillExecutionRecord,
     SkillExecutionResult,
     SkillExecutionStatus,
     SkillExecutionStepOutcome,
@@ -115,6 +118,8 @@ _ERROR_TOOL_DENIED = "tool_denied"
 _ERROR_INVALID_INPUT = "invalid_input"
 _ERROR_EXECUTION_FAILED = "execution_error"
 
+logger = logging.getLogger("arc.skill_execution")
+
 
 class SkillExecutionService:
     """Controlled Skill execution on top of the existing foundations.
@@ -125,9 +130,11 @@ class SkillExecutionService:
     adds ONLY orchestration: ordering, gating, and structured outcomes.
     """
 
-    def __init__(self, skill_service: SkillService, tool_service: ToolExecutionService):
+    def __init__(self, skill_service: SkillService, tool_service: ToolExecutionService,
+                 record_repo=None):
         self.skill_service = skill_service
         self.tool_service = tool_service
+        self.record_repo = record_repo
 
     async def execute(
         self,
@@ -141,6 +148,7 @@ class SkillExecutionService:
         approval_id: Optional[str] = None,
         resume_from_step: Optional[int] = None,
         previous_steps: Optional[List[SkillExecutionStepOutcome]] = None,
+        agent_run_id: Optional[str] = None,
     ) -> SkillExecutionResult:
         """Execute a Skill within the trusted tenant.
 
@@ -201,35 +209,51 @@ class SkillExecutionService:
 
         skill = await self.skill_service.get_skill(context, skill_id)
 
+        # Create the persistence record early so that every terminal
+        # outcome (including skill-not-found) is auditable.
+        record_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+        record = SkillExecutionRecord(
+            id=record_id,
+            tenant_id=context.tenant_id,
+            skill_id=skill.id,
+            skill_version=skill.version,
+            principal_id=context.user_id,
+            agent_run_id=agent_run_id,
+            status=SkillExecutionStatus.FAILED,
+            started_at=now,
+        )
+        await self._persist_record(record)
+
         if skill.status is not SkillStatus.ACTIVE:
-            return self._build_result(
+            return await self._finalize(record, self._build_result(
                 context,
                 skill,
                 SkillExecutionStatus.FAILED,
                 error_kind=_ERROR_INACTIVE_SKILL,
                 steps=[],
-            )
+            ))
 
         if not self.skill_service.preconditions_met(skill, conditions):
-            return self._build_result(
+            return await self._finalize(record, self._build_result(
                 context,
                 skill,
                 SkillExecutionStatus.PRECONDITION_FAILED,
                 error_kind=_ERROR_PRECONDITION_FAILED,
                 steps=[],
-            )
+            ))
 
         # Skill-level approval_required check: on first execution (no
         # approval_id), stop before any tool call.  On resume, skip this
         # gate — the approval was already granted.
         if skill.approval_required and approval_id is None:
-            return self._build_result(
+            return await self._finalize(record, self._build_result(
                 context,
                 skill,
                 SkillExecutionStatus.APPROVAL_REQUIRED,
                 error_kind=_ERROR_APPROVAL_REQUIRED,
                 steps=[],
-            )
+            ))
 
         # Collect completed steps: either from a fresh run or from the
         # prior attempt when resuming.
@@ -245,7 +269,7 @@ class SkillExecutionService:
 
             # Gate 1 — the Skill's own declared tool set.
             if not self.skill_service.is_tool_allowed(skill, tool_name):
-                return self._stopped_result(
+                return await self._finalize(record, self._stopped_result(
                     context,
                     skill,
                     SkillExecutionStatus.DENIED,
@@ -253,7 +277,7 @@ class SkillExecutionService:
                     completed,
                     sequence,
                     tool_name,
-                )
+                ))
 
             # Gates 2..N — delegated to ToolExecutionService.
             # When resuming the approval-gated step, pass the approval_id
@@ -272,15 +296,15 @@ class SkillExecutionService:
                 # If the tool service created a new approval (REQUIRE_HUMAN_APPROVAL
                 # policy on a later tool call), propagate the approval_id upward.
                 if exc.approval_id is not None:
-                    return self._approval_required_result(
+                    return await self._finalize(record, self._approval_required_result(
                         context,
                         skill,
                         completed,
                         sequence,
                         tool_name,
                         exc.approval_id,
-                    )
-                return self._stopped_result(
+                    ))
+                return await self._finalize(record, self._stopped_result(
                     context,
                     skill,
                     SkillExecutionStatus.FAILED,
@@ -288,9 +312,9 @@ class SkillExecutionService:
                     completed,
                     sequence,
                     tool_name,
-                )
+                ))
             except ToolNotFoundError:
-                return self._stopped_result(
+                return await self._finalize(record, self._stopped_result(
                     context,
                     skill,
                     SkillExecutionStatus.FAILED,
@@ -298,9 +322,9 @@ class SkillExecutionService:
                     completed,
                     sequence,
                     tool_name,
-                )
+                ))
             except ToolValidationError:
-                return self._stopped_result(
+                return await self._finalize(record, self._stopped_result(
                     context,
                     skill,
                     SkillExecutionStatus.FAILED,
@@ -308,9 +332,9 @@ class SkillExecutionService:
                     completed,
                     sequence,
                     tool_name,
-                )
+                ))
             except ToolExecutionError:
-                return self._stopped_result(
+                return await self._finalize(record, self._stopped_result(
                     context,
                     skill,
                     SkillExecutionStatus.FAILED,
@@ -318,7 +342,7 @@ class SkillExecutionService:
                     completed,
                     sequence,
                     tool_name,
-                )
+                ))
 
             completed.append(
                 SkillExecutionStepOutcome(
@@ -330,15 +354,57 @@ class SkillExecutionService:
                 )
             )
 
-        return self._build_result(
+        return await self._finalize(record, self._build_result(
             context,
             skill,
             SkillExecutionStatus.SUCCEEDED,
             error_kind=None,
             steps=completed,
-        )
+        ))
 
     # -- internals -----------------------------------------------------
+
+    async def _persist_record(self, record: SkillExecutionRecord) -> None:
+        """Best-effort record persistence. Failures are logged, not raised."""
+        if self.record_repo is None:
+            return
+        try:
+            await self.record_repo.create_record(record)
+        except Exception:
+            logger.warning(
+                "skill_execution_record_create_failed record_id=%s tenant=%s",
+                record.id,
+                record.tenant_id,
+            )
+
+    async def _finalize(
+        self, record: SkillExecutionRecord, result: SkillExecutionResult
+    ) -> SkillExecutionResult:
+        """Update the persistence record with terminal state and return."""
+        record.status = result.status
+        record.completed_at = datetime.now(timezone.utc)
+        if result.error_kind:
+            record.failure_code = result.error_kind
+            record.failure_message = result.error_kind
+        # PII-safe result summary: only status and step count, never raw output.
+        step_count = len(result.steps)
+        record.result_summary = f"status={result.status.value} steps={step_count}"
+        await self._update_record(record)
+        result.agent_run_id = record.agent_run_id
+        return result
+
+    async def _update_record(self, record: SkillExecutionRecord) -> None:
+        """Best-effort record update. Failures are logged, not raised."""
+        if self.record_repo is None:
+            return
+        try:
+            await self.record_repo.update_record(record)
+        except Exception:
+            logger.warning(
+                "skill_execution_record_update_failed record_id=%s tenant=%s",
+                record.id,
+                record.tenant_id,
+            )
 
     @staticmethod
     def _validate_proposed_calls(tool_calls: List[Dict[str, Any]]) -> None:
