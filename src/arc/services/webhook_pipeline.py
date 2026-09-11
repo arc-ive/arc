@@ -182,9 +182,7 @@ class WebhookPipelineService:
         except NotFoundError:
             # Try claiming from retrying status using a dedicated single-event
             # claim (C1 fix: no longer claims unrelated events).
-            claimed = await self._webhook_repository.claim_single_for_retry(
-                event_id, tenant_id
-            )
+            claimed = await self._webhook_repository.claim_single_for_retry(event_id, tenant_id)
             if claimed is None:
                 raise NotFoundError(
                     f"Webhook event '{event_id}' not found or not in "

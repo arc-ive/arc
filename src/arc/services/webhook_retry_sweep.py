@@ -64,9 +64,7 @@ async def _retry_sweep_loop(
             tenant_ids = _get_configured_tenant_ids()
             for tenant_id in tenant_ids:
                 await _process_retryable_for_tenant(pipeline_service, tenant_id)
-                await _sweep_stuck_for_tenant(
-                    pipeline_service, tenant_id, stuck_threshold_seconds
-                )
+                await _sweep_stuck_for_tenant(pipeline_service, tenant_id, stuck_threshold_seconds)
         except Exception:
             logger.exception("webhook_retry_sweep_error")
         try:
@@ -118,9 +116,7 @@ async def _sweep_stuck_for_tenant(
     """
     repo = pipeline_service._webhook_repository
     try:
-        stuck_events = await repo.sweep_stuck_processing(
-            tenant_id, stuck_threshold_seconds
-        )
+        stuck_events = await repo.sweep_stuck_processing(tenant_id, stuck_threshold_seconds)
     except Exception:
         logger.exception(
             "Failed to sweep stuck processing events",
@@ -130,9 +126,7 @@ async def _sweep_stuck_for_tenant(
 
     for event in stuck_events:
         try:
-            await repo.mark_dead_letter(
-                event.event_id, tenant_id, "stuck_processing"
-            )
+            await repo.mark_dead_letter(event.event_id, tenant_id, "stuck_processing")
             logger.warning(
                 "Recovered stuck processing event to dead_letter",
                 extra={

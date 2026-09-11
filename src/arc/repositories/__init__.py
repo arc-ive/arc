@@ -404,9 +404,7 @@ class WebhookEventRepository(Protocol):
         """
         ...
 
-    async def claim_single_for_retry(
-        self, event_id: str, tenant_id: str
-    ) -> Optional[WebhookEvent]:
+    async def claim_single_for_retry(self, event_id: str, tenant_id: str) -> Optional[WebhookEvent]:
         """Atomically claim a single retrying event by event_id.
 
         Transitions the event from 'retrying' to 'processing' if its

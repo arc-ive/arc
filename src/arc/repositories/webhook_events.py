@@ -230,9 +230,7 @@ class PostgreSQLWebhookEventRepository:
                     claimed.append(self._row_to_event(result))
         return claimed
 
-    async def claim_single_for_retry(
-        self, event_id: str, tenant_id: str
-    ):
+    async def claim_single_for_retry(self, event_id: str, tenant_id: str):
         """Atomically claim a single retrying event by event_id.
 
         Returns the claimed event or None if not claimable.

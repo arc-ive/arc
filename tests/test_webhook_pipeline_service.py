@@ -176,9 +176,7 @@ class FakeRepository:
                     break
         return claimed
 
-    async def claim_single_for_retry(
-        self, event_id: str, tenant_id: str
-    ) -> Optional[WebhookEvent]:
+    async def claim_single_for_retry(self, event_id: str, tenant_id: str) -> Optional[WebhookEvent]:
         now = datetime.now(timezone.utc)
         for e in self._events.values():
             if (
@@ -1169,14 +1167,14 @@ async def test_idempotency_prevents_duplicate_tool_execution():
 
     # Execute downstream (simulating the pipeline's _execute_downstream).
     idempotency_key = compute_idempotency_key("tenant-1", event.event_id)
-    await svc._execute_downstream(
-        "tenant-1", event.endpoint_id, event.event_type, idempotency_key
-    )
+    await svc._execute_downstream("tenant-1", event.endpoint_id, event.event_type, idempotency_key)
     assert call_count == 1
 
     # Simulate crash: event stays in PROCESSING, then recovered to RETRYING.
     await repo.mark_retrying(
-        event.event_id, "tenant-1", 1,
+        event.event_id,
+        "tenant-1",
+        1,
         datetime.now(timezone.utc) - timedelta(seconds=1),
     )
 
