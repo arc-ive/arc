@@ -14,7 +14,7 @@ domain models reject empty strings in ``__post_init__``.
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator
+from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator, model_validator
 
 from arc.domain.models import (
     ConnectorProvider,
@@ -24,6 +24,20 @@ from arc.domain.models import (
     ToolExecutionStatus,
     UserRole,
 )
+
+
+def _reject_explicit_nulls(model: BaseModel, fields: tuple[str, ...]) -> None:
+    """Reject fields that were sent explicitly as null.
+
+    Omitting a key on a partial update keeps the stored value, but sending
+    ``null`` is a value, and the domain models refuse it. Without this the null
+    reaches a dataclass constructor outside the handler's try/except and
+    surfaces as a 500 instead of a validation error.
+    """
+    for name in fields:
+        if name in model.model_fields_set and getattr(model, name) is None:
+            raise ValueError(f"{name} must not be null")
+
 
 # ---------------------------------------------------------------------------
 # Tenants
@@ -52,6 +66,11 @@ class TenantUpdateRequest(BaseModel):
     phone: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _check_nulls(self):
+        _reject_explicit_nulls(self, ("name",))
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +155,11 @@ class SkillUpdateRequest(BaseModel):
     risk: Optional[SkillRiskLevel] = None
     status: Optional[SkillStatus] = None
 
+    @model_validator(mode="after")
+    def _check_nulls(self):
+        _reject_explicit_nulls(self, ("name", "purpose", "version", "status"))
+        return self
+
 
 # ---------------------------------------------------------------------------
 # Skill and agent execution
@@ -159,14 +183,35 @@ class PreviousStepInput(BaseModel):
 
     These entries were previously read by direct dictionary indexing outside
     any try/except, so a missing key or an unknown ``status`` produced a 500.
+    The field constraints and the cross-field rules below mirror
+    ``SkillExecutionStepOutcome.__post_init__``: anything it rejects has to be
+    rejected here, or it still reaches the dataclass and still returns a 500.
     """
 
-    sequence: int
-    tool_name: str
+    # StrictInt because the dataclass rejects bool explicitly, and bool is a
+    # subclass of int.
+    sequence: StrictInt = Field(ge=0)
+    tool_name: str = Field(min_length=1)
     status: ToolExecutionStatus
     tool_version: Optional[str] = None
     output: Optional[Any] = None
     error_kind: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _check_status_invariants(self):
+        if self.status is ToolExecutionStatus.SUCCESS:
+            if self.error_kind is not None:
+                raise ValueError("successful steps cannot have an error kind")
+            if self.output is None:
+                raise ValueError("successful steps must carry an output")
+            if not self.tool_version:
+                raise ValueError("successful steps must record a tool version")
+        elif self.status is ToolExecutionStatus.FAILED:
+            if not self.error_kind:
+                raise ValueError("failed steps require an error kind")
+            if self.output is not None:
+                raise ValueError("failed steps cannot carry an output")
+        return self
 
 
 class SkillResumeRequest(BaseModel):
@@ -174,7 +219,7 @@ class SkillResumeRequest(BaseModel):
 
     approval_id: str = Field(min_length=1)
     tool_calls: List[Any] = Field(min_length=1)
-    resume_from_step: int = Field(ge=0)
+    resume_from_step: StrictInt = Field(ge=0)
     previous_steps: List[PreviousStepInput] = Field(default_factory=list)
     satisfied_preconditions: Any = Field(default_factory=list)
 
@@ -184,6 +229,13 @@ class AgentRunRequest(BaseModel):
 
     ``goal`` stays untyped: the handler passes it to the agent service
     without inspecting it.
+
+    ``tenant_id`` is declared so the field appears in the generated document,
+    but its constraint never fires: ``_require_tenant_permission_from_body``
+    is a sub-dependency, and FastAPI resolves sub-dependencies before the
+    route's own body, so a missing or empty ``tenant_id`` is already rejected
+    there with a 400 and a string detail. Moving that check into this model
+    would change an authorization-boundary error, which is out of scope here.
     """
 
     tenant_id: str = Field(min_length=1)
@@ -191,13 +243,16 @@ class AgentRunRequest(BaseModel):
 
 
 class AgentResumeRequest(BaseModel):
-    """Body of ``POST /agent/runs/resume``."""
+    """Body of ``POST /agent/runs/resume``.
+
+    See ``AgentRunRequest`` on why ``tenant_id``'s constraint is unreachable.
+    """
 
     tenant_id: str = Field(min_length=1)
     approval_id: str = Field(min_length=1)
     skill_id: str = Field(min_length=1)
     tool_calls: List[Any] = Field(min_length=1)
-    resume_from_step: int = Field(ge=0)
+    resume_from_step: StrictInt = Field(ge=0)
     previous_steps: List[PreviousStepInput] = Field(default_factory=list)
     satisfied_preconditions: Any = Field(default_factory=list)
 
@@ -213,7 +268,7 @@ class KnowledgeCreateRequest(BaseModel):
     source: KnowledgeSource
     provenance: str = Field(min_length=1)
     content: str = Field(min_length=1)
-    version: int = 1
+    version: StrictInt = 1
     external_id: Optional[str] = None
 
 
@@ -288,6 +343,7 @@ __all__ = [
     "ApprovalDecisionRequest",
     "ToolExecuteRequest",
     "AUTHENTICATED_ERROR_RESPONSES",
+    "AUTHENTICATION_ONLY_ERROR_RESPONSES",
 ]
 
 
@@ -304,6 +360,15 @@ ERROR_DETAIL_SCHEMA = {
 #: generated document reflects them without repeating the same block on each
 #: of the routes. FastAPI already documents 422 by itself for any route with a
 #: validatable body or parameter, so it is deliberately not repeated here.
+#: For routes that authenticate but run no permission check, so 403 never
+#: applies to them: session-scoped auth routes and HMAC-signed webhook intake.
+AUTHENTICATION_ONLY_ERROR_RESPONSES = {
+    401: {
+        "description": "Authentication is missing or invalid.",
+        "content": {"application/json": {"schema": ERROR_DETAIL_SCHEMA}},
+    },
+}
+
 AUTHENTICATED_ERROR_RESPONSES = {
     401: {
         "description": "Authentication is missing or invalid.",

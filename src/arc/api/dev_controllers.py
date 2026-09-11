@@ -20,7 +20,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends
 
 from arc.api.controllers import app_context
-from arc.api.schemas import DevMembershipCreateRequest
+from arc.api.schemas import AUTHENTICATED_ERROR_RESPONSES, DevMembershipCreateRequest
 from arc.security.authorization import MEMBERSHIP_CREATE
 from arc.security.dependencies import require_permission
 from arc.security.models import AuthenticatedPrincipal
@@ -29,7 +29,10 @@ from arc.services.domain import UserService
 dev_router = APIRouter(prefix="/internal/dev")
 
 
-@dev_router.post("/users/{user_id}/tenants/{tenant_id}/memberships")
+@dev_router.post(
+    "/users/{user_id}/tenants/{tenant_id}/memberships",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
+)
 async def create_membership(
     user_id: str,
     tenant_id: str,

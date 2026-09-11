@@ -91,6 +91,49 @@ class TestResumeStepsReturn422:
         )
         _assert_structured_422(response)
 
+    @pytest.mark.parametrize(
+        "step",
+        [
+            pytest.param(
+                {"sequence": 1, "tool_name": "x", "status": "success"}, id="success-no-output"
+            ),
+            pytest.param(
+                {"sequence": 1, "tool_name": "x", "status": "failed"}, id="failed-no-error-kind"
+            ),
+            pytest.param(
+                {"sequence": 1, "tool_name": "", "status": "failed", "error_kind": "e"},
+                id="empty-tool-name",
+            ),
+            pytest.param(
+                {"sequence": -1, "tool_name": "x", "status": "failed", "error_kind": "e"},
+                id="negative-sequence",
+            ),
+            pytest.param(
+                {"sequence": True, "tool_name": "x", "status": "failed", "error_kind": "e"},
+                id="boolean-sequence",
+            ),
+        ],
+    )
+    async def test_skill_resume_rejects_steps_the_domain_model_refuses(self, client, admin, step):
+        """Each of these reached SkillExecutionStepOutcome and raised a 500.
+
+        Presence and type validation alone is not enough: the dataclass also
+        enforces cross-field rules, and anything it rejects has to be rejected
+        during request validation or it still surfaces as a 500.
+        """
+        tenant, _, token = admin
+        response = client.post(
+            f"/skills/does-not-matter/resume?tenant_id={tenant.id}",
+            json={
+                "approval_id": "a-1",
+                "tool_calls": [{"tool": "x"}],
+                "resume_from_step": 0,
+                "previous_steps": [step],
+            },
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
     async def test_agent_resume_with_invalid_step_status(self, client, admin):
         tenant, _, token = admin
         response = client.post(
@@ -151,7 +194,9 @@ class TestInvalidEnumValuesReturn422:
         tenant, _, token = admin
         response = client.post(
             f"/tenants/{tenant.id}/knowledge",
-            json={"title": "T", "content": "C", "source": "hearsay"},
+            # Every other required field is valid, so only the bad enum can
+            # be responsible for the rejection.
+            json={"content": "C", "provenance": "p", "source": "hearsay"},
             headers=_auth(token),
         )
         _assert_structured_422(response)
@@ -258,3 +303,26 @@ class TestValidRequestsAreUnaffected:
         tenant, _, token = admin
         response = client.get(f"/tenants/{tenant.id}/approvals", headers=_auth(token))
         assert response.status_code == 200
+
+    async def test_partial_update_leaves_omitted_fields_untouched(self, client, admin):
+        """The models must not turn a partial update into a full replacement.
+
+        This is the highest-risk behaviour in the change: an omitted key has to
+        keep its stored value, which depends on exclude_unset rather than on
+        field defaults.
+        """
+        tenant, _, token = admin
+        seed = client.put(
+            f"/tenants/{tenant.id}",
+            json={"name": "Contract Co", "industry": "Technology"},
+            headers=_auth(token),
+        )
+        assert seed.status_code == 200
+
+        response = client.put(
+            f"/tenants/{tenant.id}", json={"industry": "Healthcare"}, headers=_auth(token)
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["industry"] == "Healthcare"
+        assert body["name"] == "Contract Co"
