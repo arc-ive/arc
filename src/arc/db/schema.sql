@@ -145,6 +145,19 @@ ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS authorization_outcom
 
 CREATE INDEX IF NOT EXISTS idx_tool_execution_records_tenant_id ON tool_execution_records(tenant_id);
 
+-- Idempotency key for tool execution deduplication (Issue #136, V2-ADR-019):
+-- When set, prevents duplicate handler invocations for the same logical
+-- operation. NULL for legacy records and non-idempotent calls.
+ALTER TABLE tool_execution_records
+    ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(512);
+
+-- Partial unique index: at most one SUCCESS record per idempotency key.
+-- Failed records are NOT constrained — retries after failure must be allowed.
+-- Only applies to non-NULL keys (legacy rows have NULL and are unaffected).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tool_execution_records_idempotency_key
+    ON tool_execution_records(idempotency_key)
+    WHERE idempotency_key IS NOT NULL AND status = 'success';
+
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS knowledge_chunks (
@@ -253,6 +266,14 @@ ALTER TABLE webhook_events
 ALTER TABLE webhook_events
     ADD CONSTRAINT ck_webhook_events_status
     CHECK (status IN ('received', 'processing', 'processed', 'retrying', 'failed', 'dead_letter'));
+
+-- Composite index for webhook retry sweep queries (Issue #136):
+-- Supports efficient lookup of retrying events by (tenant, status, schedule)
+-- and stuck-processing recovery by (tenant, status, created_at).
+CREATE INDEX IF NOT EXISTS idx_webhook_events_retry
+    ON webhook_events(tenant_id, status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_stuck
+    ON webhook_events(tenant_id, status, created_at);
 
 -- Observability foundation (PRD 17, TRD 17/28/31): metadata-only HTTP
 -- telemetry owned by the Observability/API layer. This is NOT a generic

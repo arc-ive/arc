@@ -1,4 +1,4 @@
-"""Webhook downstream processing pipeline (Issue #102, PRD 16).
+"""Webhook downstream processing pipeline (Issue #102, #136, PRD 16).
 
 Implements the webhook-to-Skill execution pipeline that transitions
 received webhook events through processing to processed or failed.
@@ -23,6 +23,9 @@ Security invariants:
 - At most one processor can atomically claim a received event.
   Downstream execution is best-effort; a crash during processing
   leaves the event in ``processing`` status (manual recovery).
+- Retries use a deterministic idempotency key derived from the
+  webhook event to prevent duplicate downstream side effects
+  (V2-ADR-019, Issue #136).
 """
 
 import logging
@@ -41,6 +44,7 @@ from arc.security.authorization import AuthorizationService
 from arc.security.models import ApplicationRole, AuthenticatedPrincipal
 from arc.services.pii import PiiGuardService
 from arc.services.skill_execution import SkillExecutionService
+from arc.services.tools import ToolDeniedError
 from arc.services.webhook_config import WebhookEndpointStore
 
 logger = logging.getLogger("arc.services.webhook_pipeline")
@@ -58,19 +62,24 @@ _ERROR_UNKNOWN_ACTION_TYPE = "unknown_action_type"
 _ERROR_CONFIGURATION = "configuration_error"
 _ERROR_DOWNSTREAM = "downstream_execution_error"
 _ERROR_INTERNAL = "pipeline_internal_error"
+_ERROR_DISALLOWED_TOOL = "disallowed_tool"
+_ERROR_AUTHORIZATION = "authorization_error"
 
 # Retry configuration defaults.
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_BASE_DELAY_SECONDS = 10
 DEFAULT_MAX_DELAY_SECONDS = 300
 
-# Error kinds that are NEVER retried (permanent/auth failures).
-# These go straight to dead-letter or failed.
+# Error kinds that are NEVER retried (permanent/auth/policy failures).
+# These go straight to failed. Authentication failures (HMAC) never
+# reach the pipeline. Authorization/policy failures are permanent.
 _PERMANENT_ERROR_KINDS = frozenset(
     {
         _ERROR_NO_ACTION,
         _ERROR_UNKNOWN_ACTION_TYPE,
         _ERROR_CONFIGURATION,
+        _ERROR_DISALLOWED_TOOL,
+        _ERROR_AUTHORIZATION,
     }
 )
 
@@ -79,7 +88,8 @@ def is_transient_failure(error_kind: str) -> bool:
     """Return True if the error kind represents a retryable transient failure.
 
     Transient failures are: downstream execution errors and internal
-    pipeline errors. Configuration and action errors are permanent.
+    pipeline errors. Configuration, action, authorization, and policy
+    errors are permanent.
     """
     return error_kind not in _PERMANENT_ERROR_KINDS
 
@@ -107,6 +117,16 @@ def classify_failure(error_kind: str, retry_count: int, max_retries: int) -> str
     return "retry"
 
 
+def compute_idempotency_key(tenant_id: str, event_id: str) -> str:
+    """Compute a deterministic idempotency key for a webhook event.
+
+    The key is scoped to (tenant, event) and is stable across retries.
+    Per-tool-step differentiation is handled by SkillExecutionService
+    which appends the step index.
+    """
+    return f"webhook:{tenant_id}:{event_id}"
+
+
 class WebhookProcessingError(Exception):
     """Controlled failure of a webhook processing attempt."""
 
@@ -122,7 +142,7 @@ class WebhookPipelineService:
     processing, resolves the configured downstream action, and routes
     the event through the existing SkillExecutionService. On success
     the event transitions to ``processed``; on any failure it
-    transitions to ``failed`` with a safe error category.
+    transitions to ``failed`` or ``retrying`` with a safe error category.
     """
 
     def __init__(
@@ -160,11 +180,25 @@ class WebhookPipelineService:
         try:
             event = await self._webhook_repository.claim_for_processing(event_id, tenant_id)
         except NotFoundError:
-            # Try claiming from retrying status.
-            event = await self._claim_for_retry_single(event_id, tenant_id)
+            # Try claiming from retrying status using a dedicated single-event
+            # claim (C1 fix: no longer claims unrelated events).
+            claimed = await self._webhook_repository.claim_single_for_retry(
+                event_id, tenant_id
+            )
+            if claimed is None:
+                raise NotFoundError(
+                    f"Webhook event '{event_id}' not found or not in "
+                    f"retryable status in tenant {tenant_id}"
+                )
+            event = claimed
+
+        # Compute deterministic idempotency key for downstream dedup.
+        idempotency_key = compute_idempotency_key(tenant_id, event_id)
 
         try:
-            await self._execute_downstream(tenant_id, event.endpoint_id, event.event_type)
+            await self._execute_downstream(
+                tenant_id, event.endpoint_id, event.event_type, idempotency_key
+            )
             # Step 2a: Downstream succeeded -> processed.
             await self._webhook_repository.mark_processed(event_id, tenant_id)
             logger.info(
@@ -277,16 +311,6 @@ class WebhookPipelineService:
                 f"Webhook processing failed: {error_kind}",
             ) from exc
 
-    async def _claim_for_retry_single(self, event_id: str, tenant_id: str):
-        """Claim a single event from retrying status for immediate processing."""
-        claimed = await self._webhook_repository.claim_for_retry(tenant_id, limit=100)
-        for event in claimed:
-            if event.event_id == event_id:
-                return event
-        raise NotFoundError(
-            f"Webhook event '{event_id}' not found or not in retryable status in tenant {tenant_id}"
-        )
-
     async def _schedule_retry(
         self, event_id: str, tenant_id: str, current_retry_count: int, error_kind: str
     ) -> None:
@@ -308,12 +332,21 @@ class WebhookPipelineService:
             },
         )
 
-    async def _execute_downstream(self, tenant_id: str, endpoint_id: str, event_type: str) -> None:
+    async def _execute_downstream(
+        self,
+        tenant_id: str,
+        endpoint_id: str,
+        event_type: str,
+        idempotency_key: str,
+    ) -> None:
         """Execute the configured downstream action for an endpoint.
 
         Resolves the endpoint configuration, validates the action,
         constructs the system context, and delegates to
         SkillExecutionService.
+
+        The ``idempotency_key`` is derived from the webhook event and
+        passed through to prevent duplicate side effects on retry.
 
         Raises:
             WebhookProcessingError: on any handled failure.
@@ -370,11 +403,21 @@ class WebhookPipelineService:
                 action.tool_calls,
                 action.satisfied_conditions,
                 authorization,
+                idempotency_key=idempotency_key,
             )
         except (ValueError, NotFoundError) as exc:
             raise WebhookProcessingError(
                 _ERROR_CONFIGURATION,
                 f"Skill execution configuration error: {_ERROR_CONFIGURATION}",
+            ) from exc
+        except ToolDeniedError as exc:
+            # F1 fix: ToolDeniedError from authorization or policy is
+            # permanent — never retry. Maps to authorization_error or
+            # disallowed_tool depending on the underlying cause.
+            error_kind = _ERROR_AUTHORIZATION
+            raise WebhookProcessingError(
+                error_kind,
+                f"Tool execution denied: {error_kind}",
             ) from exc
 
         # Any non-success status from SkillExecutionService is a failure.

@@ -11,7 +11,7 @@ execution service (TRD 14.2): secrets, credentials, raw sensitive
 payloads, and internal stack traces must never reach this table.
 """
 
-from typing import List
+from typing import List, Optional
 
 from arc.db.connection import ArcDatabase
 from arc.domain.models import (
@@ -43,6 +43,7 @@ class PostgreSQLToolExecutionRepository:
             input_summary=row["input_summary"],
             output_summary=row["output_summary"],
             error_kind=row["error_kind"],
+            idempotency_key=row["idempotency_key"],
             created_at=row["created_at"],
         )
 
@@ -54,8 +55,8 @@ class PostgreSQLToolExecutionRepository:
                 INSERT INTO tool_execution_records
                     (id, tenant_id, user_id, tool_name, tool_version, status,
                      authorization_outcome, risk_level, input_summary,
-                     output_summary, error_kind, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                     output_summary, error_kind, idempotency_key, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 """,
                 record.id,
                 record.tenant_id,
@@ -68,9 +69,35 @@ class PostgreSQLToolExecutionRepository:
                 record.input_summary,
                 record.output_summary,
                 record.error_kind,
+                record.idempotency_key,
                 record.created_at,
             )
             return record
+
+    async def find_successful_by_idempotency_key(
+        self, idempotency_key: str, tenant_id: str
+    ) -> Optional[ToolExecutionRecord]:
+        """Find a prior successful execution by idempotency key.
+
+        Returns the existing successful record if one exists for the
+        given key and tenant, or None.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, tenant_id, user_id, tool_name, tool_version, status,
+                       authorization_outcome, risk_level, input_summary,
+                       output_summary, error_kind, idempotency_key, created_at
+                FROM tool_execution_records
+                WHERE idempotency_key = $1 AND tenant_id = $2 AND status = 'success'
+                LIMIT 1
+                """,
+                idempotency_key,
+                tenant_id,
+            )
+            if row is None:
+                return None
+            return self._from_row(row)
 
     async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[ToolExecutionRecord]:
         """List the most recent tool execution records for a tenant."""
@@ -79,7 +106,7 @@ class PostgreSQLToolExecutionRepository:
                 """
                 SELECT id, tenant_id, user_id, tool_name, tool_version, status,
                        authorization_outcome, risk_level, input_summary,
-                       output_summary, error_kind, created_at
+                       output_summary, error_kind, idempotency_key, created_at
                 FROM tool_execution_records
                 WHERE tenant_id = $1
                 ORDER BY created_at DESC

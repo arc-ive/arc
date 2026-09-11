@@ -738,6 +738,7 @@ class ToolExecutionRecord:
     authorization_outcome: ToolAuthorizationOutcome = ToolAuthorizationOutcome.GRANTED
     output_summary: Optional[str] = None
     error_kind: Optional[str] = None
+    idempotency_key: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):

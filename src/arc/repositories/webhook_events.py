@@ -230,6 +230,31 @@ class PostgreSQLWebhookEventRepository:
                     claimed.append(self._row_to_event(result))
         return claimed
 
+    async def claim_single_for_retry(
+        self, event_id: str, tenant_id: str
+    ):
+        """Atomically claim a single retrying event by event_id.
+
+        Returns the claimed event or None if not claimable.
+        """
+        now = datetime.now(timezone.utc)
+        async with self.db.transaction() as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE webhook_events
+                SET status = 'processing'
+                WHERE event_id = $1 AND tenant_id = $2
+                  AND status = 'retrying' AND next_retry_at <= $3
+                RETURNING {_SELECT_COLUMNS}
+                """,
+                event_id,
+                tenant_id,
+                now,
+            )
+            if row is None:
+                return None
+            return self._row_to_event(row)
+
     async def mark_dead_letter(self, event_id: str, tenant_id: str, error_kind: str) -> None:
         """Transition an event to 'dead_letter' status."""
         now = datetime.now(timezone.utc)

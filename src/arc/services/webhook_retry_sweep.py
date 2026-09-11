@@ -57,13 +57,16 @@ async def _retry_sweep_loop(
     Each iteration:
     1. Discovers configured tenants from the endpoint environment.
     2. For each tenant, claims and re-processes retryable events.
-    3. Optionally sweeps stuck processing events.
+    3. Sweeps stuck processing events (crash recovery).
     """
     while not stop_event.is_set():
         try:
             tenant_ids = _get_configured_tenant_ids()
             for tenant_id in tenant_ids:
                 await _process_retryable_for_tenant(pipeline_service, tenant_id)
+                await _sweep_stuck_for_tenant(
+                    pipeline_service, tenant_id, stuck_threshold_seconds
+                )
         except Exception:
             logger.exception("webhook_retry_sweep_error")
         try:
@@ -97,6 +100,50 @@ async def _process_retryable_for_tenant(
         except Exception:
             logger.exception(
                 "Retry sweep failed to process event",
+                extra={"event_id": event.event_id, "tenant_id": tenant_id},
+            )
+
+
+async def _sweep_stuck_for_tenant(
+    pipeline_service: WebhookPipelineService,
+    tenant_id: str,
+    stuck_threshold_seconds: int,
+) -> None:
+    """Recover events stuck in 'processing' beyond the threshold.
+
+    Stuck events are moved to 'dead_letter' to prevent indefinite
+    blocking. The idempotency key on downstream tool execution records
+    ensures that if the original processing succeeded before the crash,
+    a retry will not duplicate side effects.
+    """
+    repo = pipeline_service._webhook_repository
+    try:
+        stuck_events = await repo.sweep_stuck_processing(
+            tenant_id, stuck_threshold_seconds
+        )
+    except Exception:
+        logger.exception(
+            "Failed to sweep stuck processing events",
+            extra={"tenant_id": tenant_id},
+        )
+        return
+
+    for event in stuck_events:
+        try:
+            await repo.mark_dead_letter(
+                event.event_id, tenant_id, "stuck_processing"
+            )
+            logger.warning(
+                "Recovered stuck processing event to dead_letter",
+                extra={
+                    "event_id": event.event_id,
+                    "tenant_id": tenant_id,
+                    "created_at": event.created_at.isoformat(),
+                },
+            )
+        except Exception:
+            logger.exception(
+                "Failed to mark stuck event as dead_letter",
                 extra={"event_id": event.event_id, "tenant_id": tenant_id},
             )
 

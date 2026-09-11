@@ -506,6 +506,7 @@ class ToolExecutionService:
         raw_input: Dict[str, Any],
         authorization: AuthorizationService,
         approval_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> ToolExecutionResult:
         """Execute an approved tool following the TRD 14.1 flow.
 
@@ -730,6 +731,21 @@ class ToolExecutionService:
 
         input_data = validated.model_dump()
 
+        # Idempotency check (V2-ADR-019): if an idempotency_key is
+        # provided and a prior successful execution exists, skip the
+        # handler and return the previous result. This prevents duplicate
+        # side effects on webhook retry after a crash.
+        if idempotency_key is not None:
+            prior = await self.record_repo.find_successful_by_idempotency_key(
+                idempotency_key, context.tenant_id
+            )
+            if prior is not None:
+                return ToolExecutionResult(
+                    tool_name=tool.name,
+                    tool_version=tool.version,
+                    output={},  # Output not stored in full; idempotent skip.
+                )
+
         try:
             output = tool.handler(input_data, context.tenant_id)
         except Exception:
@@ -751,6 +767,7 @@ class ToolExecutionService:
             tool=tool,
             input_summary=_summarize(input_data),
             output_summary=_summarize(output),
+            idempotency_key=idempotency_key,
         )
         return ToolExecutionResult(
             tool_name=tool.name,
@@ -788,6 +805,7 @@ class ToolExecutionService:
         tool: ToolDefinition,
         input_summary: str,
         output_summary: str,
+        idempotency_key: Optional[str] = None,
     ) -> None:
         if self.pii_guard is not None:
             try:
@@ -807,6 +825,7 @@ class ToolExecutionService:
                 risk_level=tool.risk_level,
                 input_summary=input_summary,
                 output_summary=output_summary,
+                idempotency_key=idempotency_key,
             )
         )
 
