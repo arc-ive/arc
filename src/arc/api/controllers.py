@@ -1961,9 +1961,7 @@ async def ingest_webhook_event(
     # is NOT re-triggered to avoid duplicate downstream execution.
     if not result.duplicate:
         try:
-            await webhook_pipeline_service.process(
-                result.event.tenant_id, result.event.event_id
-            )
+            await webhook_pipeline_service.process(result.event.tenant_id, result.event.event_id)
             # Refresh the event to reflect processed status.
             result.event = await webhook_ingestion_service._repository.get_by_event_id(
                 result.event.event_id, result.event.tenant_id
@@ -1973,8 +1971,7 @@ async def ingest_webhook_event(
             # ``received`` status for manual retry via the /process
             # endpoint. Ingestion still returns 201.
             logger.warning(
-                "Webhook auto-dispatch failed; event remains in 'received' "
-                "status for manual retry",
+                "Webhook auto-dispatch failed; event remains in 'received' status for manual retry",
                 extra={
                     "endpoint_id": endpoint_id,
                     "event_id": result.event.event_id,
