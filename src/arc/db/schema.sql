@@ -230,6 +230,30 @@ ALTER TABLE webhook_events
 ALTER TABLE webhook_events
     ADD COLUMN IF NOT EXISTS processed_at TIMESTAMP WITH TIME ZONE;
 
+-- Webhook retry/backoff pipeline (Issue #136, V2-ADR-019, TRD 22):
+-- retry_count tracks how many retry attempts have been made.
+-- next_retry_at is set when status = 'retrying' and cleared on retry.
+-- max_retries bounds the total number of retry attempts (default 5).
+-- These statements are idempotent and safe for both fresh and existing
+-- databases.
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS max_retries INTEGER NOT NULL DEFAULT 5;
+
+-- Extend the status CHECK constraint to include 'retrying' and
+-- 'dead_letter' for bounded retry and dead-letter states.
+ALTER TABLE webhook_events
+    DROP CONSTRAINT IF EXISTS ck_webhook_events_status;
+
+ALTER TABLE webhook_events
+    ADD CONSTRAINT ck_webhook_events_status
+    CHECK (status IN ('received', 'processing', 'processed', 'retrying', 'failed', 'dead_letter'));
+
 -- Observability foundation (PRD 17, TRD 17/28/31): metadata-only HTTP
 -- telemetry owned by the Observability/API layer. This is NOT a generic
 -- event table and never duplicates subsystem records - tool executions,

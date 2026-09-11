@@ -768,20 +768,21 @@ class WebhookEventStatus(str, Enum):
 
     - ``received``: ingested and recorded, awaiting processing.
     - ``processing``: claimed by a pipeline processor (atomic transition
-      from ``received``; at most one processor wins).
+      from ``received`` or ``retrying``; at most one processor wins).
     - ``processed``: downstream execution completed successfully.
-    - ``failed``: downstream execution failed; ``error_kind`` records
-      the safe error category.
-
-    ``processing``, ``processed``, and ``failed`` are terminal states
-    for the current processing attempt. A stuck ``processing`` event
-    (process crash) requires manual recovery.
+    - ``retrying``: transient failure; waiting for next retry attempt.
+    - ``failed``: permanent failure; ``error_kind`` records the safe
+      error category. No further retries.
+    - ``dead_letter``: exhausted all retry attempts; manual intervention
+      required.
     """
 
     RECEIVED = "received"
     PROCESSING = "processing"
     PROCESSED = "processed"
+    RETRYING = "retrying"
     FAILED = "failed"
+    DEAD_LETTER = "dead_letter"
 
 
 @dataclass
@@ -812,6 +813,9 @@ class WebhookEvent:
     created_at: datetime = field(default_factory=datetime.now)
     error_kind: Optional[str] = None
     processed_at: Optional[datetime] = None
+    retry_count: int = 0
+    next_retry_at: Optional[datetime] = None
+    max_retries: int = 5
 
     def __post_init__(self):
         if not self.id:
