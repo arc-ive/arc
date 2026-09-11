@@ -182,6 +182,43 @@ CREATE TABLE IF NOT EXISTS connector_sync_records (
 
 CREATE INDEX IF NOT EXISTS idx_connector_sync_records_tenant_id ON connector_sync_records(tenant_id);
 
+-- Tenant-isolated connector credentials (Issue #137, V2-ADR-015, TRD 20):
+-- One encrypted credential per (tenant_id, provider). Credentials are
+-- encrypted at rest using AES-256-GCM with a configured key. The
+-- key_version supports future key rotation. Plaintext credentials are
+-- never stored, logged, or returned through API responses.
+CREATE TABLE IF NOT EXISTS connector_credentials (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    encrypted_credential BYTEA NOT NULL,
+    key_version INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rotated_at TIMESTAMP WITH TIME ZONE,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT uq_connector_credentials_tenant_provider UNIQUE (tenant_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_connector_credentials_tenant_id ON connector_credentials(tenant_id);
+
+-- Credential audit events (Issue #137, V2-ADR-015):
+-- Metadata-only records of credential lifecycle operations. Never
+-- contain plaintext credentials, encryption keys, or decrypted material.
+CREATE TABLE IF NOT EXISTS connector_credential_audit (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    operation VARCHAR(50) NOT NULL,
+    actor_user_id VARCHAR(255) NOT NULL,
+    key_version INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_connector_credential_audit_operation
+        CHECK (operation IN ('create', 'rotate', 'delete'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_connector_credential_audit_tenant_id ON connector_credential_audit(tenant_id);
+
 -- Webhooks foundation (PRD 16, TRD 16): tenant-scoped records of
 -- validated inbound webhook events. Records are metadata-only by design:
 -- raw external payloads are untrusted input (ADR-001 webhook security
