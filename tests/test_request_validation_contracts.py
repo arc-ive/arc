@@ -202,6 +202,40 @@ class TestQueryParameterBounds:
         _assert_structured_422(response)
 
 
+class TestOpenAPIDocumentsErrorResponses:
+    """R6: the generated document lists the errors each endpoint can return.
+
+    These assert the document, not the models, and they distinguish public
+    routes from protected ones — declaring 401 on an endpoint that cannot
+    return it would be as wrong as omitting it from one that can.
+    """
+
+    @staticmethod
+    def _responses(path, method):
+        from arc.main import app
+
+        return set(app.openapi()["paths"][path][method].get("responses", {}))
+
+    def test_protected_endpoint_documents_authentication_errors(self):
+        responses = self._responses("/platform/users", "get")
+        assert {"401", "403"} <= responses
+
+    def test_endpoint_with_a_body_documents_validation_errors(self):
+        responses = self._responses("/tenants", "post")
+        assert {"401", "403", "422"} <= responses
+
+    def test_public_health_endpoint_documents_no_auth_errors(self):
+        responses = self._responses("/health", "get")
+        assert "401" not in responses
+        assert "403" not in responses
+
+    def test_signature_authenticated_webhook_documents_401_but_not_403(self):
+        """Webhook ingestion authenticates by HMAC, so RBAC's 403 never applies."""
+        responses = self._responses("/webhooks/{endpoint_id}/events", "post")
+        assert "401" in responses
+        assert "403" not in responses
+
+
 class TestValidRequestsAreUnaffected:
     """R8: the contract only tightens for invalid input, never for valid input."""
 

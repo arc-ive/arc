@@ -287,4 +287,31 @@ __all__ = [
     "ConnectorCreateRequest",
     "ApprovalDecisionRequest",
     "ToolExecuteRequest",
+    "AUTHENTICATED_ERROR_RESPONSES",
 ]
+
+
+# ---------------------------------------------------------------------------
+# OpenAPI error declarations
+# ---------------------------------------------------------------------------
+
+ERROR_DETAIL_SCHEMA = {
+    "type": "object",
+    "properties": {"detail": {"type": "string"}},
+}
+
+#: Errors every RBAC-protected route can return. Declared on the router so the
+#: generated document reflects them without repeating the same block on each
+#: of the routes. FastAPI already documents 422 by itself for any route with a
+#: validatable body or parameter, so it is deliberately not repeated here.
+AUTHENTICATED_ERROR_RESPONSES = {
+    401: {
+        "description": "Authentication is missing or invalid.",
+        "content": {"application/json": {"schema": ERROR_DETAIL_SCHEMA}},
+    },
+    403: {
+        "description": "The caller lacks the required permission, or the "
+        "requested tenant is outside their membership.",
+        "content": {"application/json": {"schema": ERROR_DETAIL_SCHEMA}},
+    },
+}

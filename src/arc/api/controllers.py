@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from arc.api.pagination import PaginationParams, paginate
 from arc.api.schemas import (
+    AUTHENTICATED_ERROR_RESPONSES,
     AgentResumeRequest,
     AgentRunRequest,
     ApprovalDecisionRequest,
@@ -267,7 +268,7 @@ async def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@api_router.get("/auth/me")
+@api_router.get("/auth/me", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_authenticated_profile(
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
@@ -316,7 +317,7 @@ async def get_authenticated_profile(
     }
 
 
-@api_router.post("/tenants")
+@api_router.post("/tenants", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def create_tenant(
     tenant_data: TenantCreateRequest,
     principal: AuthenticatedPrincipal = Depends(require_permission(TENANT_CREATE)),
@@ -362,7 +363,7 @@ async def create_tenant(
     }
 
 
-@api_router.get("/platform/tenants")
+@api_router.get("/platform/tenants", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_platform_tenants(
     limit: Optional[int] = Query(default=None),
     offset: Optional[int] = Query(default=None),
@@ -394,7 +395,7 @@ async def list_platform_tenants(
     )
 
 
-@api_router.get("/tenants/{tenant_id}")
+@api_router.get("/tenants/{tenant_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_tenant(
     tenant_id: str,
     context: TenantContext = Depends(require_tenant_permission(TENANT_READ)),
@@ -421,7 +422,7 @@ async def get_tenant(
     }
 
 
-@api_router.put("/tenants/{tenant_id}")
+@api_router.put("/tenants/{tenant_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def update_tenant(
     tenant_id: str,
     tenant_data: TenantUpdateRequest,
@@ -466,7 +467,7 @@ async def update_tenant(
     }
 
 
-@api_router.post("/users")
+@api_router.post("/users", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def create_user(
     user_data: UserCreateRequest,
     _: AuthenticatedPrincipal = Depends(require_permission(USER_CREATE)),
@@ -500,7 +501,7 @@ async def create_user(
     }
 
 
-@api_router.get("/platform/users")
+@api_router.get("/platform/users", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_platform_users(
     limit: Optional[int] = Query(default=None),
     offset: Optional[int] = Query(default=None),
@@ -532,7 +533,7 @@ async def list_platform_users(
     )
 
 
-@api_router.get("/tenants/{tenant_id}/users")
+@api_router.get("/tenants/{tenant_id}/users", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_users_for_tenant(
     tenant_id: str,
     limit: Optional[int] = Query(default=None),
@@ -566,7 +567,7 @@ async def get_users_for_tenant(
     )
 
 
-@api_router.post("/tenants/{tenant_id}/memberships")
+@api_router.post("/tenants/{tenant_id}/memberships", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def create_membership(
     tenant_id: str,
     membership_data: MembershipCreateRequest,
@@ -597,7 +598,9 @@ async def create_membership(
     }
 
 
-@api_router.delete("/tenants/{tenant_id}/memberships/{user_id}")
+@api_router.delete(
+    "/tenants/{tenant_id}/memberships/{user_id}", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def delete_membership(
     tenant_id: str,
     user_id: str,
@@ -619,7 +622,7 @@ async def delete_membership(
     return {"detail": "Membership removed"}
 
 
-@api_router.get("/users/{user_id}/tenants")
+@api_router.get("/users/{user_id}/tenants", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_tenants_for_user(
     user_id: str,
     limit: Optional[int] = Query(default=None),
@@ -687,7 +690,7 @@ def _skill_response(skill: Skill) -> Dict[str, Any]:
     }
 
 
-@api_router.post("/skills")
+@api_router.post("/skills", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def create_skill(
     skill_data: SkillCreateRequest,
     tenant_id: str,
@@ -734,7 +737,7 @@ async def create_skill(
     return _skill_response(created_skill)
 
 
-@api_router.get("/skills")
+@api_router.get("/skills", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_skills(
     tenant_id: str,
     limit: Optional[int] = Query(default=None),
@@ -756,7 +759,7 @@ async def list_skills(
     return paginate([_skill_response(skill) for skill in skills], total, params)
 
 
-@api_router.get("/skills/{skill_id}")
+@api_router.get("/skills/{skill_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_skill(
     skill_id: str,
     tenant_id: str,
@@ -780,7 +783,7 @@ async def get_skill(
     return _skill_response(skill)
 
 
-@api_router.put("/skills/{skill_id}")
+@api_router.put("/skills/{skill_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def update_skill(
     skill_id: str,
     skill_data: SkillUpdateRequest,
@@ -838,7 +841,11 @@ async def update_skill(
     return _skill_response(result)
 
 
-@api_router.delete("/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
+@api_router.delete(
+    "/skills/{skill_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=AUTHENTICATED_ERROR_RESPONSES,
+)
 async def delete_skill(
     skill_id: str,
     tenant_id: str,
@@ -895,7 +902,7 @@ def _skill_execution_response(result: SkillExecutionResult) -> Dict[str, Any]:
     return response
 
 
-@api_router.post("/skills/{skill_id}/execute")
+@api_router.post("/skills/{skill_id}/execute", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def execute_skill(
     skill_id: str,
     tenant_id: str,
@@ -1025,7 +1032,7 @@ async def _require_tenant_permission_from_body(
     return context
 
 
-@api_router.post("/agent/runs")
+@api_router.post("/agent/runs", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def run_agent(
     body: AgentRunRequest,
     context: TenantContext = Depends(_require_tenant_permission_from_body),
@@ -1152,7 +1159,7 @@ def _knowledge_match_response(match: KnowledgeMatch) -> Dict[str, Any]:
     }
 
 
-@api_router.get("/tenants/{tenant_id}/knowledge/search")
+@api_router.get("/tenants/{tenant_id}/knowledge/search", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def search_knowledge(
     tenant_id: str,
     query: str = Query(min_length=1),
@@ -1218,7 +1225,7 @@ def _intelligence_answer_response(answer: IntelligenceAnswer) -> Dict[str, Any]:
     }
 
 
-@api_router.post("/tenants/{tenant_id}/intelligence/query")
+@api_router.post("/tenants/{tenant_id}/intelligence/query", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def query_unified_intelligence(
     tenant_id: str,
     body: IntelligenceQueryRequest,
@@ -1271,7 +1278,7 @@ async def query_unified_intelligence(
     return _intelligence_answer_response(answer)
 
 
-@api_router.post("/tenants/{tenant_id}/knowledge")
+@api_router.post("/tenants/{tenant_id}/knowledge", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def create_knowledge_document(
     tenant_id: str,
     knowledge_data: KnowledgeCreateRequest,
@@ -1333,7 +1340,9 @@ async def create_knowledge_document(
     return _knowledge_document_payload(document)
 
 
-@api_router.get("/tenants/{tenant_id}/knowledge/{document_id}")
+@api_router.get(
+    "/tenants/{tenant_id}/knowledge/{document_id}", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def get_knowledge_document(
     tenant_id: str,
     document_id: str,
@@ -1360,7 +1369,7 @@ async def get_knowledge_document(
     return _knowledge_document_payload(document)
 
 
-@api_router.get("/tenants/{tenant_id}/knowledge")
+@api_router.get("/tenants/{tenant_id}/knowledge", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_knowledge_documents(
     tenant_id: str,
     limit: Optional[int] = Query(default=None),
@@ -1413,7 +1422,7 @@ def get_tool_service() -> ToolExecutionService:
     return app_context.tool_service
 
 
-@api_router.get("/tenants/{tenant_id}/tools")
+@api_router.get("/tenants/{tenant_id}/tools", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_tools(
     tenant_id: str,
     limit: Optional[int] = Query(default=None),
@@ -1439,7 +1448,9 @@ async def list_tools(
     return paginate([_tool_definition_payload(t) for t in sliced], total, params)
 
 
-@api_router.post("/tenants/{tenant_id}/tools/{name}/execute")
+@api_router.post(
+    "/tenants/{tenant_id}/tools/{name}/execute", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def execute_tool(
     tenant_id: str,
     name: str,
@@ -1511,7 +1522,7 @@ def _connector_payload(config) -> Dict[str, Any]:
     }
 
 
-@api_router.get("/tenants/{tenant_id}/connectors")
+@api_router.get("/tenants/{tenant_id}/connectors", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_connectors(
     tenant_id: str,
     limit: Optional[int] = Query(default=None),
@@ -1536,7 +1547,7 @@ async def list_connectors(
     return paginate([_connector_payload(connector) for connector in connectors], total, params)
 
 
-@api_router.post("/tenants/{tenant_id}/connectors")
+@api_router.post("/tenants/{tenant_id}/connectors", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def create_connector(
     connector_data: ConnectorCreateRequest,
     tenant_id: str,
@@ -1565,7 +1576,9 @@ async def create_connector(
     return _connector_payload(created)
 
 
-@api_router.post("/tenants/{tenant_id}/connectors/{connector_id}/sync")
+@api_router.post(
+    "/tenants/{tenant_id}/connectors/{connector_id}/sync", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def sync_connector(
     connector_id: str,
     tenant_id: str,
@@ -1877,7 +1890,10 @@ async def _read_capped_body(request: Request, max_bytes: int) -> bytes:
     return bytes(buffer)
 
 
-@api_router.post("/webhooks/{endpoint_id}/events")
+@api_router.post(
+    "/webhooks/{endpoint_id}/events",
+    responses={401: AUTHENTICATED_ERROR_RESPONSES[401]},
+)
 async def ingest_webhook_event(
     endpoint_id: str,
     request: Request,
@@ -1972,7 +1988,7 @@ async def ingest_webhook_event(
     return _webhook_event_payload(event_to_return, result.duplicate)
 
 
-@api_router.get("/tenants/{tenant_id}/webhooks/events")
+@api_router.get("/tenants/{tenant_id}/webhooks/events", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_webhook_events(
     tenant_id: str,
     limit: Optional[int] = Query(default=None),
@@ -1998,7 +2014,7 @@ async def list_webhook_events(
     return paginate([_webhook_event_payload(event, False) for event in events], total, params)
 
 
-@api_router.post("/tenants/{tenant_id}/webhooks/process")
+@api_router.post("/tenants/{tenant_id}/webhooks/process", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def process_webhook_event(
     tenant_id: str,
     event_id: str = Query(..., description="Sender-supplied event identifier"),
@@ -2037,7 +2053,9 @@ async def process_webhook_event(
     return result
 
 
-@api_router.get("/tenants/{tenant_id}/observability/usage-summary")
+@api_router.get(
+    "/tenants/{tenant_id}/observability/usage-summary", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def get_tenant_usage_summary(
     tenant_id: str,
     hours: int = Query(default=24, ge=1, le=168),
@@ -2059,7 +2077,9 @@ async def get_tenant_usage_summary(
     return await observability_service.get_tenant_usage_summary(context.tenant_id, hours)
 
 
-@api_router.get("/tenants/{tenant_id}/observability/llm-usage")
+@api_router.get(
+    "/tenants/{tenant_id}/observability/llm-usage", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def get_llm_usage(
     tenant_id: str,
     hours: int = Query(default=24, ge=1, le=168),
@@ -2092,7 +2112,9 @@ async def get_llm_usage(
     }
 
 
-@api_router.get("/tenants/{tenant_id}/observability/llm-usage/records")
+@api_router.get(
+    "/tenants/{tenant_id}/observability/llm-usage/records", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def get_llm_usage_records(
     tenant_id: str,
     hours: int = Query(default=24, ge=1, le=168),
@@ -2127,7 +2149,8 @@ async def get_llm_usage_records(
     }
 
 
-@api_router.get("/platform/observability/summary")
+@api_router.get("/platform/observability/summary", responses=AUTHENTICATED_ERROR_RESPONSES)
+@api_router.get("/platform/observability/summary", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_platform_observability_summary(
     hours: int = Query(default=24, ge=1, le=168),
     _: AuthenticatedPrincipal = Depends(require_permission(OBSERVABILITY_PLATFORM_READ)),
@@ -2145,7 +2168,7 @@ async def get_platform_observability_summary(
     return await observability_service.get_platform_summary(hours)
 
 
-@api_router.get("/observability/health")
+@api_router.get("/observability/health", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_component_health(
     _: AuthenticatedPrincipal = Depends(require_permission(OBSERVABILITY_PLATFORM_READ)),
     observability_service: ObservabilityService = Depends(
@@ -2162,7 +2185,9 @@ async def get_component_health(
     return await observability_service.get_component_health()
 
 
-@api_router.get("/tenants/{tenant_id}/observability/agent-runs")
+@api_router.get(
+    "/tenants/{tenant_id}/observability/agent-runs", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def list_agent_run_traces(
     tenant_id: str,
     hours: int = Query(default=24, ge=1, le=168),
@@ -2188,7 +2213,10 @@ async def list_agent_run_traces(
     return paginate([_agent_run_trace_payload(r) for r in records], total, params)
 
 
-@api_router.get("/tenants/{tenant_id}/observability/agent-runs/{record_id}")
+@api_router.get(
+    "/tenants/{tenant_id}/observability/agent-runs/{record_id}",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
+)
 async def get_agent_run_trace(
     tenant_id: str,
     record_id: str,
@@ -2258,7 +2286,7 @@ def _approval_payload(approval) -> Dict[str, Any]:
     }
 
 
-@api_router.get("/tenants/{tenant_id}/approvals")
+@api_router.get("/tenants/{tenant_id}/approvals", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_approval_requests(
     tenant_id: str,
     status_filter: Optional[ApprovalStatus] = Query(default=None, alias="status"),
@@ -2282,7 +2310,9 @@ async def list_approval_requests(
     return paginate([_approval_payload(a) for a in approvals], total, params)
 
 
-@api_router.get("/tenants/{tenant_id}/approvals/{approval_id}")
+@api_router.get(
+    "/tenants/{tenant_id}/approvals/{approval_id}", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def get_approval_request(
     tenant_id: str,
     approval_id: str,
@@ -2301,7 +2331,10 @@ async def get_approval_request(
     return _approval_payload(approval)
 
 
-@api_router.post("/tenants/{tenant_id}/approvals/{approval_id}/decisions")
+@api_router.post(
+    "/tenants/{tenant_id}/approvals/{approval_id}/decisions",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
+)
 async def decide_approval_request(
     tenant_id: str,
     approval_id: str,
@@ -2344,7 +2377,7 @@ async def decide_approval_request(
     return _approval_payload(approval)
 
 
-@api_router.post("/skills/{skill_id}/resume")
+@api_router.post("/skills/{skill_id}/resume", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def resume_skill_execution(
     skill_id: str,
     tenant_id: str,
@@ -2403,7 +2436,7 @@ async def resume_skill_execution(
     return _skill_execution_response(result)
 
 
-@api_router.post("/agent/runs/resume")
+@api_router.post("/agent/runs/resume", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def resume_agent_execution(
     body: AgentResumeRequest,
     context: TenantContext = Depends(_require_tenant_permission_from_body),
