@@ -16,9 +16,11 @@ from arc.services.llm import (
     LlmError,
     LlmProvider,
     LlmRetryableError,
+    LlmUsageReport,
     OpenRouterProvider,
     SkillSelectingLlm,
     ToolProposingLlm,
+    _build_skill_proposal_prompt,
     _parse_json_response,
     _validate_skill_proposal,
     _validate_tool_proposal,
@@ -718,3 +720,202 @@ class TestLlmRetryableError:
     def test_catchable_as_llm_error(self):
         with pytest.raises(LlmError):
             raise LlmRetryableError("test")
+
+
+# ---------------------------------------------------------------------------
+# Skill proposal prompt contract tests
+# ---------------------------------------------------------------------------
+
+
+class TestSkillProposalPromptContract:
+    def test_prompt_requests_skill_id_not_skill_name(self):
+        """The prompt must ask for 'skill_id' to match AgentDecision.parse."""
+        prompt = _build_skill_proposal_prompt("goal", [{"id": "s1", "name": "Skill1"}])
+        assert "skill_id" in prompt
+        assert "skill_name" not in prompt
+
+    def test_prompt_requests_tool_calls_not_arguments(self):
+        """The prompt must ask for 'tool_calls' to match AgentDecision.parse."""
+        prompt = _build_skill_proposal_prompt("goal", [])
+        assert "tool_calls" in prompt
+        assert "'arguments'" not in prompt
+
+    def test_prompt_requests_satisfied_preconditions(self):
+        """The prompt must ask for 'satisfied_preconditions' to match AgentDecision.parse."""
+        prompt = _build_skill_proposal_prompt("goal", [])
+        assert "satisfied_preconditions" in prompt
+
+    def test_prompt_contains_goal_and_catalog(self):
+        catalog = [{"id": "s1", "name": "Skill1", "status": "active"}]
+        prompt = _build_skill_proposal_prompt("deploy the service", catalog)
+        assert "deploy the service" in prompt
+        assert "Skill1" in prompt
+
+    def test_prompt_handles_empty_catalog(self):
+        prompt = _build_skill_proposal_prompt("goal", [])
+        assert "[]" in prompt
+
+    def test_propose_skill_with_correct_contract(self):
+        """End-to-end: provider returns valid decision matching AgentDecision contract."""
+        decision = {
+            "skill_id": "summarize-001",
+            "tool_calls": [{"tool": "summarize", "args": {"text": "hello"}}],
+            "satisfied_preconditions": [],
+        }
+        provider = _make_provider(
+            lambda r: httpx.Response(200, json=_chat_response(json.dumps(decision)))
+        )
+        result = provider.propose_skill("summarize the text", [{"id": "summarize-001"}])
+        assert result == decision
+        assert "skill_id" in result
+        assert "tool_calls" in result
+        assert "satisfied_preconditions" in result
+
+
+# ---------------------------------------------------------------------------
+# Usage report and latency tests
+# ---------------------------------------------------------------------------
+
+
+class TestLlmUsageReport:
+    def test_frozen_dataclass(self):
+        report = LlmUsageReport(
+            provider="openrouter",
+            model="test-model",
+            input_tokens=10,
+            output_tokens=20,
+            total_tokens=30,
+            latency_ms=150,
+        )
+        assert report.provider == "openrouter"
+        assert report.input_tokens == 10
+        assert report.latency_ms == 150
+
+    def test_optional_fields_default_none(self):
+        report = LlmUsageReport(provider="openrouter", model="m")
+        assert report.input_tokens is None
+        assert report.output_tokens is None
+        assert report.total_tokens is None
+        assert report.latency_ms is None
+
+
+class TestOpenRouterProviderUsageCapture:
+    def test_complete_captures_usage_from_response(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {
+                        "prompt_tokens": 15,
+                        "completion_tokens": 25,
+                        "total_tokens": 40,
+                    },
+                },
+            )
+
+        provider = _make_provider(handler)
+        result = provider.complete("test prompt")
+        assert result == "ok"
+        usage = provider.last_usage
+        assert usage is not None
+        assert usage.provider == "openrouter"
+        assert usage.model == "test-model"
+        assert usage.input_tokens == 15
+        assert usage.output_tokens == 25
+        assert usage.total_tokens == 40
+        assert usage.latency_ms is not None
+        assert usage.latency_ms >= 0
+
+    def test_complete_captures_latency(self):
+        def handler(request):
+            return httpx.Response(200, json=_chat_response("ok"))
+
+        provider = _make_provider(handler)
+        provider.complete("prompt")
+        usage = provider.last_usage
+        assert usage is not None
+        assert usage.latency_ms is not None
+        assert usage.latency_ms >= 0
+
+    def test_last_usage_none_before_first_call(self):
+        provider = _make_provider(lambda r: httpx.Response(200, json=_chat_response("ok")))
+        assert provider.last_usage is None
+
+    def test_propose_tool_captures_usage(self):
+        proposal = {"tool_name": "check_health", "arguments": {"url": "https://x.com"}}
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": json.dumps(proposal)}}],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15},
+                },
+            )
+
+        provider = _make_provider(handler)
+        result = provider.propose_tool("check health")
+        assert result == proposal
+        usage = provider.last_usage
+        assert usage is not None
+        assert usage.input_tokens == 5
+
+    def test_propose_skill_captures_usage(self):
+        decision = {
+            "skill_id": "s1",
+            "tool_calls": [{"tool": "t"}],
+            "satisfied_preconditions": [],
+        }
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": json.dumps(decision)}}],
+                    "usage": {"prompt_tokens": 8, "completion_tokens": 12, "total_tokens": 20},
+                },
+            )
+
+        provider = _make_provider(handler)
+        result = provider.propose_skill("goal", [{"id": "s1"}])
+        assert result == decision
+        usage = provider.last_usage
+        assert usage is not None
+        assert usage.total_tokens == 20
+
+    def test_usage_captured_when_response_lacks_usage_field(self):
+        """API responses without usage field should still work."""
+
+        def handler(request):
+            return httpx.Response(200, json=_chat_response("ok"))
+
+        provider = _make_provider(handler)
+        result = provider.complete("prompt")
+        assert result == "ok"
+        usage = provider.last_usage
+        assert usage is not None
+        assert usage.input_tokens is None
+        assert usage.output_tokens is None
+        assert usage.total_tokens is None
+        assert usage.latency_ms is not None
+
+    def test_usage_updated_on_each_call(self):
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": f"resp-{call_count}"}}],
+                    "usage": {"total_tokens": call_count * 10},
+                },
+            )
+
+        provider = _make_provider(handler)
+        provider.complete("first")
+        assert provider.last_usage.total_tokens == 10
+        provider.complete("second")
+        assert provider.last_usage.total_tokens == 20

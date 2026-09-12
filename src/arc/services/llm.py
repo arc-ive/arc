@@ -57,9 +57,10 @@ class LlmProvider(Protocol):
     """Provider-agnostic LLM completion interface.
 
     Implementations receive a single deterministic prompt string and
-    return a completion string. Production providers are deferred; the
-    deterministic provider makes the reasoning contract testable and
-    CI-safe without any external API, key, or network access.
+    return a completion string. The deterministic provider makes the
+    reasoning contract testable and CI-safe without any external API,
+    key, or network access. The OpenRouter provider is the production
+    implementation (V2-ADR-006).
     """
 
     def complete(self, prompt: str) -> str:
@@ -184,6 +185,24 @@ class DeterministicLlmProvider:
         return "Deterministic response using 0 approved context item(s)."
 
 
+@dataclass(frozen=True)
+class LlmUsageReport:
+    """Raw provider usage data captured from a single LLM request.
+
+    This is the minimum data contract that enables downstream usage
+    telemetry (V2-ADR-024, Issue #141). The provider captures and
+    exposes this data; persistence and observability are handled by
+    the caller.
+    """
+
+    provider: str
+    model: str
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    latency_ms: Optional[int] = None
+
+
 _OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 _OPENROUTER_DEFAULT_TIMEOUT = httpx.Timeout(60.0)
 _DEFAULT_MAX_RETRIES = 3
@@ -241,19 +260,38 @@ class OpenRouterProvider:
         self._max_retries = max_retries
         self._base_delay = base_delay
         self._max_delay = max_delay
+        self._last_usage: Optional[LlmUsageReport] = None
+
+    @property
+    def last_usage(self) -> Optional[LlmUsageReport]:
+        """Usage data from the most recent request, or ``None``."""
+        return self._last_usage
 
     def _execute_request(self, client: httpx.Client, url: str, body: dict, headers: dict) -> str:
         """Execute a single HTTP request and return assistant content.
 
+        Captures usage data (tokens) and latency from the API response.
         Raises ``LlmConfigurationError`` for permanent auth failures and
         ``LlmError`` for all other errors. Never retries.
         """
+        started = time.monotonic()
         response = client.post(url, json=body, headers=headers)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
         _raise_for_status(response)
         data = response.json()
         choices = data.get("choices", [])
         if not choices:
             raise LlmError("OpenRouter returned no choices")
+        # Capture usage data from the response (V2-ADR-006, TRD 13).
+        usage = data.get("usage") or {}
+        self._last_usage = LlmUsageReport(
+            provider="openrouter",
+            model=self._model,
+            input_tokens=usage.get("prompt_tokens"),
+            output_tokens=usage.get("completion_tokens"),
+            total_tokens=usage.get("total_tokens"),
+            latency_ms=elapsed_ms,
+        )
         return choices[0]["message"]["content"]
 
     def _post(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
@@ -463,15 +501,22 @@ def _build_tool_proposal_prompt(query: str) -> str:
 
 
 def _build_skill_proposal_prompt(goal: str, catalog: list[Mapping[str, Any]]) -> str:
-    """Build a prompt that asks the LLM to select a Skill from the catalog."""
+    """Build a prompt that asks the LLM to select a Skill from the catalog.
+
+    The prompt asks for the exact keys expected by ``_validate_skill_proposal``
+    and ``AgentDecision.parse``: ``skill_id``, ``tool_calls``, and
+    ``satisfied_preconditions``.
+    """
     catalog_text = json.dumps(catalog, indent=2) if catalog else "[]"
     return (
         "You are an AI agent that selects the next bounded step (Skill) "
         "to accomplish a goal.\n"
         "Given the goal and the available Skill catalog below, decide "
         "whether a Skill should be executed.\n"
-        "If yes, return EXACTLY a JSON object with keys 'skill_name' and "
-        "'arguments'.\n"
+        "If yes, return EXACTLY a JSON object with keys:\n"
+        "  - 'skill_id': the Skill's id from the catalog\n"
+        "  - 'tool_calls': list of tool call objects the Skill should invoke\n"
+        "  - 'satisfied_preconditions': list of precondition strings that are met\n"
         "If no Skill is appropriate, return exactly the string NONE.\n\n"
         f"Goal: {goal}\n\n"
         f"Available Skills:\n{catalog_text}\n\n"
