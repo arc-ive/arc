@@ -1927,9 +1927,11 @@ async def ingest_webhook_event(
 
     After successful ingestion, the event is automatically dispatched
     through the configured Skill pipeline (WebhookPipelineService).
-    Pipeline failures are non-blocking: the ingestion returns 201 with
-    the event in ``received`` status and the error is logged for manual
-    retry via ``POST /tenants/{tenant_id}/webhooks/process``.
+    On success the event transitions to ``processed``. On pipeline
+    failure the event transitions to ``failed`` (or remains ``processing``
+    if the failure-status write itself fails). The response body
+    reflects the actual persisted state. The ingestion HTTP status
+    remains 201 because the event was successfully received.
     """
     body = await _read_capped_body(request, MAX_BODY_BYTES)
     timestamp_header = request.headers.get("X-Arc-Timestamp", "")
@@ -1959,19 +1961,21 @@ async def ingest_webhook_event(
     # events through the Skill pipeline immediately after ingestion.
     # Duplicate deliveries are already recorded; pipeline processing
     # is NOT re-triggered to avoid duplicate downstream execution.
+    #
+    # After process() completes (success or failure), the event's actual
+    # DB state is re-read so the response body is accurate. Three paths:
+    #   A) claim_for_processing fails → event remains received
+    #   B) claim succeeds, downstream fails → event transitions to failed
+    #   C) claim succeeds, mark_failed fails → event stuck in processing
+    event_to_return = result.event
     if not result.duplicate:
         try:
             await webhook_pipeline_service.process(result.event.tenant_id, result.event.event_id)
-            # Refresh the event to reflect processed status.
-            result.event = await webhook_ingestion_service._repository.get_by_event_id(
-                result.event.event_id, result.event.tenant_id
-            )
         except Exception:
-            # Pipeline failure is non-blocking: the event remains in
-            # ``received`` status for manual retry via the /process
-            # endpoint. Ingestion still returns 201.
             logger.warning(
-                "Webhook auto-dispatch failed; event remains in 'received' status for manual retry",
+                "Webhook auto-dispatch failed for event '%s' in tenant '%s'",
+                result.event.event_id,
+                result.event.tenant_id,
                 extra={
                     "endpoint_id": endpoint_id,
                     "event_id": result.event.event_id,
@@ -1979,8 +1983,16 @@ async def ingest_webhook_event(
                 },
                 exc_info=True,
             )
+        # Re-read the actual persisted state regardless of success or failure.
+        # process() may have transitioned the event to processed/failed/processing.
+        try:
+            event_to_return = await webhook_ingestion_service._repository.get_by_event_id(
+                result.event.event_id, result.event.tenant_id
+            )
+        except NotFoundError:
+            pass
 
-    return _webhook_event_payload(result.event, result.duplicate)
+    return _webhook_event_payload(event_to_return, result.duplicate)
 
 
 @api_router.get("/tenants/{tenant_id}/webhooks/events")

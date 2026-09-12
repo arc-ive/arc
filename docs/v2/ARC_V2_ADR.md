@@ -509,7 +509,9 @@ Do not replace the architecture merely because the default local mode is simulat
 Webhook events route to the configured Skill:
 
 ```text
-Webhook
+Webhook ingestion
+ ↓ (automatic, synchronous)
+WebhookPipelineService.process
  ↓
 SkillExecutionService
  ↓
@@ -517,6 +519,21 @@ ToolExecutionService
 ```
 
 Do not introduce Agent routing into the webhook pipeline for V2.
+
+Automatic dispatch: the API ingestion endpoint automatically invokes the
+Skill pipeline after successful ingestion. The pipeline is called
+synchronously within the same request so the response body reflects the
+actual persisted event state (processed / failed / received). Duplicate
+deliveries are NOT re-dispatched.
+
+## Consequences
+
+- Ingestion latency increases by downstream execution time.
+- The response body is accurate: it reflects the event's actual state
+  after dispatch, not just the post-ingestion state.
+- Failed dispatches are non-blocking: ingestion returns HTTP 200
+  regardless; the event transitions to `failed` for manual retry via
+  `POST /tenants/{tenant_id}/webhooks/process`.
 
 ## Rationale
 
