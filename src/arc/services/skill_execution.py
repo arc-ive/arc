@@ -141,6 +141,7 @@ class SkillExecutionService:
         approval_id: Optional[str] = None,
         resume_from_step: Optional[int] = None,
         previous_steps: Optional[List[SkillExecutionStepOutcome]] = None,
+        idempotency_key: Optional[str] = None,
     ) -> SkillExecutionResult:
         """Execute a Skill within the trusted tenant.
 
@@ -172,6 +173,13 @@ class SkillExecutionService:
             previous_steps: completed steps from the prior execution
                 attempt. These are included in the result without
                 re-execution.
+            idempotency_key: when provided, passed through to
+                ToolExecutionService to prevent duplicate handler
+                invocations for the same logical operation (V2-ADR-019).
+                The key must be deterministic and unique per
+                (tenant, event, tool, step). If a prior successful
+                execution with the same key exists, the handler is
+                skipped.
 
         Returns:
             A structured :class:`SkillExecutionResult`. Controlled
@@ -259,6 +267,12 @@ class SkillExecutionService:
             # When resuming the approval-gated step, pass the approval_id
             # so the tool service atomically consumes it before executing.
             call_approval_id = approval_id if sequence == start and approval_id else None
+            # Per-step idempotency key: when a webhook-level key is
+            # provided, append the step index to distinguish individual
+            # tool invocations within the same event.
+            step_idempotency_key = None
+            if idempotency_key is not None:
+                step_idempotency_key = f"{idempotency_key}:{sequence}"
             try:
                 executed = await self.tool_service.execute_tool(
                     context,
@@ -267,6 +281,7 @@ class SkillExecutionService:
                     tool_input,
                     authorization,
                     approval_id=call_approval_id,
+                    idempotency_key=step_idempotency_key,
                 )
             except ToolDeniedError as exc:
                 # If the tool service created a new approval (REQUIRE_HUMAN_APPROVAL

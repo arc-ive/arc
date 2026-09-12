@@ -18,7 +18,8 @@ from arc.domain.models import WebhookEvent, WebhookEventStatus
 
 _SELECT_COLUMNS = (
     "id, tenant_id, endpoint_id, event_id, event_type, "
-    "status, payload_size_bytes, created_at, error_kind, processed_at"
+    "status, payload_size_bytes, created_at, error_kind, processed_at, "
+    "retry_count, next_retry_at, max_retries"
 )
 
 
@@ -40,8 +41,9 @@ class PostgreSQLWebhookEventRepository:
                     """
                     INSERT INTO webhook_events
                         (id, tenant_id, endpoint_id, event_id, event_type,
-                         status, payload_size_bytes, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                         status, payload_size_bytes, created_at,
+                         retry_count, next_retry_at, max_retries)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     """,
                     event.id,
                     event.tenant_id,
@@ -51,6 +53,9 @@ class PostgreSQLWebhookEventRepository:
                     event.status.value,
                     event.payload_size_bytes,
                     event.created_at,
+                    event.retry_count,
+                    event.next_retry_at,
+                    event.max_retries,
                 )
             except asyncpg.UniqueViolationError:
                 raise DuplicateKeyError(
@@ -167,6 +172,126 @@ class PostgreSQLWebhookEventRepository:
                     f"Webhook event '{event_id}' not in 'processing' status in tenant {tenant_id}"
                 )
 
+    async def mark_retrying(
+        self, event_id: str, tenant_id: str, retry_count: int, next_retry_at: datetime
+    ) -> None:
+        """Mark a 'processing' event as 'retrying' with a schedule."""
+        async with self.db.transaction() as conn:
+            result = await conn.execute(
+                """
+                UPDATE webhook_events
+                SET status = 'retrying', retry_count = $3, next_retry_at = $4
+                WHERE event_id = $1 AND tenant_id = $2 AND status = 'processing'
+                """,
+                event_id,
+                tenant_id,
+                retry_count,
+                next_retry_at,
+            )
+            if result == "UPDATE 0":
+                raise NotFoundError(
+                    f"Webhook event '{event_id}' not in 'processing' status in tenant {tenant_id}"
+                )
+
+    async def claim_for_retry(self, tenant_id: str, limit: int = 10) -> List[WebhookEvent]:
+        """Atomically claim retryable events for processing.
+
+        Claims events in 'retrying' status whose next_retry_at <= now.
+        Each claim is atomic via conditional UPDATE. Returns up to
+        ``limit`` claimed events.
+        """
+        now = datetime.now(timezone.utc)
+        claimed: List[WebhookEvent] = []
+        async with self.db.transaction() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id FROM webhook_events
+                WHERE tenant_id = $1 AND status = 'retrying'
+                  AND next_retry_at <= $2
+                ORDER BY next_retry_at ASC
+                LIMIT $3
+                """,
+                tenant_id,
+                now,
+                limit,
+            )
+            for row in rows:
+                result = await conn.fetchrow(
+                    f"""
+                    UPDATE webhook_events
+                    SET status = 'processing'
+                    WHERE id = $1 AND status = 'retrying' AND next_retry_at <= $2
+                    RETURNING {_SELECT_COLUMNS}
+                    """,
+                    row["id"],
+                    now,
+                )
+                if result is not None:
+                    claimed.append(self._row_to_event(result))
+        return claimed
+
+    async def claim_single_for_retry(self, event_id: str, tenant_id: str):
+        """Atomically claim a single retrying event by event_id.
+
+        Returns the claimed event or None if not claimable.
+        """
+        now = datetime.now(timezone.utc)
+        async with self.db.transaction() as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE webhook_events
+                SET status = 'processing'
+                WHERE event_id = $1 AND tenant_id = $2
+                  AND status = 'retrying' AND next_retry_at <= $3
+                RETURNING {_SELECT_COLUMNS}
+                """,
+                event_id,
+                tenant_id,
+                now,
+            )
+            if row is None:
+                return None
+            return self._row_to_event(row)
+
+    async def mark_dead_letter(self, event_id: str, tenant_id: str, error_kind: str) -> None:
+        """Transition an event to 'dead_letter' status."""
+        now = datetime.now(timezone.utc)
+        async with self.db.transaction() as conn:
+            result = await conn.execute(
+                """
+                UPDATE webhook_events
+                SET status = 'dead_letter', error_kind = $3, processed_at = $4
+                WHERE event_id = $1 AND tenant_id = $2
+                  AND status IN ('processing', 'retrying')
+                """,
+                event_id,
+                tenant_id,
+                error_kind,
+                now,
+            )
+            if result == "UPDATE 0":
+                raise NotFoundError(
+                    f"Webhook event '{event_id}' not in retryable status in tenant {tenant_id}"
+                )
+
+    async def sweep_stuck_processing(
+        self, tenant_id: str, stuck_threshold_seconds: int = 600
+    ) -> List[WebhookEvent]:
+        """Find events stuck in 'processing' longer than the threshold."""
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT {_SELECT_COLUMNS}
+                FROM webhook_events
+                WHERE tenant_id = $1 AND status = 'processing'
+                  AND created_at < NOW() - INTERVAL '1 second' * $2
+                ORDER BY created_at ASC
+                """,
+                tenant_id,
+                stuck_threshold_seconds,
+            )
+            return [self._row_to_event(row) for row in rows]
+
     @staticmethod
     def _row_to_event(row: asyncpg.Record) -> WebhookEvent:
         return WebhookEvent(
@@ -180,4 +305,7 @@ class PostgreSQLWebhookEventRepository:
             created_at=row["created_at"],
             error_kind=row["error_kind"],
             processed_at=row["processed_at"],
+            retry_count=row["retry_count"],
+            next_retry_at=row["next_retry_at"],
+            max_retries=row["max_retries"],
         )
