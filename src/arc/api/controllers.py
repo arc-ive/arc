@@ -1931,7 +1931,7 @@ async def ingest_webhook_event(
     failure the event transitions to ``failed`` (or remains ``processing``
     if the failure-status write itself fails). The response body
     reflects the actual persisted state. The ingestion HTTP status
-    remains 201 because the event was successfully received.
+    remains 200 to reflect the actual persisted state.
     """
     body = await _read_capped_body(request, MAX_BODY_BYTES)
     timestamp_header = request.headers.get("X-Arc-Timestamp", "")

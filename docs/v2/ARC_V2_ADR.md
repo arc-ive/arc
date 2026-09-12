@@ -532,8 +532,9 @@ deliveries are NOT re-dispatched.
 - The response body is accurate: it reflects the event's actual state
   after dispatch, not just the post-ingestion state.
 - Failed dispatches are non-blocking: ingestion returns HTTP 200
-  regardless; the event transitions to `failed` for manual retry via
-  `POST /tenants/{tenant_id}/webhooks/process`.
+  regardless; the event transitions to `failed` for manual review.
+  The `/process` endpoint only accepts `received` events, so failed
+  events require manual intervention or a dedicated retry mechanism.
 
 ## Rationale
 
