@@ -120,6 +120,7 @@ TOOL_EXECUTE = Permission(resource="tool", action="execute")
 CONNECTOR_CREATE = Permission(resource="connector", action="create")
 CONNECTOR_READ = Permission(resource="connector", action="read")
 CONNECTOR_SYNC = Permission(resource="connector", action="sync")
+CONNECTOR_MANAGE_CREDENTIALS = Permission(resource="connector", action="manage_credentials")
 WEBHOOK_READ = Permission(resource="webhook", action="read")
 WEBHOOK_PROCESS = Permission(resource="webhook", action="process")
 OBSERVABILITY_READ = Permission(resource="observability", action="read")
@@ -153,6 +154,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_CREATE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            CONNECTOR_MANAGE_CREDENTIALS,
             WEBHOOK_READ,
             WEBHOOK_PROCESS,
             OBSERVABILITY_READ,
@@ -178,6 +180,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_CREATE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            CONNECTOR_MANAGE_CREDENTIALS,
             WEBHOOK_READ,
             WEBHOOK_PROCESS,
             OBSERVABILITY_READ,

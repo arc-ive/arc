@@ -306,6 +306,73 @@ class ConnectorSyncRecord:
 
 
 @dataclass
+class ConnectorCredential:
+    """Tenant-scoped encrypted connector credential (V2-ADR-015, TRD 20).
+
+    One credential per (tenant_id, provider). The credential is stored
+    encrypted at rest; plaintext is never persisted, logged, or returned
+    through API responses.
+    """
+
+    id: str
+    tenant_id: str
+    provider: ConnectorProvider
+    encrypted_credential: bytes
+    key_version: int = 1
+    created_at: datetime = field(default_factory=datetime.now)
+    rotated_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Connector credential ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.provider, ConnectorProvider):
+            raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if not isinstance(self.encrypted_credential, bytes) or not self.encrypted_credential:
+            raise ValueError("Encrypted credential must be non-empty bytes")
+        if not isinstance(self.key_version, int) or self.key_version < 1:
+            raise ValueError("Key version must be a positive integer")
+
+    def __repr__(self) -> str:
+        """Exclude encrypted_credential from repr to prevent accidental leakage."""
+        return (
+            f"ConnectorCredential(id={self.id!r}, tenant_id={self.tenant_id!r}, "
+            f"provider={self.provider!r}, key_version={self.key_version!r})"
+        )
+
+
+@dataclass
+class ConnectorCredentialAudit:
+    """Metadata-only audit record for connector credential lifecycle events.
+
+    Never contains plaintext credentials, encryption keys, or decrypted
+    material. Stores only safe metadata: tenant, provider, operation,
+    actor, key version, and timestamp.
+    """
+
+    id: str
+    tenant_id: str
+    provider: ConnectorProvider
+    operation: str
+    actor_user_id: str
+    key_version: Optional[int] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Audit record ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.provider, ConnectorProvider):
+            raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if self.operation not in ("create", "rotate", "delete"):
+            raise ValueError(f"Invalid audit operation: {self.operation!r}")
+        if not self.actor_user_id:
+            raise ValueError("Actor user ID cannot be empty")
+
+
+@dataclass
 class KnowledgeDocument:
     """Tenant-owned knowledge document stored in the Company Brain.
 

@@ -8,6 +8,8 @@ from arc.domain.models import (
     ApprovalRequest,
     ApprovalStatus,
     ConnectorConfig,
+    ConnectorCredential,
+    ConnectorCredentialAudit,
     ConnectorSyncActivityMetrics,
     ConnectorSyncRecord,
     HttpUsageMetrics,
@@ -160,6 +162,43 @@ class ConnectorSyncRepository(Protocol):
 
     async def list_for_tenant(self, tenant_id: str) -> List[ConnectorSyncRecord]:
         """List all connector synchronization records for a tenant."""
+        ...
+
+
+class ConnectorCredentialRepository(Protocol):
+    """Repository for tenant-scoped connector credential storage (V2-ADR-015).
+
+    Every operation is tenant scoped. Credentials are stored encrypted;
+    the repository never handles plaintext. One credential per
+    (tenant_id, provider) is enforced by a unique constraint.
+    """
+
+    async def get_by_tenant_and_provider(
+        self, tenant_id: str, provider: str
+    ) -> Optional[ConnectorCredential]:
+        """Return the encrypted credential for a tenant/provider, or None."""
+        ...
+
+    async def create(self, credential: ConnectorCredential) -> ConnectorCredential:
+        """Persist a new encrypted credential."""
+        ...
+
+    async def update(self, credential: ConnectorCredential) -> ConnectorCredential:
+        """Update an existing encrypted credential (rotation)."""
+        ...
+
+    async def delete(self, tenant_id: str, provider: str) -> None:
+        """Delete the credential for a tenant/provider."""
+        ...
+
+    async def create_audit(self, audit: ConnectorCredentialAudit) -> ConnectorCredentialAudit:
+        """Persist a credential lifecycle audit record."""
+        ...
+
+    async def list_audit_for_tenant(
+        self, tenant_id: str, provider: Optional[str] = None
+    ) -> List[ConnectorCredentialAudit]:
+        """List audit records for a tenant, optionally filtered by provider."""
         ...
 
 
