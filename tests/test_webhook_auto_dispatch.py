@@ -355,3 +355,59 @@ class TestAutoDispatchManualRecoverySemantics:
             f"/tenants/{webhook_tenant.id}/webhooks/process?event_id={event_id}",
         )
         assert response.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# WebhookIngestionService.get_event_by_id — public API contract
+# ---------------------------------------------------------------------------
+
+
+class TestGetEventById:
+    """Verify the public get_event_by_id service method (Finding #2 fix).
+
+    The auto-dispatch controller path calls get_event_by_id after
+    process() to re-read the persisted event state. These tests verify
+    that the re-read path works correctly end-to-end.
+    """
+
+    def test_re_read_returns_persisted_event(self, client, webhook_tenant):
+        """After ingestion + dispatch, the response reflects the re-read state."""
+        restore = _provision_endpoint(webhook_tenant.id, with_action=False)
+        try:
+            body = _valid_body()
+            ingest_response = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=body,
+                headers=_signed_headers(body),
+            )
+            assert ingest_response.status_code == 200
+            data = ingest_response.json()
+            assert data["event_id"]
+            assert data["status"] in ("received", "failed", "processing")
+        finally:
+            restore()
+
+    def test_duplicate_ingest_returns_same_event(self, client, webhook_tenant):
+        """Duplicate delivery returns the original event (no re-dispatch)."""
+        restore = _provision_endpoint(webhook_tenant.id, with_action=False)
+        try:
+            event_id = _unique("dedup")
+            body = _valid_body(event_id)
+            first = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=body,
+                headers=_signed_headers(body),
+            )
+            assert first.status_code == 200
+            assert first.json()["event_id"] == event_id
+
+            second = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=body,
+                headers=_signed_headers(body),
+            )
+            assert second.status_code == 200
+            assert second.json()["event_id"] == event_id
+            assert second.json()["duplicate"] is True
+        finally:
+            restore()

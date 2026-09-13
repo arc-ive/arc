@@ -1986,7 +1986,7 @@ async def ingest_webhook_event(
         # Re-read the actual persisted state regardless of success or failure.
         # process() may have transitioned the event to processed/failed/processing.
         try:
-            event_to_return = await webhook_ingestion_service._repository.get_by_event_id(
+            event_to_return = await webhook_ingestion_service.get_event_by_id(
                 result.event.event_id, result.event.tenant_id
             )
         except NotFoundError:
