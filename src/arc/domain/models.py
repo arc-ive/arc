@@ -57,13 +57,16 @@ class KnowledgeSource(str, Enum):
 class RetrievalMethod(str, Enum):
     """Retrieval strategies available to the Secure RAG layer.
 
-    Only ``DENSE_SEMANTIC`` is implemented in this slice. Lexical,
-    hybrid/fusion, reranked, and modular routing are later maturity
-    layers (proposal ┬º10): they must be added as new enum values behind
-    the same security boundary without changing the contract shape.
+    ``DENSE_SEMANTIC`` uses pgvector cosine similarity.
+    ``LEXICAL`` uses PostgreSQL full-text search (tsvector/ts_rank).
+
+    Hybrid/fusion, reranked, and modular routing are later maturity
+    layers: they must be added as new enum values behind the same
+    security boundary without changing the contract shape.
     """
 
     DENSE_SEMANTIC = "dense_semantic"
+    LEXICAL = "lexical"
 
 
 class SkillStatus(str, Enum):

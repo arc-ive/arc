@@ -146,6 +146,36 @@ class RetrievalService:
             context.tenant_id, query_embedding, limit, source_type=source_type
         )
 
+    async def lexical_search(
+        self,
+        context: TenantContext,
+        query: str,
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
+    ) -> List[KnowledgeMatch]:
+        """Return top tenant-scoped matches via PostgreSQL full-text search.
+
+        This method does NOT call the embedding provider: lexical
+        retrieval uses the pre-computed ``search_vector`` column and
+        ``plainto_tsquery`` for query parsing. The tenant boundary comes
+        exclusively from the trusted context; caller-supplied tenant
+        identifiers are never accepted.
+
+        When ``source_type`` is provided, only chunks belonging to
+        documents of that source type are candidates.
+
+        Raises:
+            ValueError: for an empty query or a non-positive limit.
+        """
+        if not query or not query.strip():
+            raise ValueError("Search query cannot be empty")
+        if limit < 1:
+            raise ValueError("Search limit must be a positive integer")
+
+        return await self.chunk_repo.lexical_search(
+            context.tenant_id, query, limit, source_type=source_type
+        )
+
     async def approved_search(
         self,
         context: TenantContext,

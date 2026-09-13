@@ -67,6 +67,8 @@ class FakeChunkRepository:
         self.persisted = []
         self.searches = []
         self.search_results = []
+        self.lexical_searches = []
+        self.lexical_search_results = []
 
     async def create_many(self, chunks, embeddings):
         self.persisted.append((chunks, embeddings))
@@ -75,6 +77,10 @@ class FakeChunkRepository:
     async def search(self, tenant_id, query_embedding, limit=5, source_type=None):
         self.searches.append((tenant_id, query_embedding, limit, source_type))
         return self.search_results
+
+    async def lexical_search(self, tenant_id, query_text, limit=5, source_type=None):
+        self.lexical_searches.append((tenant_id, query_text, limit, source_type))
+        return self.lexical_search_results
 
 
 class DeterministicFakeProvider:
@@ -237,6 +243,90 @@ class TestRetrievalServiceSearch:
 
         assert len(repo.searches) == 1
         tenant_id, _embedding, limit, source_type = repo.searches[0]
+        assert tenant_id == "tenant-1"
+        assert limit == 3
+        assert source_type is None
+
+
+class TestRetrievalServiceLexicalSearch:
+    async def test_lexical_search_delegates_to_repository(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+        match = KnowledgeMatch(
+            chunk_id=_unique("chunk"),
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="approved remote work policy",
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        repo.lexical_search_results = [match]
+
+        matches = await service.lexical_search(_context("tenant-1"), "remote work", limit=3)
+
+        assert matches == [match]
+        assert repo.lexical_searches == [("tenant-1", "remote work", 3, None)]
+
+    async def test_lexical_search_rejects_empty_query(self):
+        service = _service()
+        with pytest.raises(ValueError):
+            await service.lexical_search(_context(), "")
+        with pytest.raises(ValueError):
+            await service.lexical_search(_context(), "   ")
+
+    async def test_lexical_search_rejects_invalid_limit(self):
+        service = _service()
+        with pytest.raises(ValueError):
+            await service.lexical_search(_context(), "remote", limit=0)
+
+    async def test_lexical_search_does_not_use_embedding_provider(self):
+        """Lexical search must NOT call the embedding provider."""
+        repo = FakeChunkRepository()
+        provider = DeterministicFakeProvider()
+        service = RetrievalService(repo, embedding_provider=provider)
+        match = KnowledgeMatch(
+            chunk_id=_unique("chunk"),
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="approved remote work policy",
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        repo.lexical_search_results = [match]
+
+        await service.lexical_search(_context("tenant-1"), "remote work", limit=3)
+
+        assert provider.embed_calls == []
+
+    async def test_lexical_search_passes_source_type_to_repository(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        await service.lexical_search(
+            _context("tenant-1"), "remote work", limit=3, source_type=KnowledgeSource.POLICY
+        )
+
+        assert len(repo.lexical_searches) == 1
+        tenant_id, _query, limit, source_type = repo.lexical_searches[0]
+        assert tenant_id == "tenant-1"
+        assert _query == "remote work"
+        assert limit == 3
+        assert source_type == KnowledgeSource.POLICY
+
+    async def test_lexical_search_no_source_type_passes_none(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        await service.lexical_search(_context("tenant-1"), "remote work", limit=3)
+
+        assert len(repo.lexical_searches) == 1
+        tenant_id, _query, limit, source_type = repo.lexical_searches[0]
         assert tenant_id == "tenant-1"
         assert limit == 3
         assert source_type is None

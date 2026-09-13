@@ -310,7 +310,17 @@ class KnowledgeChunkRepository(Protocol):
         limit: int = 5,
         source_type: Optional[KnowledgeSource] = None,
     ) -> List[KnowledgeMatch]:
-        """Return tenant-scoped chunk matches ordered by similarity."""
+        """Return tenant-scoped chunk matches ordered by cosine similarity."""
+        ...
+
+    async def lexical_search(
+        self,
+        tenant_id: str,
+        query_text: str,
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
+    ) -> List[KnowledgeMatch]:
+        """Return tenant-scoped chunk matches ordered by lexical relevance."""
         ...
 
 

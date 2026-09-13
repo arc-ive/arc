@@ -136,9 +136,10 @@ class PostgreSQLKnowledgeRepository:
                 """
                 INSERT INTO knowledge_chunks (
                     id, document_id, tenant_id, content, sequence,
-                    embedding, created_at
+                    embedding, search_vector, created_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
+                VALUES ($1, $2, $3, $4, $5, $6::vector,
+                        to_tsvector('english', $4), $7)
                 """,
                 chunk.id,
                 chunk.document_id,

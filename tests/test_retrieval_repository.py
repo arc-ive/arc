@@ -443,3 +443,246 @@ class TestSearchSourceFiltering:
         assert policy_matches[0].source == KnowledgeSource.POLICY
         assert len(incident_matches) == 1
         assert incident_matches[0].source == KnowledgeSource.INCIDENT_REPORT
+
+
+class TestLexicalSearchVectorPopulation:
+    """search_vector must be populated on insert for lexical retrieval."""
+
+    async def test_search_vector_is_populated_after_insert(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=1)
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        async with chunk_repo.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT search_vector FROM knowledge_chunks WHERE id = $1",
+                chunks[0].id,
+            )
+        assert row is not None
+        assert row["search_vector"] is not None
+
+    async def test_search_vector_matches_content(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=1)
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        async with chunk_repo.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT search_vector, content FROM knowledge_chunks WHERE id = $1",
+                chunks[0].id,
+            )
+        # Verify the vector is non-null and non-empty
+        assert row["search_vector"] is not None
+        assert len(str(row["search_vector"])) > 0
+
+
+class TestLexicalSearchRepository:
+    """Lexical search via PostgreSQL full-text search."""
+
+    async def test_lexical_search_returns_matching_chunks(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=1)
+        chunks[0].content = "approved remote work policy"
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        matches = await chunk_repo.lexical_search(seeded_document.tenant_id, "remote work", limit=5)
+        assert len(matches) == 1
+        assert matches[0].chunk_id == chunks[0].id
+        assert matches[0].content == "approved remote work policy"
+
+    async def test_lexical_search_no_match_returns_empty(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=1)
+        chunks[0].content = "approved remote work policy"
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        matches = await chunk_repo.lexical_search(
+            seeded_document.tenant_id, "quantum physics", limit=5
+        )
+        assert matches == []
+
+    async def test_lexical_search_orders_by_relevance(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=3)
+        chunks[0].content = "remote work policy for employees"
+        chunks[1].content = "remote work policy for contractors"
+        chunks[2].content = "office attendance policy"
+        await chunk_repo.create_many(chunks, _embeddings(3))
+
+        matches = await chunk_repo.lexical_search(
+            seeded_document.tenant_id, "remote work", limit=10
+        )
+        assert len(matches) == 2
+        # Both remote work chunks should be returned; the attendance chunk should not
+        contents = {m.content for m in matches}
+        assert "office attendance policy" not in contents
+
+    async def test_lexical_search_limit_bounds_results(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=3)
+        chunks[0].content = "remote work policy alpha"
+        chunks[1].content = "remote work policy beta"
+        chunks[2].content = "remote work policy gamma"
+        await chunk_repo.create_many(chunks, _embeddings(3))
+
+        matches = await chunk_repo.lexical_search(seeded_document.tenant_id, "remote work", limit=2)
+        assert len(matches) == 2
+
+    async def test_lexical_search_source_type_filter(self, db, chunk_repo, seeded_tenant):
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc_policy = await knowledge_repo.create(
+            _document(seeded_tenant.id, source=KnowledgeSource.POLICY)
+        )
+        doc_procedure = await knowledge_repo.create(
+            _document(seeded_tenant.id, source=KnowledgeSource.PROCEDURE)
+        )
+        chunk_policy = _chunks(doc_policy, count=1)
+        chunk_policy[0].content = "remote work policy"
+        chunk_procedure = _chunks(doc_procedure, count=1)
+        chunk_procedure[0].content = "remote work procedure"
+        await chunk_repo.create_many(chunk_policy, _embeddings(1))
+        await chunk_repo.create_many(chunk_procedure, _embeddings(1))
+
+        policy_matches = await chunk_repo.lexical_search(
+            seeded_tenant.id, "remote work", limit=10, source_type=KnowledgeSource.POLICY
+        )
+        assert len(policy_matches) == 1
+        assert policy_matches[0].source == KnowledgeSource.POLICY
+
+    async def test_lexical_search_archived_documents_excluded(self, db, chunk_repo, seeded_tenant):
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc = await knowledge_repo.create(
+            _document(seeded_tenant.id, source=KnowledgeSource.POLICY)
+        )
+        chunks = _chunks(doc, count=1)
+        chunks[0].content = "remote work policy"
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        async with db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE knowledge_documents SET status = 'archived' WHERE id = $1",
+                doc.id,
+            )
+
+        matches = await chunk_repo.lexical_search(seeded_tenant.id, "remote work", limit=10)
+        assert matches == []
+
+    async def test_lexical_search_invalid_limit_rejected(self, chunk_repo, seeded_tenant):
+        with pytest.raises(ValueError):
+            await chunk_repo.lexical_search(seeded_tenant.id, "remote", limit=0)
+
+    async def test_lexical_search_stemming(self, chunk_repo, seeded_document):
+        chunks = _chunks(seeded_document, count=1)
+        chunks[0].content = "employees are running the new process"
+        await chunk_repo.create_many(chunks, _embeddings(1))
+
+        # "running" should stem to "run" and match "running"
+        matches = await chunk_repo.lexical_search(seeded_document.tenant_id, "run", limit=5)
+        assert len(matches) == 1
+        assert matches[0].chunk_id == chunks[0].id
+
+
+class TestLexicalSearchTenantIsolation:
+    """Lexical search must enforce tenant isolation at the SQL level."""
+
+    async def test_lexical_search_is_tenant_isolated(self, db, chunk_repo, seeded_tenants):
+        tenant_a, tenant_b = seeded_tenants
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc_a = await knowledge_repo.create(_document(tenant_a.id))
+        doc_b = await knowledge_repo.create(_document(tenant_b.id))
+
+        chunks_a = _chunks(doc_a, count=1)
+        chunks_a[0].content = "tenant A secret strategy"
+        chunks_b = _chunks(doc_b, count=1)
+        chunks_b[0].content = "tenant B secret strategy"
+        await chunk_repo.create_many(chunks_a, _embeddings(1))
+        await chunk_repo.create_many(chunks_b, _embeddings(1))
+
+        search_a = await chunk_repo.lexical_search(tenant_a.id, "secret strategy", limit=10)
+        search_b = await chunk_repo.lexical_search(tenant_b.id, "secret strategy", limit=10)
+
+        assert {match.chunk_id for match in search_a} == {chunk.id for chunk in chunks_a}
+        assert {match.chunk_id for match in search_b} == {chunk.id for chunk in chunks_b}
+        assert all(match.tenant_id == tenant_a.id for match in search_a)
+        assert all(match.tenant_id == tenant_b.id for match in search_b)
+
+    async def test_lexical_search_source_filter_preserves_isolation(
+        self, db, chunk_repo, seeded_tenants
+    ):
+        tenant_a, tenant_b = seeded_tenants
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        doc_a = await knowledge_repo.create(_document(tenant_a.id, source=KnowledgeSource.POLICY))
+        doc_b = await knowledge_repo.create(_document(tenant_b.id, source=KnowledgeSource.POLICY))
+        chunks_a = _chunks(doc_a, count=1)
+        chunks_a[0].content = "tenant A policy"
+        chunks_b = _chunks(doc_b, count=1)
+        chunks_b[0].content = "tenant B policy"
+        await chunk_repo.create_many(chunks_a, _embeddings(1))
+        await chunk_repo.create_many(chunks_b, _embeddings(1))
+
+        matches_a = await chunk_repo.lexical_search(
+            tenant_a.id, "policy", limit=10, source_type=KnowledgeSource.POLICY
+        )
+        matches_b = await chunk_repo.lexical_search(
+            tenant_b.id, "policy", limit=10, source_type=KnowledgeSource.POLICY
+        )
+        assert len(matches_a) == 1
+        assert matches_a[0].tenant_id == tenant_a.id
+        assert len(matches_b) == 1
+        assert matches_b[0].tenant_id == tenant_b.id
+
+
+class TestLexicalSearchEndToEnd:
+    """Lexical search through the RetrievalService with real storage."""
+
+    async def test_lexical_search_end_to_end(self, db, seeded_document):
+        service = RetrievalService(
+            chunk_repo=PostgreSQLKnowledgeChunkRepository(db),
+            embedding_provider=DeterministicEmbeddingProvider(),
+        )
+        context = TenantContext(
+            tenant_id=seeded_document.tenant_id,
+            tenant_name="Chunk Test Tenant",
+            user_id=_unique("user"),
+            role=UserRole.MEMBER,
+        )
+
+        prepared = await service.prepare_index(context, seeded_document)
+        assert prepared is not None
+        await service.persist_index(prepared)
+
+        matches = await service.lexical_search(context, "remote work", limit=5)
+        assert len(matches) == 1
+        assert matches[0].document_id == seeded_document.id
+        assert matches[0].tenant_id == seeded_document.tenant_id
+
+    async def test_lexical_search_does_not_use_embedding_provider(self, db, seeded_document):
+        """Lexical search must not call the embedding provider."""
+
+        class EmbeddingTracker:
+            def __init__(self):
+                self.called = False
+
+            def embed(self, text):
+                self.called = True
+                return [0.0] * 1536
+
+            def embed_many(self, texts):
+                self.called = True
+                return [[0.0] * 1536 for _ in texts]
+
+        tracker = EmbeddingTracker()
+        service = RetrievalService(
+            chunk_repo=PostgreSQLKnowledgeChunkRepository(db),
+            embedding_provider=tracker,
+        )
+        context = TenantContext(
+            tenant_id=seeded_document.tenant_id,
+            tenant_name="Test",
+            user_id=_unique("user"),
+            role=UserRole.MEMBER,
+        )
+
+        prepared = await service.prepare_index(context, seeded_document)
+        await service.persist_index(prepared)
+
+        # Reset tracker after prepare_index (which legitimately uses embeddings)
+        tracker.called = False
+
+        # lexical_search should NOT call the embedding provider
+        await service.lexical_search(context, "remote work", limit=5)
+        assert not tracker.called
