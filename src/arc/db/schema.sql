@@ -178,6 +178,15 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document_id ON knowledge_chunks(
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
     ON knowledge_chunks USING hnsw (embedding vector_cosine_ops);
 
+-- Lexical retrieval: PostgreSQL full-text search vector populated on insert
+-- via to_tsvector('english', content). GIN index enables fast text matching
+-- for the lexical retrieval leg of hybrid RAG (ADR-007).
+ALTER TABLE knowledge_chunks
+    ADD COLUMN IF NOT EXISTS search_vector tsvector;
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_search_vector
+    ON knowledge_chunks USING gin(search_vector);
+
 CREATE TABLE IF NOT EXISTS connector_sync_records (
     id VARCHAR(255) PRIMARY KEY,
     tenant_id VARCHAR(255) NOT NULL,
