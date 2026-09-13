@@ -271,9 +271,7 @@ class RetrievalService:
             RuntimeError: when the repository returns a match outside the
                 trusted tenant (invariant violation; fail closed).
         """
-        dense_matches = await self.search(
-            context, query, limit=limit, source_type=source_type
-        )
+        dense_matches = await self.search(context, query, limit=limit, source_type=source_type)
         lexical_matches = await self.lexical_search(
             context, query, limit=limit, source_type=source_type
         )
