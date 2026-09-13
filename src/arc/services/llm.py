@@ -61,7 +61,18 @@ class LlmProvider(Protocol):
     reasoning contract testable and CI-safe without any external API,
     key, or network access. The OpenRouter provider is the production
     implementation (V2-ADR-006).
+
+    ``last_usage`` exposes raw provider usage data from the most recent
+    request (V2-ADR-006, TRD 13). Production providers capture token
+    counts and latency; the deterministic provider returns ``None``.
+    Downstream telemetry (Issue #141) consumes this data for persistence,
+    cost accounting, and dashboards.
     """
+
+    @property
+    def last_usage(self) -> Optional["LlmUsageReport"]:
+        """Usage data from the most recent request, or ``None``."""
+        ...
 
     def complete(self, prompt: str) -> str:
         """Return the completion for ``prompt``."""
@@ -141,6 +152,11 @@ class DeterministicLlmProvider:
         self._tool_proposal_script = tool_proposal_script
         self._skill_decision_script = skill_decision_script
 
+    @property
+    def last_usage(self) -> Optional["LlmUsageReport"]:
+        """Always ``None`` — the deterministic provider has no real provider usage."""
+        return None
+
     def propose_tool(
         self, query: str, context_references: Sequence[str] = ()
     ) -> Optional[Mapping[str, Any]]:
@@ -193,6 +209,11 @@ class LlmUsageReport:
     telemetry (V2-ADR-024, Issue #141). The provider captures and
     exposes this data; persistence and observability are handled by
     the caller.
+
+    ``latency_ms`` measures the wall-clock time of a single HTTP attempt
+    (request to response), not the total operation time which may include
+    retries and exponential backoff. This matches the per-attempt
+    granularity expected by downstream telemetry.
     """
 
     provider: str
@@ -371,12 +392,12 @@ class OpenRouterProvider:
     ) -> Optional[Mapping[str, Any]]:
         """Return raw untrusted proposal output, or ``None``.
 
-        Performs lightweight structural validation: a valid tool proposal
-        must be a JSON object with ``tool_name`` (non-empty string) and
-        ``arguments`` (mapping). Malformed output returns ``None`` — the
-        domain layer (``ToolProposal.parse``) retains full strict
-        validation. Malformed output can never reach execution as a valid
-        decision.
+        Performs structural validation matching ``ToolProposal.parse``: a
+        valid tool proposal must be a JSON object with exactly the keys
+        ``tool_name`` (non-empty string) and ``arguments`` (mapping).
+        Extra or missing keys return ``None``. The domain layer retains
+        full strict validation including length limits and value-type
+        checks.
         """
         prompt = _build_tool_proposal_prompt(query)
         raw = self._post([{"role": "user", "content": prompt}])
@@ -392,12 +413,12 @@ class OpenRouterProvider:
     ) -> Optional[Mapping[str, Any]]:
         """Return raw untrusted decision output for ``goal``, or ``None``.
 
-        Performs lightweight structural validation: a valid skill decision
-        must be a JSON object with ``skill_id`` (non-empty string),
-        ``tool_calls`` (list), and ``satisfied_preconditions`` (list).
-        Malformed output returns ``None`` — the domain layer
-        (``AgentDecision.parse``) retains full strict validation.
-        Malformed output can never reach execution as a valid decision.
+        Performs structural validation matching ``AgentDecision.parse``: a
+        valid skill decision must be a JSON object with exactly the keys
+        ``skill_id`` (non-empty string), ``tool_calls`` (list), and
+        ``satisfied_preconditions`` (list). Extra or missing keys return
+        ``None``. The domain layer retains full strict validation
+        including element-type checks and length limits.
         """
         prompt = _build_skill_proposal_prompt(goal, list(catalog))
         raw = self._post([{"role": "user", "content": prompt}])
@@ -449,14 +470,19 @@ def _parse_json_response(raw: str) -> Optional[Mapping[str, Any]]:
     return None
 
 
-def _validate_tool_proposal(raw: Mapping[str, Any]) -> bool:
-    """Lightweight structural check for a tool proposal.
+_TOOL_PROPOSAL_KEYS = frozenset({"tool_name", "arguments"})
 
-    A valid proposal must have ``tool_name`` (non-empty string) and
-    ``arguments`` (mapping). This catches obviously malformed output at
-    the provider level. The domain layer (``ToolProposal.parse``) retains
-    full strict validation including exact-key checks and length limits.
+
+def _validate_tool_proposal(raw: Mapping[str, Any]) -> bool:
+    """Structural check for a tool proposal matching ``ToolProposal.parse``.
+
+    A valid proposal must have exactly the keys ``tool_name`` (non-empty
+    string) and ``arguments`` (mapping). Extra or missing keys are
+    rejected. The domain layer (``ToolProposal.parse``) retains full
+    strict validation including length limits and value-type checks.
     """
+    if set(raw.keys()) != _TOOL_PROPOSAL_KEYS:
+        return False
     tool_name = raw.get("tool_name")
     arguments = raw.get("arguments")
     if not isinstance(tool_name, str) or not tool_name.strip():
@@ -466,15 +492,20 @@ def _validate_tool_proposal(raw: Mapping[str, Any]) -> bool:
     return True
 
 
-def _validate_skill_proposal(raw: Mapping[str, Any]) -> bool:
-    """Lightweight structural check for a skill decision.
+_SKILL_PROPOSAL_KEYS = frozenset({"skill_id", "tool_calls", "satisfied_preconditions"})
 
-    A valid decision must have ``skill_id`` (non-empty string),
-    ``tool_calls`` (list), and ``satisfied_preconditions`` (list). This
-    catches obviously malformed output at the provider level. The domain
-    layer (``AgentDecision.parse``) retains full strict validation
-    including exact-key checks and element-type checks.
+
+def _validate_skill_proposal(raw: Mapping[str, Any]) -> bool:
+    """Structural check for a skill decision matching ``AgentDecision.parse``.
+
+    A valid decision must have exactly the keys ``skill_id`` (non-empty
+    string), ``tool_calls`` (list), and ``satisfied_preconditions`` (list).
+    Extra or missing keys are rejected. The domain layer
+    (``AgentDecision.parse``) retains full strict validation including
+    element-type checks and length limits.
     """
+    if set(raw.keys()) != _SKILL_PROPOSAL_KEYS:
+        return False
     skill_id = raw.get("skill_id")
     tool_calls = raw.get("tool_calls")
     preconditions = raw.get("satisfied_preconditions")

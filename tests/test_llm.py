@@ -77,6 +77,14 @@ class TestLlmProviderContract:
     def test_deterministic_provider_satisfies_the_contract(self):
         assert isinstance(DeterministicLlmProvider(), LlmProvider)
 
+    def test_deterministic_provider_last_usage_is_none(self):
+        provider = DeterministicLlmProvider()
+        assert provider.last_usage is None
+
+    def test_last_usage_accessible_through_protocol(self):
+        provider: LlmProvider = DeterministicLlmProvider()
+        assert provider.last_usage is None
+
 
 class TestLlmSettings:
     def test_defaults_are_the_deterministic_provider(self, monkeypatch):
@@ -185,6 +193,10 @@ class TestOpenRouterProviderProtocolCompliance:
     def test_satisfies_skill_selecting_llm(self):
         provider = OpenRouterProvider(api_key="k", model="m")
         assert isinstance(provider, SkillSelectingLlm)
+
+    def test_last_usage_accessible_through_llm_provider_protocol(self):
+        provider: LlmProvider = OpenRouterProvider(api_key="k", model="m")
+        assert provider.last_usage is None
 
 
 class TestOpenRouterProviderComplete:
@@ -597,8 +609,13 @@ class TestValidateToolProposal:
     def test_arguments_not_dict(self):
         assert not _validate_tool_proposal({"tool_name": "x", "arguments": "bad"})
 
-    def test_extra_keys_pass_lightweight_check(self):
-        assert _validate_tool_proposal({"tool_name": "x", "arguments": {}, "extra": True})
+    def test_extra_keys_are_rejected(self):
+        assert not _validate_tool_proposal({"tool_name": "x", "arguments": {}, "extra": True})
+
+    def test_extra_keys_with_all_required_rejected(self):
+        assert not _validate_tool_proposal(
+            {"tool_name": "x", "arguments": {}, "reasoning": "because"}
+        )
 
 
 class TestValidateSkillProposal:
@@ -638,6 +655,26 @@ class TestValidateSkillProposal:
     def test_preconditions_not_list(self):
         assert not _validate_skill_proposal(
             {"skill_id": "s1", "tool_calls": [], "satisfied_preconditions": "bad"}
+        )
+
+    def test_extra_keys_are_rejected(self):
+        assert not _validate_skill_proposal(
+            {
+                "skill_id": "s1",
+                "tool_calls": [],
+                "satisfied_preconditions": [],
+                "extra": True,
+            }
+        )
+
+    def test_extra_keys_with_all_required_rejected(self):
+        assert not _validate_skill_proposal(
+            {
+                "skill_id": "s1",
+                "tool_calls": [],
+                "satisfied_preconditions": [],
+                "reasoning": "because",
+            }
         )
 
 
@@ -919,3 +956,21 @@ class TestOpenRouterProviderUsageCapture:
         assert provider.last_usage.total_tokens == 10
         provider.complete("second")
         assert provider.last_usage.total_tokens == 20
+
+    def test_last_usage_accessible_through_protocol_after_call(self):
+        """Usage data is accessible through LlmProvider protocol, not just concrete type."""
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {"total_tokens": 42},
+                },
+            )
+
+        provider: LlmProvider = _make_provider(handler)
+        assert provider.last_usage is None
+        provider.complete("prompt")
+        assert provider.last_usage is not None
+        assert provider.last_usage.total_tokens == 42
