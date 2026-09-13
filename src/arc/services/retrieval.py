@@ -19,7 +19,7 @@ without a complete index, nor a partial chunk set.
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from arc.domain.models import (
     ApprovedContext,
@@ -51,6 +51,69 @@ class PreparedIndex:
 
     chunks: List[KnowledgeChunk]
     embeddings: List[List[float]]
+
+
+class ReciprocalRankFusion:
+    """Deterministic Reciprocal Rank Fusion for dense and lexical ranked lists.
+
+    For each result at 1-based rank ``r`` in a ranked list, the contribution
+    is ``1 / (k + r)``. When the same chunk appears in both lists, its
+    contributions are summed. Results are sorted by descending fused score,
+    with ascending ``chunk_id`` as the deterministic tie-breaker.
+
+    This component is stateless and does not mutate input lists or
+    ``KnowledgeMatch`` objects.
+    """
+
+    K = 60
+
+    @staticmethod
+    def fuse(
+        dense: List[KnowledgeMatch],
+        lexical: List[KnowledgeMatch],
+        k: int = 60,
+    ) -> List[KnowledgeMatch]:
+        """Fuse dense and lexical ranked lists using Reciprocal Rank Fusion.
+
+        Returns a single ranked list with RRF scores applied. The original
+        ``KnowledgeMatch`` objects are not mutated; the fused score is
+        returned separately for the caller to use when constructing
+        ``ApprovedContextItem.relevance_score``.
+        """
+        scores: Dict[str, float] = {}
+        chunk_map: Dict[str, KnowledgeMatch] = {}
+
+        for rank, match in enumerate(dense, start=1):
+            scores[match.chunk_id] = scores.get(match.chunk_id, 0.0) + 1.0 / (k + rank)
+            chunk_map[match.chunk_id] = match
+
+        for rank, match in enumerate(lexical, start=1):
+            scores[match.chunk_id] = scores.get(match.chunk_id, 0.0) + 1.0 / (k + rank)
+            chunk_map[match.chunk_id] = match
+
+        ranked_ids = sorted(scores.keys(), key=lambda cid: (-scores[cid], cid))
+        return [chunk_map[cid] for cid in ranked_ids]
+
+    @staticmethod
+    def scores(
+        dense: List[KnowledgeMatch],
+        lexical: List[KnowledgeMatch],
+        k: int = 60,
+    ) -> Dict[str, float]:
+        """Return the RRF score per chunk_id without constructing a ranked list.
+
+        Useful for callers that need the score mapping without the
+        ordered result list.
+        """
+        result: Dict[str, float] = {}
+
+        for rank, match in enumerate(dense, start=1):
+            result[match.chunk_id] = result.get(match.chunk_id, 0.0) + 1.0 / (k + rank)
+
+        for rank, match in enumerate(lexical, start=1):
+            result[match.chunk_id] = result.get(match.chunk_id, 0.0) + 1.0 / (k + rank)
+
+        return result
 
 
 class RetrievalService:
@@ -188,11 +251,10 @@ class RetrievalService:
         This is the ONLY representation a future Unified
         Intelligence/LLM layer may consume: it carries already-sanitized
         content with provenance/citation metadata and never exposes the
-        repository, vectors, or authorization state. This slice
-        implements dense semantic retrieval only
-        (``RetrievalMethod.DENSE_SEMANTIC``); lexical, fusion, reranking,
-        and modular routing are later maturity layers behind the same
-        boundary.
+        repository, vectors, or authorization state.
+
+        V2 uses hybrid retrieval: dense semantic retrieval + lexical
+        retrieval fused via Reciprocal Rank Fusion (``HYBRID_RRF``).
 
         The tenant boundary comes exclusively from the trusted context,
         the SQL similarity search is tenant-scoped, and every returned
@@ -209,9 +271,15 @@ class RetrievalService:
             RuntimeError: when the repository returns a match outside the
                 trusted tenant (invariant violation; fail closed).
         """
-        matches = await self.search(context, query, limit=limit, source_type=source_type)
+        dense_matches = await self.search(context, query, limit=limit, source_type=source_type)
+        lexical_matches = await self.lexical_search(
+            context, query, limit=limit, source_type=source_type
+        )
 
-        for match in matches:
+        fused = ReciprocalRankFusion.fuse(dense_matches, lexical_matches)
+        rrf_scores = ReciprocalRankFusion.scores(dense_matches, lexical_matches)
+
+        for match in fused:
             if match.tenant_id != context.tenant_id:
                 raise RuntimeError("Retrieval returned a match outside the trusted tenant")
 
@@ -224,10 +292,10 @@ class RetrievalService:
                 provenance=match.provenance,
                 document_version=match.document_version,
                 sequence=match.sequence,
-                relevance_score=float(match.similarity),
+                relevance_score=rrf_scores[match.chunk_id],
                 citation_reference=f"{match.document_id}#c{match.sequence}",
             )
-            for match in matches
+            for match in fused
         ]
 
         return ApprovedContext(
@@ -235,7 +303,7 @@ class RetrievalService:
             tenant_id=context.tenant_id,
             principal_id=context.user_id,
             query=query,
-            retrieval_method=RetrievalMethod.DENSE_SEMANTIC,
+            retrieval_method=RetrievalMethod.HYBRID_RRF,
             items=items,
             security_metadata=ApprovedContextSecurityMetadata(
                 tenant_id=context.tenant_id,

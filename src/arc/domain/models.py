@@ -59,14 +59,17 @@ class RetrievalMethod(str, Enum):
 
     ``DENSE_SEMANTIC`` uses pgvector cosine similarity.
     ``LEXICAL`` uses PostgreSQL full-text search (tsvector/ts_rank).
+    ``HYBRID_RRF`` fuses dense and lexical ranked lists using Reciprocal
+    Rank Fusion (k=60).
 
-    Hybrid/fusion, reranked, and modular routing are later maturity
-    layers: they must be added as new enum values behind the same
-    security boundary without changing the contract shape.
+    Reranked, and modular routing are later maturity layers: they must be
+    added as new enum values behind the same security boundary without
+    changing the contract shape.
     """
 
     DENSE_SEMANTIC = "dense_semantic"
     LEXICAL = "lexical"
+    HYBRID_RRF = "hybrid_rrf"
 
 
 class SkillStatus(str, Enum):
