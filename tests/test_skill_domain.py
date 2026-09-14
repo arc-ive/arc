@@ -167,7 +167,10 @@ class TestSkillModel:
         assert skill_with_risk.risk == SkillRiskLevel.HIGH
 
         skill_low_risk = Skill(
-            id="s3", tenant_id="t1", name="Health Check", purpose="Check health",
+            id="s3",
+            tenant_id="t1",
+            name="Health Check",
+            purpose="Check health",
             risk=SkillRiskLevel.LOW,
         )
         assert skill_low_risk.risk == SkillRiskLevel.LOW
@@ -175,7 +178,10 @@ class TestSkillModel:
     def test_skill_risk_medium(self):
         """Test that SkillRiskLevel.MEDIUM is accepted and preserved."""
         skill = Skill(
-            id="s4", tenant_id="t1", name="Deploy", purpose="Deploy code",
+            id="s4",
+            tenant_id="t1",
+            name="Deploy",
+            purpose="Deploy code",
             risk=SkillRiskLevel.MEDIUM,
         )
         assert skill.risk == SkillRiskLevel.MEDIUM
