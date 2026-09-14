@@ -34,6 +34,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "evaluation_real_llm: requires real LLM provider (OpenRouter); skipped when OPENROUTER_API_KEY is absent",
+]
 
 [tool.ruff]
 target-version = "py312"
