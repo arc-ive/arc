@@ -225,7 +225,6 @@ class TestUnifiedIntelligenceService:
         assert lines[0].startswith("You are Arc's Unified Intelligence.")
         # The retrieved content block has its own labeled header.
         assert "APPROVED CONTEXT:" in lines
-        approved_index = lines.index("APPROVED CONTEXT:")
         # Retrieved content appears only after the header, not before it.
         assert "Retrieved document body." not in prompt[:prompt.index("APPROVED CONTEXT:")]
         # The query follows the retrieved content.
