@@ -175,10 +175,12 @@ class TestUnifiedIntelligenceService:
 
     async def test_prompt_contains_only_content_and_citations(self):
         retrieval = FakeRetrieval(
-            _approved([
-                _item(document_id="doc-1", content="Sanitized policy body.", sequence=0),
-                _item(document_id="doc-2", content="Engineering on-call runbook.", sequence=3),
-            ])
+            _approved(
+                [
+                    _item(document_id="doc-1", content="Sanitized policy body.", sequence=0),
+                    _item(document_id="doc-2", content="Engineering on-call runbook.", sequence=3),
+                ]
+            )
         )
         llm = FakeLlmProvider()
         service = UnifiedIntelligenceService(retrieval, llm)
@@ -211,9 +213,7 @@ class TestUnifiedIntelligenceService:
 
     async def test_prompt_structurally_separates_instructions_from_retrieved_content(self):
         """TRD 10: prompts must structurally distinguish instructions from retrieved content."""
-        retrieval = FakeRetrieval(
-            _approved([_item(content="Retrieved document body.")])
-        )
+        retrieval = FakeRetrieval(_approved([_item(content="Retrieved document body.")]))
         llm = FakeLlmProvider()
         service = UnifiedIntelligenceService(retrieval, llm)
 
@@ -226,7 +226,7 @@ class TestUnifiedIntelligenceService:
         # The retrieved content block has its own labeled header.
         assert "APPROVED CONTEXT:" in lines
         # Retrieved content appears only after the header, not before it.
-        assert "Retrieved document body." not in prompt[:prompt.index("APPROVED CONTEXT:")]
+        assert "Retrieved document body." not in prompt[: prompt.index("APPROVED CONTEXT:")]
         # The query follows the retrieved content.
         assert "QUERY: question" in lines
 
