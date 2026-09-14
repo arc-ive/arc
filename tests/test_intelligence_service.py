@@ -175,7 +175,10 @@ class TestUnifiedIntelligenceService:
 
     async def test_prompt_contains_only_content_and_citations(self):
         retrieval = FakeRetrieval(
-            _approved([_item(document_id="doc-1", content="Sanitized policy body.")])
+            _approved([
+                _item(document_id="doc-1", content="Sanitized policy body.", sequence=0),
+                _item(document_id="doc-2", content="Engineering on-call runbook.", sequence=3),
+            ])
         )
         llm = FakeLlmProvider()
         service = UnifiedIntelligenceService(retrieval, llm)
@@ -183,14 +186,50 @@ class TestUnifiedIntelligenceService:
         await service.answer_query(_context(), "remote work policy")
 
         prompt = llm.prompts[0]
-        assert "doc-1#c0" in prompt
+        # Expected citation/reference pairs are present.
+        assert "[1] citation: doc-1#c0" in prompt
         assert "Sanitized policy body." in prompt
-        # No tenant/principal identifiers, vectors, scores, or authorization
-        # state cross into the LLM prompt.
+        assert "[2] citation: doc-2#c3" in prompt
+        assert "Engineering on-call runbook." in prompt
+        # The user query is present.
+        assert "QUERY: remote work policy" in prompt
+        # ApprovedContext structural header is present.
+        assert "APPROVED CONTEXT:" in prompt
+        # No tenant/principal identifiers, vectors, scores, or
+        # authorization state cross into the LLM prompt.
         assert "tenant-1" not in prompt
         assert "user-1" not in prompt
         assert "0.95" not in prompt
         assert "DENSE_SEMANTIC" not in prompt
+        # No ApprovedContext metadata leaks into the prompt.
+        assert "req-1" not in prompt
+        # No KnowledgeMatch/retrieval metadata leaks into the prompt.
+        assert "POLICY" not in prompt
+        assert "Policy handbook 2026 edition" not in prompt
+        assert "doc-1-c0" not in prompt
+        assert "doc-2-c3" not in prompt
+
+    async def test_prompt_structurally_separates_instructions_from_retrieved_content(self):
+        """TRD 10: prompts must structurally distinguish instructions from retrieved content."""
+        retrieval = FakeRetrieval(
+            _approved([_item(content="Retrieved document body.")])
+        )
+        llm = FakeLlmProvider()
+        service = UnifiedIntelligenceService(retrieval, llm)
+
+        await service.answer_query(_context(), "question")
+
+        prompt = llm.prompts[0]
+        lines = prompt.split("\n")
+        # The first line is the system/trusted instruction.
+        assert lines[0].startswith("You are Arc's Unified Intelligence.")
+        # The retrieved content block has its own labeled header.
+        assert "APPROVED CONTEXT:" in lines
+        approved_index = lines.index("APPROVED CONTEXT:")
+        # Retrieved content appears only after the header, not before it.
+        assert "Retrieved document body." not in prompt[:prompt.index("APPROVED CONTEXT:")]
+        # The query follows the retrieved content.
+        assert "QUERY: question" in lines
 
     async def test_empty_query_is_rejected(self):
         retrieval = FakeRetrieval(_approved([]))
