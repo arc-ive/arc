@@ -96,6 +96,21 @@ class ToolRiskLevel(str, Enum):
     HIGH = "high"
 
 
+class SkillRiskLevel(str, Enum):
+    """Risk classification of a Skill (PRD 12, TRD 14, Issue #140).
+
+    Values match ToolRiskLevel for consistency across the platform.
+    The risk level is an input to the deterministic execution policy
+    layer (TRD 6); it does NOT create an approval mapping. The
+    skill-level ``approval_required`` boolean remains independent
+    (V2-ADR-011).
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class ToolExecutionStatus(str, Enum):
     """Final status of a controlled tool execution attempt (TRD 14.2).
 
@@ -744,7 +759,7 @@ class Skill:
     expected_output: Optional[str] = None
     failure_behavior: Optional[str] = None
     provenance: Optional[str] = None
-    risk: Optional[str] = None
+    risk: Optional[SkillRiskLevel] = None
     status: SkillStatus = SkillStatus.ACTIVE
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
@@ -764,6 +779,8 @@ class Skill:
             raise ValueError(f"Invalid skill status: {self.status!r}")
         if not isinstance(self.approval_required, bool):
             raise ValueError("approval_required must be a boolean")
+        if self.risk is not None and not isinstance(self.risk, SkillRiskLevel):
+            raise ValueError(f"Invalid skill risk: {self.risk!r}")
         for list_field_name, list_value in (
             ("inputs", self.inputs),
             ("preconditions", self.preconditions),

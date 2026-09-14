@@ -1138,6 +1138,52 @@ class TestSkillRiskField:
         assert updated.status_code == 200
         assert updated.json()["risk"] == "medium"
 
+    async def test_create_skill_with_invalid_risk_rejected(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Creating a Skill with an invalid risk value returns 400."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(risk="critical"),
+        )
+        assert response.status_code == 400
+        assert "risk" in response.json()["detail"].lower()
+
+    async def test_update_skill_with_invalid_risk_rejected(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Updating a Skill with an invalid risk value returns 400."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(),
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        response = client.put(
+            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            headers=headers,
+            json={"risk": "invalid"},
+        )
+        assert response.status_code == 400
+        assert "risk" in response.json()["detail"].lower()
+
 
 class TestSkillRouteSurface:
     """Requirement 15: the API surface contains exactly the intended endpoints."""
