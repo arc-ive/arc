@@ -72,3 +72,9 @@ docker-data/
 
 # Local developer secret storage
 API_KEYS/
+
+# Playwright MCP snapshots
+.playwright-mcp/
+
+# App state
+data/state.json
