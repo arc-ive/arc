@@ -1,5 +1,6 @@
 """Repository interfaces for Arc domain."""
 
+from datetime import datetime
 from typing import List, Optional, Protocol
 
 from arc.domain.models import (
@@ -7,6 +8,8 @@ from arc.domain.models import (
     ApprovalRequest,
     ApprovalStatus,
     ConnectorConfig,
+    ConnectorCredential,
+    ConnectorCredentialAudit,
     ConnectorSyncActivityMetrics,
     ConnectorSyncRecord,
     HttpUsageMetrics,
@@ -162,6 +165,43 @@ class ConnectorSyncRepository(Protocol):
         ...
 
 
+class ConnectorCredentialRepository(Protocol):
+    """Repository for tenant-scoped connector credential storage (V2-ADR-015).
+
+    Every operation is tenant scoped. Credentials are stored encrypted;
+    the repository never handles plaintext. One credential per
+    (tenant_id, provider) is enforced by a unique constraint.
+    """
+
+    async def get_by_tenant_and_provider(
+        self, tenant_id: str, provider: str
+    ) -> Optional[ConnectorCredential]:
+        """Return the encrypted credential for a tenant/provider, or None."""
+        ...
+
+    async def create(self, credential: ConnectorCredential) -> ConnectorCredential:
+        """Persist a new encrypted credential."""
+        ...
+
+    async def update(self, credential: ConnectorCredential) -> ConnectorCredential:
+        """Update an existing encrypted credential (rotation)."""
+        ...
+
+    async def delete(self, tenant_id: str, provider: str) -> None:
+        """Delete the credential for a tenant/provider."""
+        ...
+
+    async def create_audit(self, audit: ConnectorCredentialAudit) -> ConnectorCredentialAudit:
+        """Persist a credential lifecycle audit record."""
+        ...
+
+    async def list_audit_for_tenant(
+        self, tenant_id: str, provider: Optional[str] = None
+    ) -> List[ConnectorCredentialAudit]:
+        """List audit records for a tenant, optionally filtered by provider."""
+        ...
+
+
 class KnowledgeRepository(Protocol):
     """Repository for KnowledgeDocument entities.
 
@@ -270,7 +310,17 @@ class KnowledgeChunkRepository(Protocol):
         limit: int = 5,
         source_type: Optional[KnowledgeSource] = None,
     ) -> List[KnowledgeMatch]:
-        """Return tenant-scoped chunk matches ordered by similarity."""
+        """Return tenant-scoped chunk matches ordered by cosine similarity."""
+        ...
+
+    async def lexical_search(
+        self,
+        tenant_id: str,
+        query_text: str,
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
+    ) -> List[KnowledgeMatch]:
+        """Return tenant-scoped chunk matches ordered by lexical relevance."""
         ...
 
 
@@ -316,6 +366,17 @@ class ToolExecutionRepository(Protocol):
 
     async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[ToolExecutionRecord]:
         """List the most recent tool execution records for a tenant."""
+        ...
+
+    async def find_successful_by_idempotency_key(
+        self, idempotency_key: str, tenant_id: str
+    ) -> Optional[ToolExecutionRecord]:
+        """Find a prior successful execution by idempotency key.
+
+        Returns the existing successful record if one exists for the
+        given key and tenant, or None. Used by the webhook retry
+        pipeline to prevent duplicate side effects (V2-ADR-019).
+        """
         ...
 
 
@@ -369,6 +430,55 @@ class WebhookEventRepository(Protocol):
         The event must already be in 'processing' status for this tenant.
         The ``error_kind`` is a safe hardcoded string constant, never
         user-provided text.
+        """
+        ...
+
+    async def mark_retrying(
+        self, event_id: str, tenant_id: str, retry_count: int, next_retry_at: datetime
+    ) -> None:
+        """Mark a 'processing' event as 'retrying' with a schedule.
+
+        The event must already be in 'processing' status for this tenant.
+        ``retry_count`` is the attempt number (1-based); ``next_retry_at``
+        is the earliest time the event should be retried.
+        """
+        ...
+
+    async def claim_for_retry(self, tenant_id: str, limit: int = 10) -> List[WebhookEvent]:
+        """Atomically claim events in 'retrying' status whose next_retry_at has passed.
+
+        Returns the claimed events (transitioned to 'processing').
+        At most ``limit`` events are claimed per call. Each claim is
+        atomic: at most one processor wins a given event.
+        """
+        ...
+
+    async def claim_single_for_retry(self, event_id: str, tenant_id: str) -> Optional[WebhookEvent]:
+        """Atomically claim a single retrying event by event_id.
+
+        Transitions the event from 'retrying' to 'processing' if its
+        next_retry_at has passed. Returns the claimed event, or None if
+        the event does not exist, is not in 'retrying' status, or its
+        next_retry_at is in the future. At most one caller wins.
+        """
+        ...
+
+    async def mark_dead_letter(self, event_id: str, tenant_id: str, error_kind: str) -> None:
+        """Transition a 'retrying' or 'processing' event to 'dead_letter'.
+
+        Used when all retry attempts are exhausted or the failure is
+        permanent. The ``error_kind`` is a safe hardcoded string constant.
+        """
+        ...
+
+    async def sweep_stuck_processing(
+        self, tenant_id: str, stuck_threshold_seconds: int = 600
+    ) -> List[WebhookEvent]:
+        """Find events stuck in 'processing' longer than the threshold.
+
+        Returns the stuck events (still in processing status) for
+        operator visibility. Does NOT modify state; the caller decides
+        whether to transition to dead_letter or retry.
         """
         ...
 

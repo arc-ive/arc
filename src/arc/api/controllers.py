@@ -52,6 +52,7 @@ from arc.security.authorization import (
     APPROVAL_DECIDE,
     APPROVAL_READ,
     CONNECTOR_CREATE,
+    CONNECTOR_MANAGE_CREDENTIALS,
     CONNECTOR_READ,
     CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
@@ -93,6 +94,10 @@ from arc.services.approvals import (
     ApprovalSelfDecisionError,
     ApprovalStateError,
     HumanApprovalService,
+)
+from arc.services.connector_credentials import (
+    ConnectorCredentialError,
+    ConnectorCredentialService,
 )
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.connectors import ConnectorService
@@ -183,6 +188,10 @@ class ApplicationContext:
     @property
     def connector_sync_service(self) -> ConnectorSyncService:
         return self.services.get("connector_sync_service")
+
+    @property
+    def connector_credential_service(self) -> ConnectorCredentialService:
+        return self.services.get("connector_credential_service")
 
     @property
     def knowledge_service(self) -> KnowledgeService:
@@ -1075,6 +1084,30 @@ def _knowledge_document_payload(document: KnowledgeDocument) -> Dict[str, Any]:
     }
 
 
+def _get_credential_service_or_503() -> ConnectorCredentialService:
+    """Resolve the credential management service or return 503.
+
+    The credential management service requires CONNECTOR_ENCRYPTION_KEY
+    to be configured. When it is absent the service is intentionally
+    unavailable: ENV-only credential mode remains active for connector
+    sync, but credential management API operations cannot function
+    without encryption.  This dependency returns 503 instead of leaking
+    an internal KeyError as 500.
+    """
+    try:
+        service = app_context.connector_credential_service
+    except KeyError:
+        service = None
+    if service is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Connector credential management requires CONNECTOR_ENCRYPTION_KEY to be configured"
+            ),
+        )
+    return service
+
+
 def _require_path_tenant_matches_context(path_tenant_id: str, context: TenantContext) -> None:
     """Reject a request whose path tenant does not match the trusted context.
 
@@ -1610,6 +1643,208 @@ async def sync_connector(
     }
 
 
+# ---------------------------------------------------------------------------
+# Connector credential management (V2-ADR-015, TRD 20, Issue #137)
+# ---------------------------------------------------------------------------
+
+
+@api_router.get(
+    "/tenants/{tenant_id}/connectors/credentials/{provider}",
+)
+async def get_credential_metadata(
+    tenant_id: str,
+    provider: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
+) -> Dict[str, Any]:
+    """Return safe metadata for a connector credential (never the secret).
+
+    Protected: requires ``connector:manage_credentials`` and a trusted
+    tenant context. Returns only provider, key_version, and timestamps.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        provider_enum = ConnectorProvider(provider)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid connector provider",
+        )
+
+    metadata = await credential_service.get_credential_metadata(context, provider_enum)
+    if metadata is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Credential not found",
+        )
+    return metadata
+
+
+@api_router.post(
+    "/tenants/{tenant_id}/connectors/credentials/{provider}",
+)
+async def create_credential(
+    tenant_id: str,
+    provider: str,
+    body: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
+) -> Dict[str, Any]:
+    """Create a connector credential for the trusted tenant.
+
+    Protected: requires ``connector:manage_credentials`` and a trusted
+    tenant context. The credential is encrypted at rest; the response
+    contains only safe metadata.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        provider_enum = ConnectorProvider(provider)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid connector provider",
+        )
+
+    credential_value = body.get("credential")
+    if not isinstance(credential_value, str) or not credential_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="credential must be a non-empty string",
+        )
+
+    try:
+        result = await credential_service.create_credential(
+            context, provider_enum, credential_value
+        )
+    except ConnectorCredentialError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    return result
+
+
+@api_router.put(
+    "/tenants/{tenant_id}/connectors/credentials/{provider}",
+)
+async def rotate_credential(
+    tenant_id: str,
+    provider: str,
+    body: Dict[str, Any],
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
+) -> Dict[str, Any]:
+    """Rotate a connector credential for the trusted tenant.
+
+    Protected: requires ``connector:manage_credentials`` and a trusted
+    tenant context. The old credential is replaced; the response
+    contains only safe metadata.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        provider_enum = ConnectorProvider(provider)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid connector provider",
+        )
+
+    credential_value = body.get("credential")
+    if not isinstance(credential_value, str) or not credential_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="credential must be a non-empty string",
+        )
+
+    try:
+        result = await credential_service.rotate_credential(
+            context, provider_enum, credential_value
+        )
+    except ConnectorCredentialError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+
+    return result
+
+
+@api_router.delete(
+    "/tenants/{tenant_id}/connectors/credentials/{provider}",
+)
+async def delete_credential(
+    tenant_id: str,
+    provider: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
+) -> None:
+    """Delete a connector credential for the trusted tenant.
+
+    Protected: requires ``connector:manage_credentials`` and a trusted
+    tenant context. An audit event is recorded.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        provider_enum = ConnectorProvider(provider)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid connector provider",
+        )
+
+    try:
+        await credential_service.delete_credential(context, provider_enum)
+    except ConnectorCredentialError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+
+
+@api_router.get(
+    "/tenants/{tenant_id}/connectors/credentials/{provider}/audit",
+)
+async def list_credential_audit(
+    tenant_id: str,
+    provider: str,
+    context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
+    credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
+) -> List[Dict[str, Any]]:
+    """List credential audit records for a tenant/provider.
+
+    Protected: requires ``connector:manage_credentials`` and a trusted
+    tenant context. Audit records contain only safe metadata.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        provider_enum = ConnectorProvider(provider)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid connector provider",
+        )
+
+    records = await credential_service.list_audit(context, provider_enum)
+    return [
+        {
+            "id": r.id,
+            "tenant_id": r.tenant_id,
+            "provider": r.provider.value,
+            "operation": r.operation,
+            "actor_user_id": r.actor_user_id,
+            "key_version": r.key_version,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in records
+    ]
+
+
 def _webhook_event_payload(event: WebhookEvent, duplicate: bool) -> Dict[str, Any]:
     """Serialize a WebhookEvent without exposing any payload content."""
     return {
@@ -1672,8 +1907,12 @@ async def ingest_webhook_event(
     webhook_ingestion_service: WebhookIngestionService = Depends(
         lambda: app_context.webhook_ingestion_service
     ),
+    webhook_pipeline_service: WebhookPipelineService = Depends(
+        lambda: app_context.webhook_pipeline_service
+    ),
 ) -> Dict[str, Any]:
-    """Receive one inbound webhook delivery (machine-to-machine).
+    """Receive one inbound webhook delivery and automatically dispatch
+    to the downstream Skill pipeline (Issue #138, V2-ADR-017, PRD 17).
 
     NOT RBAC-gated by design (ADR-001 webhook security boundary):
     external senders hold no Arc identity. Authentication is per-endpoint
@@ -1686,12 +1925,13 @@ async def ingest_webhook_event(
     they return the original record with ``duplicate=true`` instead of
     creating a second row. Raw payloads are never persisted or returned.
 
-    Deliberate precedence: bodies larger than MAX_BODY_BYTES are rejected
-    BEFORE authentication/timestamp verification (controlled 400). This
-    prevents excessive unauthenticated buffering — an aborted read cannot
-    be HMAC-verified at all. Authentication behavior for bodies within
-    the limit is unchanged, and the oversize rejection is endpoint-
-    independent (it reveals nothing about endpoint validity).
+    After successful ingestion, the event is automatically dispatched
+    through the configured Skill pipeline (WebhookPipelineService).
+    On success the event transitions to ``processed``. On pipeline
+    failure the event transitions to ``failed`` (or remains ``processing``
+    if the failure-status write itself fails). The response body
+    reflects the actual persisted state. The ingestion HTTP status
+    remains 200 to reflect the actual persisted state.
     """
     body = await _read_capped_body(request, MAX_BODY_BYTES)
     timestamp_header = request.headers.get("X-Arc-Timestamp", "")
@@ -1717,7 +1957,42 @@ async def ingest_webhook_event(
             detail="Webhook ingestion failed",
         )
 
-    return _webhook_event_payload(result.event, result.duplicate)
+    # Automatic dispatch (Issue #138, V2-ADR-017): route non-duplicate
+    # events through the Skill pipeline immediately after ingestion.
+    # Duplicate deliveries are already recorded; pipeline processing
+    # is NOT re-triggered to avoid duplicate downstream execution.
+    #
+    # After process() completes (success or failure), the event's actual
+    # DB state is re-read so the response body is accurate. Three paths:
+    #   A) claim_for_processing fails → event remains received
+    #   B) claim succeeds, downstream fails → event transitions to failed
+    #   C) claim succeeds, mark_failed fails → event stuck in processing
+    event_to_return = result.event
+    if not result.duplicate:
+        try:
+            await webhook_pipeline_service.process(result.event.tenant_id, result.event.event_id)
+        except Exception:
+            logger.warning(
+                "Webhook auto-dispatch failed for event '%s' in tenant '%s'",
+                result.event.event_id,
+                result.event.tenant_id,
+                extra={
+                    "endpoint_id": endpoint_id,
+                    "event_id": result.event.event_id,
+                    "tenant_id": result.event.tenant_id,
+                },
+                exc_info=True,
+            )
+        # Re-read the actual persisted state regardless of success or failure.
+        # process() may have transitioned the event to processed/failed/processing.
+        try:
+            event_to_return = await webhook_ingestion_service.get_event_by_id(
+                result.event.event_id, result.event.tenant_id
+            )
+        except NotFoundError:
+            pass
+
+    return _webhook_event_payload(event_to_return, result.duplicate)
 
 
 @api_router.get("/tenants/{tenant_id}/webhooks/events")

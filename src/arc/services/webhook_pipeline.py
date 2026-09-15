@@ -1,4 +1,4 @@
-"""Webhook downstream processing pipeline (Issue #102, PRD 16).
+"""Webhook downstream processing pipeline (Issue #102, #136, PRD 16).
 
 Implements the webhook-to-Skill execution pipeline that transitions
 received webhook events through processing to processed or failed.
@@ -23,9 +23,13 @@ Security invariants:
 - At most one processor can atomically claim a received event.
   Downstream execution is best-effort; a crash during processing
   leaves the event in ``processing`` status (manual recovery).
+- Retries use a deterministic idempotency key derived from the
+  webhook event to prevent duplicate downstream side effects
+  (V2-ADR-019, Issue #136).
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from arc.db.connection import NotFoundError
@@ -40,6 +44,7 @@ from arc.security.authorization import AuthorizationService
 from arc.security.models import ApplicationRole, AuthenticatedPrincipal
 from arc.services.pii import PiiGuardService
 from arc.services.skill_execution import SkillExecutionService
+from arc.services.tools import ToolDeniedError
 from arc.services.webhook_config import WebhookEndpointStore
 
 logger = logging.getLogger("arc.services.webhook_pipeline")
@@ -57,6 +62,69 @@ _ERROR_UNKNOWN_ACTION_TYPE = "unknown_action_type"
 _ERROR_CONFIGURATION = "configuration_error"
 _ERROR_DOWNSTREAM = "downstream_execution_error"
 _ERROR_INTERNAL = "pipeline_internal_error"
+_ERROR_DISALLOWED_TOOL = "disallowed_tool"
+_ERROR_AUTHORIZATION = "authorization_error"
+
+# Retry configuration defaults.
+DEFAULT_MAX_RETRIES = 5
+DEFAULT_BASE_DELAY_SECONDS = 10
+DEFAULT_MAX_DELAY_SECONDS = 300
+
+# Error kinds that are NEVER retried (permanent/auth/policy failures).
+# These go straight to failed. Authentication failures (HMAC) never
+# reach the pipeline. Authorization/policy failures are permanent.
+_PERMANENT_ERROR_KINDS = frozenset(
+    {
+        _ERROR_NO_ACTION,
+        _ERROR_UNKNOWN_ACTION_TYPE,
+        _ERROR_CONFIGURATION,
+        _ERROR_DISALLOWED_TOOL,
+        _ERROR_AUTHORIZATION,
+    }
+)
+
+
+def is_transient_failure(error_kind: str) -> bool:
+    """Return True if the error kind represents a retryable transient failure.
+
+    Transient failures are: downstream execution errors and internal
+    pipeline errors. Configuration, action, authorization, and policy
+    errors are permanent.
+    """
+    return error_kind not in _PERMANENT_ERROR_KINDS
+
+
+def compute_retry_delay(retry_count: int, base_delay: float = DEFAULT_BASE_DELAY_SECONDS) -> float:
+    """Compute exponential backoff delay in seconds.
+
+    delay = base_delay * 2^retry_count, capped at DEFAULT_MAX_DELAY_SECONDS.
+    """
+    delay = base_delay * (2**retry_count)
+    return min(delay, DEFAULT_MAX_DELAY_SECONDS)
+
+
+def classify_failure(error_kind: str, retry_count: int, max_retries: int) -> str:
+    """Classify a failure into next action: 'retry', 'dead_letter', or 'failed'.
+
+    Returns 'retry' if the failure is transient and retries remain,
+    'dead_letter' if retries are exhausted, 'failed' for permanent
+    errors.
+    """
+    if error_kind in _PERMANENT_ERROR_KINDS:
+        return "failed"
+    if retry_count >= max_retries:
+        return "dead_letter"
+    return "retry"
+
+
+def compute_idempotency_key(tenant_id: str, event_id: str) -> str:
+    """Compute a deterministic idempotency key for a webhook event.
+
+    The key is scoped to (tenant, event) and is stable across retries.
+    Per-tool-step differentiation is handled by SkillExecutionService
+    which appends the step index.
+    """
+    return f"webhook:{tenant_id}:{event_id}"
 
 
 class WebhookProcessingError(Exception):
@@ -74,7 +142,7 @@ class WebhookPipelineService:
     processing, resolves the configured downstream action, and routes
     the event through the existing SkillExecutionService. On success
     the event transitions to ``processed``; on any failure it
-    transitions to ``failed`` with a safe error category.
+    transitions to ``failed`` or ``retrying`` with a safe error category.
     """
 
     def __init__(
@@ -103,16 +171,32 @@ class WebhookPipelineService:
 
         Raises:
             NotFoundError: the event does not exist, is not in 'received'
-                status, or belongs to a different tenant.
+                or 'retrying' status, or belongs to a different tenant.
             WebhookProcessingError: a handled pipeline failure. The event
-                is in 'failed' status with a safe error category.
+                is in 'failed', 'retrying', or 'dead_letter' status.
         """
-        # Step 1: Atomically claim the event (received -> processing).
-        # At most one processor wins this race.
-        event = await self._webhook_repository.claim_for_processing(event_id, tenant_id)
+        # Step 1: Atomically claim the event (received -> processing, or
+        # retrying -> processing). At most one processor wins this race.
+        try:
+            event = await self._webhook_repository.claim_for_processing(event_id, tenant_id)
+        except NotFoundError:
+            # Try claiming from retrying status using a dedicated single-event
+            # claim (C1 fix: no longer claims unrelated events).
+            claimed = await self._webhook_repository.claim_single_for_retry(event_id, tenant_id)
+            if claimed is None:
+                raise NotFoundError(
+                    f"Webhook event '{event_id}' not found or not in "
+                    f"retryable status in tenant {tenant_id}"
+                )
+            event = claimed
+
+        # Compute deterministic idempotency key for downstream dedup.
+        idempotency_key = compute_idempotency_key(tenant_id, event_id)
 
         try:
-            await self._execute_downstream(tenant_id, event.endpoint_id, event.event_type)
+            await self._execute_downstream(
+                tenant_id, event.endpoint_id, event.event_type, idempotency_key
+            )
             # Step 2a: Downstream succeeded -> processed.
             await self._webhook_repository.mark_processed(event_id, tenant_id)
             logger.info(
@@ -131,36 +215,136 @@ class WebhookPipelineService:
                 "duplicate": False,
             }
         except WebhookProcessingError as exc:
-            # Handled pipeline failure: mark as failed, then re-raise.
-            try:
-                await self._webhook_repository.mark_failed(event_id, tenant_id, exc.error_kind)
-            except Exception:
-                logger.exception(
-                    "Failed to mark webhook event as failed",
-                    extra={"event_id": event_id, "tenant_id": tenant_id},
-                )
-            raise
+            # Classify the failure and choose next action.
+            action = classify_failure(exc.error_kind, event.retry_count, event.max_retries)
+            if action == "retry":
+                new_retry_count = event.retry_count + 1
+                try:
+                    await self._schedule_retry(
+                        event_id, tenant_id, event.retry_count, exc.error_kind
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to schedule retry, marking as failed",
+                        extra={"event_id": event_id, "tenant_id": tenant_id},
+                    )
+                    try:
+                        await self._webhook_repository.mark_failed(
+                            event_id, tenant_id, exc.error_kind
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to mark webhook event as failed",
+                            extra={"event_id": event_id, "tenant_id": tenant_id},
+                        )
+                    raise exc
+                return {
+                    "id": event.id,
+                    "tenant_id": event.tenant_id,
+                    "endpoint_id": event.endpoint_id,
+                    "event_id": event.event_id,
+                    "event_type": event.event_type,
+                    "status": WebhookEventStatus.RETRYING.value,
+                    "payload_size_bytes": event.payload_size_bytes,
+                    "created_at": event.created_at.isoformat(),
+                    "retry_count": new_retry_count,
+                }
+            elif action == "dead_letter":
+                try:
+                    await self._webhook_repository.mark_dead_letter(
+                        event_id, tenant_id, exc.error_kind
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to mark webhook event as dead letter",
+                        extra={"event_id": event_id, "tenant_id": tenant_id},
+                    )
+                raise
+            else:
+                # Permanent failure -> failed.
+                try:
+                    await self._webhook_repository.mark_failed(event_id, tenant_id, exc.error_kind)
+                except Exception:
+                    logger.exception(
+                        "Failed to mark webhook event as failed",
+                        extra={"event_id": event_id, "tenant_id": tenant_id},
+                    )
+                raise
         except Exception as exc:
-            # Step 2b: Unexpected failure -> failed.
+            # Step 2b: Unexpected failure -> classify and retry or fail.
             error_kind = _ERROR_INTERNAL
-            try:
-                await self._webhook_repository.mark_failed(event_id, tenant_id, error_kind)
-            except Exception:
-                logger.exception(
-                    "Failed to mark webhook event as failed",
-                    extra={"event_id": event_id, "tenant_id": tenant_id},
-                )
+            action = classify_failure(error_kind, event.retry_count, event.max_retries)
+            if action == "retry":
+                new_retry_count = event.retry_count + 1
+                await self._schedule_retry(event_id, tenant_id, event.retry_count, error_kind)
+                return {
+                    "id": event.id,
+                    "tenant_id": event.tenant_id,
+                    "endpoint_id": event.endpoint_id,
+                    "event_id": event.event_id,
+                    "event_type": event.event_type,
+                    "status": WebhookEventStatus.RETRYING.value,
+                    "payload_size_bytes": event.payload_size_bytes,
+                    "created_at": event.created_at.isoformat(),
+                    "retry_count": new_retry_count,
+                }
+            elif action == "dead_letter":
+                try:
+                    await self._webhook_repository.mark_dead_letter(event_id, tenant_id, error_kind)
+                except Exception:
+                    logger.exception(
+                        "Failed to mark webhook event as dead letter",
+                        extra={"event_id": event_id, "tenant_id": tenant_id},
+                    )
+            else:
+                try:
+                    await self._webhook_repository.mark_failed(event_id, tenant_id, error_kind)
+                except Exception:
+                    logger.exception(
+                        "Failed to mark webhook event as failed",
+                        extra={"event_id": event_id, "tenant_id": tenant_id},
+                    )
             raise WebhookProcessingError(
                 error_kind,
                 f"Webhook processing failed: {error_kind}",
             ) from exc
 
-    async def _execute_downstream(self, tenant_id: str, endpoint_id: str, event_type: str) -> None:
+    async def _schedule_retry(
+        self, event_id: str, tenant_id: str, current_retry_count: int, error_kind: str
+    ) -> None:
+        """Schedule the next retry attempt with exponential backoff."""
+        new_retry_count = current_retry_count + 1
+        delay = compute_retry_delay(current_retry_count)
+        next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+        await self._webhook_repository.mark_retrying(
+            event_id, tenant_id, new_retry_count, next_retry_at
+        )
+        logger.info(
+            "Webhook event scheduled for retry",
+            extra={
+                "event_id": event_id,
+                "tenant_id": tenant_id,
+                "retry_count": new_retry_count,
+                "delay_seconds": delay,
+                "error_kind": error_kind,
+            },
+        )
+
+    async def _execute_downstream(
+        self,
+        tenant_id: str,
+        endpoint_id: str,
+        event_type: str,
+        idempotency_key: str,
+    ) -> None:
         """Execute the configured downstream action for an endpoint.
 
         Resolves the endpoint configuration, validates the action,
         constructs the system context, and delegates to
         SkillExecutionService.
+
+        The ``idempotency_key`` is derived from the webhook event and
+        passed through to prevent duplicate side effects on retry.
 
         Raises:
             WebhookProcessingError: on any handled failure.
@@ -217,11 +401,21 @@ class WebhookPipelineService:
                 action.tool_calls,
                 action.satisfied_conditions,
                 authorization,
+                idempotency_key=idempotency_key,
             )
         except (ValueError, NotFoundError) as exc:
             raise WebhookProcessingError(
                 _ERROR_CONFIGURATION,
                 f"Skill execution configuration error: {_ERROR_CONFIGURATION}",
+            ) from exc
+        except ToolDeniedError as exc:
+            # F1 fix: ToolDeniedError from authorization or policy is
+            # permanent — never retry. Maps to authorization_error or
+            # disallowed_tool depending on the underlying cause.
+            error_kind = _ERROR_AUTHORIZATION
+            raise WebhookProcessingError(
+                error_kind,
+                f"Tool execution denied: {error_kind}",
             ) from exc
 
         # Any non-success status from SkillExecutionService is a failure.

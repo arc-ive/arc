@@ -45,6 +45,10 @@ class PostgreSQLKnowledgeChunkRepository:
 
         All chunk rows are inserted in one transaction: a failure inserts
         nothing (no partial index for a document).
+
+        The ``search_vector`` column is populated from ``content`` via
+        PostgreSQL's ``to_tsvector('english', ...)`` so that lexical
+        retrieval is immediately available after insert.
         """
         if len(chunks) != len(embeddings):
             raise ValueError("chunks and embeddings must have the same length")
@@ -57,9 +61,10 @@ class PostgreSQLKnowledgeChunkRepository:
                     """
                     INSERT INTO knowledge_chunks (
                         id, document_id, tenant_id, content, sequence,
-                        embedding, created_at
+                        embedding, search_vector, created_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
+                    VALUES ($1, $2, $3, $4, $5, $6::vector,
+                            to_tsvector('english', $4), $7)
                     """,
                     chunk.id,
                     chunk.document_id,
@@ -157,6 +162,95 @@ class PostgreSQLKnowledgeChunkRepository:
                     document_version=row["version"],
                     sequence=row["sequence"],
                     similarity=float(row["similarity"]),
+                )
+                for row in rows
+            ]
+
+    async def lexical_search(
+        self,
+        tenant_id: str,
+        query_text: str,
+        limit: int = 5,
+        source_type: Optional[KnowledgeSource] = None,
+    ) -> List[KnowledgeMatch]:
+        """Return tenant-scoped chunk matches ordered by lexical relevance.
+
+        Uses PostgreSQL full-text search: ``plainto_tsquery`` converts the
+        user query to a tsquery (implicit AND between terms), and
+        ``ts_rank`` scores matches against the pre-computed
+        ``search_vector``. The GIN index on ``search_vector`` accelerates
+        the ``@@`` match.
+
+        The SQL boundary is the security boundary: chunks are filtered by
+        ``tenant_id`` and joined to their owning document within the same
+        tenant, so a tenant B query can never observe tenant A chunks.
+
+        When ``source_type`` is provided, only documents whose
+        ``knowledge_documents.source`` matches are included in the
+        candidate set.
+        """
+        if limit < 1:
+            raise ValueError("Search limit must be a positive integer")
+
+        if source_type is not None:
+            sql = """
+                SELECT c.id AS chunk_id,
+                       c.document_id,
+                       c.tenant_id,
+                       c.content,
+                       c.sequence,
+                       d.source,
+                       d.provenance,
+                       d.version,
+                       ts_rank(c.search_vector,
+                               plainto_tsquery('english', $2)) AS rank
+                FROM knowledge_chunks c
+                JOIN knowledge_documents d
+                  ON d.id = c.document_id AND d.tenant_id = c.tenant_id
+                WHERE c.tenant_id = $1
+                  AND c.search_vector @@ plainto_tsquery('english', $2)
+                  AND d.status = 'active'
+                  AND d.source = $4
+                ORDER BY rank DESC
+                LIMIT $3
+                """
+            params = (tenant_id, query_text, limit, source_type.value)
+        else:
+            sql = """
+                SELECT c.id AS chunk_id,
+                       c.document_id,
+                       c.tenant_id,
+                       c.content,
+                       c.sequence,
+                       d.source,
+                       d.provenance,
+                       d.version,
+                       ts_rank(c.search_vector,
+                               plainto_tsquery('english', $2)) AS rank
+                FROM knowledge_chunks c
+                JOIN knowledge_documents d
+                  ON d.id = c.document_id AND d.tenant_id = c.tenant_id
+                WHERE c.tenant_id = $1
+                  AND c.search_vector @@ plainto_tsquery('english', $2)
+                  AND d.status = 'active'
+                ORDER BY rank DESC
+                LIMIT $3
+                """
+            params = (tenant_id, query_text, limit)
+
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+            return [
+                KnowledgeMatch(
+                    chunk_id=row["chunk_id"],
+                    document_id=row["document_id"],
+                    tenant_id=row["tenant_id"],
+                    content=row["content"],
+                    source=KnowledgeSource(row["source"]),
+                    provenance=row["provenance"],
+                    document_version=row["version"],
+                    sequence=row["sequence"],
+                    similarity=float(row["rank"]),
                 )
                 for row in rows
             ]

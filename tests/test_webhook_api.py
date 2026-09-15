@@ -176,7 +176,11 @@ class TestWebhookIngestionFlow:
         assert envelope["duplicate"] is False
         assert envelope["tenant_id"] == webhook_tenant.id
         assert envelope["endpoint_id"] == ENDPOINT_ID
-        assert envelope["status"] == "received"
+        # Auto-dispatch (Issue #138) invokes the real pipeline which
+        # transitions the event through processing → failed (no action
+        # configured for this test endpoint). The response reflects
+        # the actual persisted state.
+        assert envelope["status"] == "failed"
         assert envelope["payload_size_bytes"] == len(body)
         # Only envelope metadata is returned: no sender payload content.
         assert "external-content" not in json.dumps(envelope)

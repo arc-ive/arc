@@ -41,6 +41,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
+      LLM_MODEL: ${LLM_MODEL:-}
     ports:
       - "8000:8000"
     depends_on:

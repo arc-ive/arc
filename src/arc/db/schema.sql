@@ -145,6 +145,19 @@ ALTER TABLE tool_execution_records ADD COLUMN IF NOT EXISTS authorization_outcom
 
 CREATE INDEX IF NOT EXISTS idx_tool_execution_records_tenant_id ON tool_execution_records(tenant_id);
 
+-- Idempotency key for tool execution deduplication (Issue #136, V2-ADR-019):
+-- When set, prevents duplicate handler invocations for the same logical
+-- operation. NULL for legacy records and non-idempotent calls.
+ALTER TABLE tool_execution_records
+    ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(512);
+
+-- Partial unique index: at most one SUCCESS record per idempotency key.
+-- Failed records are NOT constrained — retries after failure must be allowed.
+-- Only applies to non-NULL keys (legacy rows have NULL and are unaffected).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tool_execution_records_idempotency_key
+    ON tool_execution_records(idempotency_key)
+    WHERE idempotency_key IS NOT NULL AND status = 'success';
+
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS knowledge_chunks (
@@ -165,6 +178,15 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document_id ON knowledge_chunks(
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
     ON knowledge_chunks USING hnsw (embedding vector_cosine_ops);
 
+-- Lexical retrieval: PostgreSQL full-text search vector populated on insert
+-- via to_tsvector('english', content). GIN index enables fast text matching
+-- for the lexical retrieval leg of hybrid RAG (ADR-007).
+ALTER TABLE knowledge_chunks
+    ADD COLUMN IF NOT EXISTS search_vector tsvector;
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_search_vector
+    ON knowledge_chunks USING gin(search_vector);
+
 CREATE TABLE IF NOT EXISTS connector_sync_records (
     id VARCHAR(255) PRIMARY KEY,
     tenant_id VARCHAR(255) NOT NULL,
@@ -181,6 +203,43 @@ CREATE TABLE IF NOT EXISTS connector_sync_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_connector_sync_records_tenant_id ON connector_sync_records(tenant_id);
+
+-- Tenant-isolated connector credentials (Issue #137, V2-ADR-015, TRD 20):
+-- One encrypted credential per (tenant_id, provider). Credentials are
+-- encrypted at rest using AES-256-GCM with a configured key. The
+-- key_version supports future key rotation. Plaintext credentials are
+-- never stored, logged, or returned through API responses.
+CREATE TABLE IF NOT EXISTS connector_credentials (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    encrypted_credential BYTEA NOT NULL,
+    key_version INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rotated_at TIMESTAMP WITH TIME ZONE,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT uq_connector_credentials_tenant_provider UNIQUE (tenant_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_connector_credentials_tenant_id ON connector_credentials(tenant_id);
+
+-- Credential audit events (Issue #137, V2-ADR-015):
+-- Metadata-only records of credential lifecycle operations. Never
+-- contain plaintext credentials, encryption keys, or decrypted material.
+CREATE TABLE IF NOT EXISTS connector_credential_audit (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255) NOT NULL,
+    provider VARCHAR(50) NOT NULL,
+    operation VARCHAR(50) NOT NULL,
+    actor_user_id VARCHAR(255) NOT NULL,
+    key_version INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_connector_credential_audit_operation
+        CHECK (operation IN ('create', 'rotate', 'delete'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_connector_credential_audit_tenant_id ON connector_credential_audit(tenant_id);
 
 -- Webhooks foundation (PRD 16, TRD 16): tenant-scoped records of
 -- validated inbound webhook events. Records are metadata-only by design:
@@ -229,6 +288,38 @@ ALTER TABLE webhook_events
 -- NULL for unprocessed events.
 ALTER TABLE webhook_events
     ADD COLUMN IF NOT EXISTS processed_at TIMESTAMP WITH TIME ZONE;
+
+-- Webhook retry/backoff pipeline (Issue #136, V2-ADR-019, TRD 22):
+-- retry_count tracks how many retry attempts have been made.
+-- next_retry_at is set when status = 'retrying' and cleared on retry.
+-- max_retries bounds the total number of retry attempts (default 5).
+-- These statements are idempotent and safe for both fresh and existing
+-- databases.
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE webhook_events
+    ADD COLUMN IF NOT EXISTS max_retries INTEGER NOT NULL DEFAULT 5;
+
+-- Extend the status CHECK constraint to include 'retrying' and
+-- 'dead_letter' for bounded retry and dead-letter states.
+ALTER TABLE webhook_events
+    DROP CONSTRAINT IF EXISTS ck_webhook_events_status;
+
+ALTER TABLE webhook_events
+    ADD CONSTRAINT ck_webhook_events_status
+    CHECK (status IN ('received', 'processing', 'processed', 'retrying', 'failed', 'dead_letter'));
+
+-- Composite index for webhook retry sweep queries (Issue #136):
+-- Supports efficient lookup of retrying events by (tenant, status, schedule)
+-- and stuck-processing recovery by (tenant, status, created_at).
+CREATE INDEX IF NOT EXISTS idx_webhook_events_retry
+    ON webhook_events(tenant_id, status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_stuck
+    ON webhook_events(tenant_id, status, created_at);
 
 -- Observability foundation (PRD 17, TRD 17/28/31): metadata-only HTTP
 -- telemetry owned by the Observability/API layer. This is NOT a generic

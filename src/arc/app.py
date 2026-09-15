@@ -1,9 +1,13 @@
 """Application setup and initialization."""
 
+import logging
 import os
 
 from arc.db.connection import ArcDatabase
 from arc.repositories.approvals import PostgreSQLApprovalRequestRepository
+from arc.repositories.connector_credentials import (
+    PostgreSQLConnectorCredentialRepository,
+)
 from arc.repositories.connector_sync import PostgreSQLConnectorSyncRepository
 from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
@@ -17,9 +21,11 @@ from arc.repositories.tenancy import (
 )
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
+from arc.security.encryption import EncryptionError, EncryptionService
 from arc.services.agent import AgentExecutionService
 from arc.services.approvals import HumanApprovalService
 from arc.services.chunking import KnowledgeChunker
+from arc.services.connector_credentials import ConnectorCredentialService
 from arc.services.connector_providers import (
     ConnectorCredentialStore,
     build_provider_registry,
@@ -41,6 +47,8 @@ from arc.services.tools import ToolExecutionService, build_platform_tool_registr
 from arc.services.webhook_config import WebhookEndpointStore
 from arc.services.webhook_ingestion import WebhookIngestionService
 from arc.services.webhook_pipeline import WebhookPipelineService
+
+logger = logging.getLogger(__name__)
 
 
 class Application:
@@ -82,6 +90,7 @@ class Application:
             "webhook_events": PostgreSQLWebhookEventRepository(self.db),
             "observability": PostgreSQLObservabilityRepository(self.db),
             "approval_requests": PostgreSQLApprovalRequestRepository(self.db),
+            "connector_credentials": PostgreSQLConnectorCredentialRepository(self.db),
         }
 
         # Initialize services
@@ -189,6 +198,26 @@ class Application:
         # clients, live mode uses the httpx adapters. Credentials are read
         # lazily from the environment and never logged or returned.
         connector_settings = get_connector_settings()
+
+        # Initialize connector credential management (V2-ADR-015, TRD 20):
+        # encrypted-at-rest credential storage with key versioning. The
+        # encryption key is loaded from CONNECTOR_ENCRYPTION_KEY; if
+        # unconfigured, credential management is skipped and ENV fallback
+        # remains the only credential source.
+        try:
+            encryption_service = EncryptionService()
+            credential_service = ConnectorCredentialService(
+                credential_repo=self.repositories["connector_credentials"],
+                encryption_service=encryption_service,
+            )
+            self.services["connector_credential_service"] = credential_service
+        except EncryptionError:
+            logger.info(
+                "Connector encryption key not configured; "
+                "DB credential management disabled, ENV fallback active"
+            )
+            credential_service = None
+
         self.services["connector_sync_service"] = ConnectorSyncService(
             connector_repo=self.repositories["connector"],
             sync_repo=self.repositories["connector_sync"],
@@ -197,6 +226,7 @@ class Application:
             knowledge_service=KnowledgeService(
                 self.repositories["knowledge"], indexer=retrieval_service
             ),
+            connector_credential_service=credential_service,
         )
 
         # Initialize webhook ingestion (Webhooks foundation, PRD 16 /

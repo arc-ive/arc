@@ -21,6 +21,7 @@ from arc.security.google import GoogleConfig, GoogleOIDCService
 from arc.security.session import SessionService
 from arc.security.settings import get_security_settings
 from arc.services.approval_sweep import ApprovalSweepRunner
+from arc.services.webhook_retry_sweep import WebhookRetrySweepRunner
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,13 @@ async def startup_event():
         await sweep_runner.start()
         arc_app._sweep_runner = sweep_runner
 
+    # Start the background webhook retry sweep (Issue #136, V2-ADR-019)
+    webhook_pipeline_service = arc_app.services.get("webhook_pipeline_service")
+    if webhook_pipeline_service is not None:
+        retry_sweep_runner = WebhookRetrySweepRunner(webhook_pipeline_service)
+        await retry_sweep_runner.start()
+        arc_app._retry_sweep_runner = retry_sweep_runner
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -140,4 +148,9 @@ async def shutdown_event():
     sweep_runner = getattr(arc_app, "_sweep_runner", None)
     if sweep_runner is not None:
         await sweep_runner.stop()
+
+    # Stop the webhook retry sweep before closing the database
+    retry_sweep_runner = getattr(arc_app, "_retry_sweep_runner", None)
+    if retry_sweep_runner is not None:
+        await retry_sweep_runner.stop()
     await arc_app.shutdown()

@@ -153,6 +153,13 @@ class WebhookIngestionService:
             return WebhookIngestionResult(event=stored, duplicate=True)
         return WebhookIngestionResult(event=stored, duplicate=False)
 
+    async def get_event_by_id(self, event_id: str, tenant_id: str) -> WebhookEvent:
+        """Retrieve a webhook event by sender-supplied event ID and tenant.
+
+        Raises ``NotFoundError`` when no matching event exists.
+        """
+        return await self._repository.get_by_event_id(event_id, tenant_id)
+
     async def list_events(self, context: TenantContext, limit: int = 50) -> list:
         """List recent events for the caller's trusted tenant."""
         return await self._repository.list_for_tenant(context.tenant_id, limit)

@@ -19,6 +19,7 @@ from arc.domain.models import (
     KnowledgeMatch,
     KnowledgeSource,
     KnowledgeStatus,
+    RetrievalMethod,
     TenantContext,
     UserRole,
 )
@@ -67,6 +68,8 @@ class FakeChunkRepository:
         self.persisted = []
         self.searches = []
         self.search_results = []
+        self.lexical_searches = []
+        self.lexical_search_results = []
 
     async def create_many(self, chunks, embeddings):
         self.persisted.append((chunks, embeddings))
@@ -75,6 +78,10 @@ class FakeChunkRepository:
     async def search(self, tenant_id, query_embedding, limit=5, source_type=None):
         self.searches.append((tenant_id, query_embedding, limit, source_type))
         return self.search_results
+
+    async def lexical_search(self, tenant_id, query_text, limit=5, source_type=None):
+        self.lexical_searches.append((tenant_id, query_text, limit, source_type))
+        return self.lexical_search_results
 
 
 class DeterministicFakeProvider:
@@ -240,3 +247,551 @@ class TestRetrievalServiceSearch:
         assert tenant_id == "tenant-1"
         assert limit == 3
         assert source_type is None
+
+
+class TestRetrievalServiceLexicalSearch:
+    async def test_lexical_search_delegates_to_repository(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+        match = KnowledgeMatch(
+            chunk_id=_unique("chunk"),
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="approved remote work policy",
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        repo.lexical_search_results = [match]
+
+        matches = await service.lexical_search(_context("tenant-1"), "remote work", limit=3)
+
+        assert matches == [match]
+        assert repo.lexical_searches == [("tenant-1", "remote work", 3, None)]
+
+    async def test_lexical_search_rejects_empty_query(self):
+        service = _service()
+        with pytest.raises(ValueError):
+            await service.lexical_search(_context(), "")
+        with pytest.raises(ValueError):
+            await service.lexical_search(_context(), "   ")
+
+    async def test_lexical_search_rejects_invalid_limit(self):
+        service = _service()
+        with pytest.raises(ValueError):
+            await service.lexical_search(_context(), "remote", limit=0)
+
+    async def test_lexical_search_does_not_use_embedding_provider(self):
+        """Lexical search must NOT call the embedding provider."""
+        repo = FakeChunkRepository()
+        provider = DeterministicFakeProvider()
+        service = RetrievalService(repo, embedding_provider=provider)
+        match = KnowledgeMatch(
+            chunk_id=_unique("chunk"),
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="approved remote work policy",
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        repo.lexical_search_results = [match]
+
+        await service.lexical_search(_context("tenant-1"), "remote work", limit=3)
+
+        assert provider.embed_calls == []
+
+    async def test_lexical_search_passes_source_type_to_repository(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        await service.lexical_search(
+            _context("tenant-1"), "remote work", limit=3, source_type=KnowledgeSource.POLICY
+        )
+
+        assert len(repo.lexical_searches) == 1
+        tenant_id, _query, limit, source_type = repo.lexical_searches[0]
+        assert tenant_id == "tenant-1"
+        assert _query == "remote work"
+        assert limit == 3
+        assert source_type == KnowledgeSource.POLICY
+
+    async def test_lexical_search_no_source_type_passes_none(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        await service.lexical_search(_context("tenant-1"), "remote work", limit=3)
+
+        assert len(repo.lexical_searches) == 1
+        tenant_id, _query, limit, source_type = repo.lexical_searches[0]
+        assert tenant_id == "tenant-1"
+        assert limit == 3
+        assert source_type is None
+
+
+class TestReciprocalRankFusion:
+    def test_same_inputs_produce_same_output(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        a = _unique("chunk")
+        b = _unique("chunk")
+        dense = [
+            KnowledgeMatch(
+                chunk_id=a,
+                document_id=_unique("doc"),
+                tenant_id="t",
+                content="a",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.9,
+            ),
+            KnowledgeMatch(
+                chunk_id=b,
+                document_id=_unique("doc"),
+                tenant_id="t",
+                content="b",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=1,
+                similarity=0.5,
+            ),
+        ]
+        lexical = [
+            KnowledgeMatch(
+                chunk_id=b,
+                document_id=_unique("doc"),
+                tenant_id="t",
+                content="b",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=1,
+                similarity=0.8,
+            ),
+            KnowledgeMatch(
+                chunk_id=a,
+                document_id=_unique("doc"),
+                tenant_id="t",
+                content="a",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.3,
+            ),
+        ]
+
+        result1 = ReciprocalRankFusion.fuse(dense, lexical)
+        result2 = ReciprocalRankFusion.fuse(dense, lexical)
+        assert [m.chunk_id for m in result1] == [m.chunk_id for m in result2]
+
+    def test_rank1_contribution(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        scores = ReciprocalRankFusion.scores(
+            [
+                KnowledgeMatch(
+                    chunk_id="c",
+                    document_id="d",
+                    tenant_id="t",
+                    content="x",
+                    source=KnowledgeSource.POLICY,
+                    provenance="p",
+                    document_version=1,
+                    sequence=0,
+                    similarity=0.9,
+                )
+            ],
+            [],
+        )
+        assert abs(scores["c"] - 1.0 / 61) < 1e-9
+
+    def test_rank2_contribution(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        m1 = KnowledgeMatch(
+            chunk_id="c1",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        m2 = KnowledgeMatch(
+            chunk_id="c2",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=1,
+            similarity=0.5,
+        )
+        scores = ReciprocalRankFusion.scores([m1, m2], [])
+        assert abs(scores["c2"] - 1.0 / 62) < 1e-9
+
+    def test_duplicate_chunk_id_sums_contributions(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        m = KnowledgeMatch(
+            chunk_id="shared",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        scores = ReciprocalRankFusion.scores([m], [m])
+        expected = 1.0 / 61 + 1.0 / 61
+        assert abs(scores["shared"] - expected) < 1e-9
+
+    def test_higher_fused_score_ranks_first(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        dense = [
+            KnowledgeMatch(
+                chunk_id="dense-1",
+                document_id="d",
+                tenant_id="t",
+                content="x",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.9,
+            ),
+        ]
+        lexical = [
+            KnowledgeMatch(
+                chunk_id="dense-1",
+                document_id="d",
+                tenant_id="t",
+                content="x",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.8,
+            ),
+            KnowledgeMatch(
+                chunk_id="lex-only",
+                document_id="d",
+                tenant_id="t",
+                content="x",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=1,
+                similarity=0.5,
+            ),
+        ]
+        result = ReciprocalRankFusion.fuse(dense, lexical)
+        assert result[0].chunk_id == "dense-1"
+        assert result[1].chunk_id == "lex-only"
+
+    def test_deterministic_chunk_id_tie_break(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        m_a = KnowledgeMatch(
+            chunk_id="a",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.5,
+        )
+        m_b = KnowledgeMatch(
+            chunk_id="b",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=1,
+            similarity=0.5,
+        )
+        result = ReciprocalRankFusion.fuse([m_a, m_b], [])
+        assert result[0].chunk_id == "a"
+        assert result[1].chunk_id == "b"
+
+    def test_dense_only_input(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        m = KnowledgeMatch(
+            chunk_id="c",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        result = ReciprocalRankFusion.fuse([m], [])
+        assert len(result) == 1
+        assert result[0].chunk_id == "c"
+
+    def test_lexical_only_input(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        m = KnowledgeMatch(
+            chunk_id="c",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        result = ReciprocalRankFusion.fuse([], [m])
+        assert len(result) == 1
+        assert result[0].chunk_id == "c"
+
+    def test_both_empty(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        result = ReciprocalRankFusion.fuse([], [])
+        assert result == []
+
+    def test_inputs_not_mutated(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        m = KnowledgeMatch(
+            chunk_id="c",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        dense_copy = [m]
+        lexical_copy = [m]
+        ReciprocalRankFusion.fuse(dense_copy, lexical_copy)
+        assert dense_copy[0].similarity == 0.9
+        assert lexical_copy[0].similarity == 0.9
+
+    def test_custom_k_value(self):
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        m = KnowledgeMatch(
+            chunk_id="c",
+            document_id="d",
+            tenant_id="t",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        scores = ReciprocalRankFusion.scores([m], [], k=10)
+        assert abs(scores["c"] - 1.0 / 11) < 1e-9
+
+
+class TestRetrievalServiceApprovedSearchHybrid:
+    async def test_approved_search_calls_both_retrieval_paths(self):
+        repo = FakeChunkRepository()
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+        dense_match = KnowledgeMatch(
+            chunk_id=_unique("chunk"),
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="dense match",
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            document_version=1,
+            sequence=0,
+            similarity=0.9,
+        )
+        lexical_match = KnowledgeMatch(
+            chunk_id=_unique("chunk"),
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="lexical match",
+            source=KnowledgeSource.POLICY,
+            provenance="Policy handbook",
+            document_version=1,
+            sequence=0,
+            similarity=0.7,
+        )
+        repo.search_results = [dense_match]
+        repo.lexical_search_results = [lexical_match]
+
+        contract = await service.approved_search(_context("tenant-1"), "remote work", limit=3)
+
+        assert repo.searches == [("tenant-1", [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), 3, None)]
+        assert repo.lexical_searches == [("tenant-1", "remote work", 3, None)]
+        assert len(contract.items) == 2
+
+    async def test_approved_search_returns_hybrid_rrf_method(self):
+        from arc.domain.models import RetrievalMethod
+
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = []
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        contract = await service.approved_search(_context("tenant-1"), "remote work")
+
+        assert contract.retrieval_method == RetrievalMethod.HYBRID_RRF
+
+    async def test_approved_search_fused_relevance_score(self):
+        dense_match = KnowledgeMatch(
+            chunk_id="shared",
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.99,
+        )
+        lexical_match = KnowledgeMatch(
+            chunk_id="shared",
+            document_id=_unique("doc"),
+            tenant_id="tenant-1",
+            content="x",
+            source=KnowledgeSource.POLICY,
+            provenance="p",
+            document_version=1,
+            sequence=0,
+            similarity=0.10,
+        )
+        repo = FakeChunkRepository()
+        repo.search_results = [dense_match]
+        repo.lexical_search_results = [lexical_match]
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        contract = await service.approved_search(_context("tenant-1"), "remote work")
+
+        assert len(contract.items) == 1
+        expected = 1.0 / 61 + 1.0 / 61
+        assert abs(contract.items[0].relevance_score - expected) < 1e-9
+
+    async def test_approved_search_both_empty(self):
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = []
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        contract = await service.approved_search(_context("tenant-1"), "remote work")
+
+        assert contract.items == []
+        assert contract.retrieval_method == RetrievalMethod.HYBRID_RRF
+
+    async def test_approved_search_dense_only_fallback(self):
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            KnowledgeMatch(
+                chunk_id="dense-1",
+                document_id=_unique("doc"),
+                tenant_id="tenant-1",
+                content="dense",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.9,
+            )
+        ]
+        repo.lexical_search_results = []
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        contract = await service.approved_search(_context("tenant-1"), "remote work")
+
+        assert len(contract.items) == 1
+        assert contract.items[0].chunk_id == "dense-1"
+
+    async def test_approved_search_lexical_only_fallback(self):
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = [
+            KnowledgeMatch(
+                chunk_id="lex-1",
+                document_id=_unique("doc"),
+                tenant_id="tenant-1",
+                content="lexical",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.9,
+            )
+        ]
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        contract = await service.approved_search(_context("tenant-1"), "remote work")
+
+        assert len(contract.items) == 1
+        assert contract.items[0].chunk_id == "lex-1"
+
+    async def test_approved_search_cross_tenant_fused_match_fails_closed(self):
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            KnowledgeMatch(
+                chunk_id="dense-1",
+                document_id=_unique("doc"),
+                tenant_id="tenant-a",
+                content="x",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.9,
+            )
+        ]
+        repo.lexical_search_results = [
+            KnowledgeMatch(
+                chunk_id="lex-1",
+                document_id=_unique("doc"),
+                tenant_id="tenant-b",
+                content="x",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                similarity=0.9,
+            )
+        ]
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        with pytest.raises(RuntimeError):
+            await service.approved_search(_context("tenant-a"), "remote work")
+
+    async def test_approved_search_source_type_passed_to_both_paths(self):
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = []
+        service = RetrievalService(repo, embedding_provider=DeterministicFakeProvider())
+
+        await service.approved_search(
+            _context("tenant-1"), "remote work", limit=3, source_type=KnowledgeSource.POLICY
+        )
+
+        assert repo.searches[0][3] == KnowledgeSource.POLICY
+        assert repo.lexical_searches[0][3] == KnowledgeSource.POLICY

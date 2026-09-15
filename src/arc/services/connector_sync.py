@@ -42,6 +42,7 @@ from arc.domain.models import (
     TenantContext,
 )
 from arc.repositories import ConnectorRepository, ConnectorSyncRepository
+from arc.services.connector_credentials import ConnectorCredentialService
 from arc.services.connector_providers.base import (
     ProviderAuthError,
     ProviderCredential,
@@ -99,12 +100,14 @@ class ConnectorSyncService:
         registry: ProviderRegistry,
         credential_store: ConnectorCredentialStore,
         knowledge_service: KnowledgeService,
+        connector_credential_service: Optional[ConnectorCredentialService] = None,
     ):
         self.connector_repo = connector_repo
         self.sync_repo = sync_repo
         self.registry = registry
         self.credential_store = credential_store
         self.knowledge_service = knowledge_service
+        self._credential_service = connector_credential_service
 
     async def sync(self, context: TenantContext, connector_id: str) -> ConnectorSyncResult:
         """Synchronize one tenant-owned connector.
@@ -123,7 +126,17 @@ class ConnectorSyncService:
             await self._record_failure(context, config, "unsupported_provider")
             raise ConnectorSyncError("Connector provider is not supported")
 
-        token = self.credential_store.get(context.tenant_id, config.provider)
+        # Credential resolution: DB credential takes precedence over ENV.
+        # DB credentials (V2-ADR-015) are encrypted at rest and decrypted
+        # narrowly for this execution only. ENV fallback remains available
+        # for development.
+        token = None
+        if self._credential_service is not None:
+            token = await self._credential_service.resolve_credential(
+                context.tenant_id, config.provider
+            )
+        if token is None:
+            token = self.credential_store.get(context.tenant_id, config.provider)
         if token is None:
             await self._record_failure(context, config, "missing_credential")
             raise ConnectorSyncError("Connector credentials are not configured")

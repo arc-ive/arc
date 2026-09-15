@@ -38,6 +38,8 @@ class FakeChunkRepository:
     def __init__(self):
         self.searches = []
         self.search_results = []
+        self.lexical_searches = []
+        self.lexical_search_results = []
 
     async def create_many(self, chunks, embeddings):
         return chunks
@@ -45,6 +47,10 @@ class FakeChunkRepository:
     async def search(self, tenant_id, query_embedding, limit=5, source_type=None):
         self.searches.append((tenant_id, query_embedding, limit, source_type))
         return self.search_results
+
+    async def lexical_search(self, tenant_id, query_text, limit=5, source_type=None):
+        self.lexical_searches.append((tenant_id, query_text, limit, source_type))
+        return self.lexical_search_results
 
 
 class DeterministicFakeProvider:
@@ -174,6 +180,7 @@ class TestApprovedSearch:
     async def test_builds_contract_from_retrieval_matches(self):
         repo = FakeChunkRepository()
         repo.search_results = [_match(sequence=2, provenance="Policy handbook 2026")]
+        repo.lexical_search_results = []
         service = _service(repo)
 
         contract = await service.approved_search(_context(), "remote work", limit=3)
@@ -183,11 +190,12 @@ class TestApprovedSearch:
         assert contract.tenant_id == "tenant-1"
         assert contract.principal_id == "user-1"
         assert contract.query == "remote work"
-        assert contract.retrieval_method == RetrievalMethod.DENSE_SEMANTIC
+        assert contract.retrieval_method == RetrievalMethod.HYBRID_RRF
         assert contract.security_metadata.tenant_id == "tenant-1"
         assert contract.security_metadata.authorization_status == "approved"
         assert contract.security_metadata.pii_status == "sanitized"
         assert repo.searches == [("tenant-1", [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), 3, None)]
+        assert repo.lexical_searches == [("tenant-1", "remote work", 3, None)]
 
         item = contract.items[0]
         assert isinstance(item, ApprovedContextItem)
@@ -198,46 +206,53 @@ class TestApprovedSearch:
         assert item.provenance == "Policy handbook 2026"
         assert item.document_version == 1
         assert item.sequence == 2
-        assert item.relevance_score == 0.9
         assert item.citation_reference == f"{item.document_id}#c2"
 
     async def test_preserves_ordering_and_scores(self):
         repo = FakeChunkRepository()
-        repo.search_results = [
-            _match(sequence=0, similarity=0.9),
-            _match(sequence=1, similarity=0.5),
-        ]
+        match_a = _match(sequence=0, similarity=0.9, chunk_id="chunk-a")
+        match_b = _match(sequence=1, similarity=0.5, chunk_id="chunk-b")
+        repo.search_results = [match_a, match_b]
+        repo.lexical_search_results = []
         service = _service(repo)
 
         contract = await service.approved_search(_context(), "remote work")
 
         assert [item.sequence for item in contract.items] == [0, 1]
-        assert [item.relevance_score for item in contract.items] == [0.9, 0.5]
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        rrf_scores = ReciprocalRankFusion.scores([match_a, match_b], [])
+        assert contract.items[0].relevance_score == rrf_scores["chunk-a"]
+        assert contract.items[1].relevance_score == rrf_scores["chunk-b"]
 
     async def test_no_match_returns_safe_empty_contract(self):
         repo = FakeChunkRepository()
         repo.search_results = []
+        repo.lexical_search_results = []
         service = _service(repo)
 
         contract = await service.approved_search(_context(), "remote work")
 
         assert contract.items == []
         assert contract.tenant_id == "tenant-1"
-        assert contract.retrieval_method == RetrievalMethod.DENSE_SEMANTIC
+        assert contract.retrieval_method == RetrievalMethod.HYBRID_RRF
 
     async def test_uses_trusted_tenant_only(self):
         repo = FakeChunkRepository()
         repo.search_results = [_match(tenant_id="tenant-a")]
+        repo.lexical_search_results = []
         service = _service(repo)
 
         contract = await service.approved_search(_context("tenant-a"), "remote work")
 
         assert repo.searches[0][0] == "tenant-a"
+        assert repo.lexical_searches[0][0] == "tenant-a"
         assert contract.tenant_id == "tenant-a"
 
     async def test_cross_tenant_match_fails_closed(self):
         repo = FakeChunkRepository()
         repo.search_results = [_match(tenant_id="tenant-b")]
+        repo.lexical_search_results = []
         service = _service(repo)
 
         with pytest.raises(RuntimeError):
@@ -250,6 +265,7 @@ class TestApprovedSearch:
         with pytest.raises(EmbeddingError):
             await service.approved_search(_context(), "remote work")
         assert repo.searches == []
+        assert repo.lexical_searches == []
 
     async def test_rejects_empty_query_and_invalid_limit(self):
         service = _service(FakeChunkRepository())
@@ -260,3 +276,106 @@ class TestApprovedSearch:
             await service.approved_search(_context(), "   ")
         with pytest.raises(ValueError):
             await service.approved_search(_context(), "remote work", limit=0)
+
+
+class TestApprovedSearchHybrid:
+    async def test_calls_both_dense_and_lexical(self):
+        repo = FakeChunkRepository()
+        repo.search_results = [_match(sequence=0, chunk_id="dense-1")]
+        repo.lexical_search_results = [_match(sequence=0, chunk_id="lex-1")]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "remote work", limit=3)
+
+        assert repo.searches == [("tenant-1", [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1), 3, None)]
+        assert repo.lexical_searches == [("tenant-1", "remote work", 3, None)]
+        assert contract.retrieval_method == RetrievalMethod.HYBRID_RRF
+
+    async def test_fuses_overlapping_chunks(self):
+        repo = FakeChunkRepository()
+        shared = _match(sequence=0, chunk_id="shared-chunk", document_id="doc-1")
+        repo.search_results = [shared]
+        repo.lexical_search_results = [
+            _match(sequence=1, chunk_id="other-chunk", document_id="doc-2")
+        ]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "remote work")
+
+        chunk_ids = [item.chunk_id for item in contract.items]
+        assert "shared-chunk" in chunk_ids
+        assert "other-chunk" in chunk_ids
+
+    async def test_rrf_score_is_used_not_raw_similarity(self):
+        dense_match = _match(sequence=0, chunk_id="chunk-a", similarity=0.99)
+        lexical_match = _match(sequence=0, chunk_id="chunk-a", similarity=0.10)
+        repo = FakeChunkRepository()
+        repo.search_results = [dense_match]
+        repo.lexical_search_results = [lexical_match]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "remote work")
+
+        assert len(contract.items) == 1
+        assert contract.items[0].relevance_score != 0.99
+        assert contract.items[0].relevance_score != 0.10
+        expected = 1.0 / (60 + 1) + 1.0 / (60 + 1)
+        assert abs(contract.items[0].relevance_score - expected) < 1e-9
+
+    async def test_dense_only_fallback(self):
+        repo = FakeChunkRepository()
+        repo.search_results = [_match(sequence=0, chunk_id="dense-only")]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "remote work")
+
+        assert len(contract.items) == 1
+        assert contract.items[0].chunk_id == "dense-only"
+        assert contract.retrieval_method == RetrievalMethod.HYBRID_RRF
+
+    async def test_lexical_only_fallback(self):
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = [_match(sequence=0, chunk_id="lex-only")]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "remote work")
+
+        assert len(contract.items) == 1
+        assert contract.items[0].chunk_id == "lex-only"
+        assert contract.retrieval_method == RetrievalMethod.HYBRID_RRF
+
+    async def test_cross_tenant_fused_match_fails_closed(self):
+        repo = FakeChunkRepository()
+        repo.search_results = [_match(tenant_id="tenant-a", chunk_id="dense-1")]
+        repo.lexical_search_results = [_match(tenant_id="tenant-b", chunk_id="lex-1")]
+        service = _service(repo)
+
+        with pytest.raises(RuntimeError):
+            await service.approved_search(_context("tenant-a"), "remote work")
+
+    async def test_source_type_passed_to_both_retrieval_paths(self):
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        await service.approved_search(
+            _context("tenant-1"), "remote work", limit=3, source_type=KnowledgeSource.POLICY
+        )
+
+        assert repo.searches[0][3] == KnowledgeSource.POLICY
+        assert repo.lexical_searches[0][3] == KnowledgeSource.POLICY
+
+    async def test_security_metadata_preserved(self):
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context("tenant-1"), "remote work")
+
+        assert contract.security_metadata.tenant_id == "tenant-1"
+        assert contract.security_metadata.authorization_status == "approved"
+        assert contract.security_metadata.pii_status == "sanitized"

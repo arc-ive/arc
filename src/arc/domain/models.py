@@ -57,13 +57,19 @@ class KnowledgeSource(str, Enum):
 class RetrievalMethod(str, Enum):
     """Retrieval strategies available to the Secure RAG layer.
 
-    Only ``DENSE_SEMANTIC`` is implemented in this slice. Lexical,
-    hybrid/fusion, reranked, and modular routing are later maturity
-    layers (proposal ┬º10): they must be added as new enum values behind
-    the same security boundary without changing the contract shape.
+    ``DENSE_SEMANTIC`` uses pgvector cosine similarity.
+    ``LEXICAL`` uses PostgreSQL full-text search (tsvector/ts_rank).
+    ``HYBRID_RRF`` fuses dense and lexical ranked lists using Reciprocal
+    Rank Fusion (k=60).
+
+    Reranked, and modular routing are later maturity layers: they must be
+    added as new enum values behind the same security boundary without
+    changing the contract shape.
     """
 
     DENSE_SEMANTIC = "dense_semantic"
+    LEXICAL = "lexical"
+    HYBRID_RRF = "hybrid_rrf"
 
 
 class SkillStatus(str, Enum):
@@ -303,6 +309,73 @@ class ConnectorSyncRecord:
             raise ValueError("Successful sync records cannot have an error kind")
         if self.status is ConnectorSyncStatus.FAILED and self.items_fetched > 0:
             raise ValueError("Failed sync records cannot report fetched items")
+
+
+@dataclass
+class ConnectorCredential:
+    """Tenant-scoped encrypted connector credential (V2-ADR-015, TRD 20).
+
+    One credential per (tenant_id, provider). The credential is stored
+    encrypted at rest; plaintext is never persisted, logged, or returned
+    through API responses.
+    """
+
+    id: str
+    tenant_id: str
+    provider: ConnectorProvider
+    encrypted_credential: bytes
+    key_version: int = 1
+    created_at: datetime = field(default_factory=datetime.now)
+    rotated_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Connector credential ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.provider, ConnectorProvider):
+            raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if not isinstance(self.encrypted_credential, bytes) or not self.encrypted_credential:
+            raise ValueError("Encrypted credential must be non-empty bytes")
+        if not isinstance(self.key_version, int) or self.key_version < 1:
+            raise ValueError("Key version must be a positive integer")
+
+    def __repr__(self) -> str:
+        """Exclude encrypted_credential from repr to prevent accidental leakage."""
+        return (
+            f"ConnectorCredential(id={self.id!r}, tenant_id={self.tenant_id!r}, "
+            f"provider={self.provider!r}, key_version={self.key_version!r})"
+        )
+
+
+@dataclass
+class ConnectorCredentialAudit:
+    """Metadata-only audit record for connector credential lifecycle events.
+
+    Never contains plaintext credentials, encryption keys, or decrypted
+    material. Stores only safe metadata: tenant, provider, operation,
+    actor, key version, and timestamp.
+    """
+
+    id: str
+    tenant_id: str
+    provider: ConnectorProvider
+    operation: str
+    actor_user_id: str
+    key_version: Optional[int] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("Audit record ID cannot be empty")
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not isinstance(self.provider, ConnectorProvider):
+            raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if self.operation not in ("create", "rotate", "delete"):
+            raise ValueError(f"Invalid audit operation: {self.operation!r}")
+        if not self.actor_user_id:
+            raise ValueError("Actor user ID cannot be empty")
 
 
 @dataclass
@@ -738,6 +811,7 @@ class ToolExecutionRecord:
     authorization_outcome: ToolAuthorizationOutcome = ToolAuthorizationOutcome.GRANTED
     output_summary: Optional[str] = None
     error_kind: Optional[str] = None
+    idempotency_key: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self):
@@ -768,20 +842,21 @@ class WebhookEventStatus(str, Enum):
 
     - ``received``: ingested and recorded, awaiting processing.
     - ``processing``: claimed by a pipeline processor (atomic transition
-      from ``received``; at most one processor wins).
+      from ``received`` or ``retrying``; at most one processor wins).
     - ``processed``: downstream execution completed successfully.
-    - ``failed``: downstream execution failed; ``error_kind`` records
-      the safe error category.
-
-    ``processing``, ``processed``, and ``failed`` are terminal states
-    for the current processing attempt. A stuck ``processing`` event
-    (process crash) requires manual recovery.
+    - ``retrying``: transient failure; waiting for next retry attempt.
+    - ``failed``: permanent failure; ``error_kind`` records the safe
+      error category. No further retries.
+    - ``dead_letter``: exhausted all retry attempts; manual intervention
+      required.
     """
 
     RECEIVED = "received"
     PROCESSING = "processing"
     PROCESSED = "processed"
+    RETRYING = "retrying"
     FAILED = "failed"
+    DEAD_LETTER = "dead_letter"
 
 
 @dataclass
@@ -812,6 +887,9 @@ class WebhookEvent:
     created_at: datetime = field(default_factory=datetime.now)
     error_kind: Optional[str] = None
     processed_at: Optional[datetime] = None
+    retry_count: int = 0
+    next_retry_at: Optional[datetime] = None
+    max_retries: int = 5
 
     def __post_init__(self):
         if not self.id:
