@@ -10,13 +10,12 @@ the trusted ``TenantContext`` can never be influenced by model output.
 import uuid
 from collections import deque
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
 from arc.domain.models import (
-    AgentRunRecord,
     AgentRunStatus,
     Skill,
     SkillExecutionStatus,
@@ -619,7 +618,7 @@ class TestTraceDuration:
         env["queue"].extend([_decision(skill.id), None])
 
         before = datetime.now(timezone.utc)
-        result = await env["agent"].run(
+        await env["agent"].run(
             env["context"], env["principal"], "goal", env["authorization"]
         )
         after = datetime.now(timezone.utc)
@@ -641,7 +640,7 @@ class TestTraceDuration:
         bad = await _create_skill(env, allowed_tools=["check_service_health", "ghost_tool"])
         env["queue"].append(_decision(bad.id, "ghost_tool"))
 
-        result = await env["agent"].run(
+        await env["agent"].run(
             env["context"], env["principal"], "goal", env["authorization"]
         )
 
@@ -663,7 +662,7 @@ class TestTraceMetadata:
         skill = await _create_skill(env)
         env["queue"].extend([_decision(skill.id), None])
 
-        result = await env["agent"].run(
+        await env["agent"].run(
             env["context"], env["principal"], "check the payment service", env["authorization"]
         )
 
