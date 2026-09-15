@@ -1033,33 +1033,7 @@ async def run_agent(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    # Best-effort agent execution trace persistence (PRD 17 O-6).
-    # A telemetry persistence failure must never fail the business response.
-    try:
-        from arc.domain.models import AgentRunRecord, AgentRunRecordStep
-
-        trace_record = AgentRunRecord(
-            id=result.id,
-            tenant_id=result.tenant_id,
-            principal_id=result.principal_id,
-            goal=result.goal,
-            status=result.status.value,
-            error_kind=result.error_kind,
-            steps=[
-                AgentRunRecordStep(
-                    sequence=step.sequence,
-                    skill_id=step.skill_id,
-                    skill_name=step.skill_name,
-                    status=step.status.value,
-                    error_kind=step.error_kind,
-                )
-                for step in result.steps
-            ],
-            created_at=result.created_at,
-        )
-        await app_context.observability_service.record_agent_run(trace_record)
-    except Exception:
-        logger.warning("agent_run_trace_persistence_failed run_id=%s", result.id)
+    # Trace persistence is now owned by AgentExecutionService (Issue #143).
 
     return _agent_run_response(result)
 
