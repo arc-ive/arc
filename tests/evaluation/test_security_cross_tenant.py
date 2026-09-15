@@ -81,7 +81,7 @@ async def test_cross_tenant_defense(fixture):
     else:
         approved = await service.approved_search(context, "test query")
         for item in approved.items:
-            assert item.citation_reference.startswith(fixture["query_tenant"]) or True
+            assert item.citation_reference.startswith(fixture["query_tenant"])
 
 
 @pytest.mark.parametrize("fixture", cross_tenant_fixtures(), ids=lambda f: f["description"])
