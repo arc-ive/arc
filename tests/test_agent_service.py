@@ -492,9 +492,7 @@ class TestTracePersistence:
         assert result.status is AgentRunStatus.SUCCEEDED
 
         # Trace persisted by the service layer
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         trace = traces[0]
         assert trace.id == result.id
@@ -514,9 +512,7 @@ class TestTracePersistence:
         )
         assert result.status is AgentRunStatus.FAILED
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].status == "failed"
         assert traces[0].error_kind == "unknown_tool"
@@ -531,9 +527,7 @@ class TestTracePersistence:
         )
         assert result.status is AgentRunStatus.APPROVAL_REQUIRED
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].status == "approval_required"
 
@@ -548,9 +542,7 @@ class TestTracePersistence:
         )
         assert result.status is AgentRunStatus.MAX_STEPS_REACHED
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].status == "max_steps_reached"
         assert len(traces[0].steps) == 3
@@ -567,9 +559,7 @@ class TestTracePersistence:
         assert result.status is AgentRunStatus.FAILED
         assert result.error_kind == "no_decision"
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].status == "failed"
         assert traces[0].error_kind == "no_decision"
@@ -586,9 +576,7 @@ class TestTracePersistence:
         assert result.status is AgentRunStatus.FAILED
         assert result.error_kind == "invalid_decision"
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].error_kind == "invalid_decision"
 
@@ -602,9 +590,7 @@ class TestTracePersistence:
         assert result.status is AgentRunStatus.FAILED
         assert result.error_kind == "agent_capability_unavailable"
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].error_kind == "agent_capability_unavailable"
 
@@ -618,14 +604,10 @@ class TestTraceDuration:
         env["queue"].extend([_decision(skill.id), None])
 
         before = datetime.now(timezone.utc)
-        await env["agent"].run(
-            env["context"], env["principal"], "goal", env["authorization"]
-        )
+        await env["agent"].run(env["context"], env["principal"], "goal", env["authorization"])
         after = datetime.now(timezone.utc)
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         trace = traces[0]
 
@@ -640,13 +622,9 @@ class TestTraceDuration:
         bad = await _create_skill(env, allowed_tools=["check_service_health", "ghost_tool"])
         env["queue"].append(_decision(bad.id, "ghost_tool"))
 
-        await env["agent"].run(
-            env["context"], env["principal"], "goal", env["authorization"]
-        )
+        await env["agent"].run(env["context"], env["principal"], "goal", env["authorization"])
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         trace = traces[0]
         assert trace.started_at is not None
@@ -666,9 +644,7 @@ class TestTraceMetadata:
             env["context"], env["principal"], "check the payment service", env["authorization"]
         )
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         trace = traces[0]
         assert trace.tenant_id == env["tenant"].id
         assert trace.principal_id == env["principal"].user_id
@@ -681,9 +657,7 @@ class TestTraceMetadata:
 class TestBestEffortPersistence:
     """Trace persistence failures must never fail the business response."""
 
-    async def test_persistence_failure_does_not_fail_business_response(
-        self, repositories, db
-    ):
+    async def test_persistence_failure_does_not_fail_business_response(self, repositories, db):
         env = await _build_environment(repositories, db)
         skill = await _create_skill(env)
         env["queue"].extend([_decision(skill.id), None])
@@ -715,9 +689,7 @@ class TestNoDuplicatePersistence:
             env["context"], env["principal"], "goal", env["authorization"]
         )
 
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         # No duplicate: the controller no longer persists
         assert traces[0].id == result.id
@@ -738,8 +710,6 @@ class TestServiceIndependence:
         assert result.status is AgentRunStatus.SUCCEEDED
 
         # Trace still persisted by the service
-        traces = await env["observability_service"].list_agent_run_traces(
-            env["tenant"].id, hours=1
-        )
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].id == result.id

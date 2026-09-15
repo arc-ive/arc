@@ -175,6 +175,14 @@ class Application:
         # Wire approval service to tool execution service
         self.services["tool_service"].approval_service = self.services["human_approval_service"]
 
+        # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
+        # read layer over AUTHORITATIVE subsystem records plus the HTTP
+        # telemetry table this layer owns. Telemetry writes are best
+        # effort and never fail a business operation; reads fail closed.
+        self.services["observability_service"] = ObservabilityService(
+            repository=self.repositories["observability"],
+        )
+
         # Initialize the bounded Agent orchestration layer (ADR-006). It
         # sits strictly ABOVE SkillExecutionService and holds no tool
         # registry or handlers of its own. Observability is injected so
@@ -184,14 +192,6 @@ class Application:
             skill_execution_service=self.services["skill_execution_service"],
             llm_provider=build_llm_provider(get_llm_settings()),
             observability_service=self.services["observability_service"],
-        )
-
-        # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
-        # read layer over AUTHORITATIVE subsystem records plus the HTTP
-        # telemetry table this layer owns. Telemetry writes are best
-        # effort and never fail a business operation; reads fail closed.
-        self.services["observability_service"] = ObservabilityService(
-            repository=self.repositories["observability"],
         )
 
         # Initialize connector synchronization (provider integrations):

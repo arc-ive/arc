@@ -372,6 +372,4 @@ class AgentExecutionService:
             )
             await self.observability_service.record_agent_run(trace)
         except Exception:
-            logger.warning(
-                "agent_run_trace_persistence_failed run_id=%s", result.id
-            )
+            logger.warning("agent_run_trace_persistence_failed run_id=%s", result.id)

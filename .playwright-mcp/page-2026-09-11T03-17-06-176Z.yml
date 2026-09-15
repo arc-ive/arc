@@ -1,0 +1,127 @@
+- generic [ref=f4e5]:
+  - complementary [ref=f4e6]:
+    - navigation "Primary" [ref=f4e7]:
+      - generic [ref=f4e8]: Arc
+      - generic [ref=f4e14]:
+        - generic [ref=f4e15]:
+          - paragraph [ref=f4e16]: Tenant
+          - generic [ref=f4e17]:
+            - link "Overview" [ref=f4e18] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/overview
+            - link "Company" [ref=f4e22] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/company
+            - link "Company Brain" [ref=f4e27] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/knowledge
+            - link "Skills" [ref=f4e30] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/skills
+            - link "Tools" [ref=f4e35] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/tools
+            - link "Connectors" [ref=f4e38] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/connectors
+            - link "Webhooks" [ref=f4e41] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/webhooks
+            - link "Operations" [ref=f4e46] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/operations
+            - link "Incidents" [ref=f4e50] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/incidents
+            - link "Users" [ref=f4e53] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/users
+            - link "Observability" [active] [ref=f4e66] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/observability
+            - link "Approvals" [ref=f4e69] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/approvals
+            - link "Usage" [ref=f4e73] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/usage
+            - link "Settings" [ref=f4e76] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/settings
+        - generic [ref=f4e80]:
+          - paragraph [ref=f4e81]: Personal
+          - link "Profile" [ref=f4e83] [cursor=pointer]:
+            - /url: /app/profile
+  - generic [ref=f4e88]:
+    - banner [ref=f4e89]:
+      - navigation "Breadcrumb" [ref=f4e90]:
+        - link "Home" [ref=f4e91] [cursor=pointer]:
+          - /url: /app
+        - link "Tenants" [ref=f4e97] [cursor=pointer]:
+          - /url: /app/t
+        - link "Acme Technologies" [ref=f4e100] [cursor=pointer]:
+          - /url: /app/t/ref-acme-technologies
+        - generic [ref=f4e607]: Observability
+      - generic [ref=f4e104]:
+        - button "Acme Technologies" [ref=f4e106]
+        - button "Search ⌘K" [ref=f4e115]:
+          - text: Search
+          - generic [ref=f4e119]: ⌘K
+        - button "ref-acme-technologies-company-admin" [ref=f4e122]:
+          - generic [aria-hidden] [ref=f4e123]: R
+    - main [ref=f4e125]:
+      - generic [ref=f4e608]:
+        - generic [ref=f4e614]:
+          - heading "Observability" [level=1] [ref=f4e615]
+          - paragraph [ref=f4e616]: Usage metrics for this tenant.
+        - generic [ref=f4e617]:
+          - generic [ref=f4e619]:
+            - heading "Usage Summary" [level=2] [ref=f4e620]
+            - paragraph [ref=f4e621]: Metrics over the last 24 hours.
+          - generic [ref=f4e623]:
+            - generic [ref=f4e624]:
+              - heading "HTTP" [level=3] [ref=f4e625]
+              - generic [ref=f4e626]:
+                - generic [ref=f4e627]:
+                  - paragraph [ref=f4e628]: "27"
+                  - paragraph [ref=f4e629]: Total Requests
+                - generic [ref=f4e630]:
+                  - paragraph [ref=f4e631]: "0"
+                  - paragraph [ref=f4e632]: Errors
+                - generic [ref=f4e633]:
+                  - paragraph [ref=f4e634]: 136.9ms
+                  - paragraph [ref=f4e635]: Avg Latency
+                - generic [ref=f4e636]:
+                  - paragraph [ref=f4e637]: 30.5ms
+                  - paragraph [ref=f4e638]: P95 Latency
+            - generic [ref=f4e639]:
+              - heading "Tools" [level=3] [ref=f4e640]
+              - generic [ref=f4e641]:
+                - generic [ref=f4e642]:
+                  - paragraph [ref=f4e643]: "1"
+                  - paragraph [ref=f4e644]: Total Executions
+                - generic [ref=f4e645]:
+                  - paragraph [ref=f4e646]: "1"
+                  - paragraph [ref=f4e647]: Successful
+                - generic [ref=f4e648]:
+                  - paragraph [ref=f4e649]: "0"
+                  - paragraph [ref=f4e650]: Failed
+                - generic [ref=f4e651]:
+                  - paragraph [ref=f4e652]: "0"
+                  - paragraph [ref=f4e653]: Denied
+            - generic [ref=f4e654]:
+              - heading "Connectors" [level=3] [ref=f4e655]
+              - generic [ref=f4e656]:
+                - generic [ref=f4e657]:
+                  - paragraph [ref=f4e658]: "0"
+                  - paragraph [ref=f4e659]: Total Syncs
+                - generic [ref=f4e660]:
+                  - paragraph [ref=f4e661]: "0"
+                  - paragraph [ref=f4e662]: Successful
+                - generic [ref=f4e663]:
+                  - paragraph [ref=f4e664]: "0"
+                  - paragraph [ref=f4e665]: Failed
+                - generic [ref=f4e666]:
+                  - paragraph [ref=f4e667]: "0"
+                  - paragraph [ref=f4e668]: Items Fetched
+            - generic [ref=f4e669]:
+              - heading "Webhooks" [level=3] [ref=f4e670]
+              - generic [ref=f4e671]:
+                - generic [ref=f4e672]:
+                  - paragraph [ref=f4e673]: "0"
+                  - paragraph [ref=f4e674]: Total Events
+                - generic [ref=f4e675]:
+                  - paragraph [ref=f4e676]: "0"
+                  - paragraph [ref=f4e677]: Distinct Event Types
+                - generic [ref=f4e678]:
+                  - paragraph [ref=f4e679]: "0"
+                  - paragraph [ref=f4e680]: Payload Bytes
+                - generic [ref=f4e681]:
+                  - paragraph [ref=f4e682]: "Yes"
+                  - paragraph [ref=f4e683]: Available

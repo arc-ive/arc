@@ -1,0 +1,25 @@
+- generic [ref=e36]:
+  - complementary [ref=e37]:
+    - navigation "Primary" [ref=e38]:
+      - generic [ref=e39]: Arc
+      - generic [ref=e46]:
+        - paragraph [ref=e47]: Personal
+        - link "Profile" [ref=e49] [cursor=pointer]:
+          - /url: /app/profile
+  - generic [ref=e54]:
+    - banner [ref=e55]:
+      - navigation "Breadcrumb" [ref=e56]:
+        - link "Home" [ref=e57] [cursor=pointer]:
+          - /url: /app
+      - generic [ref=e61]:
+        - button "Select tenant" [ref=e63]
+        - button "Search ⌘K" [ref=e72]:
+          - text: Search
+          - generic [ref=e76]: ⌘K
+        - button "ref-platform-admin" [ref=e79]:
+          - generic [aria-hidden] [ref=e80]: R
+    - main [ref=e82]:
+      - generic [ref=e86]:
+        - heading "You are not a member of any tenant" [level=3] [ref=e92]
+        - paragraph [ref=e93]: Your identity is authenticated, but no tenant membership has been provisioned. Ask a platform administrator to assign you to an organization.
+        - generic [ref=e94]: Identity and membership are managed by the backend

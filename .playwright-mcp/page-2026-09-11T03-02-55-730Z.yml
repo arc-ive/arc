@@ -1,0 +1,67 @@
+- generic [ref=f3e36]:
+  - complementary [ref=f3e37]:
+    - navigation "Primary" [ref=f3e38]:
+      - generic [ref=f3e39]: Arc
+      - generic [ref=f3e45]:
+        - generic [ref=f3e46]:
+          - paragraph [ref=f3e47]: Tenant
+          - generic [ref=f3e48]:
+            - link "Home" [ref=f3e49] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/home
+            - link "Ask Arc" [ref=f3e53] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/ask
+            - link "Overview" [ref=f3e57] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/overview
+            - link "Company" [ref=f3e61] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/company
+            - link "Company Brain" [ref=f3e66] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/knowledge
+            - link "Skills" [ref=f3e69] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/skills
+            - link "Tools" [ref=f3e74] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/tools
+            - link "Connectors" [ref=f3e77] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/connectors
+            - link "Webhooks" [ref=f3e80] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/webhooks
+            - link "Operations" [ref=f3e85] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/operations
+            - link "Incidents" [ref=f3e89] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/incidents
+            - link "Users" [ref=f3e92] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/users
+            - link "Observability" [ref=f3e105] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/observability
+            - link "Approvals" [ref=f3e108] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/approvals
+            - link "Usage" [ref=f3e112] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/usage
+            - link "Activity" [ref=f3e115] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/activity
+            - link "Settings" [active] [ref=f3e120] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/settings
+        - generic [ref=f3e124]:
+          - paragraph [ref=f3e125]: Personal
+          - link "Profile" [ref=f3e127] [cursor=pointer]:
+            - /url: /app/profile
+  - generic [ref=f3e132]:
+    - banner [ref=f3e133]:
+      - navigation "Breadcrumb" [ref=f3e134]:
+        - link "Home" [ref=f3e135] [cursor=pointer]:
+          - /url: /app
+        - link "Tenants" [ref=f3e141] [cursor=pointer]:
+          - /url: /app/t
+        - link "Acme Technologies" [ref=f3e144] [cursor=pointer]:
+          - /url: /app/t/ref-acme-technologies
+        - generic [ref=f3e377]: Settings
+      - generic [ref=f3e148]:
+        - button "Acme Technologies" [ref=f3e150]
+        - button "Search ⌘K" [ref=f3e159]:
+          - text: Search
+          - generic [ref=f3e163]: ⌘K
+        - button "ref-acme-technologies-company-admin" [ref=f3e166]:
+          - generic [aria-hidden] [ref=f3e167]: R
+    - main [ref=f3e169]:
+      - generic [ref=f3e385]:
+        - heading "Settings" [level=1] [ref=f3e386]
+        - paragraph [ref=f3e387]: Tenant configuration and preferences.

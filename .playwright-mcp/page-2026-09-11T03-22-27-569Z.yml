@@ -1,0 +1,127 @@
+- generic [ref=f4e5]:
+  - complementary [ref=f4e6]:
+    - navigation "Primary" [ref=f4e7]:
+      - generic [ref=f4e8]: Arc
+      - generic [ref=f4e14]:
+        - generic [ref=f4e15]:
+          - paragraph [ref=f4e16]: Tenant
+          - generic [ref=f4e17]:
+            - link "Overview" [ref=f4e18] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/overview
+            - link "Company" [ref=f4e22] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/company
+            - link "Company Brain" [ref=f4e27] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/knowledge
+            - link "Skills" [ref=f4e30] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/skills
+            - link "Tools" [ref=f4e35] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/tools
+            - link "Connectors" [ref=f4e38] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/connectors
+            - link "Webhooks" [ref=f4e41] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/webhooks
+            - link "Operations" [ref=f4e46] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/operations
+            - link "Incidents" [ref=f4e50] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/incidents
+            - link "Users" [ref=f4e53] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/users
+            - link "Observability" [ref=f4e66] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/observability
+            - link "Approvals" [ref=f4e69] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/approvals
+            - link "Usage" [ref=f4e73] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/usage
+            - link "Settings" [ref=f4e76] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/settings
+        - generic [ref=f4e80]:
+          - paragraph [ref=f4e81]: Personal
+          - link "Profile" [active] [ref=f4e83] [cursor=pointer]:
+            - /url: /app/profile
+  - generic [ref=f4e88]:
+    - banner [ref=f4e89]:
+      - navigation "Breadcrumb" [ref=f4e90]:
+        - link "Home" [ref=f4e91] [cursor=pointer]:
+          - /url: /app
+        - generic [ref=f4e883]: Profile
+      - generic [ref=f4e104]:
+        - button "Acme Technologies" [ref=f4e106]
+        - button "Search ⌘K" [ref=f4e115]:
+          - text: Search
+          - generic [ref=f4e119]: ⌘K
+        - button "ref-acme-technologies-company-admin" [ref=f4e122]:
+          - generic [aria-hidden] [ref=f4e123]: R
+    - main [ref=f4e125]:
+      - generic [ref=f4e884]:
+        - generic [ref=f4e885]:
+          - heading "Profile" [level=1] [ref=f4e886]
+          - paragraph [ref=f4e887]: Your identity, session, and authorized context. The authorized context is reported by the backend — the frontend never assumes what you can do.
+        - generic [ref=f4e888]:
+          - generic [ref=f4e890]:
+            - heading "Identity" [level=2] [ref=f4e891]
+            - paragraph [ref=f4e892]: The identity used to authenticate every request.
+          - generic [ref=f4e894]:
+            - generic [aria-hidden] [ref=f4e895]: R
+            - generic [ref=f4e896]:
+              - paragraph [ref=f4e897]: ref-acme-technologies-company-admin
+              - paragraph [ref=f4e898]: company-admin@acme-technologies.example.com
+              - generic [ref=f4e899]: Server-managed session
+        - generic [ref=f4e901]:
+          - generic [ref=f4e903]:
+            - heading "Authorized context" [level=2] [ref=f4e904]
+            - paragraph [ref=f4e905]: Application role and permission matrix, as resolved by the backend (GET /auth/me).
+          - generic [ref=f4e907]:
+            - generic [ref=f4e908]:
+              - generic [ref=f4e909]: Application role
+              - generic [ref=f4e910]: Company Administrator
+            - generic [ref=f4e911]:
+              - paragraph [ref=f4e912]: Granted permissions
+              - generic [ref=f4e913]:
+                - generic [ref=f4e914]: agent:execute
+                - generic [ref=f4e916]: approval:decide
+                - generic [ref=f4e918]: approval:read
+                - generic [ref=f4e920]: connector:create
+                - generic [ref=f4e922]: connector:read
+                - generic [ref=f4e924]: connector:sync
+                - generic [ref=f4e926]: knowledge:create
+                - generic [ref=f4e928]: knowledge:read
+                - generic [ref=f4e930]: observability:read
+                - generic [ref=f4e932]: skill:create
+                - generic [ref=f4e934]: skill:delete
+                - generic [ref=f4e936]: skill:execute
+                - generic [ref=f4e938]: skill:read
+                - generic [ref=f4e940]: skill:update
+                - generic [ref=f4e942]: tenant:read
+                - generic [ref=f4e944]: tenant:update
+                - generic [ref=f4e946]: tool:execute
+                - generic [ref=f4e948]: tool:read
+                - generic [ref=f4e950]: webhook:process
+                - generic [ref=f4e952]: webhook:read
+            - generic [ref=f4e954]:
+              - paragraph [ref=f4e955]: Tenant memberships
+              - generic [ref=f4e957]:
+                - generic [ref=f4e958]: ref-acme-technologies
+                - generic [ref=f4e959]: ·
+                - text: owner
+            - paragraph [ref=f4e960]: These capabilities inform what this app shows you. Every protected operation is independently authorized by the backend.
+        - generic [ref=f4e961]:
+          - generic [ref=f4e963]:
+            - heading "Session" [level=2] [ref=f4e964]
+            - paragraph [ref=f4e965]: Server-managed session for your authenticated identity.
+          - generic [ref=f4e967]:
+            - generic [ref=f4e968]:
+              - term [ref=f4e969]: Session type
+              - definition [ref=f4e970]: HttpOnly secure cookie
+            - generic [ref=f4e971]:
+              - term [ref=f4e972]: Session storage
+              - definition [ref=f4e973]: Server-side (PostgreSQL)
+            - generic [ref=f4e974]:
+              - term [ref=f4e975]: Cookie attributes
+              - definition [ref=f4e976]: HttpOnly, Secure, SameSite=Lax
+        - generic [ref=f4e977]:
+          - generic [ref=f4e979]:
+            - heading "Session controls" [level=2] [ref=f4e980]
+            - paragraph [ref=f4e981]: End your session and clear the server-side session.
+          - generic [ref=f4e982]:
+            - paragraph [ref=f4e983]: Signing out invalidates your server-side session and clears the session cookie. You will need to authenticate again to access the platform.
+            - button "Sign out" [ref=f4e985]

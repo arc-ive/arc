@@ -1,0 +1,115 @@
+- generic [ref=f4e5]:
+  - complementary [ref=f4e6]:
+    - navigation "Primary" [ref=f4e7]:
+      - generic [ref=f4e8]: Arc
+      - generic [ref=f4e14]:
+        - generic [ref=f4e15]:
+          - paragraph [ref=f4e16]: Tenant
+          - generic [ref=f4e17]:
+            - link "Overview" [ref=f4e18] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/overview
+            - link "Company" [active] [ref=f4e22] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/company
+            - link "Company Brain" [ref=f4e27] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/knowledge
+            - link "Skills" [ref=f4e30] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/skills
+            - link "Tools" [ref=f4e35] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/tools
+            - link "Connectors" [ref=f4e38] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/connectors
+            - link "Webhooks" [ref=f4e41] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/webhooks
+            - link "Operations" [ref=f4e46] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/operations
+            - link "Incidents" [ref=f4e50] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/incidents
+            - link "Users" [ref=f4e53] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/users
+            - link "Observability" [ref=f4e66] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/observability
+            - link "Approvals" [ref=f4e69] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/approvals
+            - link "Usage" [ref=f4e73] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/usage
+            - link "Settings" [ref=f4e76] [cursor=pointer]:
+              - /url: /app/t/ref-acme-technologies/settings
+        - generic [ref=f4e80]:
+          - paragraph [ref=f4e81]: Personal
+          - link "Profile" [ref=f4e83] [cursor=pointer]:
+            - /url: /app/profile
+  - generic [ref=f4e88]:
+    - banner [ref=f4e89]:
+      - navigation "Breadcrumb" [ref=f4e90]:
+        - link "Home" [ref=f4e91] [cursor=pointer]:
+          - /url: /app
+        - link "Tenants" [ref=f4e97] [cursor=pointer]:
+          - /url: /app/t
+        - link "Acme Technologies" [ref=f4e100] [cursor=pointer]:
+          - /url: /app/t/ref-acme-technologies
+        - generic [ref=f4e805]: Company
+      - generic [ref=f4e104]:
+        - button "Acme Technologies" [ref=f4e106]
+        - button "Search ⌘K" [ref=f4e115]:
+          - text: Search
+          - generic [ref=f4e119]: ⌘K
+        - button "ref-acme-technologies-company-admin" [ref=f4e122]:
+          - generic [aria-hidden] [ref=f4e123]: R
+    - main [ref=f4e125]:
+      - generic [ref=f4e806]:
+        - generic [ref=f4e807]:
+          - heading "Company" [level=1] [ref=f4e808]
+          - paragraph [ref=f4e809]: Information about this tenant organization, as authorized by the backend.
+        - generic [ref=f4e810]:
+          - generic [ref=f4e811]:
+            - generic [ref=f4e813]:
+              - heading "Organization" [level=2] [ref=f4e814]
+              - paragraph [ref=f4e815]: Tenant identity provisioned on the platform.
+            - generic [ref=f4e817]:
+              - generic [ref=f4e818]:
+                - generic [ref=f4e824]:
+                  - paragraph [ref=f4e825]: Acme Technologies
+                  - paragraph [ref=f4e826]: ref-acme-technologies
+                - generic [ref=f4e827]: active
+              - generic [ref=f4e829]:
+                - generic [ref=f4e830]:
+                  - term [ref=f4e831]: Members
+                  - definition [ref=f4e832]: "4"
+                - generic [ref=f4e833]:
+                  - term [ref=f4e834]: Knowledge documents
+                  - definition [ref=f4e835]: "2"
+                - generic [ref=f4e836]:
+                  - term [ref=f4e837]: Created
+                  - definition [ref=f4e838]: 11 Sept 2026
+                - generic [ref=f4e839]:
+                  - term [ref=f4e840]: Updated
+                  - definition [ref=f4e841]: 11 Sept 2026
+          - generic [ref=f4e842]:
+            - generic [ref=f4e844]:
+              - heading "Company Profile" [level=2] [ref=f4e845]
+              - paragraph [ref=f4e846]: Organization details configured in Settings.
+            - generic [ref=f4e848]:
+              - generic [ref=f4e849]:
+                - term [ref=f4e850]: Industry
+                - definition [ref=f4e851]: —
+              - generic [ref=f4e852]:
+                - term [ref=f4e853]: Address
+                - definition [ref=f4e854]: —
+              - generic [ref=f4e855]:
+                - term [ref=f4e856]: Phone
+                - definition [ref=f4e857]: —
+              - generic [ref=f4e858]:
+                - term [ref=f4e859]: Website
+                - definition [ref=f4e860]: —
+              - generic [ref=f4e861]:
+                - term [ref=f4e862]: Logo URL
+                - definition [ref=f4e863]: —
+          - generic [ref=f4e864]:
+            - generic [ref=f4e866]:
+              - heading "Company intelligence" [level=2] [ref=f4e867]
+              - paragraph [ref=f4e868]: Knowledge stored in the Company Brain, by source.
+            - generic [ref=f4e870]:
+              - generic [ref=f4e871]: procedure · 1
+              - generic [ref=f4e872]: policy · 1
+        - paragraph [ref=f4e876]: Company profile details are configured on the Settings page. Every request is authorized by the backend — access to this tenant is validated on each call.
+        - generic [ref=f4e877]: Tenant boundary enforced server-side for every request.

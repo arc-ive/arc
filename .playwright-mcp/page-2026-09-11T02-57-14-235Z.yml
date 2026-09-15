@@ -1,0 +1,16 @@
+- generic [ref=f2e4]:
+  - generic [ref=f2e10]:
+    - paragraph [ref=f2e11]: Arc
+    - paragraph [ref=f2e12]: Enterprise Intelligence Platform
+  - generic [ref=f2e14]:
+    - button "Sign in with Google" [ref=f2e15]
+    - generic [ref=f2e21]:
+      - generic [ref=f2e22]: Development Login
+      - combobox [ref=f2e30]:
+        - option "Select a role persona…" [selected]
+        - option "Platform Admin — Global platform administrator with full permissions"
+        - option "Tenant Admin — Company administrator for Acme Technologies"
+        - option "Employee — Employee with knowledge:read access at Acme Technologies"
+        - option "Viewer — Viewer with read-only access at Acme Technologies"
+      - button "Sign in as reference user" [disabled]
+  - generic [ref=f2e31]: The backend remains the source of truth for identity and access.
