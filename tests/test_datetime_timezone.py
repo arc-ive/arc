@@ -1,11 +1,9 @@
 """Regression tests for Issue #145 — timezone-aware UTC timestamps."""
 
-from datetime import timezone
-
 from arc.domain.models import (
+    ConnectorProvider,
     ConnectorSyncRecord,
     ConnectorSyncStatus,
-    ConnectorProvider,
     KnowledgeDocument,
     KnowledgeSource,
     Skill,
@@ -19,9 +17,7 @@ class TestModelDefaultFactoriesProduceTimezoneAwareUTC:
     """Verify representative model default_factory timestamps are timezone-aware UTC."""
 
     def test_skill_created_at_is_aware_utc(self):
-        skill = Skill(
-            id="s1", tenant_id="t", name="s", purpose="p", allowed_tools=[]
-        )
+        skill = Skill(id="s1", tenant_id="t", name="s", purpose="p", allowed_tools=[])
         assert skill.created_at.tzinfo is not None
         assert skill.created_at.utcoffset() is not None
         assert skill.created_at.utcoffset().total_seconds() == 0
