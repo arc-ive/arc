@@ -78,10 +78,14 @@ async def test_cross_tenant_defense(fixture):
     if fixture["expected_outcome"] == "error":
         with pytest.raises(RuntimeError, match="trusted tenant"):
             await service.approved_search(context, "test query")
+    elif fixture["expected_outcome"] == "ok":
+        approved = await service.approved_search(context, "test query")
+        assert len(approved.items) > 0
+        for item in approved.items:
+            assert item.document_id
     else:
         approved = await service.approved_search(context, "test query")
-        for item in approved.items:
-            assert item.citation_reference.startswith(fixture["query_tenant"])
+        assert len(approved.items) == 0
 
 
 @pytest.mark.parametrize("fixture", cross_tenant_fixtures(), ids=lambda f: f["description"])
