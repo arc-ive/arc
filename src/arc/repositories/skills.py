@@ -21,7 +21,7 @@ from typing import List
 import asyncpg
 
 from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
-from arc.domain.models import Skill, SkillStatus
+from arc.domain.models import Skill, SkillRiskLevel, SkillStatus
 
 
 class PostgreSQLSkillRepository:
@@ -68,7 +68,7 @@ class PostgreSQLSkillRepository:
             expected_output=definition.get("expected_output"),
             failure_behavior=definition.get("failure_behavior"),
             provenance=definition.get("provenance"),
-            risk=definition.get("risk"),
+            risk=SkillRiskLevel(definition["risk"]) if definition.get("risk") else None,
         )
 
     async def create(self, skill: Skill) -> Skill:

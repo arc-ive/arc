@@ -229,6 +229,18 @@ class UnifiedIntelligenceService:
         scores, repository details, or authorization state are included:
         the LLM must reason over the approved knowledge itself.
 
+        Per TRD 10 the prompt structurally separates:
+
+        - **System instructions** – the first line defining the assistant
+          role and response constraints.
+        - **Untrusted retrieved content** – the ``APPROVED CONTEXT`` block
+          containing sanitized citation references and content.  Retrieved
+          documents are untrusted data; the block label distinguishes it
+          from instructions.
+        - **Tool observations** (when present) – appended as clearly
+          delimited untrusted data that may inform the answer but never
+          grants authorization.
+
         When an ADR-004 observation exists it is appended as clearly
         delimited UNTRUSTED data: it may inform the answer, but every
         security decision remains in the application.

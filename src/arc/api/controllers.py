@@ -39,6 +39,7 @@ from arc.domain.models import (
     Skill,
     SkillExecutionResult,
     SkillExecutionStepOutcome,
+    SkillRiskLevel,
     SkillStatus,
     Tenant,
     TenantContext,
@@ -675,6 +676,15 @@ async def create_skill(
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill status")
 
+    risk_value = skill_data.get("risk")
+    if risk_value is not None:
+        try:
+            risk_value = SkillRiskLevel(risk_value)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill risk level"
+            )
+
     skill = Skill(
         id="unassigned",
         tenant_id=context.tenant_id,
@@ -690,7 +700,7 @@ async def create_skill(
         expected_output=skill_data.get("expected_output"),
         failure_behavior=skill_data.get("failure_behavior"),
         provenance=skill_data.get("provenance"),
-        risk=skill_data.get("risk"),
+        risk=risk_value,
         status=status_value,
     )
     try:
@@ -776,6 +786,15 @@ async def update_skill(
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill status")
 
+    risk_value = skill_data.get("risk", existing.risk)
+    if risk_value is not None and not isinstance(risk_value, SkillRiskLevel):
+        try:
+            risk_value = SkillRiskLevel(risk_value)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid skill risk level"
+            )
+
     from dataclasses import replace
 
     updated_skill = replace(
@@ -792,7 +811,7 @@ async def update_skill(
         expected_output=skill_data.get("expected_output", existing.expected_output),
         failure_behavior=skill_data.get("failure_behavior", existing.failure_behavior),
         provenance=skill_data.get("provenance", existing.provenance),
-        risk=skill_data.get("risk", existing.risk),
+        risk=risk_value,
         status=status_value,
     )
 

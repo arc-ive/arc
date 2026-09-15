@@ -77,9 +77,6 @@ class SkillService:
             if skill.failure_behavior is not None
             else None
         )
-        sanitized_risk = (
-            self.pii_guard.sanitize(skill.risk).sanitized_text if skill.risk is not None else None
-        )
 
         trusted_skill = replace(
             skill,
@@ -91,7 +88,6 @@ class SkillService:
             steps=sanitized_steps,
             expected_output=sanitized_expected_output,
             failure_behavior=sanitized_failure_behavior,
-            risk=sanitized_risk,
         )
         return await self.skill_repo.create(trusted_skill)
 
@@ -135,9 +131,6 @@ class SkillService:
             if skill.failure_behavior is not None
             else None
         )
-        sanitized_risk = (
-            self.pii_guard.sanitize(skill.risk).sanitized_text if skill.risk is not None else None
-        )
 
         trusted_skill = replace(
             skill,
@@ -148,7 +141,6 @@ class SkillService:
             steps=sanitized_steps,
             expected_output=sanitized_expected_output,
             failure_behavior=sanitized_failure_behavior,
-            risk=sanitized_risk,
             updated_at=datetime.now(timezone.utc),
         )
         return await self.skill_repo.update(trusted_skill)
