@@ -151,8 +151,8 @@ class Tenant:
     phone: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -173,8 +173,8 @@ class User:
     provider_subject: Optional[str] = None
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -216,8 +216,8 @@ class Membership:
     user_id: str
     tenant_id: str
     role: UserRole = UserRole.MEMBER
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -267,8 +267,8 @@ class ConnectorConfig:
     name: str
     target: str = ""
     status: ConnectorStatus = ConnectorStatus.ACTIVE
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -306,7 +306,7 @@ class ConnectorSyncRecord:
     status: ConnectorSyncStatus
     items_fetched: int = 0
     error_kind: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -341,7 +341,7 @@ class ConnectorCredential:
     provider: ConnectorProvider
     encrypted_credential: bytes
     key_version: int = 1
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     rotated_at: Optional[datetime] = None
 
     def __post_init__(self):
@@ -379,7 +379,7 @@ class ConnectorCredentialAudit:
     operation: str
     actor_user_id: str
     key_version: Optional[int] = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -422,8 +422,8 @@ class KnowledgeDocument:
     status: KnowledgeStatus = KnowledgeStatus.ACTIVE
     version: int = 1
     external_id: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -467,7 +467,7 @@ class KnowledgeChunk:
     tenant_id: str
     content: str
     sequence: int
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -762,8 +762,8 @@ class Skill:
     provenance: Optional[str] = None
     risk: Optional[SkillRiskLevel] = None
     status: SkillStatus = SkillStatus.ACTIVE
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -830,7 +830,7 @@ class ToolExecutionRecord:
     output_summary: Optional[str] = None
     error_kind: Optional[str] = None
     idempotency_key: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -902,7 +902,7 @@ class WebhookEvent:
     event_type: str
     status: WebhookEventStatus = WebhookEventStatus.RECEIVED
     payload_size_bytes: int = 0
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     error_kind: Optional[str] = None
     processed_at: Optional[datetime] = None
     retry_count: int = 0
@@ -978,7 +978,7 @@ class ApiRequestRecord:
     duration_ms: int
     tenant_id: Optional[str] = None
     error_kind: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -1176,8 +1176,8 @@ class ApprovalRequest:
     input_summary: str
     arguments_digest: str
     status: ApprovalStatus = ApprovalStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.now)
-    expires_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     decided_at: Optional[datetime] = None
     decided_by_user_id: Optional[str] = None
     consumed_at: Optional[datetime] = None
@@ -1324,7 +1324,7 @@ class SkillExecutionResult:
     error_kind: Optional[str] = None
     approval_id: Optional[str] = None
     agent_run_id: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:
@@ -1442,7 +1442,7 @@ class AgentExecutionResult:
     steps: List[AgentStepOutcome] = field(default_factory=list)
     error_kind: Optional[str] = None
     approval_id: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
         if not self.id:

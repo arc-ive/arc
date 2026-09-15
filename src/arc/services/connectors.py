@@ -7,7 +7,7 @@ callers.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from arc.domain.models import (
     ConnectorConfig,
@@ -47,8 +47,8 @@ class ConnectorService:
             name=name,
             target=target,
             status=ConnectorStatus.ACTIVE,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         return await self.connector_repo.create(connector)
 

@@ -31,7 +31,7 @@ API as a single controlled error type.
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from arc.domain.models import (
@@ -199,7 +199,7 @@ class ConnectorSyncService:
                 provider=config.provider,
                 status=ConnectorSyncStatus.SUCCESS,
                 items_fetched=items_fetched,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
             )
         )
 
@@ -217,6 +217,6 @@ class ConnectorSyncService:
                 provider=config.provider,
                 status=ConnectorSyncStatus.FAILED,
                 error_kind=error_kind,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
             )
         )
