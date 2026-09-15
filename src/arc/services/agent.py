@@ -60,6 +60,7 @@ from arc.domain.models import (
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
 from arc.services.llm import LlmProvider, SkillSelectingLlm
+from arc.services.observability import ObservabilityService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 
@@ -97,7 +98,7 @@ class AgentExecutionService:
         skill_service: SkillService,
         skill_execution_service: SkillExecutionService,
         llm_provider: Optional[LlmProvider] = None,
-        observability_service: Optional["ObservabilityService"] = None,
+        observability_service: Optional[ObservabilityService] = None,
     ):
         self.skill_service = skill_service
         self.skill_execution_service = skill_execution_service
