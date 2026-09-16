@@ -248,8 +248,8 @@ class PostgreSQLObservabilityRepository:
                 """
                 INSERT INTO agent_run_records
                     (id, tenant_id, principal_id, goal, status, error_kind,
-                     steps, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+                     steps, created_at, started_at, completed_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
                 RETURNING created_at
                 """,
                 record.id,
@@ -260,6 +260,8 @@ class PostgreSQLObservabilityRepository:
                 record.error_kind,
                 steps_json,
                 record.created_at,
+                record.started_at,
+                record.completed_at,
             )
         record.created_at = row["created_at"]
         return record
@@ -272,7 +274,7 @@ class PostgreSQLObservabilityRepository:
             row = await conn.fetchrow(
                 """
                 SELECT id, tenant_id, principal_id, goal, status, error_kind,
-                       steps, created_at
+                       steps, created_at, started_at, completed_at
                 FROM agent_run_records
                 WHERE id = $1 AND tenant_id = $2
                 """,
@@ -296,6 +298,8 @@ class PostgreSQLObservabilityRepository:
             error_kind=row["error_kind"],
             steps=steps,
             created_at=row["created_at"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
         )
 
     async def list_agent_run_records(self, tenant_id: str, hours: int = 24) -> list:
@@ -306,7 +310,7 @@ class PostgreSQLObservabilityRepository:
             rows = await conn.fetch(
                 f"""
                 SELECT id, tenant_id, principal_id, goal, status, error_kind,
-                       steps, created_at
+                       steps, created_at, started_at, completed_at
                 FROM agent_run_records
                 WHERE {self._scope_clause()}
                 ORDER BY created_at DESC
@@ -330,6 +334,8 @@ class PostgreSQLObservabilityRepository:
                     error_kind=row["error_kind"],
                     steps=steps,
                     created_at=row["created_at"],
+                    started_at=row["started_at"],
+                    completed_at=row["completed_at"],
                 )
             )
         return results

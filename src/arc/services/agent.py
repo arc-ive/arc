@@ -30,21 +30,28 @@ Security invariants:
   immediately; there are NO retries and NO autonomous looping.
 - **Human Intervention is not implemented.** An approval-gated Skill
   stops the run with the propagated ``APPROVAL_REQUIRED`` outcome.
-- **No second audit path.** Tool-level audit rows are written by the
-  existing tool layer; durable agent-run records are deferred.
+- **Trace persistence is owned by the service layer** (Issue #143).
+  Every invocation of ``run()`` attempts to persist an
+  ``AgentRunRecord`` from the service, regardless of which
+  controller/caller invoked it. Persistence failures are best-effort:
+  they never fail the business response.
 
 The default deterministic provider carries no decision script, so the
 Agent fails closed (``agent_capability_unavailable``) until a decision
 capability is explicitly configured.
 """
 
+import logging
 import uuid
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from arc.db.connection import NotFoundError
 from arc.domain.models import (
     AgentDecision,
     AgentExecutionResult,
+    AgentRunRecord,
+    AgentRunRecordStep,
     AgentRunStatus,
     AgentStepOutcome,
     SkillExecutionStatus,
@@ -53,8 +60,11 @@ from arc.domain.models import (
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
 from arc.services.llm import LlmProvider, SkillSelectingLlm
+from arc.services.observability import ObservabilityService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
+
+logger = logging.getLogger(__name__)
 
 # Hard upper bound on Skill executions per Agent run. The Agent is a
 # bounded orchestrator, not an autonomous planner (full autonomous loops
@@ -76,6 +86,11 @@ class AgentExecutionService:
     Composes the existing ``SkillService`` (trusted, tenant-scoped
     catalog) with the existing ``SkillExecutionService`` (the single
     action boundary) and an optional decision-capable LLM provider.
+
+    Trace persistence (Issue #143): every invocation of ``run()``
+    attempts to persist an ``AgentRunRecord`` via the
+    ``observability_service``. Persistence failures are best-effort and
+    never fail the business response.
     """
 
     def __init__(
@@ -83,10 +98,12 @@ class AgentExecutionService:
         skill_service: SkillService,
         skill_execution_service: SkillExecutionService,
         llm_provider: Optional[LlmProvider] = None,
+        observability_service: Optional[ObservabilityService] = None,
     ):
         self.skill_service = skill_service
         self.skill_execution_service = skill_execution_service
         self.llm_provider = llm_provider
+        self.observability_service = observability_service
 
     async def run(
         self,
@@ -115,20 +132,30 @@ class AgentExecutionService:
         Raises:
             ValueError: invalid tenant context or empty goal (never a
                 controlled outcome).
+
+        Side effects:
+            Every terminal outcome (success, failure, approval-required,
+            max-steps) is best-effort persisted as an ``AgentRunRecord``
+            via the ``observability_service``. Persistence failures are
+            logged and never fail the business response.
         """
         if context is None or not context.is_valid:
             raise ValueError("Invalid tenant context")
         if not isinstance(goal, str) or not goal.strip():
             raise ValueError("Goal cannot be empty")
 
+        started_at = datetime.now(timezone.utc)
+
         if not self._decision_enabled():
-            return self._build_result(
+            result = self._build_result(
                 context,
                 goal,
                 AgentRunStatus.FAILED,
                 _ERROR_CAPABILITY_UNAVAILABLE,
                 steps=[],
             )
+            await self._persist_trace(result, started_at)
+            return result
 
         # Trusted, tenant-scoped catalog. The snapshot given to the model
         # deliberately contains no tenant identifiers.
@@ -147,29 +174,37 @@ class AgentExecutionService:
                 # ends here. It counts as success only when at least one
                 # delegated Skill execution actually succeeded.
                 if any(step.status is SkillExecutionStatus.SUCCEEDED for step in completed):
-                    return self._build_result(
+                    result = self._build_result(
                         context, goal, AgentRunStatus.SUCCEEDED, None, completed
                     )
-                return self._build_result(
+                    await self._persist_trace(result, started_at)
+                    return result
+                result = self._build_result(
                     context,
                     goal,
                     AgentRunStatus.FAILED,
                     _ERROR_NO_DECISION,
                     completed,
                 )
+                await self._persist_trace(result, started_at)
+                return result
 
             decision = AgentDecision.parse(raw_decision)
             if decision is None:
                 # Unusable model output: stop without executing anything.
-                return self._failed_at_decision_boundary(
+                result = self._failed_at_decision_boundary(
                     context, goal, completed, _ERROR_INVALID_DECISION
                 )
+                await self._persist_trace(result, started_at)
+                return result
             if decision.skill_id not in catalog_by_id:
                 # Outside the trusted tenant's own catalog (unknown,
                 # cross-tenant, or deleted): fail closed, execute nothing.
-                return self._failed_at_decision_boundary(
+                result = self._failed_at_decision_boundary(
                     context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE
                 )
+                await self._persist_trace(result, started_at)
+                return result
 
             try:
                 executed = await self.skill_execution_service.execute(
@@ -183,16 +218,20 @@ class AgentExecutionService:
             except NotFoundError:
                 # Deleted between listing and execution: indistinguishable
                 # from unavailable, and nothing executed.
-                return self._failed_at_decision_boundary(
+                result = self._failed_at_decision_boundary(
                     context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE
                 )
+                await self._persist_trace(result, started_at)
+                return result
             except ValueError:
                 # Deep proposal validation is owned by the execution
                 # engine; its rejection means the decision was unusable.
                 # Nothing executed.
-                return self._failed_at_decision_boundary(
+                result = self._failed_at_decision_boundary(
                     context, goal, completed, _ERROR_INVALID_DECISION
                 )
+                await self._persist_trace(result, started_at)
+                return result
 
             completed.append(
                 AgentStepOutcome(
@@ -216,23 +255,28 @@ class AgentExecutionService:
                     completed,
                 )
                 result.approval_id = executed.approval_id
+                await self._persist_trace(result, started_at)
                 return result
             if executed.status is not SkillExecutionStatus.SUCCEEDED:
                 # ANY controlled failure stops the run immediately.
                 # There are no retries.
-                return self._build_result(
+                result = self._build_result(
                     context, goal, AgentRunStatus.FAILED, executed.error_kind, completed
                 )
+                await self._persist_trace(result, started_at)
+                return result
 
         # The hard bound was reached without the provider ever declining.
         # Fail closed rather than continuing autonomously.
-        return self._build_result(
+        result = self._build_result(
             context,
             goal,
             AgentRunStatus.MAX_STEPS_REACHED,
             _ERROR_MAX_STEPS_REACHED,
             completed,
         )
+        await self._persist_trace(result, started_at)
+        return result
 
     # -- internals -----------------------------------------------------
 
@@ -288,3 +332,44 @@ class AgentExecutionService:
             steps=steps,
             error_kind=error_kind,
         )
+
+    async def _persist_trace(
+        self,
+        result: AgentExecutionResult,
+        started_at: datetime,
+    ) -> None:
+        """Best-effort trace persistence from the service layer (Issue #143).
+
+        Every terminal outcome of ``run()`` is routed here. The record
+        includes ``started_at`` (captured before execution) and
+        ``completed_at`` (set to now). Persistence failure is logged and
+        never propagated — the business response is always returned.
+        """
+        if self.observability_service is None:
+            return
+        try:
+            completed_at = datetime.now(timezone.utc)
+            trace = AgentRunRecord(
+                id=result.id,
+                tenant_id=result.tenant_id,
+                principal_id=result.principal_id,
+                goal=result.goal,
+                status=result.status.value,
+                error_kind=result.error_kind,
+                steps=[
+                    AgentRunRecordStep(
+                        sequence=step.sequence,
+                        skill_id=step.skill_id,
+                        skill_name=step.skill_name,
+                        status=step.status.value,
+                        error_kind=step.error_kind,
+                    )
+                    for step in result.steps
+                ],
+                created_at=result.created_at,
+                started_at=started_at,
+                completed_at=completed_at,
+            )
+            await self.observability_service.record_agent_run(trace)
+        except Exception:
+            logger.warning("agent_run_trace_persistence_failed run_id=%s", result.id)
