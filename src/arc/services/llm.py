@@ -305,7 +305,15 @@ class OpenRouterProvider:
         Captures usage data (tokens) and latency from the API response.
         Raises ``LlmConfigurationError`` for permanent auth failures and
         ``LlmError`` for all other errors. Never retries.
+
+        Lifecycle: the per-call ContextVar ``_current_llm_usage`` is
+        **cleared before** the HTTP call so that stale usage from a
+        prior call is never accidentally consumed.  On a successful
+        response the ContextVar is set to the new usage report.  If the
+        call raises, the ContextVar remains ``None`` — callers observe
+        no usage from a failed call.
         """
+        _current_llm_usage.set(None)
         started = time.monotonic()
         response = client.post(url, json=body, headers=headers)
         elapsed_ms = int((time.monotonic() - started) * 1000)

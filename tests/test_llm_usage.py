@@ -510,34 +510,43 @@ class TestBuildLlmUsageRecord:
 
 
 class TestContextVarUsage:
-    def test_contextvar_initial_value(self):
-        assert _current_llm_usage.get() is None
-
     def test_contextvar_set_and_get(self):
-        usage = MagicMock()
-        token = _current_llm_usage.set(usage)
+        token = _current_llm_usage.set(None)
         try:
-            assert _current_llm_usage.get() is usage
+            usage = MagicMock()
+            token2 = _current_llm_usage.set(usage)
+            try:
+                assert _current_llm_usage.get() is usage
+            finally:
+                _current_llm_usage.reset(token2)
         finally:
             _current_llm_usage.reset(token)
 
     def test_contextvar_reset(self):
-        token = _current_llm_usage.set(MagicMock())
-        _current_llm_usage.reset(token)
-        assert _current_llm_usage.get() is None
+        token = _current_llm_usage.set(None)
+        try:
+            token2 = _current_llm_usage.set(MagicMock())
+            _current_llm_usage.reset(token2)
+            assert _current_llm_usage.get() is None
+        finally:
+            _current_llm_usage.reset(token)
 
     @pytest.mark.asyncio
     async def test_contextvar_isolation_across_concurrent_coroutines(self):
         """Verify that two concurrent async contexts see independent values."""
 
         async def worker(name, value):
-            token = _current_llm_usage.set(value)
+            token = _current_llm_usage.set(None)
             try:
-                await asyncio.sleep(0)  # yield to allow interleaving
-                current = _current_llm_usage.get()
-                assert current is value, (
-                    f"Coroutine {name!r} expected {value!r} but got {current!r}"
-                )
+                token2 = _current_llm_usage.set(value)
+                try:
+                    await asyncio.sleep(0)  # yield to allow interleaving
+                    current = _current_llm_usage.get()
+                    assert current is value, (
+                        f"Coroutine {name!r} expected {value!r} but got {current!r}"
+                    )
+                finally:
+                    _current_llm_usage.reset(token2)
             finally:
                 _current_llm_usage.reset(token)
 
@@ -547,6 +556,212 @@ class TestContextVarUsage:
         usage_b.provider = "b"
 
         await asyncio.gather(worker("A", usage_a), worker("B", usage_b))
+
+
+# ─── ContextVar Lifecycle (Production) ──────────────────────────────
+
+
+class TestContextVarLifecycle:
+    """Verify the _execute_request ContextVar lifecycle invariant:
+    stale usage must not leak across calls."""
+
+    def _make_provider(self, handler):
+        from arc.services.llm import OpenRouterProvider
+
+        return OpenRouterProvider.__new__(OpenRouterProvider)
+
+    def test_successful_call_sets_contextvar(self):
+        """After a successful call, ContextVar has the new usage."""
+        import httpx
+
+        from arc.services.llm import OpenRouterProvider
+
+        provider = OpenRouterProvider.__new__(OpenRouterProvider)
+        provider._model = "test-model"
+        provider._last_usage = None
+
+        body = {
+            "choices": [{"message": {"content": "answer"}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return body
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = FakeResponse()
+
+        token = _current_llm_usage.set(None)
+        try:
+            result = provider._execute_request(client, "http://x", {}, {})
+            assert result == "answer"
+            usage = _current_llm_usage.get()
+            assert usage is not None
+            assert usage.provider == "openrouter"
+            assert usage.model == "test-model"
+            assert usage.input_tokens == 10
+            assert usage.output_tokens == 5
+            assert usage.total_tokens == 15
+            assert provider.last_usage is usage
+        finally:
+            _current_llm_usage.reset(token)
+
+    def test_exception_path_leaves_contextvar_none(self):
+        """After a failed call, ContextVar is None — no stale usage."""
+        import httpx
+
+        from arc.services.llm import OpenRouterProvider
+
+        provider = OpenRouterProvider.__new__(OpenRouterProvider)
+        provider._model = "test-model"
+        provider._last_usage = None
+
+        client = MagicMock(spec=httpx.Client)
+        response = MagicMock()
+        response.status_code = 500
+        response.text = "error"
+        client.post.return_value = response
+
+        token = _current_llm_usage.set(None)
+        try:
+            # Pre-set stale usage to prove it gets cleared
+            token2 = _current_llm_usage.set(
+                LlmUsageReport(
+                    provider="openrouter",
+                    model="stale-model",
+                    input_tokens=999,
+                    output_tokens=999,
+                    total_tokens=999,
+                    latency_ms=999,
+                )
+            )
+            _current_llm_usage.reset(token2)
+
+            from arc.services.llm import LlmError
+
+            with pytest.raises(LlmError):
+                provider._execute_request(client, "http://x", {}, {})
+
+            assert _current_llm_usage.get() is None
+        finally:
+            _current_llm_usage.reset(token)
+
+    def test_stale_usage_cleared_before_new_call(self):
+        """A new call clears stale ContextVar usage before the HTTP call."""
+        import httpx
+
+        from arc.services.llm import OpenRouterProvider
+
+        provider = OpenRouterProvider.__new__(OpenRouterProvider)
+        provider._model = "new-model"
+        provider._last_usage = None
+
+        body = {
+            "choices": [{"message": {"content": "new"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return body
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = FakeResponse()
+
+        token = _current_llm_usage.set(None)
+        try:
+            # Inject stale usage from a hypothetical prior call
+            stale = LlmUsageReport(
+                provider="openrouter",
+                model="stale-model",
+                input_tokens=999,
+                output_tokens=999,
+                total_tokens=999,
+                latency_ms=999,
+            )
+            token2 = _current_llm_usage.set(stale)
+            _current_llm_usage.reset(token2)
+
+            # The new call should clear stale and set fresh
+            provider._execute_request(client, "http://x", {}, {})
+
+            usage = _current_llm_usage.get()
+            assert usage is not None
+            assert usage.model == "new-model"
+            assert usage.total_tokens == 2
+            assert provider.last_usage is usage
+        finally:
+            _current_llm_usage.reset(token)
+
+    def test_no_usage_response_leaves_contextvar_none(self):
+        """When the response has no usage block, ContextVar is None."""
+        import httpx
+
+        from arc.services.llm import OpenRouterProvider
+
+        provider = OpenRouterProvider.__new__(OpenRouterProvider)
+        provider._model = "test-model"
+        provider._last_usage = None
+
+        body = {"choices": [{"message": {"content": "ok"}}]}
+
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return body
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = FakeResponse()
+
+        token = _current_llm_usage.set(None)
+        try:
+            provider._execute_request(client, "http://x", {}, {})
+            usage = _current_llm_usage.get()
+            assert usage is not None
+            assert usage.input_tokens is None
+            assert usage.output_tokens is None
+            assert usage.total_tokens is None
+        finally:
+            _current_llm_usage.reset(token)
+
+    def test_provider_last_usage_preserved_on_success(self):
+        """provider.last_usage is set alongside ContextVar on success."""
+        import httpx
+
+        from arc.services.llm import OpenRouterProvider
+
+        provider = OpenRouterProvider.__new__(OpenRouterProvider)
+        provider._model = "test-model"
+        provider._last_usage = None
+
+        body = {
+            "choices": [{"message": {"content": "x"}}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+        }
+
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return body
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = FakeResponse()
+
+        token = _current_llm_usage.set(None)
+        try:
+            provider._execute_request(client, "http://x", {}, {})
+            assert provider.last_usage is not None
+            assert provider.last_usage.total_tokens == 7
+            assert _current_llm_usage.get() is provider.last_usage
+        finally:
+            _current_llm_usage.reset(token)
 
 
 # ─── Observability Service LLM Usage ────────────────────────────────
