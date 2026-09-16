@@ -2,7 +2,7 @@ import client from '../client.js'
 
 export async function listConnectors(tenantId) {
   const response = await client.get(`/tenants/${tenantId}/connectors`)
-  return response.data
+  return response.data.items
 }
 
 export async function createConnector(tenantId, { provider, name, target }) {

@@ -168,7 +168,7 @@ class TestKnowledgeTenantIsolation:
             headers={"Authorization": f"Bearer {token_b}"},
         )
         assert list_b.status_code == 200
-        assert all(doc["tenant_id"] == tenant_b.id for doc in list_b.json())
+        assert all(doc["tenant_id"] == tenant_b.id for doc in list_b.json()["items"])
 
         await membership_repo.delete(membership_b.id)
         await user_repo.delete(user_b.id)
@@ -396,7 +396,7 @@ class TestKnowledgeListPiiBoundary:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert listing.status_code == 200
-        documents = listing.json()
+        documents = listing.json()["items"]
         assert len(documents) == 1
         # The list response must not contain raw PII.
         for document in documents:

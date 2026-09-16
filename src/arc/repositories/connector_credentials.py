@@ -160,6 +160,55 @@ class PostgreSQLConnectorCredentialRepository:
                 )
         return [self._audit_from_row(row) for row in rows]
 
+    async def list_audit_for_tenant_paginated(
+        self, tenant_id: str, limit: int, offset: int, provider: Optional[str] = None
+    ) -> tuple:
+        """List audit records with LIMIT/OFFSET and total count."""
+        async with self._db._connection_pool.acquire() as conn:
+            if provider:
+                count_row = await conn.fetchrow(
+                    "SELECT COUNT(*) AS cnt FROM connector_credential_audit "
+                    "WHERE tenant_id = $1 AND provider = $2",
+                    tenant_id,
+                    provider,
+                )
+                total = count_row["cnt"]
+                rows = await conn.fetch(
+                    """
+                    SELECT id, tenant_id, provider, operation, actor_user_id,
+                           key_version, created_at
+                    FROM connector_credential_audit
+                    WHERE tenant_id = $1 AND provider = $2
+                    ORDER BY created_at DESC, id ASC
+                    LIMIT $3 OFFSET $4
+                    """,
+                    tenant_id,
+                    provider,
+                    limit,
+                    offset,
+                )
+            else:
+                count_row = await conn.fetchrow(
+                    "SELECT COUNT(*) AS cnt FROM connector_credential_audit WHERE tenant_id = $1",
+                    tenant_id,
+                )
+                total = count_row["cnt"]
+                rows = await conn.fetch(
+                    """
+                    SELECT id, tenant_id, provider, operation, actor_user_id,
+                           key_version, created_at
+                    FROM connector_credential_audit
+                    WHERE tenant_id = $1
+                    ORDER BY created_at DESC, id ASC
+                    LIMIT $2 OFFSET $3
+                    """,
+                    tenant_id,
+                    limit,
+                    offset,
+                )
+        items = [self._audit_from_row(row) for row in rows]
+        return items, total
+
     @staticmethod
     def _from_row(row) -> ConnectorCredential:
         return ConnectorCredential(

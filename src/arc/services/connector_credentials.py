@@ -216,6 +216,21 @@ class ConnectorCredentialService:
             provider.value if provider else None,
         )
 
+    async def list_audit_paginated(
+        self,
+        context: TenantContext,
+        limit: int,
+        offset: int,
+        provider: Optional[ConnectorProvider] = None,
+    ) -> tuple:
+        """List credential audit records with LIMIT/OFFSET and total count."""
+        return await self._repo.list_audit_for_tenant_paginated(
+            context.tenant_id,
+            limit,
+            offset,
+            provider.value if provider else None,
+        )
+
     async def _record_audit(
         self,
         tenant_id: str,

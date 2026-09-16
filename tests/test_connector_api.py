@@ -269,7 +269,7 @@ class TestConnectorList:
             headers={"Authorization": f"Bearer {token_b}"},
         )
         assert list_b.status_code == 200
-        assert list_b.json() == []
+        assert list_b.json()["items"] == []
 
         await membership_repo.delete(membership_b.id)
         await user_repo.delete(user_b.id)
@@ -313,7 +313,7 @@ class TestConnectorSync:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert listing.status_code == 200
-        documents = listing.json()
+        documents = listing.json()["items"]
         assert len(documents) == 3
         for document in documents:
             assert document["provenance"].startswith("connector:github:")

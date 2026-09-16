@@ -13,7 +13,7 @@ export async function getKnowledge(tenantId) {
   const { data } = await client.get(
     `/tenants/${encodeURIComponent(tenantId)}/knowledge`,
   )
-  return data
+  return data.items
 }
 
 export async function getKnowledgeDocument(tenantId, documentId) {

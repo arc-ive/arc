@@ -23,10 +23,11 @@ provisioning) are isolated in ``arc.api.dev_controllers``.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
+from arc.api.pagination import PaginationParams, paginate
 from arc.db.connection import DatabaseError, DuplicateKeyError, NotFoundError
 from arc.domain.models import (
     AgentExecutionResult,
@@ -349,27 +350,34 @@ async def create_tenant(
 
 @api_router.get("/platform/tenants")
 async def list_platform_tenants(
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     _: AuthenticatedPrincipal = Depends(require_permission(TENANT_LIST)),
     tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List all tenants — PLATFORM_ADMINISTRATOR only.
 
     Protected: requires the global ``tenant:list`` permission
     (PLATFORM_ADMINISTRATOR). Returns all tenants regardless of membership.
     No tenant context is required.
     """
-    tenants = await tenant_service.list_all_tenants()
-    return [
-        {
-            "id": tenant.id,
-            "name": tenant.name,
-            "status": tenant.status,
-            "industry": tenant.industry,
-            "created_at": tenant.created_at.isoformat(),
-            "updated_at": tenant.updated_at.isoformat(),
-        }
-        for tenant in tenants
-    ]
+    params = PaginationParams.from_query(limit, offset)
+    tenants, total = await tenant_service.list_all_tenants_paginated(params.limit, params.offset)
+    return paginate(
+        [
+            {
+                "id": tenant.id,
+                "name": tenant.name,
+                "status": tenant.status,
+                "industry": tenant.industry,
+                "created_at": tenant.created_at.isoformat(),
+                "updated_at": tenant.updated_at.isoformat(),
+            }
+            for tenant in tenants
+        ],
+        total,
+        params,
+    )
 
 
 @api_router.get("/tenants/{tenant_id}")
@@ -476,52 +484,68 @@ async def create_user(
 
 @api_router.get("/platform/users")
 async def list_platform_users(
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     _: AuthenticatedPrincipal = Depends(require_permission(USER_READ)),
     user_service: UserService = Depends(lambda: app_context.user_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List all provisioned users — PLATFORM_ADMINISTRATOR only.
 
     Protected: requires the global ``user:read`` permission
     (PLATFORM_ADMINISTRATOR). Returns all users regardless of tenant
     membership. No tenant context is required.
     """
-    users = await user_service.list_all_users()
-    return [
-        {
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "status": user.status,
-            "created_at": user.created_at.isoformat(),
-            "updated_at": user.updated_at.isoformat(),
-        }
-        for user in users
-    ]
+    params = PaginationParams.from_query(limit, offset)
+    users, total = await user_service.list_all_users_paginated(params.limit, params.offset)
+    return paginate(
+        [
+            {
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+                "status": user.status,
+                "created_at": user.created_at.isoformat(),
+                "updated_at": user.updated_at.isoformat(),
+            }
+            for user in users
+        ],
+        total,
+        params,
+    )
 
 
 @api_router.get("/tenants/{tenant_id}/users")
 async def get_users_for_tenant(
     tenant_id: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(TENANT_READ)),
     user_service: UserService = Depends(lambda: app_context.user_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Get all users for a tenant.
 
     Protected: requires a trusted X-10 tenant context and the ``tenant:read``
     permission. Cross-tenant access and missing membership are denied.
     """
-    users = await user_service.get_users_for_tenant(tenant_id)
-    return [
-        {
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "status": user.status,
-            "created_at": user.created_at.isoformat(),
-            "updated_at": user.updated_at.isoformat(),
-        }
-        for user in users
-    ]
+    params = PaginationParams.from_query(limit, offset)
+    users, total = await user_service.get_users_for_tenant_paginated(
+        tenant_id, params.limit, params.offset
+    )
+    return paginate(
+        [
+            {
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+                "status": user.status,
+                "created_at": user.created_at.isoformat(),
+                "updated_at": user.updated_at.isoformat(),
+            }
+            for user in users
+        ],
+        total,
+        params,
+    )
 
 
 @api_router.post("/tenants/{tenant_id}/memberships")
@@ -595,9 +619,11 @@ async def delete_membership(
 @api_router.get("/users/{user_id}/tenants")
 async def get_tenants_for_user(
     user_id: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     membership_service: MembershipService = Depends(lambda: app_context.membership_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """Get all tenants for a user.
 
     Protected: self-scoped. The authenticated identity (JWT ``sub``) is
@@ -609,22 +635,29 @@ async def get_tenants_for_user(
     if principal.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    tenants = await membership_service.get_tenants_for_user(principal.user_id)
-    return [
-        {
-            "id": tenant.id,
-            "name": tenant.name,
-            "status": tenant.status,
-            "industry": tenant.industry,
-            "address": tenant.address,
-            "phone": tenant.phone,
-            "website": tenant.website,
-            "logo_url": tenant.logo_url,
-            "created_at": tenant.created_at.isoformat(),
-            "updated_at": tenant.updated_at.isoformat(),
-        }
-        for tenant in tenants
-    ]
+    params = PaginationParams.from_query(limit, offset)
+    tenants, total = await membership_service.get_tenants_for_user_paginated(
+        principal.user_id, params.limit, params.offset
+    )
+    return paginate(
+        [
+            {
+                "id": tenant.id,
+                "name": tenant.name,
+                "status": tenant.status,
+                "industry": tenant.industry,
+                "address": tenant.address,
+                "phone": tenant.phone,
+                "website": tenant.website,
+                "logo_url": tenant.logo_url,
+                "created_at": tenant.created_at.isoformat(),
+                "updated_at": tenant.updated_at.isoformat(),
+            }
+            for tenant in tenants
+        ],
+        total,
+        params,
+    )
 
 
 def _skill_response(skill: Skill) -> Dict[str, Any]:
@@ -706,9 +739,11 @@ async def create_skill(
 @api_router.get("/skills")
 async def list_skills(
     tenant_id: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(SKILL_READ)),
     skill_service: SkillService = Depends(lambda: app_context.skill_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List all Skills belonging to the trusted tenant.
 
     Protected: requires a trusted X-10 tenant context and the ``skill:read``
@@ -718,8 +753,9 @@ async def list_skills(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    skills = await skill_service.list_skills(context)
-    return [_skill_response(skill) for skill in skills]
+    params = PaginationParams.from_query(limit, offset)
+    skills, total = await skill_service.list_skills_paginated(context, params.limit, params.offset)
+    return paginate([_skill_response(skill) for skill in skills], total, params)
 
 
 @api_router.get("/skills/{skill_id}")
@@ -1395,9 +1431,11 @@ async def get_knowledge_document(
 @api_router.get("/tenants/{tenant_id}/knowledge")
 async def list_knowledge_documents(
     tenant_id: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_READ)),
     knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List knowledge documents for a tenant.
 
     Protected: requires a trusted X-10 tenant context and the
@@ -1407,8 +1445,11 @@ async def list_knowledge_documents(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    documents = await knowledge_service.list_documents(context)
-    return [_knowledge_document_payload(document) for document in documents]
+    params = PaginationParams.from_query(limit, offset)
+    documents, total = await knowledge_service.list_documents_paginated(
+        context, params.limit, params.offset
+    )
+    return paginate([_knowledge_document_payload(d) for d in documents], total, params)
 
 
 def _tool_definition_payload(tool: ToolDefinition) -> Dict[str, Any]:
@@ -1443,9 +1484,11 @@ def get_tool_service() -> ToolExecutionService:
 @api_router.get("/tenants/{tenant_id}/tools")
 async def list_tools(
     tenant_id: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(TOOL_READ)),
     tool_service: ToolExecutionService = Depends(get_tool_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List the platform-owned AI Tool catalog for the trusted tenant.
 
     Protected: requires a trusted X-10 tenant context and the ``tool:read``
@@ -1457,8 +1500,11 @@ async def list_tools(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    tools = tool_service.list_tools(context)
-    return [_tool_definition_payload(tool) for tool in tools]
+    params = PaginationParams.from_query(limit, offset)
+    all_tools = tool_service.list_tools(context)
+    total = len(all_tools)
+    sliced = all_tools[params.offset : params.offset + params.limit]
+    return paginate([_tool_definition_payload(t) for t in sliced], total, params)
 
 
 @api_router.post("/tenants/{tenant_id}/tools/{name}/execute")
@@ -1536,9 +1582,11 @@ def _connector_payload(config) -> Dict[str, Any]:
 @api_router.get("/tenants/{tenant_id}/connectors")
 async def list_connectors(
     tenant_id: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_READ)),
     connector_service: ConnectorService = Depends(lambda: app_context.connector_service),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List the caller's tenant connector configurations.
 
     Protected: requires a trusted X-10 tenant context and the
@@ -1549,8 +1597,11 @@ async def list_connectors(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    connectors = await connector_service.list_connectors(context)
-    return [_connector_payload(connector) for connector in connectors]
+    params = PaginationParams.from_query(limit, offset)
+    connectors, total = await connector_service.list_connectors_paginated(
+        context, params.limit, params.offset
+    )
+    return paginate([_connector_payload(connector) for connector in connectors], total, params)
 
 
 @api_router.post("/tenants/{tenant_id}/connectors")
@@ -1812,9 +1863,11 @@ async def delete_credential(
 async def list_credential_audit(
     tenant_id: str,
     provider: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List credential audit records for a tenant/provider.
 
     Protected: requires ``connector:manage_credentials`` and a trusted
@@ -1830,19 +1883,26 @@ async def list_credential_audit(
             detail="Invalid connector provider",
         )
 
-    records = await credential_service.list_audit(context, provider_enum)
-    return [
-        {
-            "id": r.id,
-            "tenant_id": r.tenant_id,
-            "provider": r.provider.value,
-            "operation": r.operation,
-            "actor_user_id": r.actor_user_id,
-            "key_version": r.key_version,
-            "created_at": r.created_at.isoformat(),
-        }
-        for r in records
-    ]
+    params = PaginationParams.from_query(limit, offset)
+    records, total = await credential_service.list_audit_paginated(
+        context, params.limit, params.offset, provider_enum
+    )
+    return paginate(
+        [
+            {
+                "id": record.id,
+                "tenant_id": record.tenant_id,
+                "provider": record.provider,
+                "operation": record.operation,
+                "actor_user_id": record.actor_user_id,
+                "key_version": record.key_version,
+                "created_at": record.created_at.isoformat(),
+            }
+            for record in records
+        ],
+        total,
+        params,
+    )
 
 
 def _webhook_event_payload(event: WebhookEvent, duplicate: bool) -> Dict[str, Any]:
@@ -1998,11 +2058,13 @@ async def ingest_webhook_event(
 @api_router.get("/tenants/{tenant_id}/webhooks/events")
 async def list_webhook_events(
     tenant_id: str,
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(WEBHOOK_READ)),
     webhook_ingestion_service: WebhookIngestionService = Depends(
         lambda: app_context.webhook_ingestion_service
     ),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List the caller's tenant webhook event records.
 
     Protected: requires a trusted X-10 tenant context and the
@@ -2012,8 +2074,11 @@ async def list_webhook_events(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    events = await webhook_ingestion_service.list_events(context)
-    return [_webhook_event_payload(event, False) for event in events]
+    params = PaginationParams.from_query(limit, offset)
+    events, total = await webhook_ingestion_service.list_events_paginated(
+        context, params.limit, params.offset
+    )
+    return paginate([_webhook_event_payload(event, False) for event in events], total, params)
 
 
 @api_router.post("/tenants/{tenant_id}/webhooks/process")
@@ -2116,11 +2181,13 @@ async def get_component_health(
 async def list_agent_run_traces(
     tenant_id: str,
     hours: int = Query(default=24, ge=1, le=168),
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(OBSERVABILITY_READ)),
     observability_service: ObservabilityService = Depends(
         lambda: app_context.observability_service
     ),
-) -> list:
+) -> Dict[str, Any]:
     """List persisted agent execution traces (PRD 17 O-6).
 
     Requires authentication, the trusted tenant context, and
@@ -2129,8 +2196,11 @@ async def list_agent_run_traces(
     """
     if tenant_id != context.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    records = await observability_service.list_agent_run_traces(context.tenant_id, hours)
-    return [_agent_run_trace_payload(r) for r in records]
+    params = PaginationParams.from_query(limit, offset)
+    records, total = await observability_service.list_agent_run_traces_paginated(
+        context.tenant_id, hours, params.limit, params.offset
+    )
+    return paginate([_agent_run_trace_payload(r) for r in records], total, params)
 
 
 @api_router.get("/tenants/{tenant_id}/observability/agent-runs/{record_id}")
@@ -2207,11 +2277,13 @@ def _approval_payload(approval) -> Dict[str, Any]:
 async def list_approval_requests(
     tenant_id: str,
     status_filter: Optional[str] = Query(default=None, alias="status"),
+    limit: Optional[int] = Query(default=None),
+    offset: Optional[int] = Query(default=None),
     context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
     human_approval_service: HumanApprovalService = Depends(
         lambda: app_context.human_approval_service
     ),
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """List Human Intervention approval requests for the trusted tenant.
 
     Requires ``approval:read`` and path-consistent tenant scope. Expired
@@ -2226,8 +2298,11 @@ async def list_approval_requests(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status filter"
             )
-    approvals = await human_approval_service.list_requests(context, status_value)
-    return [_approval_payload(a) for a in approvals]
+    params = PaginationParams.from_query(limit, offset)
+    approvals, total = await human_approval_service.list_requests_paginated(
+        context, params.limit, params.offset, status_value
+    )
+    return paginate([_approval_payload(a) for a in approvals], total, params)
 
 
 @api_router.get("/tenants/{tenant_id}/approvals/{approval_id}")

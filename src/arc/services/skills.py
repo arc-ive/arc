@@ -32,7 +32,7 @@ These are validation helpers only; no execution engine is implemented.
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional
+from typing import Iterable, Optional
 
 from arc.domain.models import Skill, TenantContext
 from arc.services.pii import PiiGuardService
@@ -99,9 +99,13 @@ class SkillService:
         """Get a Skill by ID within a tenant."""
         return await self.skill_repo.get_by_id(skill_id, context.tenant_id)
 
-    async def list_skills(self, context: TenantContext) -> List[Skill]:
+    async def list_skills(self, context: TenantContext) -> list:
         """List all Skills for a tenant."""
         return await self.skill_repo.list_for_tenant(context.tenant_id)
+
+    async def list_skills_paginated(self, context: TenantContext, limit: int, offset: int) -> tuple:
+        """List Skills with LIMIT/OFFSET and total count."""
+        return await self.skill_repo.list_for_tenant_paginated(context.tenant_id, limit, offset)
 
     async def update_skill(self, context: TenantContext, skill: Skill) -> Skill:
         """Update an existing Skill for a tenant.

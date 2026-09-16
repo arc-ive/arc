@@ -6,7 +6,7 @@ protocols define colliding generic method names (``create``, ``get_by_id``,
 ``exists``, ``delete``) that a single shared class cannot satisfy cleanly.
 """
 
-from typing import List
+from typing import List, Tuple
 
 from arc.db.connection import ArcDatabase, NotFoundError
 from arc.domain.models import Membership, Tenant, User
@@ -48,6 +48,31 @@ class PostgreSQLTenantRepository:
                 )
                 for row in rows
             ]
+
+    async def list_all_paginated(self, limit: int, offset: int) -> Tuple[List[Tenant], int]:
+        """List tenants with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM tenants")
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                "SELECT id, name, status, industry, created_at, updated_at "
+                "FROM tenants ORDER BY created_at DESC, id ASC "
+                "LIMIT $1 OFFSET $2",
+                limit,
+                offset,
+            )
+            items = [
+                Tenant(
+                    id=row["id"],
+                    name=row["name"],
+                    status=row["status"],
+                    industry=row["industry"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+            return items, total
 
     async def update(self, tenant: Tenant) -> Tenant:
         """Update tenant."""
@@ -104,6 +129,43 @@ class PostgreSQLUserRepository:
         """Get all users for a tenant."""
         return await self.db.get_users_for_tenant(tenant_id)
 
+    async def get_by_tenant_paginated(
+        self, tenant_id: str, limit: int, offset: int
+    ) -> Tuple[List[User], int]:
+        """Get users for a tenant with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM memberships WHERE tenant_id = $1",
+                tenant_id,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                """
+                SELECT u.id, u.email, u.username, u.status,
+                       u.created_at, u.updated_at
+                FROM users u
+                JOIN memberships m ON u.id = m.user_id
+                WHERE m.tenant_id = $1
+                ORDER BY u.created_at DESC, u.id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                tenant_id,
+                limit,
+                offset,
+            )
+            items = [
+                User(
+                    id=row["id"],
+                    email=row["email"],
+                    username=row["username"],
+                    status=row["status"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+            return items, total
+
     async def list_all(self) -> List[User]:
         """List all users."""
         async with self.db._connection_pool.acquire() as conn:
@@ -122,6 +184,31 @@ class PostgreSQLUserRepository:
                 )
                 for row in rows
             ]
+
+    async def list_all_paginated(self, limit: int, offset: int) -> Tuple[List[User], int]:
+        """List all users with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM users")
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                "SELECT id, email, username, status, created_at, updated_at "
+                "FROM users ORDER BY created_at DESC, id ASC "
+                "LIMIT $1 OFFSET $2",
+                limit,
+                offset,
+            )
+            items = [
+                User(
+                    id=row["id"],
+                    email=row["email"],
+                    username=row["username"],
+                    status=row["status"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+            return items, total
 
     async def exists(self, user_id: str) -> bool:
         """Check if user exists."""
@@ -167,6 +254,43 @@ class PostgreSQLMembershipRepository:
     async def get_tenants_for_user(self, user_id: str) -> List[Tenant]:
         """Get all tenants for a user."""
         return await self.db.get_tenants_for_user(user_id)
+
+    async def get_tenants_for_user_paginated(
+        self, user_id: str, limit: int, offset: int
+    ) -> Tuple[List[Tenant], int]:
+        """Get tenants for a user with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM memberships WHERE user_id = $1",
+                user_id,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                """
+                SELECT t.id, t.name, t.status, t.industry,
+                       t.created_at, t.updated_at
+                FROM tenants t
+                JOIN memberships m ON t.id = m.tenant_id
+                WHERE m.user_id = $1
+                ORDER BY t.created_at DESC, t.id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                user_id,
+                limit,
+                offset,
+            )
+            items = [
+                Tenant(
+                    id=row["id"],
+                    name=row["name"],
+                    status=row["status"],
+                    industry=row["industry"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+            return items, total
 
     async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
         """Get all users for a tenant."""

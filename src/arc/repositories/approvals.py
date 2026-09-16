@@ -130,6 +130,29 @@ class PostgreSQLApprovalRequestRepository:
             )
         return [self._from_row(row) for row in rows]
 
+    async def list_for_tenant_paginated(self, tenant_id: str, limit: int, offset: int) -> tuple:
+        """List approval requests with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM approval_requests WHERE tenant_id = $1",
+                tenant_id,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                f"""
+                SELECT {_COLUMNS}
+                FROM approval_requests
+                WHERE tenant_id = $1
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                tenant_id,
+                limit,
+                offset,
+            )
+        items = [self._from_row(row) for row in rows]
+        return items, total
+
     async def find_open(
         self, tenant_id: str, tool_name: str, tool_version: str, arguments_digest: str
     ) -> Optional[ApprovalRequest]:
