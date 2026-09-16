@@ -145,12 +145,6 @@ class Application:
             pii_guard=pii_guard,
         )
 
-        self.services["intelligence_service"] = UnifiedIntelligenceService(
-            retrieval=retrieval_service,
-            llm_provider=build_llm_provider(get_llm_settings()),
-            tool_service=self.services["tool_service"],
-        )
-
         # Initialize skill service
         self.services["skill_service"] = SkillService(
             self.repositories["skill"], pii_guard=pii_guard
@@ -175,6 +169,22 @@ class Application:
         # Wire approval service to tool execution service
         self.services["tool_service"].approval_service = self.services["human_approval_service"]
 
+        # Initialize observability (PRD 17, TRD 17/28/31) BEFORE services
+        # that depend on it for LLM usage telemetry (V2-ADR-024, Issue
+        # #141). Telemetry writes are best effort and never fail a
+        # business operation; reads fail closed.
+        observability_service = ObservabilityService(
+            repository=self.repositories["observability"],
+        )
+        self.services["observability_service"] = observability_service
+
+        self.services["intelligence_service"] = UnifiedIntelligenceService(
+            retrieval=retrieval_service,
+            llm_provider=build_llm_provider(get_llm_settings()),
+            tool_service=self.services["tool_service"],
+            observability_service=observability_service,
+        )
+
         # Initialize the bounded Agent orchestration layer (ADR-006). It
         # sits strictly ABOVE SkillExecutionService and holds no tool
         # registry or handlers of its own.
@@ -182,14 +192,7 @@ class Application:
             skill_service=self.services["skill_service"],
             skill_execution_service=self.services["skill_execution_service"],
             llm_provider=build_llm_provider(get_llm_settings()),
-        )
-
-        # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
-        # read layer over AUTHORITATIVE subsystem records plus the HTTP
-        # telemetry table this layer owns. Telemetry writes are best
-        # effort and never fail a business operation; reads fail closed.
-        self.services["observability_service"] = ObservabilityService(
-            repository=self.repositories["observability"],
+            observability_service=observability_service,
         )
 
         # Initialize connector synchronization (provider integrations):

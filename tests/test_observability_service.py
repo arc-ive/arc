@@ -17,6 +17,7 @@ from arc.domain.models import (
     ApprovalActivityMetrics,
     ConnectorSyncActivityMetrics,
     HttpUsageMetrics,
+    LlmUsageActivityMetrics,
     ToolExecutionActivityMetrics,
     WebhookEventActivityMetrics,
 )
@@ -84,6 +85,22 @@ class RecordingRepository:
         return AgentRunActivityMetrics(
             total_runs=5, succeeded=3, failed=1, approval_required=1, max_steps_reached=0
         )
+
+    async def llm_usage_activity(self, tenant_id, hours):
+        return LlmUsageActivityMetrics(
+            total_calls=0,
+            calls_by_type={},
+            total_input_tokens=0,
+            total_output_tokens=0,
+            total_tokens=0,
+            avg_latency_ms=0.0,
+            total_cost_usd=None,
+            unknown_cost_records=0,
+            models_used=[],
+        )
+
+    async def llm_usage_records_page(self, tenant_id, hours, call_type, limit, offset):
+        return [], 0
 
     async def create_agent_run_record(self, record):
         return record

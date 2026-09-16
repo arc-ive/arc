@@ -248,6 +248,7 @@ class TestResponseContentSafety:
             "approvals",
             "escalation_count",
             "agent_runs",
+            "llm",
         }
         assert set(body["http"]) == {
             "total_requests",
