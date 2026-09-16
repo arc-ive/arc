@@ -62,7 +62,7 @@ async def test_tenant_creation_assigns_owner_membership(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
-    tenants = response.json()
+    tenants = response.json()["items"]
     assert any(t["id"] == tenant_id for t in tenants)
 
     # Verify the creator can access the tenant
@@ -281,7 +281,7 @@ async def test_tenant_isolation_after_creation(
         headers={"Authorization": f"Bearer {other_token}"},
     )
     assert response.status_code == 200
-    assert len(response.json()) == 0
+    assert len(response.json()["items"]) == 0
 
     # Cleanup
     admin_membership = await membership_repo.get_by_user_and_tenant(admin.id, tenant_id)

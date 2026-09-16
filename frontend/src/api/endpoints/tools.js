@@ -2,7 +2,7 @@ import client from '../client.js'
 
 export async function listTools(tenantId) {
   const response = await client.get(`/tenants/${tenantId}/tools`)
-  return response.data
+  return response.data.items
 }
 
 export async function executeTool(tenantId, toolName, input = {}) {

@@ -4,7 +4,7 @@ export async function listSkills(tenantId) {
   const response = await client.get('/skills', {
     params: { tenant_id: tenantId },
   })
-  return response.data
+  return response.data.items
 }
 
 export async function getSkill(tenantId, skillId) {

@@ -164,6 +164,10 @@ class WebhookIngestionService:
         """List recent events for the caller's trusted tenant."""
         return await self._repository.list_for_tenant(context.tenant_id, limit)
 
+    async def list_events_paginated(self, context: TenantContext, limit: int, offset: int) -> tuple:
+        """List events with LIMIT/OFFSET and total count."""
+        return await self._repository.list_for_tenant_paginated(context.tenant_id, limit, offset)
+
     def _verify_authentication(
         self,
         endpoint: WebhookEndpointConfig,

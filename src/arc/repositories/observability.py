@@ -340,6 +340,53 @@ class PostgreSQLObservabilityRepository:
             )
         return results
 
+    async def list_agent_run_records_paginated(
+        self, tenant_id: str, hours: int, limit: int, offset: int
+    ) -> tuple:
+        """List agent run traces with LIMIT/OFFSET and total count."""
+        import json
+
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                f"SELECT COUNT(*) AS cnt FROM agent_run_records WHERE {self._scope_clause()}",
+                tenant_id,
+                hours,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                f"""
+                SELECT id, tenant_id, principal_id, goal, status, error_kind,
+                       steps, created_at
+                FROM agent_run_records
+                WHERE {self._scope_clause()}
+                ORDER BY created_at DESC, id ASC
+                LIMIT $3 OFFSET $4
+                """,
+                tenant_id,
+                hours,
+                limit,
+                offset,
+            )
+        results = []
+        for row in rows:
+            steps_raw = row["steps"]
+            if isinstance(steps_raw, str):
+                steps_raw = json.loads(steps_raw)
+            steps = [AgentRunRecordStep.from_dict(s) for s in steps_raw]
+            results.append(
+                AgentRunRecord(
+                    id=row["id"],
+                    tenant_id=row["tenant_id"],
+                    principal_id=row["principal_id"],
+                    goal=row["goal"],
+                    status=row["status"],
+                    error_kind=row["error_kind"],
+                    steps=steps,
+                    created_at=row["created_at"],
+                )
+            )
+        return results, total
+
     async def agent_run_activity(
         self, tenant_id: Optional[str], hours: int
     ) -> AgentRunActivityMetrics:

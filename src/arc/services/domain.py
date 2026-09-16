@@ -1,6 +1,6 @@
 """Domain services for Arc multi-tenant foundation."""
 
-from typing import List
+from typing import List, Tuple
 
 from arc.db.connection import NotFoundError
 from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
@@ -55,6 +55,10 @@ class TenantService:
     async def list_all_tenants(self) -> List[Tenant]:
         """List all tenants (platform administrator operation)."""
         return await self.tenant_repo.list_all()
+
+    async def list_all_tenants_paginated(self, limit: int, offset: int) -> Tuple[List[Tenant], int]:
+        """List tenants with LIMIT/OFFSET and total count."""
+        return await self.tenant_repo.list_all_paginated(limit, offset)
 
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration."""
@@ -127,9 +131,19 @@ class UserService:
         """Get all users for a tenant."""
         return await self.user_repo.get_by_tenant(tenant_id)
 
+    async def get_users_for_tenant_paginated(
+        self, tenant_id: str, limit: int, offset: int
+    ) -> Tuple[List[User], int]:
+        """Get users for a tenant with LIMIT/OFFSET and total count."""
+        return await self.user_repo.get_by_tenant_paginated(tenant_id, limit, offset)
+
     async def list_all_users(self) -> List[User]:
         """List all users (platform administrator operation)."""
         return await self.user_repo.list_all()
+
+    async def list_all_users_paginated(self, limit: int, offset: int) -> Tuple[List[User], int]:
+        """List all users with LIMIT/OFFSET and total count."""
+        return await self.user_repo.list_all_paginated(limit, offset)
 
 
 class MembershipService:
@@ -167,6 +181,12 @@ class MembershipService:
     async def get_tenants_for_user(self, user_id: str) -> List[Tenant]:
         """Get all tenants for a user."""
         return await self.membership_repo.get_tenants_for_user(user_id)
+
+    async def get_tenants_for_user_paginated(
+        self, user_id: str, limit: int, offset: int
+    ) -> Tuple[List[Tenant], int]:
+        """Get tenants for a user with LIMIT/OFFSET and total count."""
+        return await self.membership_repo.get_tenants_for_user_paginated(user_id, limit, offset)
 
     async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
         """Get all users for a tenant."""

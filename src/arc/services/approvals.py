@@ -161,6 +161,22 @@ class HumanApprovalService:
             return derived
         return [r for r in derived if r.status == status]
 
+    async def list_requests_paginated(
+        self,
+        context: TenantContext,
+        limit: int,
+        offset: int,
+        status: Optional[ApprovalStatus] = None,
+    ):
+        """List requests with LIMIT/OFFSET and total count."""
+        all_items, total = await self.repository.list_for_tenant_paginated(
+            context.tenant_id, limit, offset
+        )
+        derived = [self._with_effective_status(r) for r in all_items]
+        if status is not None:
+            derived = [r for r in derived if r.status == status]
+        return derived, total
+
     async def get_request(self, context: TenantContext, approval_id: str) -> ApprovalRequest:
         try:
             request = await self.repository.get_by_id(approval_id, context.tenant_id)

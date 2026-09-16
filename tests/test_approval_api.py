@@ -130,7 +130,7 @@ class TestDecisionsAndLifecycle:
 
         listing = _authed(client, "get", _url(tenant.id), token)
         assert listing.status_code == 200
-        assert len(listing.json()) == 1
+        assert len(listing.json()["items"]) == 1
 
         decision = _authed(
             client,
@@ -228,7 +228,7 @@ class TestExpiredLifecycleExposure:
         authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
         token = make_token(user.id)
 
-        listing = _authed(client, "get", _url(tenant.id), token).json()
+        listing = _authed(client, "get", _url(tenant.id), token).json()["items"]
         assert listing[0]["status"] == "expired"
 
         detail = _authed(client, "get", _url(tenant.id, f"/{request.id}"), token)
@@ -304,7 +304,7 @@ class TestEmptyListingAndFieldMapping:
         token = make_token(user.id)
         response = _authed(client, "get", _url(tenant.id), token)
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_listing_maps_requester_user_id_correctly(
         self, client, seeded, make_token, authorization_override, db
@@ -314,7 +314,7 @@ class TestEmptyListingAndFieldMapping:
         await _seed(db, tenant.id)
         authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
         token = make_token(user.id)
-        body = _authed(client, "get", _url(tenant.id), token).json()
+        body = _authed(client, "get", _url(tenant.id), token).json()["items"]
         assert len(body) == 1
         assert body[0]["requester_user_id"] == "requester-1"
 
@@ -328,12 +328,13 @@ class TestEmptyListingAndFieldMapping:
         authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
         token = make_token(user.id)
 
-        all_approvals = _authed(client, "get", _url(tenant.id), token).json()
+        all_approvals = _authed(client, "get", _url(tenant.id), token).json()["items"]
         assert len(all_approvals) == 2
 
-        pending = _authed(client, "get", _url(tenant.id) + "?status=pending", token).json()
+        pending = _authed(client, "get", _url(tenant.id) + "?status=pending", token).json()["items"]
         assert len(pending) == 2
         assert all(a["status"] == "pending" for a in pending)
 
-        rejected = _authed(client, "get", _url(tenant.id) + "?status=rejected", token).json()
+        rejected_url = _url(tenant.id) + "?status=rejected"
+        rejected = _authed(client, "get", rejected_url, token).json()["items"]
         assert len(rejected) == 0
