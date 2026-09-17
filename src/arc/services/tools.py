@@ -470,6 +470,7 @@ class ToolExecutionService:
         record_repo,
         approval_service=None,
         pii_guard: Optional[PiiGuardService] = None,
+        capability_service=None,
     ):
         self.registry = registry
         self.record_repo = record_repo
@@ -486,6 +487,9 @@ class ToolExecutionService:
         # unlike Knowledge/Skill PII guards which fail closed, tool audit
         # records must never be lost due to a PII processing error).
         self.pii_guard = pii_guard
+        # Optional capability service: when wired, tool execution checks
+        # the platform/tenant capability before proceeding.
+        self.capability_service = capability_service
 
     def list_tools(self, context: TenantContext) -> List[ToolDefinition]:
         """Return the platform-owned AI Tool catalog for the trusted tenant.
@@ -528,6 +532,12 @@ class ToolExecutionService:
             # Fail closed with no record: there is no trusted tenant to
             # attribute an audit record to.
             raise ToolDeniedError(tool_name)
+
+        # Platform capability gate: tool_execution must be enabled for
+        # this tenant. Checked early to fail fast before any tool lookup.
+        if self.capability_service is not None:
+            if not await self.capability_service.is_enabled(context.tenant_id, "tool_execution"):
+                raise ToolDeniedError(tool_name)
 
         tool = self.registry.get(tool_name)
         if tool is None:

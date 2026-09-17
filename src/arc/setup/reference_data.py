@@ -378,6 +378,7 @@ _RESET_TABLES = [
     "agent_run_records",
     "llm_usage_records",
     # Parent resources (depend on tenants)
+    "tenant_capabilities",
     "knowledge_documents",
     "connector_configs",
     "skills",
@@ -386,6 +387,8 @@ _RESET_TABLES = [
     # Root entities
     "users",
     "tenants",
+    # Platform-wide (no FK dependencies)
+    "platform_capabilities",
     # Orphan table (no code reference)
     "sessions",
 ]

@@ -117,6 +117,7 @@ _ERROR_UNKNOWN_TOOL = "unknown_tool"
 _ERROR_TOOL_DENIED = "tool_denied"
 _ERROR_INVALID_INPUT = "invalid_input"
 _ERROR_EXECUTION_FAILED = "execution_error"
+_ERROR_CAPABILITY_DISABLED = "capability_disabled"
 
 logger = logging.getLogger("arc.skill_execution")
 
@@ -131,11 +132,16 @@ class SkillExecutionService:
     """
 
     def __init__(
-        self, skill_service: SkillService, tool_service: ToolExecutionService, record_repo=None
+        self,
+        skill_service: SkillService,
+        tool_service: ToolExecutionService,
+        record_repo=None,
+        capability_service=None,
     ):
         self.skill_service = skill_service
         self.tool_service = tool_service
         self.record_repo = record_repo
+        self.capability_service = capability_service
 
     async def execute(
         self,
@@ -208,6 +214,26 @@ class SkillExecutionService:
         """
         if context is None or not context.is_valid:
             raise ValueError("Invalid tenant context")
+
+        # Platform capability gate: skill_execution must be enabled for
+        # this tenant. Checked early to fail fast before any DB access or
+        # structural validation.
+        if self.capability_service is not None:
+            if not await self.capability_service.is_enabled(context.tenant_id, "skill_execution"):
+                return self._build_result(
+                    context,
+                    Skill(
+                        id=skill_id,
+                        tenant_id=context.tenant_id,
+                        name="unknown",
+                        purpose="unknown",
+                        status=SkillStatus.ACTIVE,
+                    ),
+                    SkillExecutionStatus.FAILED,
+                    error_kind=_ERROR_CAPABILITY_DISABLED,
+                    steps=[],
+                )
+
         self._validate_proposed_calls(tool_calls)
         conditions = self._validated_conditions(satisfied_conditions)
 

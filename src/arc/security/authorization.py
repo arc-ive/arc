@@ -129,6 +129,7 @@ OBSERVABILITY_PLATFORM_READ = Permission(resource="observability", action="platf
 AGENT_EXECUTE = Permission(resource="agent", action="execute")
 APPROVAL_READ = Permission(resource="approval", action="read")
 APPROVAL_DECIDE = Permission(resource="approval", action="decide")
+CAPABILITY_MANAGE = Permission(resource="capability", action="manage")
 
 
 ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
@@ -145,7 +146,6 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
-            KNOWLEDGE_DELETE,
             SKILL_CREATE,
             SKILL_READ,
             SKILL_UPDATE,
@@ -163,6 +163,8 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             OBSERVABILITY_PLATFORM_READ,
             APPROVAL_READ,
             APPROVAL_DECIDE,
+            CAPABILITY_MANAGE,
+            KNOWLEDGE_DELETE,
         }
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(

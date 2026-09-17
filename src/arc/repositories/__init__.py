@@ -18,8 +18,10 @@ from arc.domain.models import (
     KnowledgeMatch,
     KnowledgeSource,
     Membership,
+    PlatformCapability,
     Skill,
     Tenant,
+    TenantCapability,
     ToolExecutionActivityMetrics,
     ToolExecutionRecord,
     User,
@@ -281,12 +283,7 @@ class KnowledgeRepository(Protocol):
         ...
 
     async def delete_by_id(self, document_id: str, tenant_id: str) -> None:
-        """Delete a knowledge document and its chunks, scoped to a tenant.
-
-        Deletes the document row; dependent chunks are removed by
-        ``ON DELETE CASCADE``.  Raises ``NotFoundError`` when the document
-        does not exist in the given tenant.
-        """
+        """Delete a knowledge document by ID, scoped to a tenant."""
         ...
 
     async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
@@ -625,6 +622,48 @@ class ApprovalRequestRepository(Protocol):
         Transitions ``approved`` to ``consumed`` and returns the updated
         request. Returns ``None`` when the request is not in ``approved``
         status (already consumed, expired, or rejected -- fail-closed).
+        """
+        ...
+
+
+class CapabilityRepository(Protocol):
+    """Repository for platform and tenant capability state (V2-ADR-004).
+
+    Platform operations are global (not tenant-scoped). Tenant
+    operations are tenant-scoped. Every query is grounded in the
+    database; capability state is never cached or guessed.
+    """
+
+    async def get_platform_capability(self, capability_id: str) -> Optional[PlatformCapability]:
+        """Return the platform state for a capability, or None if not seeded."""
+        ...
+
+    async def list_platform_capabilities(self) -> List[PlatformCapability]:
+        """Return all platform capability states."""
+        ...
+
+    async def set_platform_capability(
+        self, capability_id: str, enabled: bool
+    ) -> PlatformCapability:
+        """Upsert the platform state for a capability. Returns the updated record."""
+        ...
+
+    async def get_tenant_capability(
+        self, tenant_id: str, capability_id: str
+    ) -> Optional[TenantCapability]:
+        """Return the tenant config for a capability, or None if not configured."""
+        ...
+
+    async def list_tenant_capabilities(self, tenant_id: str) -> List[TenantCapability]:
+        """Return all capability configs for a tenant."""
+        ...
+
+    async def set_tenant_capability(
+        self, tenant_id: str, capability_id: str, enabled: bool
+    ) -> TenantCapability:
+        """Upsert the tenant config for a capability. Returns the updated record.
+
+        Raises ``NotFoundError`` when the tenant does not exist.
         """
         ...
 

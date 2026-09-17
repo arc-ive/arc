@@ -23,7 +23,7 @@ provisioning) are isolated in ``arc.api.dev_controllers``.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
@@ -53,6 +53,7 @@ from arc.security.authorization import (
     AGENT_EXECUTE,
     APPROVAL_DECIDE,
     APPROVAL_READ,
+    CAPABILITY_MANAGE,
     CONNECTOR_CREATE,
     CONNECTOR_MANAGE_CREDENTIALS,
     CONNECTOR_READ,
@@ -239,6 +240,10 @@ class ApplicationContext:
     @property
     def human_approval_service(self):
         return self.services.get("human_approval_service")
+
+    @property
+    def capability_service(self):
+        return self.services.get("capability_service")
 
 
 # Global application context
@@ -2626,3 +2631,142 @@ async def resume_agent_execution(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     return _skill_execution_response(result)
+
+
+# ---------------------------------------------------------------------------
+# Platform Capability management API (Issue #144, V2-ADR-004)
+# ---------------------------------------------------------------------------
+
+
+@api_router.get("/platform/capabilities")
+async def list_platform_capabilities(
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> List[Dict[str, Any]]:
+    _require_platform_admin(principal, authorization_service)
+    svc = app_context.capability_service
+    states = await svc.list_platform()
+    return [
+        {
+            "capability_id": s.capability_id,
+            "enabled": s.enabled,
+            "updated_at": s.updated_at.isoformat(),
+        }
+        for s in states
+    ]
+
+
+@api_router.get("/platform/capabilities/{capability_id}")
+async def get_platform_capability(
+    capability_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> Dict[str, Any]:
+    _require_platform_admin(principal, authorization_service)
+    svc = app_context.capability_service
+    state = await svc.get_platform(capability_id)
+    if state is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown capability: {capability_id}",
+        )
+    return {
+        "capability_id": state.capability_id,
+        "enabled": state.enabled,
+        "updated_at": state.updated_at.isoformat(),
+    }
+
+
+@api_router.put("/platform/capabilities/{capability_id}")
+async def update_platform_capability(
+    capability_id: str,
+    body: Dict[str, Any] = ...,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> Dict[str, Any]:
+    _require_platform_admin(principal, authorization_service)
+    enabled = body.get("enabled")
+    if not isinstance(enabled, bool):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="enabled is required and must be a boolean",
+        )
+    svc = app_context.capability_service
+    try:
+        state = await svc.set_platform(capability_id, enabled)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    return {
+        "capability_id": state.capability_id,
+        "enabled": state.enabled,
+        "updated_at": state.updated_at.isoformat(),
+    }
+
+
+@api_router.get("/tenants/{tenant_id}/capabilities")
+async def list_tenant_capabilities(
+    tenant_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> List[Dict[str, Any]]:
+    _require_platform_admin(principal, authorization_service)
+    svc = app_context.capability_service
+    return await svc.list_tenant(tenant_id)
+
+
+@api_router.get("/tenants/{tenant_id}/capabilities/{capability_id}")
+async def get_tenant_capability(
+    tenant_id: str,
+    capability_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> Dict[str, Any]:
+    _require_platform_admin(principal, authorization_service)
+    svc = app_context.capability_service
+    result = await svc.get_tenant(tenant_id, capability_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown capability: {capability_id}",
+        )
+    return result
+
+
+@api_router.put("/tenants/{tenant_id}/capabilities/{capability_id}")
+async def update_tenant_capability(
+    tenant_id: str,
+    capability_id: str,
+    body: Dict[str, Any] = ...,
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> Dict[str, Any]:
+    _require_platform_admin(principal, authorization_service)
+    enabled = body.get("enabled")
+    if not isinstance(enabled, bool):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="enabled is required and must be a boolean",
+        )
+    svc = app_context.capability_service
+    try:
+        result = await svc.set_tenant(tenant_id, capability_id, enabled)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    return result
+
+
+def _require_platform_admin(
+    principal: AuthenticatedPrincipal,
+    authorization_service: AuthorizationService,
+) -> None:
+    if not authorization_service.has_permission(principal, CAPABILITY_MANAGE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform administrator role required",
+        )

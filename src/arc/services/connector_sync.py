@@ -101,6 +101,7 @@ class ConnectorSyncService:
         credential_store: ConnectorCredentialStore,
         knowledge_service: KnowledgeService,
         connector_credential_service: Optional[ConnectorCredentialService] = None,
+        capability_service=None,
     ):
         self.connector_repo = connector_repo
         self.sync_repo = sync_repo
@@ -108,6 +109,7 @@ class ConnectorSyncService:
         self.credential_store = credential_store
         self.knowledge_service = knowledge_service
         self._credential_service = connector_credential_service
+        self.capability_service = capability_service
 
     async def sync(self, context: TenantContext, connector_id: str) -> ConnectorSyncResult:
         """Synchronize one tenant-owned connector.
@@ -119,6 +121,12 @@ class ConnectorSyncService:
         ``ConnectorSyncError``; ``NotFoundError`` from the connector lookup
         propagates unchanged so the API can return a safe 404.
         """
+        # Platform capability gate: connector_sync must be enabled for
+        # this tenant. Checked early to fail fast before any DB access.
+        if self.capability_service is not None:
+            if not await self.capability_service.is_enabled(context.tenant_id, "connector_sync"):
+                raise ConnectorSyncError("Connector sync is not enabled for this tenant")
+
         config = await self.connector_repo.get_by_id(connector_id, context.tenant_id)
 
         adapter = self.registry.get(config.provider)

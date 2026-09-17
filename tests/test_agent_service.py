@@ -436,12 +436,14 @@ class TestTrustBoundaries:
     async def test_agent_holds_no_tool_registry_or_audit_collaborators(self, repositories, db):
         env = await _build_environment(repositories, db)
         attrs = vars(env["agent"])
-        assert set(attrs) == {
+        expected = {
             "skill_service",
             "skill_execution_service",
             "llm_provider",
             "observability_service",
+            "capability_service",
         }
+        assert set(attrs) == expected
         forbidden = ("tool", "registry", "handler", "audit", "record")
         assert not any(name in attrs for name in forbidden)
 
