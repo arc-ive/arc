@@ -102,11 +102,13 @@ class AgentExecutionService:
         skill_execution_service: SkillExecutionService,
         llm_provider: Optional[LlmProvider] = None,
         observability_service: Optional[ObservabilityService] = None,
+        capability_service=None,
     ):
         self.skill_service = skill_service
         self.skill_execution_service = skill_execution_service
         self.llm_provider = llm_provider
         self.observability_service = observability_service
+        self.capability_service = capability_service
 
     async def run(
         self,
@@ -146,6 +148,18 @@ class AgentExecutionService:
             raise ValueError("Invalid tenant context")
         if not isinstance(goal, str) or not goal.strip():
             raise ValueError("Goal cannot be empty")
+
+        # Platform capability gate: agent_execution must be enabled for
+        # this tenant. Checked early to fail fast before any DB access.
+        if self.capability_service is not None:
+            if not await self.capability_service.is_enabled(context.tenant_id, "agent_execution"):
+                return self._build_result(
+                    context,
+                    goal,
+                    AgentRunStatus.FAILED,
+                    _ERROR_CAPABILITY_UNAVAILABLE,
+                    steps=[],
+                )
 
         started_at = datetime.now(timezone.utc)
 

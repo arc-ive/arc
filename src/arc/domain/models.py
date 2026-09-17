@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, FrozenSet, List, Optional
 
 
 class UserRole(str, Enum):
@@ -1832,3 +1832,64 @@ class LlmUsageRecordsAggregate:
                 f"Invalid cost_coverage: {self.cost_coverage!r} "
                 "(expected 'full', 'partial', or 'none')"
             )
+
+
+# ---------------------------------------------------------------------------
+# Platform capability registry (V2-ADR-004 hierarchy, Issue #144)
+# ---------------------------------------------------------------------------
+
+KNOWN_CAPABILITIES: FrozenSet[str] = frozenset(
+    {
+        "skill_execution",
+        "tool_execution",
+        "agent_execution",
+        "connector_sync",
+    }
+)
+
+
+@dataclass(frozen=True)
+class PlatformCapability:
+    """Platform-level capability state (V2-ADR-004: hard ceiling).
+
+    One row per known capability. When ``enabled`` is ``False``, the
+    capability is unavailable to ALL tenants regardless of tenant
+    configuration (hard ceiling, PRD 6).
+    """
+
+    capability_id: str
+    enabled: bool
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self):
+        if not self.capability_id:
+            raise ValueError("Capability ID cannot be empty")
+        if self.capability_id not in KNOWN_CAPABILITIES:
+            raise ValueError(f"Unknown capability: {self.capability_id!r}")
+
+
+@dataclass(frozen=True)
+class TenantCapability:
+    """Tenant-level capability configuration (V2-ADR-004).
+
+    One row per (tenant_id, capability_id). When the platform capability
+    is enabled, the effective state is determined by this row: ``enabled``
+    means the tenant uses the capability; absent or ``disabled`` means
+    the tenant does not. A globally enabled capability is NOT
+    automatically enabled for every tenant (V2-ADR-004).
+    """
+
+    tenant_id: str
+    capability_id: str
+    enabled: bool
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self):
+        if not self.tenant_id:
+            raise ValueError("Tenant ID cannot be empty")
+        if not self.capability_id:
+            raise ValueError("Capability ID cannot be empty")
+        if self.capability_id not in KNOWN_CAPABILITIES:
+            raise ValueError(f"Unknown capability: {self.capability_id!r}")

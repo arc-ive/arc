@@ -5,6 +5,7 @@ import os
 
 from arc.db.connection import ArcDatabase
 from arc.repositories.approvals import PostgreSQLApprovalRequestRepository
+from arc.repositories.capabilities import PostgreSQLCapabilityRepository
 from arc.repositories.connector_credentials import (
     PostgreSQLConnectorCredentialRepository,
 )
@@ -24,6 +25,7 @@ from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
 from arc.security.encryption import EncryptionError, EncryptionService
 from arc.services.agent import AgentExecutionService
 from arc.services.approvals import HumanApprovalService
+from arc.services.capabilities import CapabilityService
 from arc.services.chunking import KnowledgeChunker
 from arc.services.connector_credentials import ConnectorCredentialService
 from arc.services.connector_providers import (
@@ -91,6 +93,7 @@ class Application:
             "observability": PostgreSQLObservabilityRepository(self.db),
             "approval_requests": PostgreSQLApprovalRequestRepository(self.db),
             "connector_credentials": PostgreSQLConnectorCredentialRepository(self.db),
+            "capability": PostgreSQLCapabilityRepository(self.db),
         }
 
         # Initialize services
@@ -103,6 +106,13 @@ class Application:
 
         # Initialize connector service
         self.services["connector_service"] = ConnectorService(self.repositories["connector"])
+
+        # Initialize capability service (V2-ADR-004, Issue #144): central
+        # capability resolution for platform/tenant enable/disable. This
+        # service is wired BEFORE execution services so they can consume it.
+        self.services["capability_service"] = CapabilityService(
+            self.repositories["capability"],
+        )
 
         # Initialize knowledge service (Company Brain foundation) with the
         # shared PII Guard boundary applied during ingestion. The Secure
@@ -143,6 +153,7 @@ class Application:
             build_platform_tool_registry(),
             self.repositories["tool_execution"],
             pii_guard=pii_guard,
+            capability_service=self.services["capability_service"],
         )
 
         # Initialize skill service
@@ -155,6 +166,7 @@ class Application:
         self.services["skill_execution_service"] = SkillExecutionService(
             skill_service=self.services["skill_service"],
             tool_service=self.services["tool_service"],
+            capability_service=self.services["capability_service"],
         )
 
         # Initialize Human Intervention approval service (V1 foundation,
@@ -196,6 +208,7 @@ class Application:
             skill_execution_service=self.services["skill_execution_service"],
             llm_provider=build_llm_provider(get_llm_settings()),
             observability_service=self.services["observability_service"],
+            capability_service=self.services["capability_service"],
         )
 
         # Initialize connector synchronization (provider integrations):
@@ -233,6 +246,7 @@ class Application:
                 self.repositories["knowledge"], indexer=retrieval_service
             ),
             connector_credential_service=credential_service,
+            capability_service=self.services["capability_service"],
         )
 
         # Initialize webhook ingestion (Webhooks foundation, PRD 16 /

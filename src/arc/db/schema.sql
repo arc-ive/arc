@@ -524,3 +524,33 @@ CREATE INDEX IF NOT EXISTS idx_llm_usage_records_agent_run_id
     WHERE agent_run_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_llm_usage_records_call_type
     ON llm_usage_records(call_type);
+
+
+-- Platform capability registry (V2-ADR-004, Issue #144):
+-- Platform-level enable/disable for each execution domain. Default
+-- disabled = hard ceiling by default. One row per known capability.
+CREATE TABLE IF NOT EXISTS platform_capabilities (
+    capability_id VARCHAR(100) PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tenant capability configuration (V2-ADR-004, Issue #144):
+-- Per-tenant enable/disable for each capability. When the platform
+-- capability is enabled, the effective state is determined by this
+-- row. enabled means the tenant uses the capability, absent or
+-- disabled means the tenant does not. A globally enabled capability
+-- is NOT automatically enabled for every tenant.
+CREATE TABLE IF NOT EXISTS tenant_capabilities (
+    tenant_id VARCHAR(255) NOT NULL,
+    capability_id VARCHAR(100) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, capability_id),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_capabilities_tenant_id
+    ON tenant_capabilities(tenant_id);

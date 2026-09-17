@@ -162,6 +162,17 @@ async def repositories(db):
     return tenant_repo, user_repo, membership_repo
 
 
+@pytest.fixture(autouse=True)
+async def _clean_capability_tables():
+    """Truncate capability tables before each test to prevent cross-module pollution."""
+    yield
+    db = ArcDatabase(DATABASE_URL)
+    await db.connect()
+    async with db._connection_pool.acquire() as conn:
+        await conn.execute("TRUNCATE TABLE tenant_capabilities, platform_capabilities CASCADE")
+    await db.disconnect()
+
+
 def unique_id(prefix: str) -> str:
     """Return a unique identifier for test data."""
     return f"x11-{prefix}-{uuid.uuid4().hex[:10]}"
