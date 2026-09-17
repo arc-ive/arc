@@ -99,6 +99,29 @@ class PostgreSQLWebhookEventRepository:
             )
             return [self._row_to_event(row) for row in rows]
 
+    async def list_for_tenant_paginated(self, tenant_id: str, limit: int, offset: int) -> tuple:
+        """List webhook events with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM webhook_events WHERE tenant_id = $1",
+                tenant_id,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                f"""
+                SELECT {_SELECT_COLUMNS}
+                FROM webhook_events
+                WHERE tenant_id = $1
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                tenant_id,
+                limit,
+                offset,
+            )
+            items = [self._row_to_event(row) for row in rows]
+            return items, total
+
     async def claim_for_processing(self, event_id: str, tenant_id: str) -> WebhookEvent:
         """Atomically transition an event from 'received' to 'processing'.
 

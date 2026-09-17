@@ -44,12 +44,12 @@ async def test_platform_administrator_can_list_tenants(
     )
     assert response.status_code == 200
     body = response.json()
-    assert isinstance(body, list)
+    assert isinstance(body["items"], list)
 
-    tenant_ids = {t["id"] for t in body}
+    tenant_ids = {t["id"] for t in body["items"]}
     assert target.id in tenant_ids
 
-    target_tenant = next(t for t in body if t["id"] == target.id)
+    target_tenant = next(t for t in body["items"] if t["id"] == target.id)
     assert "name" in target_tenant
     assert "status" in target_tenant
     assert "industry" in target_tenant
@@ -125,7 +125,7 @@ async def test_empty_directory_returns_empty_list(
     )
     assert response.status_code == 200
     body = response.json()
-    assert isinstance(body, list)
+    assert isinstance(body["items"], list)
 
 
 async def test_response_excludes_no_sensitive_fields(
@@ -144,7 +144,7 @@ async def test_response_excludes_no_sensitive_fields(
     assert response.status_code == 200
     body = response.json()
 
-    target_tenant = next(t for t in body if t["id"] == target.id)
+    target_tenant = next(t for t in body["items"] if t["id"] == target.id)
     expected_keys = {"id", "name", "status", "industry", "created_at", "updated_at"}
     assert set(target_tenant.keys()) == expected_keys
 

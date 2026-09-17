@@ -95,6 +95,15 @@ class ObservabilityService:
         window = self._validated_window(hours)
         return await self.repository.list_agent_run_records(tenant_id, window)
 
+    async def list_agent_run_traces_paginated(
+        self, tenant_id: str, hours: int, limit: int, offset: int
+    ) -> tuple:
+        """List agent run traces with LIMIT/OFFSET and total count."""
+        window = self._validated_window(hours)
+        return await self.repository.list_agent_run_records_paginated(
+            tenant_id, window, limit, offset
+        )
+
     # ------------------------------------------------------------------
     # LLM usage telemetry write path (best effort; V2-ADR-024, Issue #141)
     # ------------------------------------------------------------------

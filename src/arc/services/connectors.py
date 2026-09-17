@@ -8,7 +8,6 @@ callers.
 
 import uuid
 from datetime import datetime
-from typing import List
 
 from arc.domain.models import (
     ConnectorConfig,
@@ -57,9 +56,15 @@ class ConnectorService:
         """Get a connector configuration by ID within a tenant."""
         return await self.connector_repo.get_by_id(connector_id, context.tenant_id)
 
-    async def list_connectors(self, context: TenantContext) -> List[ConnectorConfig]:
+    async def list_connectors(self, context: TenantContext) -> list:
         """List all connector configurations for a tenant."""
         return await self.connector_repo.list_for_tenant(context.tenant_id)
+
+    async def list_connectors_paginated(
+        self, context: TenantContext, limit: int, offset: int
+    ) -> tuple:
+        """List connectors with LIMIT/OFFSET and total count."""
+        return await self.connector_repo.list_for_tenant_paginated(context.tenant_id, limit, offset)
 
     async def delete_connector(self, context: TenantContext, connector_id: str) -> None:
         """Delete a connector configuration within a tenant."""

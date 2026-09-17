@@ -308,7 +308,7 @@ class TestWebhookListingAuthorization:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_webhook_read_permission_constant_exists(self):
         assert WEBHOOK_READ.resource == "webhook"
@@ -349,7 +349,7 @@ class TestWebhookListingIsolation:
             headers={"Authorization": f"Bearer {token_b}"},
         )
         assert foreign.status_code == 200
-        assert foreign.json() == []
+        assert foreign.json()["items"] == []
 
         await membership_repo.delete(membership_b.id)
         await user_repo.delete(other_user.id)
@@ -386,7 +386,7 @@ class TestWebhookListingIsolation:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert listing.status_code == 200
-        events = listing.json()
+        events = listing.json()["items"]
         assert len(events) == 1
         assert events[0]["id"] == event_id
         assert "external-content" not in json.dumps(events)

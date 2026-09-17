@@ -9,6 +9,8 @@ the trusted ``TenantContext`` can never be influenced by model output.
 
 import uuid
 from collections import deque
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import BaseModel, ConfigDict
@@ -22,12 +24,14 @@ from arc.domain.models import (
     TenantContext,
     UserRole,
 )
+from arc.repositories.observability import PostgreSQLObservabilityRepository
 from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.security.authorization import TOOL_EXECUTE, AuthorizationService
 from arc.security.models import ApplicationRole, AuthenticatedPrincipal
 from arc.services.agent import MAX_AGENT_STEPS, AgentExecutionService
 from arc.services.llm import DeterministicLlmProvider
+from arc.services.observability import ObservabilityService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 from arc.services.tools import (
@@ -68,7 +72,7 @@ def _authorization(user_id: str = "user-1") -> AuthorizationService:
     return AuthorizationService({user_id: ApplicationRole.OPERATIONS_USER})
 
 
-async def _build_environment(repositories, db, decisions=None):
+async def _build_environment(repositories, db, decisions=None, observability_service=None):
     """Wire the real stack plus a scripted decision provider.
 
     Returns the agent under test together with everything needed to prove
@@ -122,6 +126,7 @@ async def _build_environment(repositories, db, decisions=None):
         skill_service=skill_service,
         skill_execution_service=engine,
         llm_provider=DeterministicLlmProvider(skill_decision_script=_script),
+        observability_service=observability_service,
     )
 
     return {
@@ -451,3 +456,260 @@ class TestRequestValidation:
         env = await _build_environment(repositories, db)
         with pytest.raises(ValueError, match="Invalid tenant context"):
             await env["agent"].run(None, env["principal"], "goal", env["authorization"])
+
+
+# ------------------------------------------------------------------
+# Issue #143: Service-layer trace persistence
+# ------------------------------------------------------------------
+
+
+async def _build_environment_with_observability(repositories, db, decisions=None):
+    """Build the full stack with a real ObservabilityService wired."""
+    tenant_repo, _, _ = repositories
+    observability_repo = PostgreSQLObservabilityRepository(db)
+    observability_svc = ObservabilityService(repository=observability_repo)
+    env = await _build_environment(
+        repositories,
+        db,
+        decisions=decisions,
+        observability_service=observability_svc,
+    )
+    env["observability_service"] = observability_svc
+    return env
+
+
+class TestTracePersistence:
+    """Prove every terminal outcome persists an AgentRunRecord from the service."""
+
+    async def test_success_persists_trace(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        # Trace persisted by the service layer
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        trace = traces[0]
+        assert trace.id == result.id
+        assert trace.tenant_id == env["tenant"].id
+        assert trace.status == "succeeded"
+        assert trace.error_kind is None
+        assert len(trace.steps) == 1
+        assert trace.steps[0].skill_id == skill.id
+
+    async def test_failure_persists_trace(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        bad = await _create_skill(env, allowed_tools=["check_service_health", "ghost_tool"])
+        env["queue"].extend([_decision(bad.id, "ghost_tool")])
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.FAILED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].status == "failed"
+        assert traces[0].error_kind == "unknown_tool"
+
+    async def test_approval_required_persists_trace(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        gated = await _create_skill(env, approval_required=True)
+        env["queue"].append(_decision(gated.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.APPROVAL_REQUIRED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].status == "approval_required"
+
+    async def test_max_steps_persists_trace(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skills = [await _create_skill(env) for _ in range(3)]
+        for skill in skills:
+            env["queue"].append(_decision(skill.id, "echo_tool", marker=skill.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.MAX_STEPS_REACHED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].status == "max_steps_reached"
+        assert len(traces[0].steps) == 3
+
+    async def test_no_decision_persists_trace(self, repositories, db):
+        """Provider declines with no executed steps — trace still persists."""
+        env = await _build_environment_with_observability(repositories, db)
+        await _create_skill(env)
+        env["queue"].append(None)
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "no_decision"
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].status == "failed"
+        assert traces[0].error_kind == "no_decision"
+        assert traces[0].steps == []
+
+    async def test_invalid_decision_persists_trace(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        await _create_skill(env)
+        env["queue"].append({})
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "invalid_decision"
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].error_kind == "invalid_decision"
+
+    async def test_capability_unavailable_persists_trace(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        env["agent"].llm_provider = DeterministicLlmProvider()  # unarmed
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "agent_capability_unavailable"
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].error_kind == "agent_capability_unavailable"
+
+
+class TestTraceDuration:
+    """Verify started_at and completed_at are populated and ordered."""
+
+    async def test_timestamps_present_and_ordered(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        before = datetime.now(timezone.utc)
+        await env["agent"].run(env["context"], env["principal"], "goal", env["authorization"])
+        after = datetime.now(timezone.utc)
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        trace = traces[0]
+
+        assert trace.started_at is not None
+        assert trace.completed_at is not None
+        assert trace.started_at >= before
+        assert trace.completed_at <= after
+        assert trace.completed_at >= trace.started_at
+
+    async def test_timestamps_present_on_failure(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        bad = await _create_skill(env, allowed_tools=["check_service_health", "ghost_tool"])
+        env["queue"].append(_decision(bad.id, "ghost_tool"))
+
+        await env["agent"].run(env["context"], env["principal"], "goal", env["authorization"])
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        trace = traces[0]
+        assert trace.started_at is not None
+        assert trace.completed_at is not None
+        assert trace.completed_at >= trace.started_at
+
+
+class TestTraceMetadata:
+    """Verify trace captures the full TRD §19 metadata."""
+
+    async def test_trace_captures_tenant_principal_goal_steps(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        await env["agent"].run(
+            env["context"], env["principal"], "check the payment service", env["authorization"]
+        )
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        trace = traces[0]
+        assert trace.tenant_id == env["tenant"].id
+        assert trace.principal_id == env["principal"].user_id
+        assert trace.goal == "check the payment service"
+        assert len(trace.steps) == 1
+        assert trace.steps[0].skill_id == skill.id
+        assert trace.steps[0].skill_name == skill.name
+
+
+class TestBestEffortPersistence:
+    """Trace persistence failures must never fail the business response."""
+
+    async def test_persistence_failure_does_not_fail_business_response(self, repositories, db):
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        # Inject a broken observability service that always raises
+        broken_obs = AsyncMock()
+        broken_obs.record_agent_run = AsyncMock(side_effect=RuntimeError("db down"))
+        env["agent"].observability_service = broken_obs
+
+        # Business response must still succeed
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        # The persistence was attempted
+        broken_obs.record_agent_run.assert_called_once()
+
+
+class TestNoDuplicatePersistence:
+    """Controller-mediated execution must produce exactly one trace record."""
+
+    async def test_single_persistence_per_run(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        # No duplicate: the controller no longer persists
+        assert traces[0].id == result.id
+
+
+class TestServiceIndependence:
+    """Trace persists when invoking the service directly (no controller)."""
+
+    async def test_service_direct_invocation_persists_trace(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        # Direct service call — no API controller involved
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        # Trace still persisted by the service
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].id == result.id

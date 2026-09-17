@@ -1584,9 +1584,13 @@ class AgentRunRecordStep:
 class AgentRunRecord:
     """Persisted agent execution trace (PRD 17 O-6).
 
-    Written by the Observability write path after each bounded Agent
-    run completes. Provides queryable audit of which tenant, principal,
-    goal, skill selections, tool invocations, and outcomes occurred.
+    Written by the service layer after each bounded Agent run completes.
+    Provides queryable audit of which tenant, principal, goal, skill
+    selections, tool invocations, and outcomes occurred.
+
+    ``started_at`` records when the Agent run began; ``completed_at``
+    records when the terminal outcome was determined.  The controller
+    no longer owns trace persistence (Issue #143).
     """
 
     id: str
@@ -1597,6 +1601,8 @@ class AgentRunRecord:
     error_kind: Optional[str] = None
     steps: List[AgentRunRecordStep] = field(default_factory=list)
     created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
     def __post_init__(self):
         if not self.id:
