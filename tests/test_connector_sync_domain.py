@@ -1,7 +1,7 @@
 """Domain model tests for ConnectorSyncRecord audit entities."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -24,7 +24,7 @@ def _record(**overrides):
         provider=ConnectorProvider.GITHUB,
         status=ConnectorSyncStatus.SUCCESS,
         items_fetched=3,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
     )
     values.update(overrides)
     return ConnectorSyncRecord(**values)

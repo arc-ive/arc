@@ -1,6 +1,6 @@
 """Skill execution domain model tests (validation, fail-closed invariants)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -37,7 +37,7 @@ def _result(status=SkillExecutionStatus.SUCCEEDED, **overrides) -> SkillExecutio
         "status": status,
         "steps": [_step()],
         "error_kind": None,
-        "created_at": datetime.now(),
+        "created_at": datetime.now(timezone.utc),
     }
     values.update(overrides)
     return SkillExecutionResult(**values)

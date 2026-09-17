@@ -8,7 +8,7 @@ be retrievable or listable by tenant B.
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -55,7 +55,7 @@ def _chunks(document: KnowledgeDocument, count: int = 2, **overrides):
             tenant_id=document.tenant_id,
             content=f"chunk content number {index}",
             sequence=index,
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
         )
         for index in range(count)
     ]
@@ -340,7 +340,7 @@ class TestKnowledgeDocumentIdentity:
             content="new content",
             external_id=document.external_id,
             created_at=document.created_at,
-            updated_at=datetime.now(),
+            updated_at=datetime.now(timezone.utc),
         )
         new_chunks = _chunks(document, count=1)
         result = await knowledge_repo.update_document_with_chunks(
@@ -379,7 +379,7 @@ class TestKnowledgeDocumentIdentity:
                 tenant_id=document.tenant_id,
                 content="new chunk a",
                 sequence=0,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
             ),
             KnowledgeChunk(
                 id="duplicate-chunk-id",
@@ -387,7 +387,7 @@ class TestKnowledgeDocumentIdentity:
                 tenant_id=document.tenant_id,
                 content="new chunk b",
                 sequence=1,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
             ),
         ]
         bumped = KnowledgeDocument(
@@ -400,7 +400,7 @@ class TestKnowledgeDocumentIdentity:
             content="doomed new content",
             external_id=document.external_id,
             created_at=document.created_at,
-            updated_at=datetime.now(),
+            updated_at=datetime.now(timezone.utc),
         )
         with pytest.raises(DuplicateKeyError):
             await knowledge_repo.update_document_with_chunks(

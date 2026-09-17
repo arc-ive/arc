@@ -13,7 +13,7 @@ pgvector extension). They verify:
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -51,7 +51,7 @@ def _chunks(document: KnowledgeDocument, count: int = 2):
             tenant_id=document.tenant_id,
             content=f"chunk content number {index}",
             sequence=index,
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
         )
         for index in range(count)
     ]

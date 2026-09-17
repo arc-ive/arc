@@ -6,7 +6,7 @@ URL must be built from the FRONTEND_URL environment variable.
 """
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -66,8 +66,8 @@ def _make_success_session():
     session = MagicMock()
     session.id = "test-session-id"
     session.csrf_token = "test-csrf-token"
-    session.created_at = datetime.now()
-    session.expires_at = datetime.now() + timedelta(hours=24)
+    session.created_at = datetime.now(timezone.utc)
+    session.expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
     return session
 
 
