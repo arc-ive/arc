@@ -378,14 +378,18 @@ class TestLlmUsageRecordsDeterministicOrdering:
     """Regression: records sharing created_at must sort deterministically by id ASC."""
 
     async def test_same_timestamp_records_order_by_id_asc(self, db):
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
 
         from arc.repositories.tenancy import PostgreSQLTenantRepository
 
         tenants = PostgreSQLTenantRepository(db)
         tenant = await tenants.create(Tenant(id=f"obs-det-{uuid.uuid4().hex[:6]}", name="Det"))
         try:
-            stamp = datetime(2026, 9, 16, 10, 0, 0, tzinfo=timezone.utc)
+            # Relative to now, not a fixed date: the query below filters on a
+            # rolling 24-hour window, so a hardcoded timestamp silently leaves
+            # that window once enough real time passes and the test starts
+            # failing on an unrelated commit.
+            stamp = datetime.now(timezone.utc) - timedelta(hours=1)
             # Insert three records with identical created_at, descending id order.
             ids = [f"llm-det-{i}-{uuid.uuid4().hex[:4]}" for i in range(3)]
             async with db._connection_pool.acquire() as conn:
