@@ -687,9 +687,7 @@ class TestKnowledgeExternalId:
 
 class TestKnowledgeDeleteAuthentication:
     def test_delete_requires_authentication(self, client):
-        response = client.delete(
-            f"/tenants/{_unique('tenant')}/knowledge/{_unique('doc')}"
-        )
+        response = client.delete(f"/tenants/{_unique('tenant')}/knowledge/{_unique('doc')}")
         assert response.status_code == 401
 
 
@@ -762,9 +760,7 @@ class TestKnowledgeDeleteAuthorization:
         )
         assert response.status_code == 204
 
-    async def test_employee_cannot_delete(
-        self, client, seeded, make_token, authorization_override
-    ):
+    async def test_employee_cannot_delete(self, client, seeded, make_token, authorization_override):
         """EMPLOYEE holds knowledge:read only, not knowledge:delete."""
         tenant, user, _ = seeded
         authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
