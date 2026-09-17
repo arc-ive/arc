@@ -371,6 +371,7 @@ _RESET_TABLES = [
     "knowledge_chunks",
     "connector_sync_records",
     "tool_execution_records",
+    "skill_execution_records",
     "webhook_events",
     "api_request_records",
     "approval_requests",

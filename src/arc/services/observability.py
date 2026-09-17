@@ -169,6 +169,7 @@ class ObservabilityService:
         window = self._validated_window(hours)
         http = await self.repository.api_request_summary(tenant_id, window)
         tools = await self.repository.tool_execution_activity(tenant_id, window)
+        skills = await self.repository.skill_execution_activity(tenant_id, window)
         connectors = await self.repository.connector_sync_activity(tenant_id, window)
         webhooks = await self.repository.webhook_event_activity(tenant_id, window)
         approvals = await self.repository.approval_activity(tenant_id, window)
@@ -183,6 +184,13 @@ class ObservabilityService:
                 "successful": tools.successful,
                 "failed": tools.failed,
                 "denied": tools.denied,
+            },
+            "skills": {
+                "total_executions": skills.total_executions,
+                "succeeded": skills.succeeded,
+                "failed": skills.failed,
+                "approval_required": skills.approval_required,
+                "denied": skills.denied,
             },
             "connectors": {
                 "total_syncs": connectors.total_syncs,
@@ -225,6 +233,7 @@ class ObservabilityService:
         window = self._validated_window(hours)
         http = await self.repository.api_request_summary(None, window)
         tools = await self.repository.tool_execution_activity(None, window)
+        skills = await self.repository.skill_execution_activity(None, window)
         connectors = await self.repository.connector_sync_activity(None, window)
         webhooks = await self.repository.webhook_event_activity(None, window)
         approvals = await self.repository.approval_activity(None, window)
@@ -235,6 +244,8 @@ class ObservabilityService:
             "http": self._http_payload(http),
             "tool_activity_total": tools.total_executions,
             "tool_failures_total": tools.failed + tools.denied,
+            "skill_activity_total": skills.total_executions,
+            "skill_failures_total": skills.failed + skills.denied,
             "connector_syncs_total": connectors.total_syncs,
             "connector_failures_total": connectors.failed,
             "webhook_events_total": webhooks.total_events if webhooks.available else 0,

@@ -31,6 +31,7 @@ from arc.domain.models import (
     HttpUsageMetrics,
     LlmUsageActivityMetrics,
     LlmUsageRecord,
+    SkillExecutionActivityMetrics,
     ToolExecutionActivityMetrics,
     WebhookEventActivityMetrics,
 )
@@ -133,6 +134,32 @@ class PostgreSQLObservabilityRepository:
             total_executions=row["total"],
             successful=row["successful"],
             failed=row["failed"],
+            denied=row["denied"],
+        )
+
+    async def skill_execution_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> SkillExecutionActivityMetrics:
+        """Aggregate authoritative skill execution records in place."""
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'succeeded') AS succeeded,
+                       COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+                       COUNT(*) FILTER (WHERE status = 'approval_required') AS approval_required,
+                       COUNT(*) FILTER (WHERE status = 'denied') AS denied
+                FROM skill_execution_records
+                WHERE {self._scope_clause()}
+                """,
+                tenant_id,
+                hours,
+            )
+        return SkillExecutionActivityMetrics(
+            total_executions=row["total"],
+            succeeded=row["succeeded"],
+            failed=row["failed"],
+            approval_required=row["approval_required"],
             denied=row["denied"],
         )
 
