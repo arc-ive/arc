@@ -383,9 +383,7 @@ class TestLlmUsageRecordsDeterministicOrdering:
         from arc.repositories.tenancy import PostgreSQLTenantRepository
 
         tenants = PostgreSQLTenantRepository(db)
-        tenant = await tenants.create(
-            Tenant(id=f"obs-det-{uuid.uuid4().hex[:6]}", name="Det")
-        )
+        tenant = await tenants.create(Tenant(id=f"obs-det-{uuid.uuid4().hex[:6]}", name="Det"))
         try:
             stamp = datetime(2026, 9, 16, 10, 0, 0, tzinfo=timezone.utc)
             # Insert three records with identical created_at, descending id order.
@@ -406,15 +404,11 @@ class TestLlmUsageRecordsDeterministicOrdering:
 
             repo = PostgreSQLObservabilityRepository(db)
             # Page 1: first 2 records.
-            page1, total = await repo.llm_usage_records_page(
-                tenant.id, 24, None, 2, 0
-            )
+            page1, total = await repo.llm_usage_records_page(tenant.id, 24, None, 2, 0)
             assert total == 3
             assert len(page1) == 2
             # Page 2: remaining 1 record.
-            page2, total2 = await repo.llm_usage_records_page(
-                tenant.id, 24, None, 2, 2
-            )
+            page2, total2 = await repo.llm_usage_records_page(tenant.id, 24, None, 2, 2)
             assert total2 == 3
             assert len(page2) == 1
 
@@ -425,9 +419,7 @@ class TestLlmUsageRecordsDeterministicOrdering:
             )
 
             # With call_type filter (branch 1): same deterministic ordering.
-            page_ft, total_ft = await repo.llm_usage_records_page(
-                tenant.id, 24, "complete", 2, 0
-            )
+            page_ft, total_ft = await repo.llm_usage_records_page(tenant.id, 24, "complete", 2, 0)
             assert total_ft == 3
             ft_ids = [r["id"] for r in page_ft]
             assert ft_ids == sorted(ft_ids)
