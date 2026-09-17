@@ -678,3 +678,342 @@ class TestKnowledgeExternalId:
         )
         assert read.status_code == 200
         assert read.json()["external_id"] == "test-ext-get-response"
+
+
+# ---------------------------------------------------------------------------
+# DELETE /tenants/{tenant_id}/knowledge/{document_id}  (Issue #130)
+# ---------------------------------------------------------------------------
+
+
+class TestKnowledgeDeleteAuthentication:
+    def test_delete_requires_authentication(self, client):
+        response = client.delete(
+            f"/tenants/{_unique('tenant')}/knowledge/{_unique('doc')}"
+        )
+        assert response.status_code == 401
+
+
+class TestKnowledgeDeleteAuthorization:
+    async def test_delete_requires_knowledge_delete_permission(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """OPERATIONS_USER lacks knowledge:delete and is rejected."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        # First create a document with a role that CAN create.
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-auth-test"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        # Now switch to OPERATIONS_USER and attempt delete.
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        response = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+    async def test_company_administrator_can_delete(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-company-admin"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        response = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 204
+
+    async def test_platform_administrator_can_delete(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-platform-admin"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        response = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 204
+
+    async def test_employee_cannot_delete(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """EMPLOYEE holds knowledge:read only, not knowledge:delete."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-employee-test"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        response = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+
+class TestKnowledgeDeleteTenantIsolation:
+    async def test_cross_tenant_delete_is_denied(
+        self, client, repositories, seeded, make_token, authorization_override
+    ):
+        """Tenant B cannot delete a document belonging to Tenant A."""
+        tenant_a, user_a, _ = seeded
+        tenant_repo, user_repo, membership_repo = repositories
+
+        user_b = await user_repo.create(
+            User(id=_unique("user-b"), email=f"{uuid.uuid4().hex}@example.com", username="b")
+        )
+        tenant_b = await tenant_repo.create(Tenant(id=_unique("tenant-b"), name="Tenant B"))
+        membership_b = await membership_repo.create(
+            Membership(id=_unique("membership"), user_id=user_b.id, tenant_id=tenant_b.id)
+        )
+        authorization_override(
+            {
+                user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        # Tenant A creates a document.
+        token_a = make_token(user_a.id)
+        create = client.post(
+            f"/tenants/{tenant_a.id}/knowledge",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json=_knowledge_payload(content="Tenant A secret", provenance="tenant-a-doc"),
+        )
+        assert create.status_code == 200
+        document_id = create.json()["id"]
+
+        # Tenant B attempts to delete Tenant A's document -> 404.
+        token_b = make_token(user_b.id)
+        response = client.delete(
+            f"/tenants/{tenant_b.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token_b}"},
+        )
+        assert response.status_code == 404
+
+        # Tenant A's document still exists.
+        read = client.get(
+            f"/tenants/{tenant_a.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert read.status_code == 200
+
+        await membership_repo.delete(membership_b.id)
+        await user_repo.delete(user_b.id)
+        await tenant_repo.delete(tenant_b.id)
+
+    async def test_delete_own_document_succeeds(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-own-doc"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        delete = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert delete.status_code == 204
+
+
+class TestKnowledgeDeleteBehavior:
+    async def test_delete_nonexistent_returns_404(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{_unique('nonexistent')}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404
+
+    async def test_delete_then_get_returns_404(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """After deletion, GET by document ID returns 404."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-then-get"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        delete = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert delete.status_code == 204
+
+        get = client.get(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert get.status_code == 404
+
+    async def test_delete_then_list_excludes_document(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """After deletion, the document no longer appears in list."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-then-list"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        delete = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert delete.status_code == 204
+
+        listing = client.get(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert listing.status_code == 200
+        doc_ids = [d["id"] for d in listing.json()["items"]]
+        assert doc_id not in doc_ids
+
+    async def test_delete_returns_204_no_content(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Successful delete returns 204 with empty body."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-204-check"),
+        )
+        assert create.status_code == 200
+        doc_id = create.json()["id"]
+
+        response = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 204
+        assert response.content == b"" or response.content is None
+
+    async def test_delete_does_not_affect_other_documents(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Deleting one document does not affect other documents in the tenant."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        create1 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-isolation-1", content="First doc."),
+        )
+        assert create1.status_code == 200
+        doc1_id = create1.json()["id"]
+
+        create2 = client.post(
+            f"/tenants/{tenant.id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_knowledge_payload(provenance="delete-isolation-2", content="Second doc."),
+        )
+        assert create2.status_code == 200
+        doc2_id = create2.json()["id"]
+
+        # Delete doc1.
+        delete = client.delete(
+            f"/tenants/{tenant.id}/knowledge/{doc1_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert delete.status_code == 204
+
+        # doc2 still exists.
+        read = client.get(
+            f"/tenants/{tenant.id}/knowledge/{doc2_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert read.status_code == 200
+        assert read.json()["id"] == doc2_id
+
+    async def test_mismatched_path_tenant_cannot_delete(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Path tenant mismatch is rejected with 403 before reaching the repository."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        other_tenant_id = _unique("other-tenant")
+        mismatched_context = TenantContext(
+            tenant_id=other_tenant_id,
+            tenant_name="Other Tenant",
+            user_id=user.id,
+            role=UserRole.MEMBER,
+        )
+        app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
+        try:
+            response = client.delete(
+                f"/tenants/{tenant.id}/knowledge/{_unique('doc')}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert response.status_code == 403
+        finally:
+            app.dependency_overrides.pop(get_trusted_tenant_context, None)

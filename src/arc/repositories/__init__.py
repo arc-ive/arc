@@ -280,6 +280,15 @@ class KnowledgeRepository(Protocol):
         """Get a knowledge document by ID, scoped to a tenant."""
         ...
 
+    async def delete_by_id(self, document_id: str, tenant_id: str) -> None:
+        """Delete a knowledge document and its chunks, scoped to a tenant.
+
+        Deletes the document row; dependent chunks are removed by
+        ``ON DELETE CASCADE``.  Raises ``NotFoundError`` when the document
+        does not exist in the given tenant.
+        """
+        ...
+
     async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
         """List all knowledge documents for a tenant."""
         ...
