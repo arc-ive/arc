@@ -7,12 +7,12 @@ export async function createUser(payload) {
 
 export async function listPlatformUsers() {
   const { data } = await client.get('/platform/users')
-  return data
+  return data.items
 }
 
 export async function getTenantUsers(tenantId) {
   const { data } = await client.get(
     `/tenants/${encodeURIComponent(tenantId)}/users`,
   )
-  return data
+  return data.items
 }

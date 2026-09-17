@@ -405,6 +405,8 @@ CREATE TABLE IF NOT EXISTS agent_run_records (
     error_kind VARCHAR(100),
     steps JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT ck_agent_run_records_status
         CHECK (status IN ('succeeded', 'failed', 'approval_required', 'max_steps_reached'))

@@ -100,6 +100,41 @@ class PostgreSQLConnectorRepository:
                 for row in rows
             ]
 
+    async def list_for_tenant_paginated(self, tenant_id: str, limit: int, offset: int) -> tuple:
+        """List connector configs with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM connector_configs WHERE tenant_id = $1",
+                tenant_id,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                """
+                SELECT id, tenant_id, provider, name, target, status, created_at, updated_at
+                FROM connector_configs
+                WHERE tenant_id = $1
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                tenant_id,
+                limit,
+                offset,
+            )
+            items = [
+                ConnectorConfig(
+                    id=row["id"],
+                    tenant_id=row["tenant_id"],
+                    provider=ConnectorProvider(row["provider"]),
+                    name=row["name"],
+                    target=row["target"],
+                    status=ConnectorStatus(row["status"]),
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+            return items, total
+
     async def exists(self, connector_id: str, tenant_id: str) -> bool:
         """Check if a connector configuration exists within a tenant."""
         try:

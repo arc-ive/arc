@@ -21,7 +21,7 @@ from typing import List
 import asyncpg
 
 from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
-from arc.domain.models import Skill, SkillStatus
+from arc.domain.models import Skill, SkillRiskLevel, SkillStatus
 
 
 class PostgreSQLSkillRepository:
@@ -68,7 +68,7 @@ class PostgreSQLSkillRepository:
             expected_output=definition.get("expected_output"),
             failure_behavior=definition.get("failure_behavior"),
             provenance=definition.get("provenance"),
-            risk=definition.get("risk"),
+            risk=SkillRiskLevel(definition["risk"]) if definition.get("risk") else None,
         )
 
     async def create(self, skill: Skill) -> Skill:
@@ -132,6 +132,30 @@ class PostgreSQLSkillRepository:
                 tenant_id,
             )
             return [self._from_row(row) for row in rows]
+
+    async def list_for_tenant_paginated(self, tenant_id: str, limit: int, offset: int) -> tuple:
+        """List skills for a tenant with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM skills WHERE tenant_id = $1",
+                tenant_id,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                """
+                SELECT id, tenant_id, name, version, purpose, status,
+                       definition, created_at, updated_at
+                FROM skills
+                WHERE tenant_id = $1
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                tenant_id,
+                limit,
+                offset,
+            )
+            items = [self._from_row(row) for row in rows]
+            return items, total
 
     async def exists(self, skill_id: str, tenant_id: str) -> bool:
         """Check if a skill exists within a tenant."""

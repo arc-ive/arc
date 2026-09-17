@@ -44,13 +44,13 @@ async def test_platform_administrator_can_list_users(
     )
     assert response.status_code == 200
     body = response.json()
-    assert isinstance(body, list)
+    assert isinstance(body["items"], list)
 
-    user_ids = {u["id"] for u in body}
+    user_ids = {u["id"] for u in body["items"]}
     assert target.id in user_ids
     assert admin.id in user_ids
 
-    target_user = next(u for u in body if u["id"] == target.id)
+    target_user = next(u for u in body["items"] if u["id"] == target.id)
     assert "email" in target_user
     assert "username" in target_user
     assert "status" in target_user
@@ -128,7 +128,7 @@ async def test_empty_directory_returns_empty_list(
     )
     assert response.status_code == 200
     body = response.json()
-    assert isinstance(body, list)
+    assert isinstance(body["items"], list)
 
     _, user_repo, _ = repositories
     await user_repo.delete(admin.id)
@@ -150,7 +150,7 @@ async def test_response_excludes_no_sensitive_fields(
     assert response.status_code == 200
     body = response.json()
 
-    target_user = next(u for u in body if u["id"] == target.id)
+    target_user = next(u for u in body["items"] if u["id"] == target.id)
     expected_keys = {"id", "email", "username", "status", "created_at", "updated_at"}
     assert set(target_user.keys()) == expected_keys
 

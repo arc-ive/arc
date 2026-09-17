@@ -6,7 +6,7 @@ export async function listApprovals(tenantId, { status } = {}) {
   const response = await client.get(`/tenants/${encodeURIComponent(tenantId)}/approvals`, {
     params,
   })
-  return response.data
+  return response.data.items
 }
 
 export async function getApproval(tenantId, approvalId) {

@@ -474,7 +474,7 @@ class TestAgentRunTraceEndpoints:
         url = f"/tenants/{tenant.id}/observability/agent-runs"
         response = _authed_get(client, url, token)
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     async def test_get_nonexistent_agent_run_returns_404(
         self, client, two_tenants, make_token, authorization_override

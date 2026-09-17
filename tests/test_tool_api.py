@@ -98,7 +98,7 @@ class TestToolCatalog:
         response = client.get(f"/tenants/{tenant.id}/tools", headers=_auth_headers(token))
 
         assert response.status_code == 200
-        tools = response.json()
+        tools = response.json()["items"]
         assert [tool["name"] for tool in tools] == ["check_service_health"]
         tool = tools[0]
         assert tool["version"] == "1"
@@ -120,7 +120,7 @@ class TestToolCatalog:
         response = client.get(f"/tenants/{tenant.id}/tools", headers=_auth_headers(token))
 
         assert response.status_code == 200
-        assert all("handler" not in tool for tool in response.json())
+        assert all("handler" not in tool for tool in response.json()["items"])
 
     async def test_employee_cannot_list_tools(
         self, client, repositories, make_token, authorization_override

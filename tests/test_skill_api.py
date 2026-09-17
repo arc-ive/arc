@@ -109,7 +109,7 @@ class TestSkillRolePermissions:
 
         listed = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
         assert listed.status_code == 200
-        assert any(skill["id"] == skill_id for skill in listed.json())
+        assert any(skill["id"] == skill_id for skill in listed.json()["items"])
 
         fetched = client.get(f"/skills/{skill_id}?tenant_id={tenant.id}", headers=headers)
         assert fetched.status_code == 200
@@ -282,8 +282,9 @@ class TestSkillTenantIsolation:
             f"/skills?tenant_id={tenant.id}", headers={"Authorization": f"Bearer {token}"}
         )
         assert listed.status_code == 200
-        assert len(listed.json()) == 1
-        assert listed.json()[0]["tenant_id"] == tenant.id
+        items = listed.json()["items"]
+        assert len(items) == 1
+        assert items[0]["tenant_id"] == tenant.id
 
     async def test_caller_supplied_tenant_id_cannot_override_trusted_context(
         self, client, repositories, make_token, authorization_override
@@ -337,7 +338,7 @@ class TestSkillTenantIsolation:
             f"/skills?tenant_id={tenant_a.id}", headers={"Authorization": f"Bearer {token_a}"}
         )
         assert listed.status_code == 200
-        assert [skill["id"] for skill in listed.json()] == [created_a.json()["id"]]
+        assert [skill["id"] for skill in listed.json()["items"]] == [created_a.json()["id"]]
 
     async def test_get_returns_current_tenant_skill(
         self, client, repositories, make_token, authorization_override
@@ -1137,6 +1138,52 @@ class TestSkillRiskField:
         )
         assert updated.status_code == 200
         assert updated.json()["risk"] == "medium"
+
+    async def test_create_skill_with_invalid_risk_rejected(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Creating a Skill with an invalid risk value returns 400."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(risk="critical"),
+        )
+        assert response.status_code == 400
+        assert "risk" in response.json()["detail"].lower()
+
+    async def test_update_skill_with_invalid_risk_rejected(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Updating a Skill with an invalid risk value returns 400."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        created = client.post(
+            f"/skills?tenant_id={tenant.id}",
+            headers=headers,
+            json=_skill_payload(),
+        )
+        assert created.status_code == 200
+        skill_id = created.json()["id"]
+
+        response = client.put(
+            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            headers=headers,
+            json={"risk": "invalid"},
+        )
+        assert response.status_code == 400
+        assert "risk" in response.json()["detail"].lower()
 
 
 class TestSkillRouteSurface:

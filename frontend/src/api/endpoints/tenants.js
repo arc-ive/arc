@@ -2,12 +2,12 @@ import client from '../client.js'
 
 export async function getUserTenants(userId) {
   const { data } = await client.get(`/users/${encodeURIComponent(userId)}/tenants`)
-  return data
+  return data.items
 }
 
 export async function getPlatformTenants() {
   const { data } = await client.get('/platform/tenants')
-  return data
+  return data.items
 }
 
 export async function getTenant(tenantId) {

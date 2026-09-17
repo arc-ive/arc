@@ -22,7 +22,7 @@ unsanitized content is persisted and a PiiGuardError is raised.
 
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import (
@@ -218,9 +218,15 @@ class KnowledgeService:
         """Get a knowledge document by ID within a tenant."""
         return await self.knowledge_repo.get_by_id(document_id, context.tenant_id)
 
-    async def list_documents(self, context: TenantContext) -> List[KnowledgeDocument]:
+    async def list_documents(self, context: TenantContext) -> list:
         """List ACTIVE knowledge documents for a tenant."""
         return await self.knowledge_repo.list_for_tenant(context.tenant_id)
+
+    async def list_documents_paginated(
+        self, context: TenantContext, limit: int, offset: int
+    ) -> tuple:
+        """List ACTIVE knowledge documents with LIMIT/OFFSET and total count."""
+        return await self.knowledge_repo.list_for_tenant_paginated(context.tenant_id, limit, offset)
 
     async def archive_legacy_duplicates(
         self, dry_run: bool = True, tenant_id: Optional[str] = None

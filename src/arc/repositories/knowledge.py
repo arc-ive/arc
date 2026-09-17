@@ -270,6 +270,30 @@ class PostgreSQLKnowledgeRepository:
             )
             return [self._row_to_document(row) for row in rows]
 
+    async def list_for_tenant_paginated(self, tenant_id: str, limit: int, offset: int) -> tuple:
+        """List ACTIVE knowledge documents with LIMIT/OFFSET and total count."""
+        async with self.db._connection_pool.acquire() as conn:
+            count_row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM knowledge_documents "
+                "WHERE tenant_id = $1 AND status = 'active'",
+                tenant_id,
+            )
+            total = count_row["cnt"]
+            rows = await conn.fetch(
+                f"""
+                SELECT {_DOCUMENT_COLUMNS}
+                FROM knowledge_documents
+                WHERE tenant_id = $1 AND status = 'active'
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                tenant_id,
+                limit,
+                offset,
+            )
+            items = [self._row_to_document(row) for row in rows]
+            return items, total
+
     async def find_legacy_duplicate_candidates(self, tenant_id: Optional[str] = None) -> List[dict]:
         """Discover legacy duplicate groups (ADR-003 follow-up cleanup).
 
