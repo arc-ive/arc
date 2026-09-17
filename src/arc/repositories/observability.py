@@ -516,7 +516,7 @@ class PostgreSQLObservabilityRepository:
                            request_id, agent_run_id, created_at
                     FROM llm_usage_records
                     WHERE {self._scope_clause()} AND call_type = $3
-                    ORDER BY created_at DESC
+                    ORDER BY created_at DESC, id ASC
                     LIMIT $4 OFFSET $5
                     """,
                     tenant_id,
@@ -542,7 +542,7 @@ class PostgreSQLObservabilityRepository:
                            request_id, agent_run_id, created_at
                     FROM llm_usage_records
                     WHERE {self._scope_clause()}
-                    ORDER BY created_at DESC
+                    ORDER BY created_at DESC, id ASC
                     LIMIT $3 OFFSET $4
                     """,
                     tenant_id,
