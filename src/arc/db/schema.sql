@@ -454,3 +454,37 @@ ALTER TABLE sessions ALTER COLUMN csrf_token SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at);
+
+-- LLM usage telemetry (V2-ADR-024, TRD 13, Issue #141).
+-- One row per production LLM API call. Metadata-only: never stores raw
+-- prompts, responses, or content. cost_usd is NULL when pricing is
+-- unavailable or required token data is missing (never partial).
+CREATE TABLE IF NOT EXISTS llm_usage_records (
+    id VARCHAR(255) PRIMARY KEY,
+    tenant_id VARCHAR(255),
+    request_id VARCHAR(64),
+    agent_run_id VARCHAR(255),
+    principal_id VARCHAR(255),
+    provider VARCHAR(100) NOT NULL,
+    model VARCHAR(255) NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    total_tokens INTEGER,
+    latency_ms INTEGER,
+    cost_usd NUMERIC(12,6),
+    call_type VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT ck_llm_usage_records_call_type
+        CHECK (call_type IN ('complete', 'propose_tool', 'propose_skill'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_usage_records_tenant_id
+    ON llm_usage_records(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_records_created_at
+    ON llm_usage_records(created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_records_agent_run_id
+    ON llm_usage_records(agent_run_id)
+    WHERE agent_run_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_llm_usage_records_call_type
+    ON llm_usage_records(call_type);

@@ -145,12 +145,6 @@ class Application:
             pii_guard=pii_guard,
         )
 
-        self.services["intelligence_service"] = UnifiedIntelligenceService(
-            retrieval=retrieval_service,
-            llm_provider=build_llm_provider(get_llm_settings()),
-            tool_service=self.services["tool_service"],
-        )
-
         # Initialize skill service
         self.services["skill_service"] = SkillService(
             self.repositories["skill"], pii_guard=pii_guard
@@ -179,8 +173,18 @@ class Application:
         # read layer over AUTHORITATIVE subsystem records plus the HTTP
         # telemetry table this layer owns. Telemetry writes are best
         # effort and never fail a business operation; reads fail closed.
-        self.services["observability_service"] = ObservabilityService(
+        # BEFORE services that depend on it for LLM usage telemetry
+        # (V2-ADR-024, Issue #141).
+        observability_service = ObservabilityService(
             repository=self.repositories["observability"],
+        )
+        self.services["observability_service"] = observability_service
+
+        self.services["intelligence_service"] = UnifiedIntelligenceService(
+            retrieval=retrieval_service,
+            llm_provider=build_llm_provider(get_llm_settings()),
+            tool_service=self.services["tool_service"],
+            observability_service=observability_service,
         )
 
         # Initialize the bounded Agent orchestration layer (ADR-006). It

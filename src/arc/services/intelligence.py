@@ -52,12 +52,20 @@ import uuid
 from typing import List, Optional
 
 from arc.domain.models import (
+    LLM_CALL_TYPE_COMPLETE,
+    LLM_CALL_TYPE_PROPOSE_TOOL,
     ApprovedContext,
     IntelligenceAnswer,
     TenantContext,
     ToolProposal,
 )
-from arc.services.llm import DeterministicLlmProvider, LlmProvider, ToolProposingLlm
+from arc.services.llm import (
+    DeterministicLlmProvider,
+    LlmProvider,
+    ToolProposingLlm,
+    _current_llm_usage,
+)
+from arc.services.llm_pricing import build_llm_usage_record
 from arc.services.retrieval import RetrievalService
 from arc.services.tools import (
     ToolDeniedError,
@@ -78,10 +86,12 @@ class UnifiedIntelligenceService:
         retrieval: RetrievalService,
         llm_provider: Optional[LlmProvider] = None,
         tool_service: Optional[ToolExecutionService] = None,
+        observability_service=None,
     ):
         self.retrieval = retrieval
         self.llm_provider = llm_provider if llm_provider is not None else DeterministicLlmProvider()
         self.tool_service = tool_service
+        self.observability_service = observability_service
 
     async def answer_query(
         self,
@@ -144,6 +154,7 @@ class UnifiedIntelligenceService:
             raw_proposal = self.llm_provider.propose_tool(
                 query, [item.content for item in approved.items]
             )
+            await self._record_usage(context, None, LLM_CALL_TYPE_PROPOSE_TOOL, approved.request_id)
             proposal = ToolProposal.parse(raw_proposal)
             if proposal is not None:
                 observation, executed = await self._execute_proposal(
@@ -154,6 +165,7 @@ class UnifiedIntelligenceService:
 
         prompt = self._build_prompt(approved, query, observation)
         answer = self.llm_provider.complete(prompt)
+        await self._record_usage(context, None, LLM_CALL_TYPE_COMPLETE, approved.request_id)
 
         return IntelligenceAnswer(
             request_id=str(uuid.uuid4()),
@@ -166,6 +178,28 @@ class UnifiedIntelligenceService:
             context_used=True,
             tool_executions=tool_executions,
         )
+
+    async def _record_usage(self, context, agent_run_id, call_type, request_id=None) -> None:
+        """Record LLM usage if usage data is available (best effort).
+
+        Reads from the ContextVar set by the provider after each call.
+        Deterministic provider with no usage report creates no record.
+        Persistence failure is logged and never raised (TRD 24).
+        """
+        if self.observability_service is None:
+            return
+        usage = _current_llm_usage.get()
+        if usage is None:
+            return
+        record = build_llm_usage_record(
+            usage,
+            call_type=call_type,
+            tenant_id=context.tenant_id,
+            request_id=request_id,
+            agent_run_id=agent_run_id,
+            principal_id=context.user_id,
+        )
+        await self.observability_service.record_llm_usage(record)
 
     def _tool_calling_enabled(self, principal, authorization) -> bool:
         """V1 gate: every collaborator must be present, else no proposals.

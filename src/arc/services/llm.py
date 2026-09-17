@@ -21,6 +21,7 @@ import os
 import random
 import re
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
@@ -224,6 +225,16 @@ class LlmUsageReport:
     latency_ms: Optional[int] = None
 
 
+# Per-call usage ContextVar for concurrency-safe usage attribution.
+# The OpenRouterProvider is a process-wide singleton shared by concurrent
+# requests. _last_usage is mutable instance state that can be overwritten
+# by a concurrent request before the original caller reads it. This
+# ContextVar stores usage per-async-context, preventing cross-request
+# contamination. Production callers (intelligence.py, agent.py) read
+# from here. provider.last_usage is kept for backward compatibility.
+_current_llm_usage: ContextVar[Optional[LlmUsageReport]] = ContextVar("llm_usage", default=None)
+
+
 _OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 _OPENROUTER_DEFAULT_TIMEOUT = httpx.Timeout(60.0)
 _DEFAULT_MAX_RETRIES = 3
@@ -294,7 +305,15 @@ class OpenRouterProvider:
         Captures usage data (tokens) and latency from the API response.
         Raises ``LlmConfigurationError`` for permanent auth failures and
         ``LlmError`` for all other errors. Never retries.
+
+        Lifecycle: the per-call ContextVar ``_current_llm_usage`` is
+        **cleared before** the HTTP call so that stale usage from a
+        prior call is never accidentally consumed.  On a successful
+        response the ContextVar is set to the new usage report.  If the
+        call raises, the ContextVar remains ``None`` — callers observe
+        no usage from a failed call.
         """
+        _current_llm_usage.set(None)
         started = time.monotonic()
         response = client.post(url, json=body, headers=headers)
         elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -305,7 +324,7 @@ class OpenRouterProvider:
             raise LlmError("OpenRouter returned no choices")
         # Capture usage data from the response (V2-ADR-006, TRD 13).
         usage = data.get("usage") or {}
-        self._last_usage = LlmUsageReport(
+        report = LlmUsageReport(
             provider="openrouter",
             model=self._model,
             input_tokens=usage.get("prompt_tokens"),
@@ -313,6 +332,8 @@ class OpenRouterProvider:
             total_tokens=usage.get("total_tokens"),
             latency_ms=elapsed_ms,
         )
+        self._last_usage = report
+        _current_llm_usage.set(report)
         return choices[0]["message"]["content"]
 
     def _post(self, messages: list[dict[str, str]], **kwargs: Any) -> str:

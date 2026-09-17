@@ -375,6 +375,7 @@ _RESET_TABLES = [
     "api_request_records",
     "approval_requests",
     "agent_run_records",
+    "llm_usage_records",
     # Parent resources (depend on tenants)
     "knowledge_documents",
     "connector_configs",

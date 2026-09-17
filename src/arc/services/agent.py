@@ -46,8 +46,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from arc.api.correlation import request_id_var
 from arc.db.connection import NotFoundError
 from arc.domain.models import (
+    LLM_CALL_TYPE_PROPOSE_SKILL,
     AgentDecision,
     AgentExecutionResult,
     AgentRunRecord,
@@ -59,7 +61,8 @@ from arc.domain.models import (
 )
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
-from arc.services.llm import LlmProvider, SkillSelectingLlm
+from arc.services.llm import LlmProvider, SkillSelectingLlm, _current_llm_usage
+from arc.services.llm_pricing import build_llm_usage_record
 from arc.services.observability import ObservabilityService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
@@ -166,8 +169,10 @@ class AgentExecutionService:
         ]
 
         completed: List[AgentStepOutcome] = []
+        agent_run_id = str(uuid.uuid4())
         for sequence in range(MAX_AGENT_STEPS):
             raw_decision = self.llm_provider.propose_skill(goal, snapshot)
+            await self._record_usage(context, agent_run_id)
 
             if raw_decision is None:
                 # The provider declined to propose a further step: the run
@@ -294,6 +299,28 @@ class AgentExecutionService:
             and isinstance(self.llm_provider, SkillSelectingLlm)
             and getattr(self.llm_provider, "skill_decision_capable", True)
         )
+
+    async def _record_usage(self, context, agent_run_id) -> None:
+        """Record LLM usage if usage data is available (best effort).
+
+        Reads from the ContextVar set by the provider after each call.
+        Deterministic provider with no usage report creates no record.
+        Persistence failure is logged and never raised (TRD 24).
+        """
+        if self.observability_service is None:
+            return
+        usage = _current_llm_usage.get()
+        if usage is None:
+            return
+        record = build_llm_usage_record(
+            usage,
+            call_type=LLM_CALL_TYPE_PROPOSE_SKILL,
+            tenant_id=context.tenant_id,
+            request_id=request_id_var.get(),
+            agent_run_id=agent_run_id,
+            principal_id=context.user_id,
+        )
+        await self.observability_service.record_llm_usage(record)
 
     def _failed_at_decision_boundary(
         self,

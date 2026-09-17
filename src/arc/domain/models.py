@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -1651,3 +1652,103 @@ class AgentRunActivityMetrics:
             > self.total_runs
         ):
             raise ValueError("Status breakdown cannot exceed total runs")
+
+
+# ---------------------------------------------------------------------------
+# LLM Usage Telemetry (V2-ADR-024, TRD 13, Issue #141)
+# ---------------------------------------------------------------------------
+
+LLM_CALL_TYPE_COMPLETE = "complete"
+LLM_CALL_TYPE_PROPOSE_TOOL = "propose_tool"
+LLM_CALL_TYPE_PROPOSE_SKILL = "propose_skill"
+LLM_CALL_TYPES = (LLM_CALL_TYPE_COMPLETE, LLM_CALL_TYPE_PROPOSE_TOOL, LLM_CALL_TYPE_PROPOSE_SKILL)
+
+
+@dataclass
+class LlmUsageRecord:
+    """Metadata-only telemetry record for one production LLM API call.
+
+    Owned by the Observability layer. NEVER stores raw prompts, responses,
+    content, or secrets (V2-ADR-024, PRD 9/10, TRD 20/28).
+
+    ``cost_usd`` is NULL when pricing is unavailable or required token
+    data is missing — never a partial calculation.
+    """
+
+    id: str
+    provider: str
+    model: str
+    call_type: str
+    tenant_id: Optional[str] = None
+    request_id: Optional[str] = None
+    agent_run_id: Optional[str] = None
+    principal_id: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    latency_ms: Optional[int] = None
+    cost_usd: Optional[Decimal] = None
+    created_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        if not self.id:
+            raise ValueError("LLM usage record ID cannot be empty")
+        if not isinstance(self.provider, str) or not self.provider.strip():
+            raise ValueError("LLM usage record provider cannot be empty")
+        if not isinstance(self.model, str) or not self.model.strip():
+            raise ValueError("LLM usage record model cannot be empty")
+        if self.call_type not in LLM_CALL_TYPES:
+            raise ValueError(
+                f"Invalid LLM call type: {self.call_type!r} (expected one of {LLM_CALL_TYPES})"
+            )
+
+
+@dataclass
+class LlmUsageActivityMetrics:
+    """Aggregate LLM usage read-model over llm_usage_records."""
+
+    total_calls: int
+    calls_by_type: Dict[str, int]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
+    avg_latency_ms: float
+    total_cost_usd: Optional[Decimal]
+    unknown_cost_records: int
+    models_used: List[str]
+
+    def __post_init__(self):
+        if self.total_calls < 0:
+            raise ValueError("Total calls cannot be negative")
+        if self.unknown_cost_records < 0:
+            raise ValueError("Unknown cost records cannot be negative")
+        if self.unknown_cost_records > self.total_calls:
+            raise ValueError("Unknown cost records cannot exceed total calls")
+
+    @property
+    def cost_coverage(self) -> str:
+        """Cost data coverage: 'full', 'partial', or 'none'."""
+        if self.total_calls == 0:
+            return "none"
+        if self.unknown_cost_records == 0:
+            return "full"
+        return "partial"
+
+
+@dataclass
+class LlmUsageRecordsAggregate:
+    """Summary for inclusion in the tenant usage response."""
+
+    total_calls: int
+    total_tokens: int
+    avg_latency_ms: float
+    total_cost_usd: Optional[Decimal]
+    unknown_cost_records: int
+    cost_coverage: str  # "full" | "partial" | "none"
+
+    def __post_init__(self):
+        if self.cost_coverage not in ("full", "partial", "none"):
+            raise ValueError(
+                f"Invalid cost_coverage: {self.cost_coverage!r} "
+                "(expected 'full', 'partial', or 'none')"
+            )

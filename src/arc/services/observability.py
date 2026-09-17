@@ -22,7 +22,7 @@ webhook-configuration component joins once the Webhooks foundation
 import logging
 from typing import Any, Dict
 
-from arc.domain.models import AgentRunRecord, ApiRequestRecord
+from arc.domain.models import AgentRunRecord, ApiRequestRecord, LlmUsageRecord
 from arc.services.embeddings import build_embedding_provider, get_embedding_settings
 from arc.services.llm import build_llm_provider, get_llm_settings
 
@@ -105,6 +105,51 @@ class ObservabilityService:
         )
 
     # ------------------------------------------------------------------
+    # LLM usage telemetry write path (best effort; V2-ADR-024, Issue #141)
+    # ------------------------------------------------------------------
+    async def record_llm_usage(self, record: LlmUsageRecord) -> bool:
+        """Persist one LLM usage telemetry record without ever raising.
+
+        Returns True when persisted, False when dropped. Follows the
+        approved best-effort telemetry write semantics: persistence
+        failure is logged safely and must never fail the caller or the
+        primary LLM workflow (TRD 24).
+        """
+        try:
+            await self.repository.create_llm_usage_record(record)
+            return True
+        except Exception:
+            logger.warning(
+                "llm_usage_dropped provider=%s model=%s call_type=%s",
+                record.provider,
+                record.model,
+                record.call_type,
+            )
+            return False
+
+    async def get_llm_usage(self, tenant_id: str, hours: int = DEFAULT_WINDOW_HOURS) -> dict:
+        """Return aggregated LLM usage for a tenant."""
+        window = self._validated_window(hours)
+        return await self.repository.llm_usage_activity(tenant_id, window)
+
+    async def get_llm_usage_records(
+        self,
+        tenant_id: str,
+        hours: int = DEFAULT_WINDOW_HOURS,
+        call_type: str = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """Return paginated LLM usage records for a tenant."""
+        window = self._validated_window(hours)
+        limit = max(1, min(200, limit))
+        offset = max(0, offset)
+        records, total = await self.repository.llm_usage_records_page(
+            tenant_id, window, call_type, limit, offset
+        )
+        return {"records": records, "limit": limit, "offset": offset, "total": total}
+
+    # ------------------------------------------------------------------
     # Aggregation reads
     # ------------------------------------------------------------------
     @staticmethod
@@ -129,6 +174,7 @@ class ObservabilityService:
         approvals = await self.repository.approval_activity(tenant_id, window)
         escalation_count = await self.repository.escalation_count(tenant_id, window)
         agent_runs = await self.repository.agent_run_activity(tenant_id, window)
+        llm = await self.repository.llm_usage_activity(tenant_id, window)
         return {
             "window_hours": window,
             "http": self._http_payload(http),
@@ -166,6 +212,7 @@ class ObservabilityService:
                 "approval_required": agent_runs.approval_required,
                 "max_steps_reached": agent_runs.max_steps_reached,
             },
+            "llm": self._llm_payload(llm),
         }
 
     async def get_platform_summary(self, hours: int = DEFAULT_WINDOW_HOURS) -> Dict[str, Any]:
@@ -208,6 +255,17 @@ class ObservabilityService:
             "error_rate": round(http.error_rate, 4),
             "avg_duration_ms": round(http.avg_duration_ms, 2),
             "p95_duration_ms": round(http.p95_duration_ms, 2),
+        }
+
+    @staticmethod
+    def _llm_payload(llm) -> Dict[str, Any]:
+        return {
+            "total_calls": llm.total_calls,
+            "total_tokens": llm.total_tokens,
+            "avg_latency_ms": round(llm.avg_latency_ms, 2),
+            "total_cost_usd": float(llm.total_cost_usd) if llm.total_cost_usd is not None else None,
+            "unknown_cost_records": llm.unknown_cost_records,
+            "cost_coverage": llm.cost_coverage,
         }
 
     # ------------------------------------------------------------------

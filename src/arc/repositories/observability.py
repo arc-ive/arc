@@ -29,6 +29,8 @@ from arc.domain.models import (
     ApprovalActivityMetrics,
     ConnectorSyncActivityMetrics,
     HttpUsageMetrics,
+    LlmUsageActivityMetrics,
+    LlmUsageRecord,
     ToolExecutionActivityMetrics,
     WebhookEventActivityMetrics,
 )
@@ -443,3 +445,182 @@ class PostgreSQLObservabilityRepository:
             return True
         except Exception:
             return False
+
+    # ------------------------------------------------------------------
+    # LLM usage telemetry (V2-ADR-024, TRD 13, Issue #141)
+    # ------------------------------------------------------------------
+    async def create_llm_usage_record(self, record: LlmUsageRecord) -> None:
+        """Persist one LLM usage telemetry record (best-effort callers only)."""
+        async with self.db.transaction() as conn:
+            await conn.execute(
+                """
+                INSERT INTO llm_usage_records
+                    (id, tenant_id, request_id, agent_run_id, principal_id,
+                     provider, model, input_tokens, output_tokens, total_tokens,
+                     latency_ms, cost_usd, call_type, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                """,
+                record.id,
+                record.tenant_id,
+                record.request_id,
+                record.agent_run_id,
+                record.principal_id,
+                record.provider,
+                record.model,
+                record.input_tokens,
+                record.output_tokens,
+                record.total_tokens,
+                record.latency_ms,
+                str(record.cost_usd) if record.cost_usd is not None else None,
+                record.call_type,
+                record.created_at,
+            )
+
+    async def llm_usage_activity(
+        self, tenant_id: Optional[str], hours: int
+    ) -> LlmUsageActivityMetrics:
+        """Aggregate LLM usage for a tenant, or platform-wide when None."""
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT
+                    COUNT(*) AS total_calls,
+                    COALESCE(SUM(input_tokens), 0) AS total_input,
+                    COALESCE(SUM(output_tokens), 0) AS total_output,
+                    COALESCE(SUM(total_tokens), 0) AS total_all,
+                    COALESCE(AVG(latency_ms), 0) AS avg_latency,
+                    SUM(cost_usd) AS total_cost,
+                    COUNT(*) FILTER (WHERE cost_usd IS NULL) AS unknown_cost,
+                    COUNT(DISTINCT model) AS model_count
+                FROM llm_usage_records
+                WHERE {self._scope_clause()}
+                """,
+                tenant_id,
+                hours,
+            )
+            type_rows = await conn.fetch(
+                f"""
+                SELECT call_type, COUNT(*) AS cnt
+                FROM llm_usage_records
+                WHERE {self._scope_clause()}
+                GROUP BY call_type
+                """,
+                tenant_id,
+                hours,
+            )
+            model_rows = await conn.fetch(
+                f"""
+                SELECT DISTINCT model
+                FROM llm_usage_records
+                WHERE {self._scope_clause()}
+                ORDER BY model
+                """,
+                tenant_id,
+                hours,
+            )
+
+        calls_by_type = {r["call_type"]: r["cnt"] for r in type_rows}
+        models_used = [r["model"] for r in model_rows]
+        total_cost_raw = row["total_cost"]
+
+        from decimal import Decimal
+
+        total_cost = Decimal(str(total_cost_raw)) if total_cost_raw is not None else None
+
+        return LlmUsageActivityMetrics(
+            total_calls=row["total_calls"],
+            calls_by_type=calls_by_type,
+            total_input_tokens=row["total_input"],
+            total_output_tokens=row["total_output"],
+            total_tokens=row["total_all"],
+            avg_latency_ms=float(row["avg_latency"]),
+            total_cost_usd=total_cost,
+            unknown_cost_records=row["unknown_cost"],
+            models_used=models_used,
+        )
+
+    async def llm_usage_records_page(
+        self,
+        tenant_id: str,
+        hours: int,
+        call_type: Optional[str],
+        limit: int,
+        offset: int,
+    ) -> tuple:
+        """Return (records, total_count) for paginated LLM usage records."""
+        from decimal import Decimal as Dec
+
+        async with self.db._connection_pool.acquire() as conn:
+            if call_type:
+                total_row = await conn.fetchrow(
+                    f"""
+                    SELECT COUNT(*) AS cnt
+                    FROM llm_usage_records
+                    WHERE {self._scope_clause()} AND call_type = $3
+                    """,
+                    tenant_id,
+                    hours,
+                    call_type,
+                )
+                rows = await conn.fetch(
+                    f"""
+                    SELECT id, provider, model, input_tokens, output_tokens,
+                           total_tokens, latency_ms, cost_usd, call_type,
+                           request_id, agent_run_id, created_at
+                    FROM llm_usage_records
+                    WHERE {self._scope_clause()} AND call_type = $3
+                    ORDER BY created_at DESC, id ASC
+                    LIMIT $4 OFFSET $5
+                    """,
+                    tenant_id,
+                    hours,
+                    call_type,
+                    limit,
+                    offset,
+                )
+            else:
+                total_row = await conn.fetchrow(
+                    f"""
+                    SELECT COUNT(*) AS cnt
+                    FROM llm_usage_records
+                    WHERE {self._scope_clause()}
+                    """,
+                    tenant_id,
+                    hours,
+                )
+                rows = await conn.fetch(
+                    f"""
+                    SELECT id, provider, model, input_tokens, output_tokens,
+                           total_tokens, latency_ms, cost_usd, call_type,
+                           request_id, agent_run_id, created_at
+                    FROM llm_usage_records
+                    WHERE {self._scope_clause()}
+                    ORDER BY created_at DESC, id ASC
+                    LIMIT $3 OFFSET $4
+                    """,
+                    tenant_id,
+                    hours,
+                    limit,
+                    offset,
+                )
+        total_count = total_row["cnt"] if total_row else 0
+        results = []
+        for r in rows:
+            cost = Dec(str(r["cost_usd"])) if r["cost_usd"] is not None else None
+            results.append(
+                {
+                    "id": r["id"],
+                    "provider": r["provider"],
+                    "model": r["model"],
+                    "input_tokens": r["input_tokens"],
+                    "output_tokens": r["output_tokens"],
+                    "total_tokens": r["total_tokens"],
+                    "latency_ms": r["latency_ms"],
+                    "cost_usd": cost,
+                    "call_type": r["call_type"],
+                    "request_id": r["request_id"],
+                    "agent_run_id": r["agent_run_id"],
+                    "created_at": r["created_at"],
+                }
+            )
+        return results, total_count

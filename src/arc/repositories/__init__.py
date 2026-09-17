@@ -532,6 +532,20 @@ class ObservabilityRepository(Protocol):
         """Component health probe for the database."""
         ...
 
+    async def create_llm_usage_record(self, record) -> None:
+        """Persist one LLM usage telemetry record (metadata-only)."""
+        ...
+
+    async def llm_usage_activity(self, tenant_id: Optional[str], hours: int):
+        """Aggregate LLM usage for a tenant, or platform-wide when None."""
+        ...
+
+    async def llm_usage_records_page(
+        self, tenant_id: str, hours: int, call_type: Optional[str], limit: int, offset: int
+    ) -> tuple:
+        """Return (records, total_count) for paginated LLM usage records."""
+        ...
+
 
 class ApprovalRequestRepository(Protocol):
     """Repository for Human Intervention approval requests (V1 gate).
