@@ -36,28 +36,7 @@ class PostgreSQLTenantRepository:
 
     async def list_all_paginated(self, limit: int, offset: int) -> Tuple[List[Tenant], int]:
         """List tenants with LIMIT/OFFSET and total count."""
-        async with self.db._connection_pool.acquire() as conn:
-            count_row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM tenants")
-            total = count_row["cnt"]
-            rows = await conn.fetch(
-                "SELECT id, name, status, industry, created_at, updated_at "
-                "FROM tenants ORDER BY created_at DESC, id ASC "
-                "LIMIT $1 OFFSET $2",
-                limit,
-                offset,
-            )
-            items = [
-                Tenant(
-                    id=row["id"],
-                    name=row["name"],
-                    status=row["status"],
-                    industry=row["industry"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                )
-                for row in rows
-            ]
-            return items, total
+        return await self.db.list_tenants_paginated(limit, offset)
 
     async def update(self, tenant: Tenant) -> Tenant:
         """Update tenant."""
@@ -244,38 +223,7 @@ class PostgreSQLMembershipRepository:
         self, user_id: str, limit: int, offset: int
     ) -> Tuple[List[Tenant], int]:
         """Get tenants for a user with LIMIT/OFFSET and total count."""
-        async with self.db._connection_pool.acquire() as conn:
-            count_row = await conn.fetchrow(
-                "SELECT COUNT(*) AS cnt FROM memberships WHERE user_id = $1",
-                user_id,
-            )
-            total = count_row["cnt"]
-            rows = await conn.fetch(
-                """
-                SELECT t.id, t.name, t.status, t.industry,
-                       t.created_at, t.updated_at
-                FROM tenants t
-                JOIN memberships m ON t.id = m.tenant_id
-                WHERE m.user_id = $1
-                ORDER BY t.created_at DESC, t.id ASC
-                LIMIT $2 OFFSET $3
-                """,
-                user_id,
-                limit,
-                offset,
-            )
-            items = [
-                Tenant(
-                    id=row["id"],
-                    name=row["name"],
-                    status=row["status"],
-                    industry=row["industry"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                )
-                for row in rows
-            ]
-            return items, total
+        return await self.db.get_tenants_for_user_paginated(user_id, limit, offset)
 
     async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
         """Get all users for a tenant."""

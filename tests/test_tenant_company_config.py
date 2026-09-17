@@ -339,7 +339,7 @@ class TestUserTenantListCompanyFields:
 
         response = _authed_request(client, "get", f"/users/{user.id}/tenants", token)
         assert response.status_code == 200
-        entry = next(item for item in response.json() if item["id"] == tenant.id)
+        entry = next(item for item in response.json()["items"] if item["id"] == tenant.id)
         for field, expected in COMPANY_PROFILE.items():
             assert entry[field] == expected, f"{field} was {entry[field]!r}"
 
@@ -356,7 +356,9 @@ class TestUserTenantListCompanyFields:
 
         listed = next(
             item
-            for item in _authed_request(client, "get", f"/users/{user.id}/tenants", token).json()
+            for item in _authed_request(client, "get", f"/users/{user.id}/tenants", token).json()[
+                "items"
+            ]
             if item["id"] == tenant.id
         )
         single = _authed_request(client, "get", f"/tenants/{tenant.id}", token).json()
@@ -375,7 +377,7 @@ class TestUserTenantListCompanyFields:
 
         response = _authed_request(client, "get", f"/users/{user.id}/tenants", token)
         assert response.status_code == 200
-        entry = next(item for item in response.json() if item["id"] == tenant.id)
+        entry = next(item for item in response.json()["items"] if item["id"] == tenant.id)
         assert set(entry) == TENANT_RESPONSE_KEYS
 
     async def test_list_returns_null_profile_when_unset(
@@ -387,7 +389,7 @@ class TestUserTenantListCompanyFields:
         token = make_token(user.id)
 
         response = _authed_request(client, "get", f"/users/{user.id}/tenants", token)
-        entry = next(item for item in response.json() if item["id"] == tenant.id)
+        entry = next(item for item in response.json()["items"] if item["id"] == tenant.id)
         for field in COMPANY_PROFILE:
             assert entry[field] is None
 
@@ -409,3 +411,31 @@ class TestUserTenantListCompanyFields:
         found = next(item for item in listed if item.id == tenant.id)
         for field, expected in COMPANY_PROFILE.items():
             assert getattr(found, field) == expected, f"{field} was {getattr(found, field)!r}"
+
+    async def test_paginated_listings_carry_profile_fields(
+        self, client, db, seeded, make_token, authorization_override
+    ):
+        """The paginated queries must carry the profile too.
+
+        Pagination (Issue #129) introduced a second query for each listing.
+        Those queries selected their own narrower column set, which reopened
+        this issue on the endpoints that now use them.
+        """
+        tenant, user = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        _authed_request(client, "put", f"/tenants/{tenant.id}", token, dict(COMPANY_PROFILE))
+
+        repository = PostgreSQLTenantRepository(db)
+        memberships = PostgreSQLMembershipRepository(db)
+        listings = {
+            "list_all_paginated": (await repository.list_all_paginated(100, 0))[0],
+            "get_tenants_for_user_paginated": (
+                await memberships.get_tenants_for_user_paginated(user.id, 100, 0)
+            )[0],
+        }
+        for source, tenants in listings.items():
+            found = next(item for item in tenants if item.id == tenant.id)
+            for field, expected in COMPANY_PROFILE.items():
+                actual = getattr(found, field)
+                assert actual == expected, f"{source}: {field} was {actual!r}"

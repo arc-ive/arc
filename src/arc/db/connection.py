@@ -183,6 +183,18 @@ class ArcDatabase:
             )
             return [_tenant_from_row(row) for row in rows]
 
+    async def list_tenants_paginated(self, limit: int, offset: int) -> tuple[list[Tenant], int]:
+        """One page of tenants, newest first, with the total row count."""
+        async with self._connection_pool.acquire() as conn:
+            total = await conn.fetchval("SELECT COUNT(*) FROM tenants")
+            rows = await conn.fetch(
+                f"SELECT {_tenant_select_list()} FROM tenants "
+                "ORDER BY created_at DESC, id ASC LIMIT $1 OFFSET $2",
+                limit,
+                offset,
+            )
+            return [_tenant_from_row(row) for row in rows], total
+
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration.
 
@@ -330,6 +342,29 @@ class ArcDatabase:
                 user_id,
             )
             return [_tenant_from_row(row) for row in rows]
+
+    async def get_tenants_for_user_paginated(
+        self, user_id: str, limit: int, offset: int
+    ) -> tuple[list[Tenant], int]:
+        """One page of a user's tenants, with the total membership count."""
+        async with self._connection_pool.acquire() as conn:
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM memberships WHERE user_id = $1", user_id
+            )
+            rows = await conn.fetch(
+                f"""
+                SELECT {_tenant_select_list("t")}
+                FROM tenants t
+                JOIN memberships m ON t.id = m.tenant_id
+                WHERE m.user_id = $1
+                ORDER BY t.created_at DESC, t.id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                user_id,
+                limit,
+                offset,
+            )
+            return [_tenant_from_row(row) for row in rows], total
 
     async def get_users_for_tenant(self, tenant_id: str) -> list[User]:
         """Get all users for a tenant."""
