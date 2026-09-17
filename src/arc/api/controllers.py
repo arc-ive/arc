@@ -58,6 +58,7 @@ from arc.security.authorization import (
     CONNECTOR_READ,
     CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
+    KNOWLEDGE_DELETE,
     KNOWLEDGE_READ,
     MEMBERSHIP_CREATE,
     OBSERVABILITY_PLATFORM_READ,
@@ -1419,6 +1420,36 @@ async def get_knowledge_document(
             detail="Knowledge document not found",
         )
     return _knowledge_document_payload(document)
+
+
+@api_router.delete(
+    "/tenants/{tenant_id}/knowledge/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_knowledge_document(
+    tenant_id: str,
+    document_id: str,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_DELETE)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> None:
+    """Delete a knowledge document within a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``knowledge:delete`` permission.  The path ``tenant_id`` is validated
+    for consistency against the trusted context.  Dependent knowledge
+    chunks are removed by the database ON DELETE CASCADE.  A missing
+    document returns 404; the response is indistinguishable from a
+    cross-tenant access denial.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        await knowledge_service.delete_document(context, document_id)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge document not found",
+        )
 
 
 @api_router.get("/tenants/{tenant_id}/knowledge")

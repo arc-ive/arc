@@ -110,6 +110,7 @@ MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
 TENANT_READ = Permission(resource="tenant", action="read")
 KNOWLEDGE_CREATE = Permission(resource="knowledge", action="create")
 KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
+KNOWLEDGE_DELETE = Permission(resource="knowledge", action="delete")
 SKILL_CREATE = Permission(resource="skill", action="create")
 SKILL_READ = Permission(resource="skill", action="read")
 SKILL_UPDATE = Permission(resource="skill", action="update")
@@ -144,6 +145,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
+            KNOWLEDGE_DELETE,
             SKILL_CREATE,
             SKILL_READ,
             SKILL_UPDATE,
@@ -170,6 +172,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
+            KNOWLEDGE_DELETE,
             SKILL_CREATE,
             SKILL_READ,
             SKILL_UPDATE,
