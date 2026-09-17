@@ -2632,6 +2632,7 @@ async def resume_agent_execution(
 
     return _skill_execution_response(result)
 
+
 # ---------------------------------------------------------------------------
 # Platform Capability management API (Issue #144, V2-ADR-004)
 # ---------------------------------------------------------------------------

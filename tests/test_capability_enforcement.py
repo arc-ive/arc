@@ -10,12 +10,12 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from arc.services.capabilities import CapabilityService
 
 from arc.domain.models import TenantContext
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
 from arc.services.agent import AgentExecutionService
+from arc.services.capabilities import CapabilityService
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.llm import SkillSelectingLlm
 from arc.services.skill_execution import SkillExecutionService

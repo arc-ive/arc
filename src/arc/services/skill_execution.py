@@ -132,7 +132,10 @@ class SkillExecutionService:
     """
 
     def __init__(
-        self, skill_service: SkillService, tool_service: ToolExecutionService, record_repo=None,
+        self,
+        skill_service: SkillService,
+        tool_service: ToolExecutionService,
+        record_repo=None,
         capability_service=None,
     ):
         self.skill_service = skill_service
