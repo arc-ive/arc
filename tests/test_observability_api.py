@@ -243,6 +243,7 @@ class TestResponseContentSafety:
             "window_hours",
             "http",
             "tools",
+            "skills",
             "connectors",
             "webhooks",
             "approvals",
@@ -258,6 +259,13 @@ class TestResponseContentSafety:
             "p95_duration_ms",
         }
         assert set(body["tools"]) == {"total_executions", "successful", "failed", "denied"}
+        assert set(body["skills"]) == {
+            "total_executions",
+            "succeeded",
+            "failed",
+            "approval_required",
+            "denied",
+        }
         assert set(body["connectors"]) == {"total_syncs", "successful", "failed", "items_fetched"}
         assert set(body["webhooks"]) == {
             "available",

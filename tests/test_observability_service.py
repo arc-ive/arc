@@ -18,6 +18,7 @@ from arc.domain.models import (
     ConnectorSyncActivityMetrics,
     HttpUsageMetrics,
     LlmUsageActivityMetrics,
+    SkillExecutionActivityMetrics,
     ToolExecutionActivityMetrics,
     WebhookEventActivityMetrics,
 )
@@ -60,6 +61,11 @@ class RecordingRepository:
             error_rate=0.2,
             avg_duration_ms=50.0,
             p95_duration_ms=120.0,
+        )
+
+    async def skill_execution_activity(self, tenant_id, hours):
+        return SkillExecutionActivityMetrics(
+            total_executions=12, succeeded=9, failed=2, approval_required=1, denied=0
         )
 
     async def tool_execution_activity(self, tenant_id, hours):
@@ -179,6 +185,8 @@ async def test_platform_summary_is_strictly_tenant_agnostic():
         "http",
         "tool_activity_total",
         "tool_failures_total",
+        "skill_activity_total",
+        "skill_failures_total",
         "connector_syncs_total",
         "connector_failures_total",
         "webhook_events_total",

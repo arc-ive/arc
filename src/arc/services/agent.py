@@ -160,6 +160,10 @@ class AgentExecutionService:
             await self._persist_trace(result, started_at)
             return result
 
+        # Generate the run ID early so every skill execution record
+        # can be linked back to this agent run via agent_run_id.
+        run_id = str(uuid.uuid4())
+
         # Trusted, tenant-scoped catalog. The snapshot given to the model
         # deliberately contains no tenant identifiers.
         catalog = await self.skill_service.list_skills(context)
@@ -180,7 +184,12 @@ class AgentExecutionService:
                 # delegated Skill execution actually succeeded.
                 if any(step.status is SkillExecutionStatus.SUCCEEDED for step in completed):
                     result = self._build_result(
-                        context, goal, AgentRunStatus.SUCCEEDED, None, completed
+                        context,
+                        goal,
+                        AgentRunStatus.SUCCEEDED,
+                        None,
+                        completed,
+                        run_id=run_id,
                     )
                     await self._persist_trace(result, started_at)
                     return result
@@ -190,6 +199,7 @@ class AgentExecutionService:
                     AgentRunStatus.FAILED,
                     _ERROR_NO_DECISION,
                     completed,
+                    run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
                 return result
@@ -198,7 +208,11 @@ class AgentExecutionService:
             if decision is None:
                 # Unusable model output: stop without executing anything.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_INVALID_DECISION
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_INVALID_DECISION,
+                    run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
                 return result
@@ -206,7 +220,11 @@ class AgentExecutionService:
                 # Outside the trusted tenant's own catalog (unknown,
                 # cross-tenant, or deleted): fail closed, execute nothing.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_SKILL_NOT_AVAILABLE,
+                    run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
                 return result
@@ -219,12 +237,17 @@ class AgentExecutionService:
                     decision.tool_calls,
                     decision.satisfied_preconditions,
                     authorization,
+                    agent_run_id=run_id,
                 )
             except NotFoundError:
                 # Deleted between listing and execution: indistinguishable
                 # from unavailable, and nothing executed.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_SKILL_NOT_AVAILABLE,
+                    run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
                 return result
@@ -233,7 +256,11 @@ class AgentExecutionService:
                 # engine; its rejection means the decision was unusable.
                 # Nothing executed.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_INVALID_DECISION
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_INVALID_DECISION,
+                    run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
                 return result
@@ -258,6 +285,7 @@ class AgentExecutionService:
                     AgentRunStatus.APPROVAL_REQUIRED,
                     executed.error_kind,
                     completed,
+                    run_id=run_id,
                 )
                 result.approval_id = executed.approval_id
                 await self._persist_trace(result, started_at)
@@ -266,7 +294,12 @@ class AgentExecutionService:
                 # ANY controlled failure stops the run immediately.
                 # There are no retries.
                 result = self._build_result(
-                    context, goal, AgentRunStatus.FAILED, executed.error_kind, completed
+                    context,
+                    goal,
+                    AgentRunStatus.FAILED,
+                    executed.error_kind,
+                    completed,
+                    run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
                 return result
@@ -279,6 +312,7 @@ class AgentExecutionService:
             AgentRunStatus.MAX_STEPS_REACHED,
             _ERROR_MAX_STEPS_REACHED,
             completed,
+            run_id=run_id,
         )
         await self._persist_trace(result, started_at)
         return result
@@ -328,6 +362,8 @@ class AgentExecutionService:
         goal: str,
         completed: List[AgentStepOutcome],
         error_kind: str,
+        *,
+        run_id: Optional[str] = None,
     ) -> AgentExecutionResult:
         """Terminal result for a run stopped BEFORE executing a Skill.
 
@@ -335,7 +371,14 @@ class AgentExecutionService:
         catalog: no further Skill executes and the executed prefix is
         preserved.
         """
-        return self._build_result(context, goal, AgentRunStatus.FAILED, error_kind, completed)
+        return self._build_result(
+            context,
+            goal,
+            AgentRunStatus.FAILED,
+            error_kind,
+            completed,
+            run_id=run_id,
+        )
 
     @staticmethod
     def _build_result(
@@ -344,6 +387,8 @@ class AgentExecutionService:
         status: AgentRunStatus,
         error_kind: Optional[str],
         steps: List[AgentStepOutcome],
+        *,
+        run_id: Optional[str] = None,
     ) -> AgentExecutionResult:
         """Assemble the structured run result.
 
@@ -351,7 +396,7 @@ class AgentExecutionService:
         context, consistent with the other structured results.
         """
         return AgentExecutionResult(
-            id=str(uuid.uuid4()),
+            id=run_id or str(uuid.uuid4()),
             tenant_id=context.tenant_id,
             principal_id=context.user_id,
             goal=goal,

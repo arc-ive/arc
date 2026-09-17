@@ -168,6 +168,26 @@ class PostgreSQLKnowledgeRepository:
                 )
             return self._row_to_document(row)
 
+    async def delete_by_id(self, document_id: str, tenant_id: str) -> None:
+        """Delete a knowledge document, scoped to a tenant.
+
+        The DELETE is tenant-scoped: a document belonging to another tenant
+        is unaffected.  Dependent chunks are removed by ON DELETE CASCADE.
+        Raises ``NotFoundError`` when the document does not exist in the
+        given tenant.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            status_str = await conn.execute(
+                "DELETE FROM knowledge_documents WHERE id = $1 AND tenant_id = $2",
+                document_id,
+                tenant_id,
+            )
+            deleted = int(status_str.split()[-1]) if status_str else 0
+            if deleted == 0:
+                raise NotFoundError(
+                    f"Knowledge document {document_id} not found in tenant {tenant_id}"
+                )
+
     async def get_by_external_id(
         self, external_id: str, source: KnowledgeSource, tenant_id: str
     ) -> KnowledgeDocument:
