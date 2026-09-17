@@ -1631,6 +1631,7 @@ async def sync_connector(
 
 @api_router.get(
     "/tenants/{tenant_id}/connectors/credentials/{provider}",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
 )
 async def get_credential_metadata(
     tenant_id: str,
@@ -1664,6 +1665,7 @@ async def get_credential_metadata(
 
 @api_router.post(
     "/tenants/{tenant_id}/connectors/credentials/{provider}",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
 )
 async def create_credential(
     tenant_id: str,
@@ -1710,6 +1712,7 @@ async def create_credential(
 
 @api_router.put(
     "/tenants/{tenant_id}/connectors/credentials/{provider}",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
 )
 async def rotate_credential(
     tenant_id: str,
@@ -1756,6 +1759,7 @@ async def rotate_credential(
 
 @api_router.delete(
     "/tenants/{tenant_id}/connectors/credentials/{provider}",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
 )
 async def delete_credential(
     tenant_id: str,
@@ -1789,6 +1793,7 @@ async def delete_credential(
 
 @api_router.get(
     "/tenants/{tenant_id}/connectors/credentials/{provider}/audit",
+    responses=AUTHENTICATED_ERROR_RESPONSES,
 )
 async def list_credential_audit(
     tenant_id: str,
@@ -2149,7 +2154,6 @@ async def get_llm_usage_records(
     }
 
 
-@api_router.get("/platform/observability/summary", responses=AUTHENTICATED_ERROR_RESPONSES)
 @api_router.get("/platform/observability/summary", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_platform_observability_summary(
     hours: int = Query(default=24, ge=1, le=168),
