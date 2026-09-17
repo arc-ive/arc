@@ -372,3 +372,57 @@ class TestApprovalAggregate:
         metrics = await repo.approval_activity(None, 24)
         assert metrics.total >= 0
         assert isinstance(metrics.pending, int)
+
+
+class TestLlmUsageRecordsDeterministicOrdering:
+    """Regression: records sharing created_at must sort deterministically by id ASC."""
+
+    async def test_same_timestamp_records_order_by_id_asc(self, db):
+        from datetime import datetime, timezone
+
+        from arc.repositories.tenancy import PostgreSQLTenantRepository
+
+        tenants = PostgreSQLTenantRepository(db)
+        tenant = await tenants.create(Tenant(id=f"obs-det-{uuid.uuid4().hex[:6]}", name="Det"))
+        try:
+            stamp = datetime(2026, 9, 16, 10, 0, 0, tzinfo=timezone.utc)
+            # Insert three records with identical created_at, descending id order.
+            ids = [f"llm-det-{i}-{uuid.uuid4().hex[:4]}" for i in range(3)]
+            async with db._connection_pool.acquire() as conn:
+                for rid in reversed(ids):
+                    await conn.execute(
+                        """INSERT INTO llm_usage_records
+                           (id, tenant_id, provider, model, call_type,
+                            input_tokens, output_tokens, total_tokens,
+                            latency_ms, cost_usd, created_at)
+                           VALUES ($1,$2,'openrouter','m','complete',
+                                   1,1,1,1,0,$3)""",
+                        rid,
+                        tenant.id,
+                        stamp,
+                    )
+
+            repo = PostgreSQLObservabilityRepository(db)
+            # Page 1: first 2 records.
+            page1, total = await repo.llm_usage_records_page(tenant.id, 24, None, 2, 0)
+            assert total == 3
+            assert len(page1) == 2
+            # Page 2: remaining 1 record.
+            page2, total2 = await repo.llm_usage_records_page(tenant.id, 24, None, 2, 2)
+            assert total2 == 3
+            assert len(page2) == 1
+
+            # All records have the same created_at; ordering must be id ASC.
+            all_ids = [r["id"] for r in page1] + [r["id"] for r in page2]
+            assert all_ids == sorted(all_ids), (
+                f"Records with identical created_at not ordered by id ASC: {all_ids}"
+            )
+
+            # With call_type filter (branch 1): same deterministic ordering.
+            page_ft, total_ft = await repo.llm_usage_records_page(tenant.id, 24, "complete", 2, 0)
+            assert total_ft == 3
+            ft_ids = [r["id"] for r in page_ft]
+            assert ft_ids == sorted(ft_ids)
+        finally:
+            async with db._connection_pool.acquire() as conn:
+                await conn.execute("DELETE FROM tenants WHERE id = $1", tenant.id)

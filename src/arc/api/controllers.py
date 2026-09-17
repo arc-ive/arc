@@ -58,6 +58,7 @@ from arc.security.authorization import (
     CONNECTOR_READ,
     CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
+    KNOWLEDGE_DELETE,
     KNOWLEDGE_READ,
     MEMBERSHIP_CREATE,
     OBSERVABILITY_PLATFORM_READ,
@@ -1421,6 +1422,36 @@ async def get_knowledge_document(
     return _knowledge_document_payload(document)
 
 
+@api_router.delete(
+    "/tenants/{tenant_id}/knowledge/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_knowledge_document(
+    tenant_id: str,
+    document_id: str,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_DELETE)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> None:
+    """Delete a knowledge document within a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``knowledge:delete`` permission.  The path ``tenant_id`` is validated
+    for consistency against the trusted context.  Dependent knowledge
+    chunks are removed by the database ON DELETE CASCADE.  A missing
+    document returns 404; the response is indistinguishable from a
+    cross-tenant access denial.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        await knowledge_service.delete_document(context, document_id)
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge document not found",
+        )
+
+
 @api_router.get("/tenants/{tenant_id}/knowledge")
 async def list_knowledge_documents(
     tenant_id: str,
@@ -2133,6 +2164,74 @@ async def get_tenant_usage_summary(
     if tenant_id != context.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return await observability_service.get_tenant_usage_summary(context.tenant_id, hours)
+
+
+@api_router.get("/tenants/{tenant_id}/observability/llm-usage")
+async def get_llm_usage(
+    tenant_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+    context: TenantContext = Depends(require_tenant_permission(OBSERVABILITY_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Aggregated LLM usage for a tenant (V2-ADR-024, Issue #141).
+
+    Returns token totals, latency, cost coverage, and per-type call
+    counts. cost_usd is NULL when pricing is unavailable for any record
+    in the window.
+    """
+    if tenant_id != context.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    usage = await observability_service.get_llm_usage(context.tenant_id, hours)
+    return {
+        "window_hours": hours,
+        "total_calls": usage.total_calls,
+        "calls_by_type": usage.calls_by_type,
+        "total_input_tokens": usage.total_input_tokens,
+        "total_output_tokens": usage.total_output_tokens,
+        "total_tokens": usage.total_tokens,
+        "avg_latency_ms": round(usage.avg_latency_ms, 2),
+        "total_cost_usd": float(usage.total_cost_usd) if usage.total_cost_usd is not None else None,
+        "unknown_cost_records": usage.unknown_cost_records,
+        "cost_coverage": usage.cost_coverage,
+        "models_used": usage.models_used,
+    }
+
+
+@api_router.get("/tenants/{tenant_id}/observability/llm-usage/records")
+async def get_llm_usage_records(
+    tenant_id: str,
+    hours: int = Query(default=24, ge=1, le=168),
+    call_type: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    context: TenantContext = Depends(require_tenant_permission(OBSERVABILITY_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Paginated LLM usage records for a tenant (V2-ADR-024, Issue #141).
+
+    Returns individual LLM call records with token counts, latency, cost,
+    and correlation IDs. No raw prompts or responses are ever included.
+    """
+    if tenant_id != context.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    result = await observability_service.get_llm_usage_records(
+        context.tenant_id, hours, call_type, limit, offset
+    )
+    # Serialize Decimal cost_usd to float for JSON
+    for record in result["records"]:
+        if record.get("cost_usd") is not None:
+            record["cost_usd"] = float(record["cost_usd"])
+    return {
+        "window_hours": hours,
+        "records": result["records"],
+        "limit": result["limit"],
+        "offset": result["offset"],
+        "total": result["total"],
+    }
 
 
 @api_router.get("/platform/observability/summary")

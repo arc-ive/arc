@@ -218,6 +218,17 @@ class KnowledgeService:
         """Get a knowledge document by ID within a tenant."""
         return await self.knowledge_repo.get_by_id(document_id, context.tenant_id)
 
+    async def delete_document(self, context: TenantContext, document_id: str) -> None:
+        """Delete a knowledge document within a tenant.
+
+        The ``context`` must be an already-validated TenantContext
+        established by X-10's TenantContextService.  The tenant boundary is
+        derived exclusively from it.  Dependent chunks are removed by the
+        database ON DELETE CASCADE.  Raises ``NotFoundError`` when the
+        document does not exist in the given tenant.
+        """
+        await self.knowledge_repo.delete_by_id(document_id, context.tenant_id)
+
     async def list_documents(self, context: TenantContext) -> list:
         """List ACTIVE knowledge documents for a tenant."""
         return await self.knowledge_repo.list_for_tenant(context.tenant_id)
