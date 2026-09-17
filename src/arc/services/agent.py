@@ -179,7 +179,11 @@ class AgentExecutionService:
                 # delegated Skill execution actually succeeded.
                 if any(step.status is SkillExecutionStatus.SUCCEEDED for step in completed):
                     result = self._build_result(
-                        context, goal, AgentRunStatus.SUCCEEDED, None, completed,
+                        context,
+                        goal,
+                        AgentRunStatus.SUCCEEDED,
+                        None,
+                        completed,
                         run_id=run_id,
                     )
                     await self._persist_trace(result, started_at)
@@ -199,7 +203,10 @@ class AgentExecutionService:
             if decision is None:
                 # Unusable model output: stop without executing anything.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_INVALID_DECISION,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_INVALID_DECISION,
                     run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
@@ -208,7 +215,10 @@ class AgentExecutionService:
                 # Outside the trusted tenant's own catalog (unknown,
                 # cross-tenant, or deleted): fail closed, execute nothing.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_SKILL_NOT_AVAILABLE,
                     run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
@@ -228,7 +238,10 @@ class AgentExecutionService:
                 # Deleted between listing and execution: indistinguishable
                 # from unavailable, and nothing executed.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_SKILL_NOT_AVAILABLE,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_SKILL_NOT_AVAILABLE,
                     run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
@@ -238,7 +251,10 @@ class AgentExecutionService:
                 # engine; its rejection means the decision was unusable.
                 # Nothing executed.
                 result = self._failed_at_decision_boundary(
-                    context, goal, completed, _ERROR_INVALID_DECISION,
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_INVALID_DECISION,
                     run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
@@ -273,7 +289,11 @@ class AgentExecutionService:
                 # ANY controlled failure stops the run immediately.
                 # There are no retries.
                 result = self._build_result(
-                    context, goal, AgentRunStatus.FAILED, executed.error_kind, completed,
+                    context,
+                    goal,
+                    AgentRunStatus.FAILED,
+                    executed.error_kind,
+                    completed,
                     run_id=run_id,
                 )
                 await self._persist_trace(result, started_at)
