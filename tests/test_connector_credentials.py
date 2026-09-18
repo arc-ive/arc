@@ -583,6 +583,21 @@ class TestFailureSafety:
             assert "secret_token" not in record.message
 
     @pytest.mark.asyncio
+    async def test_infrastructure_failure_propagates_instead_of_none(self):
+        """A repository failure must never be converted to None (missing credential)."""
+
+        class _FailingRepository(FakeConnectorCredentialRepository):
+            async def get_by_tenant_and_provider(self, tenant_id: str, provider: str):
+                raise RuntimeError("pool exhausted")
+
+        svc = ConnectorCredentialService(
+            credential_repo=_FailingRepository(),
+            encryption_service=_make_encryption_service(),
+        )
+        with pytest.raises(RuntimeError, match="pool exhausted"):
+            await svc.resolve_credential("tenant-1", ConnectorProvider.GITHUB)
+
+    @pytest.mark.asyncio
     async def test_delete_nonexistent_fails_safely(self):
         """Deleting a nonexistent credential raises a controlled error."""
         repo = FakeConnectorCredentialRepository()

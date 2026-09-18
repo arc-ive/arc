@@ -192,6 +192,30 @@ class TestConnectorSyncFailurePaths:
         assert record.status is ConnectorSyncStatus.FAILED
         assert record.error_kind == "missing_credential"
 
+    async def test_credential_resolution_failure_is_not_missing_credential(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+        credential_service = AsyncMock()
+        credential_service.resolve_credential.side_effect = RuntimeError("connection failed")
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: FakeGitHubProvider()}),
+            credential_store=ConnectorCredentialStore(raw="{}"),
+            knowledge_service=knowledge_service,
+            connector_credential_service=credential_service,
+        )
+
+        with pytest.raises(ConnectorSyncError, match="resolution failed"):
+            await service.sync(_context(), config.id)
+
+        assert knowledge_service.ingest_document.await_count == 0
+        record = sync_repo.create_record.await_args_list[0][0][0]
+        assert record.status is ConnectorSyncStatus.FAILED
+        assert record.error_kind == "credential_resolution_failed"
+
     async def test_unsupported_provider_fails_closed(
         self, connector_repo, sync_repo, knowledge_service
     ):
