@@ -21,7 +21,7 @@ unsanitized content is persisted and a PiiGuardError is raised.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from arc.db.connection import DuplicateKeyError, NotFoundError
@@ -134,8 +134,8 @@ class KnowledgeService:
             status=KnowledgeStatus.ACTIVE,
             content=sanitized_text,
             external_id=external_id,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
 
         prepared = await self._prepare_or_none(context, document)
@@ -167,7 +167,7 @@ class KnowledgeService:
             content=sanitized_text,
             external_id=existing.external_id,
             created_at=existing.created_at,
-            updated_at=datetime.now(),
+            updated_at=datetime.now(timezone.utc),
         )
 
         prepared = await self._prepare_or_none(context, updated)

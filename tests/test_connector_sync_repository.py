@@ -8,7 +8,7 @@ raw external payloads.
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -118,7 +118,7 @@ class TestConnectorSyncRepositoryContract:
             provider=ConnectorProvider.GITHUB,
             status=ConnectorSyncStatus.SUCCESS,
             items_fetched=3,
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
         )
         created = await sync_repo.create_record(record)
         assert created.id == record.id
@@ -140,7 +140,7 @@ class TestConnectorSyncRepositoryContract:
             provider=ConnectorProvider.GITHUB,
             status=ConnectorSyncStatus.FAILED,
             error_kind="auth_failed",
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
         )
         await sync_repo.create_record(record)
 
