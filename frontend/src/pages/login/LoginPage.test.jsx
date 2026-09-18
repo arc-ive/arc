@@ -44,7 +44,7 @@ describe('LoginPage', () => {
     expect(screen.getByText(/access denied/i)).toBeInTheDocument()
   })
 
-  it('redirects to /app when already authenticated', () => {
+  it('redirects to /app when already authenticated with no state.from', () => {
     mockUseAuth.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -58,6 +58,32 @@ describe('LoginPage', () => {
     )
 
     // Should redirect to /app - login form should not be visible
+    expect(screen.queryByText('Sign in with Google')).not.toBeInTheDocument()
+  })
+
+  it('redirects to state.from when authenticated with preserved deep-link', () => {
+    mockUseAuth.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      signIn: vi.fn(),
+    })
+
+    const fromPath = '/app/t/ref-acme-technologies/knowledge'
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/login',
+            state: { from: { pathname: fromPath } },
+          },
+        ]}
+      >
+        <LoginPage />
+      </MemoryRouter>,
+    )
+
+    // Should redirect to the deep-link path, not /app
     expect(screen.queryByText('Sign in with Google')).not.toBeInTheDocument()
   })
 

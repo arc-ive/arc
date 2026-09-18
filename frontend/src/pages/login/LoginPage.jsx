@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ShieldCheck, Users } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
 import { Button } from '../../components/ui/Button.jsx'
@@ -114,11 +114,13 @@ function DevUserSelector() {
 
 export function LoginPage() {
   const { isAuthenticated, signIn, isLoading } = useAuth()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const error = searchParams.get('error')
 
   if (isAuthenticated) {
-    return <Navigate to="/app" replace />
+    const from = location.state?.from?.pathname
+    return <Navigate to={from || '/app'} replace />
   }
 
   if (isLoading) {
