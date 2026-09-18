@@ -54,69 +54,65 @@ function CreateConnectorDialog({ open, onClose }) {
 
   const selectedProvider = PROVIDERS.find((p) => p.value === provider)
 
-  if (!open) return null
-
   return (
-    <Dialog>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-        <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-          <h3 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h3>
-          {error && (
-            <div className="mb-4 rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
-              {errorMessage(error)}
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-300">Provider</label>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
-                disabled={createMutation.isPending}
-              >
-                {PROVIDERS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-300">Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
-                placeholder="e.g. Main GitHub integration"
-                required
-                disabled={createMutation.isPending}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-300">Target</label>
-              <input
-                type="text"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
-                placeholder={selectedProvider?.targetHint ?? 'Provider-specific target'}
-                required
-                disabled={createMutation.isPending}
-              />
-              {selectedProvider && (
-                <p className="mt-1 text-xs text-zinc-500">{selectedProvider.targetHint}</p>
-              )}
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button variant="secondary" onClick={onClose} disabled={createMutation.isPending}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createMutation.isPending || !name.trim() || !target.trim()}>
-                {createMutation.isPending ? 'Creating...' : 'Create'}
-              </Button>
-            </div>
-          </form>
-        </div>
+    <Dialog open={open} onClose={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+        <h3 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h3>
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+            {errorMessage(error)}
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-zinc-300">Provider</label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+              disabled={createMutation.isPending}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-zinc-300">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+              placeholder="e.g. Main GitHub integration"
+              required
+              disabled={createMutation.isPending}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-zinc-300">Target</label>
+            <input
+              type="text"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+              placeholder={selectedProvider?.targetHint ?? 'Provider-specific target'}
+              required
+              disabled={createMutation.isPending}
+            />
+            {selectedProvider && (
+              <p className="mt-1 text-xs text-zinc-500">{selectedProvider.targetHint}</p>
+            )}
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={onClose} disabled={createMutation.isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createMutation.isPending || !name.trim() || !target.trim()}>
+              {createMutation.isPending ? 'Creating...' : 'Create'}
+            </Button>
+          </div>
+        </form>
       </div>
     </Dialog>
   )
