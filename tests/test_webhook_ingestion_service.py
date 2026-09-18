@@ -385,9 +385,7 @@ class TestWebhookEventTypePiiSanitization:
         from unittest.mock import MagicMock
 
         pii_guard = MagicMock()
-        pii_guard.sanitize = MagicMock(
-            return_value=MagicMock(sanitized_text="<EMAIL_ADDRESS>")
-        )
+        pii_guard.sanitize = MagicMock(return_value=MagicMock(sanitized_text="<EMAIL_ADDRESS>"))
         tenant_id = _unique("tenant")
         service, repository = self._make_service_with_pii_guard(tenant_id, pii_guard)
         body = json.dumps(
@@ -422,6 +420,4 @@ class TestWebhookEventTypePiiSanitization:
         headers = _signed_headers(SECRET, body)
 
         with pytest.raises(PiiGuardError):
-            await service.ingest(
-                "github-demo", headers["timestamp"], headers["signature"], body
-            )
+            await service.ingest("github-demo", headers["timestamp"], headers["signature"], body)
