@@ -32,6 +32,7 @@ from arc.security.models import ApplicationRole, AuthenticatedPrincipal
 from arc.services.agent import MAX_AGENT_STEPS, AgentExecutionService
 from arc.services.llm import DeterministicLlmProvider
 from arc.services.observability import ObservabilityService
+from arc.services.pii import PiiGuardConfig, PiiGuardService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 from arc.services.tools import (
@@ -442,6 +443,7 @@ class TestTrustBoundaries:
             "llm_provider",
             "observability_service",
             "capability_service",
+            "pii_guard",
         }
         assert set(attrs) == expected
         forbidden = ("tool", "registry", "handler", "audit", "record")
@@ -715,3 +717,150 @@ class TestServiceIndependence:
         traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
         assert traces[0].id == result.id
+
+
+class TestAgentGoalPiiSanitization:
+    """V2-ADR-025: PII in agent goals must be sanitized before persistence.
+
+    The user-supplied goal flows through:
+      request → agent.run() → AgentExecutionResult → _persist_trace → AgentRunRecord
+    PII must not survive into the persisted trace.
+
+    Default PiiGuardService detects: PERSON, EMAIL_ADDRESS, PHONE_NUMBER,
+    CREDIT_CARD, IBAN_CODE, IP_ADDRESS.  US_SSN requires explicit config
+    (see Issue #167 / PR #173).
+    """
+
+    async def test_email_in_goal_sanitized_before_persistence(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        goal_with_email = "Send report to john@example.com"
+        result = await env["agent"].run(
+            env["context"], env["principal"], goal_with_email, env["authorization"]
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert "john@example.com" not in traces[0].goal
+
+    async def test_phone_in_goal_sanitized_before_persistence(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        goal_with_phone = "Call 555-123-4567 about the incident"
+        result = await env["agent"].run(
+            env["context"], env["principal"], goal_with_phone, env["authorization"]
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert "555-123-4567" not in traces[0].goal
+
+    async def test_multiple_pii_types_in_goal_sanitized(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        goal_multi_pii = "Contact alice@corp.com or 555-987-6543 about the server"
+        result = await env["agent"].run(
+            env["context"], env["principal"], goal_multi_pii, env["authorization"]
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert "alice@corp.com" not in traces[0].goal
+        assert "555-987-6543" not in traces[0].goal
+
+    async def test_non_pii_goal_unchanged(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        clean_goal = "Check the production deployment status"
+        result = await env["agent"].run(
+            env["context"], env["principal"], clean_goal, env["authorization"]
+        )
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].goal == clean_goal
+
+    async def test_pii_sanitization_does_not_break_agent_execution(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        skill = await _create_skill(env)
+        env["queue"].extend([_decision(skill.id), None])
+
+        goal_with_pii = "Process user john@example.com for the audit"
+        result = await env["agent"].run(
+            env["context"], env["principal"], goal_with_pii, env["authorization"]
+        )
+        # Agent execution must complete successfully despite PII in goal
+        assert result.status is AgentRunStatus.SUCCEEDED
+        assert len(result.steps) == 1
+
+    async def test_failed_agent_still_sanitizes_goal(self, repositories, db):
+        env = await _build_environment_with_observability(repositories, db)
+        bad = await _create_skill(env, allowed_tools=["check_service_health", "ghost_tool"])
+        env["queue"].extend([_decision(bad.id, "ghost_tool")])
+
+        goal_with_pii = "Fix user john@example.com in the broken system"
+        result = await env["agent"].run(
+            env["context"], env["principal"], goal_with_pii, env["authorization"]
+        )
+        assert result.status is AgentRunStatus.FAILED
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert "john@example.com" not in traces[0].goal
+
+    async def test_custom_pii_guard_includes_ssn(self, repositories, db):
+        """Verify PiiGuardService can be injected with custom config."""
+        from collections import deque as _dq
+
+        custom_guard = PiiGuardService(
+            config=PiiGuardConfig(enabled_categories={"US_SSN", "EMAIL_ADDRESS"})
+        )
+        tenant_repo, _, _ = repositories
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="PII Tenant"))
+        observability_repo = PostgreSQLObservabilityRepository(db)
+        observability_svc = ObservabilityService(repository=observability_repo)
+        skill_repo = PostgreSQLSkillRepository(db)
+        skill_svc = SkillService(skill_repo)
+        record_repo = PostgreSQLToolExecutionRepository(db)
+        tool_svc = ToolExecutionService(
+            ToolRegistry({"check_service_health": SERVICE_HEALTH_TOOL}), record_repo
+        )
+        engine = SkillExecutionService(skill_service=skill_svc, tool_service=tool_svc)
+
+        skill = await skill_svc.create_skill(
+            _context(tenant.id),
+            Skill(
+                id=_unique("skill"), tenant_id=tenant.id, name="pii_skill",
+                purpose="Test", allowed_tools=["check_service_health"],
+            ),
+        )
+        decisions = _dq([_decision(skill.id), None])
+        agent = AgentExecutionService(
+            skill_service=skill_svc,
+            skill_execution_service=engine,
+            llm_provider=DeterministicLlmProvider(
+                skill_decision_script=lambda g, c: decisions.popleft() if decisions else None
+            ),
+            observability_service=observability_svc,
+            pii_guard=custom_guard,
+        )
+        ctx = _context(tenant.id)
+
+        result = await agent.run(ctx, _principal(), "SSN 111-22-3333", _authorization())
+        assert result.status is AgentRunStatus.SUCCEEDED
+
+        traces = await observability_svc.list_agent_run_traces(tenant.id, hours=1)
+        assert len(traces) == 1
+        assert "111-22-3333" not in traces[0].goal

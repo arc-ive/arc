@@ -64,6 +64,7 @@ from arc.security.models import AuthenticatedPrincipal
 from arc.services.llm import LlmProvider, SkillSelectingLlm, _current_llm_usage
 from arc.services.llm_pricing import build_llm_usage_record
 from arc.services.observability import ObservabilityService
+from arc.services.pii import PiiGuardService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 
@@ -103,12 +104,14 @@ class AgentExecutionService:
         llm_provider: Optional[LlmProvider] = None,
         observability_service: Optional[ObservabilityService] = None,
         capability_service=None,
+        pii_guard: Optional[PiiGuardService] = None,
     ):
         self.skill_service = skill_service
         self.skill_execution_service = skill_execution_service
         self.llm_provider = llm_provider
         self.observability_service = observability_service
         self.capability_service = capability_service
+        self.pii_guard = pii_guard if pii_guard is not None else PiiGuardService()
 
     async def run(
         self,
@@ -437,11 +440,12 @@ class AgentExecutionService:
             return
         try:
             completed_at = datetime.now(timezone.utc)
+            sanitized_goal = self.pii_guard.sanitize(result.goal).sanitized_text
             trace = AgentRunRecord(
                 id=result.id,
                 tenant_id=result.tenant_id,
                 principal_id=result.principal_id,
-                goal=result.goal,
+                goal=sanitized_goal,
                 status=result.status.value,
                 error_kind=result.error_kind,
                 steps=[
