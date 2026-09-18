@@ -17,7 +17,7 @@ import { Badge } from '../../components/ui/Badge.jsx'
 
 export function TenantSettingsPage() {
   const { tenantId } = useParams()
-  const { isDemo } = useAuth()
+  const { isDemo, principal } = useAuth()
   const { can } = useCapabilities()
   const queryClient = useQueryClient()
   const canUpdate = can('tenant:update')
@@ -36,6 +36,11 @@ export function TenantSettingsPage() {
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.tenant(tenantId), data)
       queryClient.invalidateQueries({ queryKey: queryKeys.tenant(tenantId) })
+      // Company and Overview read the tenant from the user-tenants list, whose
+      // key is not a prefix of the tenant key and is therefore untouched above.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.userTenants(principal?.sub),
+      })
       setForm(null)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)

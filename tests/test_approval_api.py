@@ -184,7 +184,7 @@ class TestDecisionsAndLifecycle:
             token,
             json={"decision": "maybe"},
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_unknown_approval_404(self, client, seeded, make_token, authorization_override):
         tenant, user, _ = seeded

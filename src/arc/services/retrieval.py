@@ -18,7 +18,7 @@ without a complete index, nor a partial chunk set.
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from arc.domain.models import (
@@ -154,7 +154,7 @@ class RetrievalService:
                 tenant_id=context.tenant_id,
                 content=text,
                 sequence=sequence,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
             )
             for sequence, text in enumerate(texts)
         ]

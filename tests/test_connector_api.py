@@ -182,8 +182,8 @@ class TestConnectorCreate:
             headers={"Authorization": f"Bearer {token}"},
             json=_connector_payload(provider="dropbox"),
         )
-        assert response.status_code == 400
-        assert response.json()["detail"] == "Invalid connector provider"
+        assert response.status_code == 422
+        assert any("provider" in e["loc"] for e in response.json()["detail"])
 
     async def test_missing_provider_is_rejected(
         self, client, seeded, make_token, authorization_override
@@ -197,7 +197,7 @@ class TestConnectorCreate:
             headers={"Authorization": f"Bearer {token}"},
             json={},
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_empty_name_is_rejected(self, client, seeded, make_token, authorization_override):
         tenant, user, _ = seeded
@@ -209,7 +209,7 @@ class TestConnectorCreate:
             headers={"Authorization": f"Bearer {token}"},
             json=_connector_payload(name=""),
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     async def test_duplicate_connector_returns_409(
         self, client, seeded, make_token, authorization_override

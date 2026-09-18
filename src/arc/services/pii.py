@@ -20,8 +20,8 @@ Behavior notes (implementation decisions, not product requirements):
 - The default category set and operator behavior are explicit and
   testable via PiiGuardConfig.
 - The default categories are globally applicable (PERSON, EMAIL_ADDRESS,
-  PHONE_NUMBER, CREDIT_CARD, IBAN_CODE, IP_ADDRESS). Regional identifiers
-  such as US_SSN remain configurable through PiiGuardConfig.enabled_categories.
+  PHONE_NUMBER, CREDIT_CARD, IBAN_CODE, IP_ADDRESS, US_SSN). Additional
+  regional identifiers remain configurable through PiiGuardConfig.enabled_categories.
 - Mask sizing is derived from the detected spans: the mask operator is
   configured to cover the longest merged span per entity type, so the
   complete detected entity is masked regardless of its length.
@@ -41,6 +41,7 @@ DEFAULT_ENABLED_CATEGORIES = frozenset(
         "CREDIT_CARD",
         "IBAN_CODE",
         "IP_ADDRESS",
+        "US_SSN",
     }
 )
 

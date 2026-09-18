@@ -12,6 +12,7 @@ from arc.api.csrf import CSRFMiddleware
 from arc.api.dev_auth import dev_auth_router
 from arc.api.dev_controllers import dev_router
 from arc.api.middleware import RequestTelemetryMiddleware
+from arc.api.middleware_rate_limit import RateLimitMiddleware
 
 # Import app instance to register services
 from arc.app import app as arc_app
@@ -83,6 +84,10 @@ app.add_middleware(
 # CSRF protection for state-changing requests (Double-Submit Cookie Pattern).
 # Bearer token clients are exempt from CSRF validation.
 app.add_middleware(CSRFMiddleware)
+
+# Per-IP rate limiting on auth and webhook ingestion endpoints.
+# Disabled via RATE_LIMIT_ENABLED=0; limits tunable via env vars.
+app.add_middleware(RateLimitMiddleware)
 
 # Include API router
 app.include_router(api_router)

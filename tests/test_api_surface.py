@@ -38,6 +38,9 @@ DEV_PATHS = {
 
 DEV_OPENAPI_PATHS = {
     "/internal/dev/users/{user_id}/tenants/{tenant_id}/memberships",
+    "/internal/dev/auth/login",
+    "/internal/dev/auth/reference-users",
+    "/internal/dev/auth/reference-personas",
 }
 
 LEGACY_PUBLIC_OPENAPI_PATHS = {

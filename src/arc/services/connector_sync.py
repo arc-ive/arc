@@ -31,7 +31,7 @@ API as a single controlled error type.
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from arc.domain.models import (
@@ -140,9 +140,15 @@ class ConnectorSyncService:
         # for development.
         token = None
         if self._credential_service is not None:
-            token = await self._credential_service.resolve_credential(
-                context.tenant_id, config.provider
-            )
+            try:
+                token = await self._credential_service.resolve_credential(
+                    context.tenant_id, config.provider
+                )
+            except Exception as exc:
+                # Infrastructure failure, not a missing credential: audit it
+                # distinctly so it is never mistaken for "not configured".
+                await self._record_failure(context, config, "credential_resolution_failed")
+                raise ConnectorSyncError("Connector credential resolution failed") from exc
         if token is None:
             token = self.credential_store.get(context.tenant_id, config.provider)
         if token is None:
@@ -199,7 +205,7 @@ class ConnectorSyncService:
                 provider=config.provider,
                 status=ConnectorSyncStatus.SUCCESS,
                 items_fetched=items_fetched,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
             )
         )
 
@@ -217,6 +223,6 @@ class ConnectorSyncService:
                 provider=config.provider,
                 status=ConnectorSyncStatus.FAILED,
                 error_kind=error_kind,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
             )
         )

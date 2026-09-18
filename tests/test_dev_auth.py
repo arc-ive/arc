@@ -378,7 +378,14 @@ class TestCSRFExemption:
 
 
 class TestDevAuthNotMountedInProduction:
-    """Test that the dev auth router is not mounted when APP_ENV is not development."""
+    """Test that the dev auth router is not mounted when APP_ENV is not development.
+
+    Whether the router is mounted on the real ``arc.main`` app is asserted in
+    ``tests/test_api_surface.py``, which loads the app in a subprocess under an
+    explicit APP_ENV. Asserting it here would depend on the ambient APP_ENV of
+    whoever runs the suite, because ``arc.main`` evaluates the mounting guard at
+    import time and is already imported by the time any test runs.
+    """
 
     def test_dev_auth_router_exists_only_for_development(self):
         """The dev auth router is a separate module, only included via main.py gating."""
@@ -386,18 +393,6 @@ class TestDevAuthNotMountedInProduction:
         from arc.api.dev_auth import dev_auth_router
 
         assert len(dev_auth_router.routes) > 0
-
-    def test_dev_login_endpoint_works_in_dev_mode(self):
-        """The dev login endpoint responds (APP_ENV=development in test env)."""
-        from arc.main import app
-
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.post(
-            "/internal/dev/auth/login",
-            json={"user_id": "not-a-real-user"},
-        )
-        # 403 means the endpoint is mounted and responding (user not in allowlist)
-        assert response.status_code == 403
 
     def test_dev_auth_not_mounted_when_app_env_production(self):
         """Dev auth routes return 404 when APP_ENV is not 'development'."""
