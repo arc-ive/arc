@@ -1,5 +1,6 @@
 """PostgreSQL connection manager for Arc domain."""
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -26,19 +27,68 @@ class NotFoundError(DatabaseError):
     pass
 
 
+DEFAULT_POOL_MIN = 2
+DEFAULT_POOL_MAX = 20
+
+
+def _pool_size_from_env(name: str, default: int) -> int:
+    """Read a pool bound from the environment, failing loudly on nonsense.
+
+    A misconfigured bound would otherwise surface much later as an opaque
+    asyncpg error during startup, so it is rejected here with the variable
+    name in the message.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise DatabaseError(f"{name} must be an integer, got {raw!r}") from None
+    if value < 1:
+        raise DatabaseError(f"{name} must be at least 1, got {value}")
+    return value
+
+
 class ArcDatabase:
     """Database manager for Arc domain models."""
 
     def __init__(
         self,
         database_url: str = ("postgresql://arc:arc-dev-password@localhost:5432/arc"),
+        pool_min: int | None = None,
+        pool_max: int | None = None,
     ):
+        """Create the manager.
+
+        ``pool_min``/``pool_max`` default to ``DB_POOL_MIN``/``DB_POOL_MAX``
+        from the environment. asyncpg's own default is a fixed 10/10, which
+        caps concurrency and cannot be tuned without a code change.
+        """
         self.database_url = database_url
+        self.pool_min = (
+            pool_min
+            if pool_min is not None
+            else _pool_size_from_env("DB_POOL_MIN", DEFAULT_POOL_MIN)
+        )
+        self.pool_max = (
+            pool_max
+            if pool_max is not None
+            else _pool_size_from_env("DB_POOL_MAX", DEFAULT_POOL_MAX)
+        )
+        if self.pool_min > self.pool_max:
+            raise DatabaseError(
+                f"DB_POOL_MIN ({self.pool_min}) cannot exceed DB_POOL_MAX ({self.pool_max})"
+            )
         self._connection_pool = None
 
     async def connect(self) -> None:
         """Establish connection pool."""
-        self._connection_pool = await asyncpg.create_pool(self.database_url)
+        self._connection_pool = await asyncpg.create_pool(
+            self.database_url,
+            min_size=self.pool_min,
+            max_size=self.pool_max,
+        )
 
     async def disconnect(self) -> None:
         """Close connection pool."""
