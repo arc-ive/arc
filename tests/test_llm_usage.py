@@ -1061,6 +1061,12 @@ class TestAgentServiceUsageRecording:
         assert isinstance(recorded, LlmUsageRecord)
         assert recorded.request_id == "req-agent-42"
         assert recorded.agent_run_id is not None
+        # It must be the id the run is actually persisted under. The agent
+        # previously minted a second UUID for usage records, so this was a
+        # valid id that correlated to no agent run at all — "is not None"
+        # passed throughout.
+        persisted_run = obs_service.record_agent_run.call_args[0][0]
+        assert recorded.agent_run_id == persisted_run.id
         assert recorded.call_type == "propose_skill"
         assert recorded.tenant_id == "t-5"
         assert recorded.principal_id == "u-7"
