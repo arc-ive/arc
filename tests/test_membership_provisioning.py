@@ -148,7 +148,12 @@ async def test_create_membership_missing_tenant_returns_409(
 async def test_create_membership_invalid_role_returns_400(
     client, repositories, make_token, authorization_override
 ):
-    """An invalid role string returns 400 Bad Request."""
+    """An invalid role string is rejected by request validation (Issue #135).
+
+    This returned a hand-raised 400 until ``role`` became a ``UserRole`` field
+    on the request model. It is now FastAPI's native 422 with a structured
+    detail naming the offending field.
+    """
     admin = await _seed_user(repositories)
     target_user = await _seed_user(repositories)
     tenant = await _seed_tenant(repositories)
@@ -160,8 +165,10 @@ async def test_create_membership_invalid_role_returns_400(
         json={"user_id": target_user.id, "role": "superadmin"},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == 400
-    assert "Invalid role" in response.json()["detail"]
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert any("role" in error["loc"] for error in detail)
 
     tenant_repo, user_repo, _ = repositories
     await tenant_repo.delete(tenant.id)
@@ -184,7 +191,11 @@ async def test_create_membership_missing_user_id_returns_422(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422
-    assert "user_id is required" in response.json()["detail"]
+    # Still 422, but the detail is now FastAPI's structured list rather than
+    # the hand-written string "user_id is required" (Issue #135).
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert any("user_id" in error["loc"] for error in detail)
 
     tenant_repo, user_repo, _ = repositories
     await tenant_repo.delete(tenant.id)

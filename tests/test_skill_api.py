@@ -1155,8 +1155,8 @@ class TestSkillRiskField:
             headers=headers,
             json=_skill_payload(risk="critical"),
         )
-        assert response.status_code == 400
-        assert "risk" in response.json()["detail"].lower()
+        assert response.status_code == 422
+        assert any("risk" in error["loc"] for error in response.json()["detail"])
 
     async def test_update_skill_with_invalid_risk_rejected(
         self, client, repositories, make_token, authorization_override
@@ -1182,8 +1182,8 @@ class TestSkillRiskField:
             headers=headers,
             json={"risk": "invalid"},
         )
-        assert response.status_code == 400
-        assert "risk" in response.json()["detail"].lower()
+        assert response.status_code == 422
+        assert any("risk" in error["loc"] for error in response.json()["detail"])
 
 
 class TestSkillRouteSurface:

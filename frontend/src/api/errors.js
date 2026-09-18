@@ -20,8 +20,24 @@ export class ApiError extends Error {
   }
 
   get isValidation() {
-    return this.status === 400
+    return this.status === 400 || this.status === 422
   }
+}
+
+// FastAPI reports request-validation failures as a list of per-field errors,
+// unlike every other error, which carries a plain string `detail`.
+function formatValidationDetail(detail) {
+  const parts = detail
+    .map((error) => {
+      const message = error?.msg
+      if (!message) return null
+      const field = Array.isArray(error?.loc)
+        ? error.loc.filter((part) => part !== 'body' && part !== 'query').join('.')
+        : ''
+      return field ? `${field}: ${message}` : message
+    })
+    .filter(Boolean)
+  return parts.length ? parts.join('; ') : null
 }
 
 export function toApiError(error) {
@@ -35,10 +51,13 @@ export function toApiError(error) {
       )
     }
     const detail = response.data?.detail ?? null
-    const message =
-      typeof detail === 'string' && detail
-        ? detail
-        : `Request failed with status ${response.status}`
+    const fallback = `Request failed with status ${response.status}`
+    let message = fallback
+    if (typeof detail === 'string' && detail) {
+      message = detail
+    } else if (Array.isArray(detail)) {
+      message = formatValidationDetail(detail) ?? fallback
+    }
     return new ApiError(message, {
       status: response.status,
       detail,

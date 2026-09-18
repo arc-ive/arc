@@ -28,6 +28,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 
+from arc.api.schemas import AUTHENTICATION_ONLY_ERROR_RESPONSES
 from arc.db.connection import ArcDatabase
 from arc.domain.models import User
 from arc.security.google import GoogleAuthError, GoogleOIDCService
@@ -356,7 +357,7 @@ async def google_callback(
         return resp
 
 
-@auth_router.get("/auth/workspaces")
+@auth_router.get("/auth/workspaces", responses=AUTHENTICATION_ONLY_ERROR_RESPONSES)
 async def get_workspaces(
     request: Request,
 ) -> Dict[str, Any]:
@@ -397,7 +398,7 @@ async def get_workspaces(
     }
 
 
-@auth_router.post("/auth/logout")
+@auth_router.post("/auth/logout", responses=AUTHENTICATION_ONLY_ERROR_RESPONSES)
 async def logout(
     request: Request,
     response: Response,
@@ -419,7 +420,7 @@ async def logout(
     return {"status": "ok"}
 
 
-@auth_router.post("/auth/logout-all")
+@auth_router.post("/auth/logout-all", responses=AUTHENTICATION_ONLY_ERROR_RESPONSES)
 async def logout_all(
     request: Request,
     response: Response,

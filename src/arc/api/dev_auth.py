@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from arc.api.auth_routes import _set_csrf_cookie, _set_session_cookie
+from arc.api.schemas import AUTHENTICATED_ERROR_RESPONSES
 from arc.db.connection import NotFoundError
 from arc.security.session import SessionService
 
@@ -212,7 +213,10 @@ async def list_reference_personas() -> Dict[str, Any]:
     return {"personas": _DEV_PERSONAS}
 
 
-@dev_auth_router.post("/login")
+@dev_auth_router.post(
+    "/login",
+    responses={403: AUTHENTICATED_ERROR_RESPONSES[403]},
+)
 async def dev_login(
     body: DevLoginRequest,
     request: Request,
