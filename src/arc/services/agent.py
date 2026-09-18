@@ -187,10 +187,12 @@ class AgentExecutionService:
         ]
 
         completed: List[AgentStepOutcome] = []
-        agent_run_id = str(uuid.uuid4())
         for sequence in range(MAX_AGENT_STEPS):
             raw_decision = self.llm_provider.propose_skill(goal, snapshot)
-            await self._record_usage(context, agent_run_id)
+            # run_id, not a second identifier: the usage record has to carry
+            # the same id the run is persisted under, or it correlates to
+            # nothing.
+            await self._record_usage(context, run_id)
 
             if raw_decision is None:
                 # The provider declined to propose a further step: the run

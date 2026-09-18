@@ -554,3 +554,25 @@ CREATE TABLE IF NOT EXISTS tenant_capabilities (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_capabilities_tenant_id
     ON tenant_capabilities(tenant_id);
+
+-- Missing foreign key constraint (Issue #188, TRD 26, V2-ADR-028).
+--
+-- tenant_capabilities.capability_id referenced platform_capabilities with
+-- nothing enforcing that the capability exists, so removing a capability left
+-- tenant rows pointing at nothing.
+--
+-- Added at the end of the file because the referenced table must already
+-- exist. It follows the DROP IF EXISTS / ADD pair used elsewhere here:
+-- PostgreSQL has no ADD CONSTRAINT IF NOT EXISTS, and a DO block cannot be
+-- used because this file is executed by splitting on semicolons.
+--
+-- A tenant's per-capability flag is meaningless once the platform capability
+-- it refers to no longer exists, so it goes with it. Note the referenced
+-- column is capability_id: platform_capabilities has no id column.
+ALTER TABLE tenant_capabilities
+    DROP CONSTRAINT IF EXISTS fk_tenant_cap_platform;
+
+ALTER TABLE tenant_capabilities
+    ADD CONSTRAINT fk_tenant_cap_platform
+    FOREIGN KEY (capability_id) REFERENCES platform_capabilities(capability_id)
+    ON DELETE CASCADE;
