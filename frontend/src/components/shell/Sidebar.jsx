@@ -7,6 +7,7 @@ import {
   platformNav,
   tenantNavForRole,
 } from './navigation.js'
+import { APPLICATION_ROLES } from '../../auth/useMe.js'
 
 function NavItem({ to, label, icon: Icon, onNavigate }) {
   return (
@@ -111,11 +112,13 @@ export function Sidebar({ mobile = false, onNavigate }) {
           </NavGroup>
         )}
 
-        <NavGroup title="Personal">
-          {personalNav.map((item) => (
-            <NavItem key={item.to} {...item} onNavigate={onNavigate} />
-          ))}
-        </NavGroup>
+        {role !== APPLICATION_ROLES.EMPLOYEE && (
+          <NavGroup title="Personal">
+            {personalNav.map((item) => (
+              <NavItem key={item.to} {...item} onNavigate={onNavigate} />
+            ))}
+          </NavGroup>
+        )}
       </div>
     </nav>
   )
