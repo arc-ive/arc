@@ -26,6 +26,37 @@ class NotFoundError(DatabaseError):
     pass
 
 
+_TENANT_COLUMNS: tuple[str, ...] = (
+    "id",
+    "name",
+    "status",
+    "industry",
+    "address",
+    "phone",
+    "website",
+    "logo_url",
+    "created_at",
+    "updated_at",
+)
+
+
+def _tenant_select_list(alias: str = "") -> str:
+    """Build the tenant projection, optionally table-qualified."""
+    prefix = f"{alias}." if alias else ""
+    return ", ".join(f"{prefix}{column}" for column in _TENANT_COLUMNS)
+
+
+def _tenant_from_row(row: asyncpg.Record) -> Tenant:
+    """Map a row selected with :func:`_tenant_select_list` onto a Tenant.
+
+    Projection and construction both derive from ``_TENANT_COLUMNS``, so a
+    column cannot be selected without being mapped or mapped without being
+    selected.  ``Tenant`` defaults its profile fields to ``None``, which
+    otherwise lets an omitted column pass silently as missing data.
+    """
+    return Tenant(**{column: row[column] for column in _TENANT_COLUMNS})
+
+
 class ArcDatabase:
     """Database manager for Arc domain models."""
 
@@ -137,24 +168,32 @@ class ArcDatabase:
         """Get tenant by ID."""
         async with self._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, name, status, industry, address, phone, website, "
-                "logo_url, created_at, updated_at FROM tenants WHERE id = $1",
+                f"SELECT {_tenant_select_list()} FROM tenants WHERE id = $1",
                 tenant_id,
             )
             if not row:
                 raise NotFoundError(f"Tenant with id {tenant_id} not found")
-            return Tenant(
-                id=row["id"],
-                name=row["name"],
-                status=row["status"],
-                industry=row["industry"],
-                address=row["address"],
-                phone=row["phone"],
-                website=row["website"],
-                logo_url=row["logo_url"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
+            return _tenant_from_row(row)
+
+    async def list_tenants(self) -> list[Tenant]:
+        """List every tenant, newest first (platform-scoped, no membership filter)."""
+        async with self._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT {_tenant_select_list()} FROM tenants ORDER BY created_at DESC"
             )
+            return [_tenant_from_row(row) for row in rows]
+
+    async def list_tenants_paginated(self, limit: int, offset: int) -> tuple[list[Tenant], int]:
+        """One page of tenants, newest first, with the total row count."""
+        async with self._connection_pool.acquire() as conn:
+            total = await conn.fetchval("SELECT COUNT(*) FROM tenants")
+            rows = await conn.fetch(
+                f"SELECT {_tenant_select_list()} FROM tenants "
+                "ORDER BY created_at DESC, id ASC LIMIT $1 OFFSET $2",
+                limit,
+                offset,
+            )
+            return [_tenant_from_row(row) for row in rows], total
 
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration.
@@ -184,25 +223,12 @@ class ArcDatabase:
                     tenant.updated_at,
                 )
                 row = await conn.fetchrow(
-                    "SELECT id, name, status, industry, address, phone, "
-                    "website, logo_url, created_at, updated_at "
-                    "FROM tenants WHERE id = $1",
+                    f"SELECT {_tenant_select_list()} FROM tenants WHERE id = $1",
                     tenant.id,
                 )
                 if not row:
                     raise NotFoundError(f"Tenant with id {tenant.id} not found")
-                return Tenant(
-                    id=row["id"],
-                    name=row["name"],
-                    status=row["status"],
-                    industry=row["industry"],
-                    address=row["address"],
-                    phone=row["phone"],
-                    website=row["website"],
-                    logo_url=row["logo_url"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                )
+                return _tenant_from_row(row)
             except Exception as e:
                 raise DatabaseError(f"Failed to update tenant: {e}") from e
 
@@ -307,26 +333,38 @@ class ArcDatabase:
         """Get all tenants for a user."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                SELECT t.id, t.name, t.status, t.created_at, t.updated_at
+                f"""
+                SELECT {_tenant_select_list("t")}
                 FROM tenants t
                 JOIN memberships m ON t.id = m.tenant_id
                 WHERE m.user_id = $1
                 """,
                 user_id,
             )
-            tenants = []
-            for row in rows:
-                tenants.append(
-                    Tenant(
-                        id=row["id"],
-                        name=row["name"],
-                        status=row["status"],
-                        created_at=row["created_at"],
-                        updated_at=row["updated_at"],
-                    )
-                )
-            return tenants
+            return [_tenant_from_row(row) for row in rows]
+
+    async def get_tenants_for_user_paginated(
+        self, user_id: str, limit: int, offset: int
+    ) -> tuple[list[Tenant], int]:
+        """One page of a user's tenants, with the total membership count."""
+        async with self._connection_pool.acquire() as conn:
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM memberships WHERE user_id = $1", user_id
+            )
+            rows = await conn.fetch(
+                f"""
+                SELECT {_tenant_select_list("t")}
+                FROM tenants t
+                JOIN memberships m ON t.id = m.tenant_id
+                WHERE m.user_id = $1
+                ORDER BY t.created_at DESC, t.id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                user_id,
+                limit,
+                offset,
+            )
+            return [_tenant_from_row(row) for row in rows], total
 
     async def get_users_for_tenant(self, tenant_id: str) -> list[User]:
         """Get all users for a tenant."""
