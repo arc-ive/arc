@@ -16,6 +16,7 @@ import { Button } from '../../components/ui/Button.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
+import { Dialog } from '../../components/ui/Dialog.jsx'
 import { errorMessage } from '../../api/errors.js'
 
 const PROVIDERS = [
@@ -53,10 +54,8 @@ function CreateConnectorDialog({ open, onClose }) {
 
   const selectedProvider = PROVIDERS.find((p) => p.value === provider)
 
-  if (!open) return null
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <Dialog open={open} onClose={onClose}>
       <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
         <h3 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h3>
         {error && (
@@ -115,7 +114,7 @@ function CreateConnectorDialog({ open, onClose }) {
           </div>
         </form>
       </div>
-    </div>
+    </Dialog>
   )
 }
 
