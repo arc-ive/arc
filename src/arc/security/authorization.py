@@ -210,10 +210,13 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
         }
     ),
     # EMPLOYEE holds knowledge:read for Ask Arc (Unified Intelligence) and
-    # Company Brain read access per PRD §7.4; all other permissions are denied.
+    # Company Brain read access per PRD §7.4, plus agent:execute to initiate
+    # permitted Agent workflows per V2-ADR-005. Direct skill:execute and
+    # tool:execute are NOT granted — employee workflows must go through
+    # Agent as the single execution boundary.
     # Self-scoped operations (for example listing the authenticated user's own
     # tenants) are always available through authenticated endpoints.
-    ApplicationRole.EMPLOYEE: frozenset({KNOWLEDGE_READ}),
+    ApplicationRole.EMPLOYEE: frozenset({KNOWLEDGE_READ, AGENT_EXECUTE}),
     # WEBHOOK_PROCESSOR is the synthetic system role for webhook-triggered
     # downstream execution. It holds ONLY the permissions required by
     # SkillExecutionService → ToolExecutionService: skill:execute to enter
