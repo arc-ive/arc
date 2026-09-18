@@ -218,6 +218,7 @@ def test_default_categories_are_globally_applicable() -> None:
         "CREDIT_CARD",
         "IBAN_CODE",
         "IP_ADDRESS",
+        "US_SSN",
     }
 
 
@@ -401,6 +402,17 @@ class TestPiiIntegration:
         assert result.detected_count >= 1
         assert "US_SSN" in {d.entity_type for d in result.detections}
         assert "111-22-3333" not in result.sanitized_text
+
+    def test_us_ssn_sanitized_by_default(self) -> None:
+        """Regression: SSN must be sanitized with default config (V2-ADR-025)."""
+        service = PiiGuardService()
+        text = "SSN: 111-22-3333, Email: test@example.com"
+
+        result = service.sanitize(text)
+
+        assert result.detected_count >= 2
+        assert "111-22-3333" not in result.sanitized_text
+        assert "test@example.com" not in result.sanitized_text
 
     def test_real_credit_card_detection_and_redaction(self, service) -> None:
         text = "Charge the card 4111 1111 1111 1111 to the account."
