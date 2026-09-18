@@ -842,8 +842,11 @@ class TestAgentGoalPiiSanitization:
         skill = await skill_svc.create_skill(
             _context(tenant.id),
             Skill(
-                id=_unique("skill"), tenant_id=tenant.id, name="pii_skill",
-                purpose="Test", allowed_tools=["check_service_health"],
+                id=_unique("skill"),
+                tenant_id=tenant.id,
+                name="pii_skill",
+                purpose="Test",
+                allowed_tools=["check_service_health"],
             ),
         )
         decisions = _dq([_decision(skill.id), None])
