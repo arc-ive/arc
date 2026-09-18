@@ -31,6 +31,12 @@ class SlidingWindowLimiter:
     """In-memory sliding-window rate limiter keyed by string.
 
     Uses asyncio.Lock for thread safety within a single event loop.
+
+    State is process-local with no background cleanup: fully-expired keys
+    are dropped on next access, but keys that are never accessed again keep
+    their (expired) timestamps until process restart. Accepted for the
+    current single-worker deployment (V2-ADR-026: no external
+    infrastructure).
     """
 
     config: RateLimitConfig
@@ -44,12 +50,19 @@ class SlidingWindowLimiter:
         requests still permitted in the current window.
         """
         now = time.monotonic()
+        if self.config.max_requests <= 0:
+            # Fail closed on non-positive limits instead of raising
+            # IndexError on the empty timestamp list below.
+            return False, max(1, self.config.window_seconds)
         cutoff = now - self.config.window_seconds
 
         async with self._lock:
             timestamps = self._timestamps.get(key, [])
             # Prune expired entries
             timestamps = [t for t in timestamps if t > cutoff]
+            if not timestamps:
+                # Drop fully-expired keys instead of retaining empty buckets.
+                self._timestamps.pop(key, None)
 
             if len(timestamps) < self.config.max_requests:
                 timestamps.append(now)

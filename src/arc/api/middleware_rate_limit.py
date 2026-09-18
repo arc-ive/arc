@@ -15,8 +15,18 @@ Auth endpoints protected:
 Webhook ingestion protected:
   POST /webhooks/{endpoint_id}/events
 
-POST /internal/dev/auth/login and /internal/dev/auth/dev-login are
-only available in development mode and rate-limited alongside auth.
+Development-only endpoints (e.g. POST /internal/dev/auth/login) are NOT
+rate-limited: they are mounted only when APP_ENV=development and never
+exist in production.
+
+Client identity is request.client.host (the direct TCP peer). Forwarding
+headers such as X-Forwarded-For are deliberately ignored: the repository
+has no trusted reverse-proxy configuration, so client-controlled headers
+must not select rate-limit buckets.
+
+State is process-local: each worker keeps independent buckets. The current
+single-worker deployment accepts this model (V2-ADR-026: no external
+infrastructure); this is not a distributed limiter.
 """
 
 import logging
@@ -71,10 +81,13 @@ def _rate_limit_category(path: str) -> str:
 
 
 def _client_ip(request: Request) -> str:
-    """Extract client IP from request."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Return the direct peer IP used for rate-limit bucketing.
+
+    Forwarding headers (X-Forwarded-For, X-Real-IP, Forwarded) are
+    deliberately ignored: they are client-controlled and the repository
+    has no trusted-proxy configuration, so trusting them would let any
+    sender mint fresh rate-limit buckets and bypass the limiter.
+    """
     if request.client:
         return request.client.host
     return "unknown"
