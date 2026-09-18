@@ -180,7 +180,6 @@ def _build_pipeline_service():
     endpoint_id = "github-demo"
     tenant = Tenant(id=tenant_id, name="Test Corp")
 
-
     endpoint_data = {
         "tenant_id": tenant_id,
         "secret": "a" * 32,
@@ -191,9 +190,7 @@ def _build_pipeline_service():
             "satisfied_conditions": [],
         },
     }
-    endpoint_store = WebhookEndpointStore(
-        raw=json.dumps({endpoint_id: endpoint_data})
-    )
+    endpoint_store = WebhookEndpointStore(raw=json.dumps({endpoint_id: endpoint_data}))
 
     repo = FakeRepository()
 
