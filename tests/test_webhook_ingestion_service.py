@@ -342,3 +342,86 @@ class TestWebhookSignatureScheme:
     def test_ingestion_error_hierarchy_is_controlled(self):
         assert issubclass(WebhookAuthenticationError, WebhookIngestionError)
         assert issubclass(WebhookValidationError, WebhookIngestionError)
+
+
+class TestWebhookEventTypePiiSanitization:
+    """V2-ADR-025: PII in webhook event_type must be sanitized before persistence."""
+
+    def _make_service_with_pii_guard(self, tenant_id, pii_guard):
+        config = WebhookEndpointConfig(
+            endpoint_id="github-demo", tenant_id=tenant_id, secret=SECRET
+        )
+        store = WebhookEndpointStore(
+            raw=json.dumps(
+                {
+                    "github-demo": {
+                        "tenant_id": config.tenant_id,
+                        "secret": config.secret,
+                    }
+                }
+            )
+        )
+        repository = FakeRepository()
+        return (
+            WebhookIngestionService(
+                endpoint_store=store, repository=repository, pii_guard=pii_guard
+            ),
+            repository,
+        )
+
+    async def test_clean_event_type_unchanged(self):
+        tenant_id = _unique("tenant")
+        service, repository = self._make_service_with_pii_guard(tenant_id, None)
+        body = _valid_body()
+        headers = _signed_headers(SECRET, body)
+
+        result = await service.ingest(
+            "github-demo", headers["timestamp"], headers["signature"], body
+        )
+
+        assert result.event.event_type == "issue.opened"
+
+    async def test_pii_in_event_type_sanitized_before_persistence(self):
+        from unittest.mock import MagicMock
+
+        pii_guard = MagicMock()
+        pii_guard.sanitize = MagicMock(
+            return_value=MagicMock(sanitized_text="<EMAIL_ADDRESS>")
+        )
+        tenant_id = _unique("tenant")
+        service, repository = self._make_service_with_pii_guard(tenant_id, pii_guard)
+        body = json.dumps(
+            {
+                "event_id": _unique("evt"),
+                "event_type": "john@example.com.notification",
+                "data": {},
+            }
+        ).encode("utf-8")
+        headers = _signed_headers(SECRET, body)
+
+        result = await service.ingest(
+            "github-demo", headers["timestamp"], headers["signature"], body
+        )
+
+        assert result.event.event_type == "<EMAIL_ADDRESS>"
+        pii_guard.sanitize.assert_called_once_with("john@example.com.notification")
+
+    async def test_pii_guard_failure_propagates(self):
+        from unittest.mock import MagicMock
+
+        from arc.services.pii import PiiGuardError
+
+        def _explode(text):
+            raise PiiGuardError("analysis failed")
+
+        pii_guard = MagicMock()
+        pii_guard.sanitize = _explode
+        tenant_id = _unique("tenant")
+        service, _ = self._make_service_with_pii_guard(tenant_id, pii_guard)
+        body = _valid_body()
+        headers = _signed_headers(SECRET, body)
+
+        with pytest.raises(PiiGuardError):
+            await service.ingest(
+                "github-demo", headers["timestamp"], headers["signature"], body
+            )
