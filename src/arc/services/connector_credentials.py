@@ -24,7 +24,7 @@ from arc.domain.models import (
     TenantContext,
 )
 from arc.repositories import ConnectorCredentialRepository
-from arc.security.encryption import EncryptionService
+from arc.security.encryption import EncryptionError, EncryptionService
 
 logger = logging.getLogger("arc.connector_credentials")
 
@@ -195,9 +195,12 @@ class ConnectorCredentialService:
         credential = await self._repo.get_by_tenant_and_provider(tenant_id, provider.value)
         if credential is None:
             return None
+        # Narrow boundary: only the expected decryption failure (tampered
+        # or invalid ciphertext) resolves to None. Anything else (DB,
+        # pool, or unexpected errors) propagates to the caller.
         try:
             return self._encryption.decrypt(credential.encrypted_credential)
-        except Exception:
+        except EncryptionError:
             logger.error(
                 "Failed to decrypt credential for tenant=%s provider=%s",
                 tenant_id,
