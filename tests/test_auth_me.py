@@ -56,7 +56,7 @@ async def test_me_reflects_assigned_role_permissions(client, make_token, authori
 async def test_me_reflects_employee_role_with_knowledge_read(
     client, make_token, authorization_override
 ):
-    """EMPLOYEE holds knowledge:read for Ask Arc per PRD §7.4."""
+    """EMPLOYEE holds knowledge:read + agent:execute per V2-ADR-005."""
     user_id = _unique("employee")
     authorization_override({user_id: ApplicationRole.EMPLOYEE})
     token = make_token(user_id)
@@ -64,7 +64,7 @@ async def test_me_reflects_employee_role_with_knowledge_read(
     response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     body = response.json()
     assert body["role"] == "employee"
-    assert body["permissions"] == ["knowledge:read"]
+    assert body["permissions"] == ["agent:execute", "knowledge:read"]
 
 
 async def test_me_lists_persisted_memberships(

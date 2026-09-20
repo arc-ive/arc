@@ -157,9 +157,8 @@ def test_exactly_five_application_roles_exist():
         ),
         (
             ApplicationRole.EMPLOYEE,
-            [KNOWLEDGE_READ],
+            [KNOWLEDGE_READ, AGENT_EXECUTE],
             [
-                AGENT_EXECUTE,
                 TENANT_CREATE,
                 TENANT_LIST,
                 TENANT_UPDATE,

@@ -209,6 +209,7 @@ class Application:
             llm_provider=build_llm_provider(get_llm_settings()),
             observability_service=self.services["observability_service"],
             capability_service=self.services["capability_service"],
+            pii_guard=pii_guard,
         )
 
         # Initialize connector synchronization (provider integrations):
@@ -259,6 +260,7 @@ class Application:
         self.services["webhook_ingestion_service"] = WebhookIngestionService(
             endpoint_store=webhook_endpoint_store,
             repository=self.repositories["webhook_events"],
+            pii_guard=pii_guard,
         )
 
         # Initialize webhook downstream processing pipeline (Issue #102,
