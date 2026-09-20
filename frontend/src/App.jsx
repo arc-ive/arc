@@ -1,6 +1,7 @@
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { RequireAuth } from './auth/RequireAuth.jsx'
 import { RequirePlatformAdmin } from './auth/RequirePlatformAdmin.jsx'
+import { RequireWorkspaceRole } from './auth/RequireWorkspaceRole.jsx'
 import { useAuth } from './auth/useAuth.js'
 import { useCapabilities } from './auth/capabilities.js'
 import { AppShell } from './components/shell/AppShell.jsx'
@@ -107,34 +108,45 @@ export default function App() {
           <Route path="t/:tenantId" element={<TenantLayout />}>
             <Route index element={<TenantLandingRedirect />} />
             <Route path="home" element={<EmployeeHomePage />} />
-            <Route path="overview" element={<TenantOverviewPage />} />
-            <Route path="company" element={<TenantCompanyPage />} />
-            <Route path="knowledge" element={<CompanyBrainPage />} />
-            <Route path="knowledge/new" element={<NewKnowledgePage />} />
-            <Route path="knowledge/:documentId" element={<KnowledgeDetailPage />} />
-            <Route path="skills" element={<SkillsPage view="list" />} />
-            <Route path="skills/new" element={<SkillsPage view="new" />} />
-            <Route path="skills/:skillId" element={<SkillsPage view="detail" />} />
-            <Route path="tools" element={<ToolsPage />} />
-            <Route path="connectors" element={<ConnectorsPage />} />
-            <Route path="webhooks" element={<WebhooksPage />} />
-            <Route path="operations" element={<TenantOperationsPage />} />
-            <Route path="incidents" element={<TenantIncidentsPage />} />
-            <Route path="users" element={<TenantUsersPage />} />
-            <Route path="observability" element={<ObservabilityPage />} />
-            <Route path="usage" element={<TenantUsagePage />} />
-            <Route path="settings" element={<TenantSettingsPage />} />
-            <Route path="approvals" element={<ApprovalsPage />} />
-            <Route path="activity" element={<TenantActivityPage />} />
             <Route path="ask" element={<AskArcPage />} />
 
-            {/* Legacy Company Brain aliases */}
-            <Route path="company-brain" element={<Navigate to="knowledge" replace />} />
-            <Route path="company-brain/new" element={<Navigate to="knowledge/new" replace />} />
+            {/* Workspace admin routes — blocked for employees (UX guard).
+                Backend RBAC remains authoritative on every API call. */}
             <Route
-              path="company-brain/:documentId"
-              element={<LegacyBrainDocumentRedirect />}
-            />
+              element={
+                <RequireWorkspaceRole>
+                  <Outlet />
+                </RequireWorkspaceRole>
+              }
+            >
+              <Route path="overview" element={<TenantOverviewPage />} />
+              <Route path="company" element={<TenantCompanyPage />} />
+              <Route path="knowledge" element={<CompanyBrainPage />} />
+              <Route path="knowledge/new" element={<NewKnowledgePage />} />
+              <Route path="knowledge/:documentId" element={<KnowledgeDetailPage />} />
+              <Route path="skills" element={<SkillsPage view="list" />} />
+              <Route path="skills/new" element={<SkillsPage view="new" />} />
+              <Route path="skills/:skillId" element={<SkillsPage view="detail" />} />
+              <Route path="tools" element={<ToolsPage />} />
+              <Route path="connectors" element={<ConnectorsPage />} />
+              <Route path="webhooks" element={<WebhooksPage />} />
+              <Route path="operations" element={<TenantOperationsPage />} />
+              <Route path="incidents" element={<TenantIncidentsPage />} />
+              <Route path="users" element={<TenantUsersPage />} />
+              <Route path="observability" element={<ObservabilityPage />} />
+              <Route path="usage" element={<TenantUsagePage />} />
+              <Route path="settings" element={<TenantSettingsPage />} />
+              <Route path="approvals" element={<ApprovalsPage />} />
+              <Route path="activity" element={<TenantActivityPage />} />
+
+              {/* Legacy Company Brain aliases */}
+              <Route path="company-brain" element={<Navigate to="knowledge" replace />} />
+              <Route path="company-brain/new" element={<Navigate to="knowledge/new" replace />} />
+              <Route
+                path="company-brain/:documentId"
+                element={<LegacyBrainDocumentRedirect />}
+              />
+            </Route>
           </Route>
         </Route>
 
