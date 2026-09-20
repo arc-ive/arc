@@ -93,9 +93,10 @@ class TestAgentSecurity:
         response = _run(client, tenant.id, None)
         assert response.status_code == 401
 
-    async def test_employee_is_rejected_403(
+    async def test_employee_can_execute_agent(
         self, client, repositories, make_token, authorization_override
     ):
+        """EMPLOYEE holds agent:execute per V2-ADR-005; run proceeds."""
         tenant = await _seed_tenant(repositories)
         user = await _seed_user(repositories)
         await _seed_membership(repositories, user.id, tenant.id)
@@ -104,7 +105,10 @@ class TestAgentSecurity:
 
         response = _run(client, tenant.id, token)
 
-        assert response.status_code == 403
+        # The default provider is unarmed: the capability gate fails the
+        # run closed without executing anything, but the authorized caller
+        # reaches it.
+        assert response.status_code == 200
 
     async def test_agent_execute_permission_enforced_for_operations_user(
         self, client, repositories, make_token, authorization_override
