@@ -253,6 +253,31 @@ class PostgreSQLWebhookEventRepository:
                     claimed.append(self._row_to_event(result))
         return claimed
 
+    async def list_due_retrying(self, tenant_id: str, limit: int = 10) -> List[WebhookEvent]:
+        """List due retryable events without modifying state (Issue #178).
+
+        Same selection as ``claim_for_retry`` but WITHOUT the status
+        flip: claiming happens atomically inside the pipeline per event,
+        so this listing can never strand an event in 'processing' that
+        the pipeline is then unable to claim.
+        """
+        now = datetime.now(timezone.utc)
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT {_SELECT_COLUMNS}
+                FROM webhook_events
+                WHERE tenant_id = $1 AND status = 'retrying'
+                  AND next_retry_at <= $2
+                ORDER BY next_retry_at ASC
+                LIMIT $3
+                """,
+                tenant_id,
+                now,
+                limit,
+            )
+            return [self._row_to_event(row) for row in rows]
+
     async def claim_single_for_retry(self, event_id: str, tenant_id: str):
         """Atomically claim a single retrying event by event_id.
 

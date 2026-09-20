@@ -483,6 +483,17 @@ class WebhookEventRepository(Protocol):
         """
         ...
 
+    async def list_due_retrying(self, tenant_id: str, limit: int = 10) -> List[WebhookEvent]:
+        """List due retryable events WITHOUT claiming them (Issue #178).
+
+        Returns events in 'retrying' status whose next_retry_at has
+        passed, without modifying state. Callers process each event
+        through the pipeline, which performs the atomic claim itself,
+        so concurrent workers cannot double-process: at most one
+        claimant wins and the rest observe NotFoundError.
+        """
+        ...
+
     async def claim_single_for_retry(self, event_id: str, tenant_id: str) -> Optional[WebhookEvent]:
         """Atomically claim a single retrying event by event_id.
 
