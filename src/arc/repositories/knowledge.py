@@ -22,6 +22,7 @@ from arc.domain.models import (
     KnowledgeSource,
     KnowledgeStatus,
 )
+from arc.repositories import DEFAULT_LIST_LIMIT
 from arc.repositories.retrieval import _vector_to_text
 
 # Single source of truth for every knowledge_documents SELECT projection so
@@ -264,7 +265,9 @@ class PostgreSQLKnowledgeRepository:
                 ) from e
         return document
 
-    async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[KnowledgeDocument]:
         """List ACTIVE knowledge documents for a tenant.
 
         Archived documents (ADR-003 lifecycle) are retained for
@@ -277,9 +280,11 @@ class PostgreSQLKnowledgeRepository:
                 SELECT {_DOCUMENT_COLUMNS}
                 FROM knowledge_documents
                 WHERE tenant_id = $1 AND status = 'active'
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2
                 """,
                 tenant_id,
+                limit,
             )
             return [self._row_to_document(row) for row in rows]
 

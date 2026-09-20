@@ -16,6 +16,7 @@ from typing import List, Optional
 
 from arc.db.connection import ArcDatabase
 from arc.domain.models import SkillExecutionRecord, SkillExecutionStatus
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class PostgreSQLSkillExecutionRecordRepository:
@@ -153,7 +154,7 @@ class PostgreSQLSkillExecutionRecordRepository:
             return [self._from_row(row) for row in rows]
 
     async def list_for_agent_run(
-        self, agent_run_id: str, tenant_id: str
+        self, agent_run_id: str, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
     ) -> List[SkillExecutionRecord]:
         """List skill execution records linked to a specific agent run."""
         async with self.db._connection_pool.acquire() as conn:
@@ -165,9 +166,11 @@ class PostgreSQLSkillExecutionRecordRepository:
                        result_summary, created_at
                 FROM skill_execution_records
                 WHERE agent_run_id = $1 AND tenant_id = $2
-                ORDER BY created_at ASC
+                ORDER BY created_at ASC, id ASC
+                LIMIT $3
                 """,
                 agent_run_id,
                 tenant_id,
+                limit,
             )
             return [self._from_row(row) for row in rows]

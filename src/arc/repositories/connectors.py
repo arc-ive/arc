@@ -13,6 +13,7 @@ import asyncpg
 
 from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
 from arc.domain.models import ConnectorConfig, ConnectorProvider, ConnectorStatus
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class PostgreSQLConnectorRepository:
@@ -74,7 +75,9 @@ class PostgreSQLConnectorRepository:
                 updated_at=row["updated_at"],
             )
 
-    async def list_for_tenant(self, tenant_id: str) -> List[ConnectorConfig]:
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[ConnectorConfig]:
         """List all connector configurations for a tenant."""
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -82,9 +85,11 @@ class PostgreSQLConnectorRepository:
                 SELECT id, tenant_id, provider, name, target, status, created_at, updated_at
                 FROM connector_configs
                 WHERE tenant_id = $1
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2
                 """,
                 tenant_id,
+                limit,
             )
             return [
                 ConnectorConfig(

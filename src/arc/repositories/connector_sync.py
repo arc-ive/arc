@@ -16,6 +16,7 @@ from arc.domain.models import (
     ConnectorSyncRecord,
     ConnectorSyncStatus,
 )
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class PostgreSQLConnectorSyncRepository:
@@ -45,7 +46,9 @@ class PostgreSQLConnectorSyncRepository:
             )
             return record
 
-    async def list_for_tenant(self, tenant_id: str) -> List[ConnectorSyncRecord]:
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[ConnectorSyncRecord]:
         """List all connector synchronization records for a tenant."""
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -54,9 +57,11 @@ class PostgreSQLConnectorSyncRepository:
                        items_fetched, error_kind, created_at
                 FROM connector_sync_records
                 WHERE tenant_id = $1
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2
                 """,
                 tenant_id,
+                limit,
             )
             return [
                 ConnectorSyncRecord(

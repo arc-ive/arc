@@ -22,6 +22,7 @@ import asyncpg
 
 from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
 from arc.domain.models import Skill, SkillRiskLevel, SkillStatus
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class PostgreSQLSkillRepository:
@@ -118,7 +119,7 @@ class PostgreSQLSkillRepository:
                 raise NotFoundError(f"Skill {skill_id} not found in tenant {tenant_id}")
             return self._from_row(row)
 
-    async def list_for_tenant(self, tenant_id: str) -> List[Skill]:
+    async def list_for_tenant(self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT) -> List[Skill]:
         """List all skills for a tenant."""
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -127,9 +128,11 @@ class PostgreSQLSkillRepository:
                        definition, created_at, updated_at
                 FROM skills
                 WHERE tenant_id = $1
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2
                 """,
                 tenant_id,
+                limit,
             )
             return [self._from_row(row) for row in rows]
 

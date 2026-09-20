@@ -10,6 +10,7 @@ from typing import List, Tuple
 
 from arc.db.connection import ArcDatabase, NotFoundError
 from arc.domain.models import Membership, Tenant, User
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class PostgreSQLTenantRepository:
@@ -30,9 +31,9 @@ class PostgreSQLTenantRepository:
         """Get tenant by ID."""
         return await self.db.get_tenant(tenant_id)
 
-    async def list_all(self) -> List[Tenant]:
+    async def list_all(self, limit: int = DEFAULT_LIST_LIMIT) -> List[Tenant]:
         """List all tenants (platform-scoped, no membership filter)."""
-        return await self.db.list_tenants()
+        return await self.db.list_tenants(limit)
 
     async def list_all_paginated(self, limit: int, offset: int) -> Tuple[List[Tenant], int]:
         """List tenants with LIMIT/OFFSET and total count."""
@@ -89,9 +90,9 @@ class PostgreSQLUserRepository:
                 updated_at=row["updated_at"],
             )
 
-    async def get_by_tenant(self, tenant_id: str) -> List[User]:
+    async def get_by_tenant(self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT) -> List[User]:
         """Get all users for a tenant."""
-        return await self.db.get_users_for_tenant(tenant_id)
+        return await self.db.get_users_for_tenant(tenant_id, limit)
 
     async def get_by_tenant_paginated(
         self, tenant_id: str, limit: int, offset: int
@@ -130,12 +131,14 @@ class PostgreSQLUserRepository:
             ]
             return items, total
 
-    async def list_all(self) -> List[User]:
+    async def list_all(self, limit: int = DEFAULT_LIST_LIMIT) -> List[User]:
         """List all users."""
         async with self.db._connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT id, email, username, status, created_at, updated_at "
-                "FROM users ORDER BY created_at DESC"
+                "FROM users ORDER BY created_at DESC, id ASC "
+                "LIMIT $1",
+                limit,
             )
             return [
                 User(
@@ -215,9 +218,11 @@ class PostgreSQLMembershipRepository:
         async with self.db.transaction() as conn:
             await conn.execute("DELETE FROM memberships WHERE id = $1", membership_id)
 
-    async def get_tenants_for_user(self, user_id: str) -> List[Tenant]:
+    async def get_tenants_for_user(
+        self, user_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[Tenant]:
         """Get all tenants for a user."""
-        return await self.db.get_tenants_for_user(user_id)
+        return await self.db.get_tenants_for_user(user_id, limit)
 
     async def get_tenants_for_user_paginated(
         self, user_id: str, limit: int, offset: int
@@ -225,17 +230,23 @@ class PostgreSQLMembershipRepository:
         """Get tenants for a user with LIMIT/OFFSET and total count."""
         return await self.db.get_tenants_for_user_paginated(user_id, limit, offset)
 
-    async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
+    async def get_users_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[User]:
         """Get all users for a tenant."""
-        return await self.db.get_users_for_tenant(tenant_id)
+        return await self.db.get_users_for_tenant(tenant_id, limit)
 
-    async def get_memberships_for_user(self, user_id: str) -> List[Membership]:
+    async def get_memberships_for_user(
+        self, user_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[Membership]:
         """Get all memberships for a user."""
-        return await self.db.get_memberships_for_user(user_id)
+        return await self.db.get_memberships_for_user(user_id, limit)
 
-    async def get_memberships_for_tenant(self, tenant_id: str) -> List[Membership]:
+    async def get_memberships_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[Membership]:
         """Get all memberships for a tenant."""
-        return await self.db.get_memberships_for_tenant(tenant_id)
+        return await self.db.get_memberships_for_tenant(tenant_id, limit)
 
 
 __all__ = [

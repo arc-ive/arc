@@ -29,6 +29,13 @@ from arc.domain.models import (
     WebhookEventActivityMetrics,
 )
 
+# Default safety bound for repository list methods (Issue #183,
+# V2-ADR-022). Listing methods accept an explicit ``limit`` and fall
+# back to this value so no repository query fetches unbounded rows.
+# API-layer pagination (``PaginationParams``) clamps to much smaller
+# page sizes before these methods are reached.
+DEFAULT_LIST_LIMIT = 1000
+
 
 class TenantRepository(Protocol):
     """Repository for Tenant entities."""
@@ -41,7 +48,7 @@ class TenantRepository(Protocol):
         """Get tenant by ID."""
         ...
 
-    async def list_all(self) -> List[Tenant]:
+    async def list_all(self, limit: int = DEFAULT_LIST_LIMIT) -> List[Tenant]:
         """List all tenants (platform-scoped, no membership filter)."""
         ...
 
@@ -73,11 +80,11 @@ class UserRepository(Protocol):
         """Get user by email."""
         ...
 
-    async def get_by_tenant(self, tenant_id: str) -> List[User]:
+    async def get_by_tenant(self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT) -> List[User]:
         """Get all users for a tenant."""
         ...
 
-    async def list_all(self) -> List[User]:
+    async def list_all(self, limit: int = DEFAULT_LIST_LIMIT) -> List[User]:
         """List all users."""
         ...
 
@@ -109,19 +116,27 @@ class MembershipRepository(Protocol):
         """Delete membership."""
         ...
 
-    async def get_tenants_for_user(self, user_id: str) -> List[Tenant]:
+    async def get_tenants_for_user(
+        self, user_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[Tenant]:
         """Get all tenants for a user."""
         ...
 
-    async def get_users_for_tenant(self, tenant_id: str) -> List[User]:
+    async def get_users_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[User]:
         """Get all users for a tenant."""
         ...
 
-    async def get_memberships_for_user(self, user_id: str) -> List[Membership]:
+    async def get_memberships_for_user(
+        self, user_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[Membership]:
         """Get all memberships for a user."""
         ...
 
-    async def get_memberships_for_tenant(self, tenant_id: str) -> List[Membership]:
+    async def get_memberships_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[Membership]:
         """Get all memberships for a tenant."""
         ...
 
@@ -137,7 +152,9 @@ class ConnectorRepository(Protocol):
         """Get a connector configuration by ID, scoped to a tenant."""
         ...
 
-    async def list_for_tenant(self, tenant_id: str) -> List[ConnectorConfig]:
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[ConnectorConfig]:
         """List all connector configurations for a tenant."""
         ...
 
@@ -162,7 +179,9 @@ class ConnectorSyncRepository(Protocol):
         """Persist a connector synchronization record."""
         ...
 
-    async def list_for_tenant(self, tenant_id: str) -> List[ConnectorSyncRecord]:
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[ConnectorSyncRecord]:
         """List all connector synchronization records for a tenant."""
         ...
 
@@ -198,7 +217,10 @@ class ConnectorCredentialRepository(Protocol):
         ...
 
     async def list_audit_for_tenant(
-        self, tenant_id: str, provider: Optional[str] = None
+        self,
+        tenant_id: str,
+        provider: Optional[str] = None,
+        limit: int = DEFAULT_LIST_LIMIT,
     ) -> List[ConnectorCredentialAudit]:
         """List audit records for a tenant, optionally filtered by provider."""
         ...
@@ -286,7 +308,9 @@ class KnowledgeRepository(Protocol):
         """Delete a knowledge document by ID, scoped to a tenant."""
         ...
 
-    async def list_for_tenant(self, tenant_id: str) -> List[KnowledgeDocument]:
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[KnowledgeDocument]:
         """List all knowledge documents for a tenant."""
         ...
 
@@ -341,7 +365,7 @@ class SkillRepository(Protocol):
         """Get a skill by ID, scoped to a tenant."""
         ...
 
-    async def list_for_tenant(self, tenant_id: str) -> List[Skill]:
+    async def list_for_tenant(self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT) -> List[Skill]:
         """List all skills for a tenant."""
         ...
 
@@ -638,7 +662,9 @@ class CapabilityRepository(Protocol):
         """Return the platform state for a capability, or None if not seeded."""
         ...
 
-    async def list_platform_capabilities(self) -> List[PlatformCapability]:
+    async def list_platform_capabilities(
+        self, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[PlatformCapability]:
         """Return all platform capability states."""
         ...
 
@@ -654,7 +680,9 @@ class CapabilityRepository(Protocol):
         """Return the tenant config for a capability, or None if not configured."""
         ...
 
-    async def list_tenant_capabilities(self, tenant_id: str) -> List[TenantCapability]:
+    async def list_tenant_capabilities(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[TenantCapability]:
         """Return all capability configs for a tenant."""
         ...
 
