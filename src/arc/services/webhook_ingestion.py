@@ -38,10 +38,12 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Optional
 
 from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import TenantContext, WebhookEvent, WebhookEventStatus
 from arc.repositories import WebhookEventRepository
+from arc.services.pii import PiiGuardService
 from arc.services.webhook_config import WebhookEndpointConfig, WebhookEndpointStore
 
 # Signature scheme: hex(HMAC_SHA256(secret, "{timestamp}.{body}")).
@@ -105,10 +107,12 @@ class WebhookIngestionService:
         endpoint_store: WebhookEndpointStore,
         repository: WebhookEventRepository,
         now=None,
+        pii_guard: Optional[PiiGuardService] = None,
     ):
         self._endpoint_store = endpoint_store
         self._repository = repository
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._pii_guard = pii_guard if pii_guard is not None else PiiGuardService()
 
     async def ingest(
         self,
@@ -140,7 +144,7 @@ class WebhookIngestionService:
             tenant_id=endpoint.tenant_id,
             endpoint_id=endpoint.endpoint_id,
             event_id=event_id,
-            event_type=payload["event_type"],
+            event_type=self._pii_guard.sanitize(payload["event_type"]).sanitized_text,
             status=WebhookEventStatus.RECEIVED,
             payload_size_bytes=len(body),
         )

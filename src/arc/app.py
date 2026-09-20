@@ -260,6 +260,7 @@ class Application:
         self.services["webhook_ingestion_service"] = WebhookIngestionService(
             endpoint_store=webhook_endpoint_store,
             repository=self.repositories["webhook_events"],
+            pii_guard=pii_guard,
         )
 
         # Initialize webhook downstream processing pipeline (Issue #102,
