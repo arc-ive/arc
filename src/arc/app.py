@@ -209,6 +209,7 @@ class Application:
             llm_provider=build_llm_provider(get_llm_settings()),
             observability_service=self.services["observability_service"],
             capability_service=self.services["capability_service"],
+            pii_guard=pii_guard,
         )
 
         # Initialize connector synchronization (provider integrations):
