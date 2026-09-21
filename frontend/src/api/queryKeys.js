@@ -44,6 +44,17 @@ export const queryKeys = {
   observabilityPlatform: () => ['observability', 'platform', 'summary'],
   healthComponents: () => ['observability', 'health'],
   approvals: (tenantId) => ['tenants', tenantId, 'approvals'],
+  // The status filter is part of the key: the server filters, so two
+  // filters are two different results and must not share a cache entry.
+  // Keeping the prefix above unchanged means invalidating `approvals`
+  // still refreshes every status variant after a decision.
+  approvalsList: (tenantId, status) => [
+    'tenants',
+    tenantId,
+    'approvals',
+    'list',
+    status ?? 'all',
+  ],
   approval: (tenantId, approvalId) => [
     'tenants',
     tenantId,
