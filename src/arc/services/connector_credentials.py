@@ -194,6 +194,11 @@ class ConnectorCredentialService:
         """
         credential = await self._repo.get_by_tenant_and_provider(tenant_id, provider.value)
         if credential is None:
+            logger.debug(
+                "No credential configured for tenant=%s provider=%s",
+                tenant_id,
+                provider.value,
+            )
             return None
         # Narrow boundary: only the expected decryption failure (tampered
         # or invalid ciphertext) resolves to None. Anything else (DB,

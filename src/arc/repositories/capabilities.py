@@ -138,7 +138,7 @@ class PostgreSQLCapabilityRepository:
                 tenant_id,
             )
             if not exists:
-                raise NotFoundError(f"Tenant not found: {tenant_id}")
+                raise NotFoundError("Tenant not found")
             await conn.execute(
                 """
                 INSERT INTO tenant_capabilities (tenant_id, capability_id, enabled, updated_at)

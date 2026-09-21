@@ -115,7 +115,7 @@ class PostgreSQLSkillRepository:
                 tenant_id,
             )
             if not row:
-                raise NotFoundError(f"Skill {skill_id} not found in tenant {tenant_id}")
+                raise NotFoundError("Skill not found")
             return self._from_row(row)
 
     async def list_for_tenant(self, tenant_id: str) -> List[Skill]:
@@ -196,7 +196,7 @@ class PostgreSQLSkillRepository:
                     skill.tenant_id,
                 )
                 if not row:
-                    raise NotFoundError(f"Skill {skill.id} not found in tenant {skill.tenant_id}")
+                    raise NotFoundError("Skill not found")
                 return self._from_row(row)
             except asyncpg.UniqueViolationError as e:
                 raise DuplicateKeyError(
