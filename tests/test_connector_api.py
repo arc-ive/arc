@@ -562,75 +562,170 @@ class TestConnectorPathTenantConsistency:
 class TestCredentialMaxLength:
     """Issue #185: credential plaintext input is bounded at 10,000 characters."""
 
-    def _post(self, client, tenant_id, token, provider, credential):
+    def _auth(self, authorization_override, make_token, user):
+        from arc.security.models import ApplicationRole
+
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        return make_token(user.id)
+
+    def _post_create(self, client, tenant_id, token, provider, credential):
         return client.post(
             f"/tenants/{tenant_id}/connectors/credentials/{provider}",
             headers={"Authorization": f"Bearer {token}"},
             json={"credential": credential},
         )
 
-    def _fake_service(self):
-        from unittest.mock import AsyncMock
-
-        from arc.api.controllers import app_context
-
-        fake = AsyncMock()
-        fake.create_credential.return_value = {"provider": "github"}
-        saved = app_context.services._services.get("connector_credential_service")
-        app_context.services._services["connector_credential_service"] = fake
-        return app_context, fake, saved
-
-    def _restore_service(self, app_context, saved):
-        if saved is not None:
-            app_context.services._services["connector_credential_service"] = saved
-        else:
-            app_context.services._services.pop("connector_credential_service", None)
+    def _put_rotate(self, client, tenant_id, token, provider, credential):
+        return client.put(
+            f"/tenants/{tenant_id}/connectors/credentials/{provider}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"credential": credential},
+        )
 
     async def test_short_credential_succeeds(
         self, client, seeded, make_token, authorization_override
     ):
-        tenant, user, _ = seeded
-        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
-        token = make_token(user.id)
+        from unittest.mock import AsyncMock
 
-        app_context, fake, saved = self._fake_service()
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        fake.create_credential.return_value = {"provider": "github"}
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
         try:
-            response = self._post(client, tenant.id, token, "github", "tok")
+            response = self._post_create(client, tenant.id, token, "github", "tok")
             assert response.status_code == 200
             fake.create_credential.assert_awaited_once()
         finally:
-            self._restore_service(app_context, saved)
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)
 
     async def test_exactly_10000_characters_succeeds(
         self, client, seeded, make_token, authorization_override
     ):
-        tenant, user, _ = seeded
-        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
-        token = make_token(user.id)
+        from unittest.mock import AsyncMock
 
-        app_context, fake, saved = self._fake_service()
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        fake.create_credential.return_value = {"provider": "github"}
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
         try:
-            response = self._post(client, tenant.id, token, "github", "x" * 10_000)
+            response = self._post_create(client, tenant.id, token, "github", "x" * 10_000)
             assert response.status_code == 200
             fake.create_credential.assert_awaited_once()
         finally:
-            self._restore_service(app_context, saved)
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)
 
     async def test_10001_characters_rejected_before_service(
         self, client, seeded, make_token, authorization_override
     ):
-        tenant, user, _ = seeded
-        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
-        token = make_token(user.id)
+        from unittest.mock import AsyncMock
 
-        app_context, fake, saved = self._fake_service()
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
         try:
             oversized = "y" * 10_001
-            rejected = self._post(client, tenant.id, token, "github", oversized)
+            rejected = self._post_create(client, tenant.id, token, "github", oversized)
             assert rejected.status_code == 400
             assert rejected.json()["detail"] == "Credential exceeds maximum length"
             assert oversized not in rejected.text
             # Rejected before encryption/persistence/downstream processing.
             fake.create_credential.assert_not_awaited()
         finally:
-            self._restore_service(app_context, saved)
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)
+
+
+class TestRotateCredentialMaxLength:
+    """Issue #185: the rotation path enforces the same 10,000-character bound."""
+
+    def _auth(self, authorization_override, make_token, user):
+        from arc.security.models import ApplicationRole
+
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        return make_token(user.id)
+
+    def _put_rotate(self, client, tenant_id, token, provider, credential):
+        return client.put(
+            f"/tenants/{tenant_id}/connectors/credentials/{provider}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"credential": credential},
+        )
+
+    async def test_short_rotation_credential_succeeds(
+        self, client, seeded, make_token, authorization_override
+    ):
+        from unittest.mock import AsyncMock
+
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        fake.rotate_credential.return_value = {"provider": "github"}
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
+        try:
+            response = self._put_rotate(client, tenant.id, token, "github", "tok")
+            assert response.status_code == 200
+            fake.rotate_credential.assert_awaited_once()
+        finally:
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)
+
+    async def test_exactly_10000_rotation_characters_succeeds(
+        self, client, seeded, make_token, authorization_override
+    ):
+        from unittest.mock import AsyncMock
+
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        fake.rotate_credential.return_value = {"provider": "github"}
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
+        try:
+            response = self._put_rotate(client, tenant.id, token, "github", "x" * 10_000)
+            assert response.status_code == 200
+            fake.rotate_credential.assert_awaited_once()
+        finally:
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)
+
+    async def test_10001_rotation_characters_rejected_before_service(
+        self, client, seeded, make_token, authorization_override
+    ):
+        from unittest.mock import AsyncMock
+
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
+        try:
+            oversized = "y" * 10_001
+            rejected = self._put_rotate(client, tenant.id, token, "github", oversized)
+            assert rejected.status_code == 400
+            assert rejected.json()["detail"] == "Credential exceeds maximum length"
+            assert oversized not in rejected.text
+            fake.rotate_credential.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)

@@ -156,6 +156,10 @@ from arc.services.webhook_pipeline import (
 
 logger = logging.getLogger("arc.api.controllers")
 
+# Maximum accepted plaintext credential length in characters (V2-ADR-015).
+# Bounds the value before encryption, persistence, or downstream processing.
+MAX_CREDENTIAL_LENGTH = 10_000
+
 
 class ServiceRegistry:
     """Registry for accessing domain services."""
@@ -1733,7 +1737,7 @@ async def create_credential(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="credential must be a non-empty string",
         )
-    if len(credential_value) > 10_000:
+    if len(credential_value) > MAX_CREDENTIAL_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credential exceeds maximum length",
@@ -1784,6 +1788,11 @@ async def rotate_credential(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="credential must be a non-empty string",
+        )
+    if len(credential_value) > MAX_CREDENTIAL_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Credential exceeds maximum length",
         )
 
     try:
