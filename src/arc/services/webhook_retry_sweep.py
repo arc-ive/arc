@@ -22,7 +22,7 @@ from typing import Optional, Set
 
 from arc.db.connection import NotFoundError
 from arc.domain.models import WebhookEvent, WebhookEventStatus
-from arc.services.webhook_pipeline import WebhookPipelineService
+from arc.services.webhook_pipeline import WebhookPipelineService, WebhookProcessingError
 
 logger = logging.getLogger("arc.webhook_retry_sweep")
 
@@ -112,6 +112,18 @@ async def _process_retryable_for_tenant(
                 "Retry sweep skipped concurrently claimed event",
                 extra={"event_id": event.event_id, "tenant_id": tenant_id},
             )
+        except WebhookProcessingError as exc:
+            # Handled terminal verdict: the pipeline already persisted
+            # the outcome (failed/retrying/dead_letter). INFO, no
+            # traceback — this is not an unexpected failure.
+            logger.info(
+                "Retry sweep recorded terminal outcome",
+                extra={
+                    "event_id": event.event_id,
+                    "tenant_id": tenant_id,
+                    "error_kind": exc.error_kind,
+                },
+            )
         except Exception:
             logger.exception(
                 "Retry sweep failed to process event",
@@ -185,6 +197,16 @@ async def _recover_stuck_event(
 
     try:
         await pipeline_service.process(tenant_id, event.event_id)
+    except WebhookProcessingError as exc:
+        # Handled terminal verdict, already persisted by the pipeline.
+        logger.info(
+            "Stuck event recovery recorded terminal outcome",
+            extra={
+                "event_id": event.event_id,
+                "tenant_id": tenant_id,
+                "error_kind": exc.error_kind,
+            },
+        )
     except Exception:
         logger.exception(
             "Stuck event recovery processing failed",
