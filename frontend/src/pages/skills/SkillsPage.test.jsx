@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -688,5 +688,117 @@ describe('SkillsPage — edit flow', () => {
 
     resolveMutation({ ...MOCK_SKILLS[0], name: 'Updated skill' })
     expect(await screen.findByText('2 skills')).toBeInTheDocument()
+  })
+})
+
+describe('SkillsPage — delete controls', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseAuth.mockReturnValue({
+      isDemo: false,
+      user: { user_id: 'test-user', role: 'platform_administrator', permissions: ['skill:delete'] },
+    })
+    mockUseTenant.mockReturnValue({ tenantId: 't-123' })
+    mockCan.mockImplementation((perm) => perm === 'skill:delete')
+    mockListSkills.mockResolvedValue(MOCK_SKILLS)
+  })
+
+  it('renders a labelled Delete control for authorized users', async () => {
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    expect(deleteButtons).toHaveLength(MOCK_SKILLS.length)
+  })
+
+  it('hides the Delete control when skill:delete is unavailable', async () => {
+    mockCan.mockImplementation(() => false)
+
+    renderWithProviders(<SkillsPage view="list" />)
+
+    expect(await screen.findByText('2 skills')).toBeInTheDocument()
+    expect(screen.queryByTitle('Delete skill')).not.toBeInTheDocument()
+  })
+
+  it('opens a confirmation naming the skill instead of deleting immediately', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    await user.click(deleteButtons[0])
+
+    // The confirmation is a real dialog, not the null render the missing
+    // Dialog props previously produced.
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    // Scoped to the dialog: the skill name also appears in the list card.
+    expect(within(dialog).getByText('Delete skill')).toBeInTheDocument()
+    expect(within(dialog).getByText('This action cannot be undone.')).toBeInTheDocument()
+    expect(within(dialog).getByText(MOCK_SKILLS[0].name)).toBeInTheDocument()
+
+    // Nothing is deleted until the user confirms.
+    expect(mockDeleteSkill).not.toHaveBeenCalled()
+  })
+
+  it('deletes only after confirmation, with the correct tenant and skill', async () => {
+    mockDeleteSkill.mockResolvedValue(undefined)
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    await user.click(deleteButtons[1])
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    expect(mockDeleteSkill).toHaveBeenCalledTimes(1)
+    expect(mockDeleteSkill).toHaveBeenCalledWith('t-123', MOCK_SKILLS[1].id)
+  })
+
+  it('cancelling closes the confirmation without deleting', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    await user.click(deleteButtons[0])
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(mockDeleteSkill).not.toHaveBeenCalled()
+  })
+
+  it('prevents duplicate deletion while the request is in flight', async () => {
+    let resolveDelete
+    mockDeleteSkill.mockImplementation(() => new Promise((resolve) => { resolveDelete = resolve }))
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    await user.click(deleteButtons[0])
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    expect(screen.getByText('Deleting…')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    resolveDelete(undefined)
+    expect(await screen.findByText('2 skills')).toBeInTheDocument()
+    expect(mockDeleteSkill).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces a delete failure in the confirmation instead of closing silently', async () => {
+    mockDeleteSkill.mockRejectedValue(new Error('Skill is referenced by a webhook action'))
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    await user.click(deleteButtons[0])
+    await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Skill is referenced by a webhook action',
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 })
