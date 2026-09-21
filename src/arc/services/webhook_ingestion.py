@@ -35,6 +35,7 @@ finalization (TRD 37), per-endpoint CRUD APIs, and secret rotation.
 import hashlib
 import hmac
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -44,14 +45,19 @@ from arc.db.connection import DuplicateKeyError, NotFoundError
 from arc.domain.models import TenantContext, WebhookEvent, WebhookEventStatus
 from arc.repositories import WebhookEventRepository
 from arc.services.pii import PiiGuardService
-from arc.services.webhook_config import WebhookEndpointConfig, WebhookEndpointStore
+from arc.services.webhook_config import (
+    WebhookConfigurationError,
+    WebhookEndpointConfig,
+    WebhookEndpointStore,
+)
 
 # Signature scheme: hex(HMAC_SHA256(secret, "{timestamp}.{body}")).
 SIGNATURE_SCHEME = "sha256"
 
-# Replay window (seconds): requests whose signed timestamp differs from
-# the server time by more than this are rejected.
-TIMESTAMP_TOLERANCE_SECONDS = 300
+# Default replay window (seconds): requests whose signed timestamp differs
+# from the server time by more than this are rejected. Overridable via the
+# WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS environment variable.
+TIMESTAMP_TOLERANCE_SECONDS = 120
 
 # Inbound body limit: larger bodies are rejected before parsing.
 MAX_BODY_BYTES = 65536
@@ -74,6 +80,28 @@ class WebhookAuthenticationError(WebhookIngestionError):
 
 class WebhookValidationError(WebhookIngestionError):
     """The authenticated request body is not a valid webhook event."""
+
+
+def _timestamp_tolerance_from_env() -> int:
+    """Read the replay window from the environment, failing closed on nonsense.
+
+    A misconfigured tolerance would otherwise surface as silently weakened
+    replay protection, so it is rejected here with the variable name.
+    """
+    raw = os.getenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS")
+    if raw is None or raw == "":
+        return TIMESTAMP_TOLERANCE_SECONDS
+    try:
+        value = int(raw)
+    except ValueError:
+        raise WebhookConfigurationError(
+            f"WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS must be an integer, got {raw!r}"
+        ) from None
+    if value < 1:
+        raise WebhookConfigurationError(
+            f"WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS must be at least 1, got {value}"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -108,11 +136,17 @@ class WebhookIngestionService:
         repository: WebhookEventRepository,
         now=None,
         pii_guard: Optional[PiiGuardService] = None,
+        timestamp_tolerance_seconds: Optional[int] = None,
     ):
         self._endpoint_store = endpoint_store
         self._repository = repository
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._pii_guard = pii_guard if pii_guard is not None else PiiGuardService()
+        self._timestamp_tolerance_seconds = (
+            timestamp_tolerance_seconds
+            if timestamp_tolerance_seconds is not None
+            else _timestamp_tolerance_from_env()
+        )
 
     async def ingest(
         self,
@@ -193,7 +227,7 @@ class WebhookIngestionService:
         except ValueError:
             raise WebhookAuthenticationError() from None
         now_epoch = self._now().timestamp()
-        if abs(now_epoch - delivered_at) > TIMESTAMP_TOLERANCE_SECONDS:
+        if abs(now_epoch - delivered_at) > self._timestamp_tolerance_seconds:
             raise WebhookAuthenticationError()
 
         expected = compute_signature(endpoint.secret, timestamp_header, body)
