@@ -303,8 +303,10 @@ class OpenRouterProvider:
         """Execute a single HTTP request and return assistant content.
 
         Captures usage data (tokens) and latency from the API response.
-        Raises ``LlmConfigurationError`` for permanent auth failures and
-        ``LlmError`` for all other errors. Never retries.
+        Raises ``LlmConfigurationError`` for permanent auth failures,
+        ``LlmRetryableError`` for transient failures (empty choices, rate
+        limits, 5xx, timeouts), and ``LlmError`` for other errors. Never
+        retries — the caller ``_post`` handles bounded retry.
 
         Lifecycle: the per-call ContextVar ``_current_llm_usage`` is
         **cleared before** the HTTP call so that stale usage from a
@@ -321,7 +323,9 @@ class OpenRouterProvider:
         data = response.json()
         choices = data.get("choices", [])
         if not choices:
-            raise LlmError("OpenRouter returned no choices")
+            raise LlmRetryableError(
+                f"OpenRouter returned no choices for model {self._model!r}"
+            )
         # Capture usage data from the response (V2-ADR-006, TRD 13).
         usage = data.get("usage") or {}
         report = LlmUsageReport(
@@ -339,10 +343,10 @@ class OpenRouterProvider:
     def _post(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
         """POST to the chat completions endpoint with bounded retry.
 
-        Transient failures (429, 5xx, timeouts, connection errors) are
-        retried up to ``max_retries`` times with exponential backoff.
-        Permanent failures (401, 403, other 4xx) and application errors
-        fail immediately.
+        Transient failures (429, 5xx, timeouts, connection errors, empty
+        choices) are retried up to ``max_retries`` times with exponential
+        backoff. Permanent failures (401, 403, other 4xx) and application
+        errors fail immediately.
         """
         url = f"{self._base_url}/chat/completions"
         headers = {

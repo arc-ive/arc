@@ -211,10 +211,23 @@ class TestOpenRouterProviderComplete:
         with pytest.raises(ValueError):
             provider.complete("   ")
 
-    def test_complete_no_choices_raises(self):
-        provider = _make_provider(lambda r: httpx.Response(200, json={"choices": []}))
-        with pytest.raises(LlmError, match="no choices"):
-            provider.complete("prompt")
+    def test_complete_no_choices_retries(self):
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                return httpx.Response(200, json={"choices": []})
+            return httpx.Response(200, json=_chat_response("ok"))
+
+        provider = _make_provider(handler)
+        provider._max_retries = 3
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        result = provider.complete("prompt")
+        assert result == "ok"
+        assert call_count == 2
 
     def test_complete_sends_correct_request(self):
         captured = {}
@@ -578,6 +591,63 @@ class TestOpenRouterBoundedRetry:
     def test_max_retries_negative_fails_closed(self):
         with pytest.raises(LlmConfigurationError, match="max_retries"):
             OpenRouterProvider(api_key="k", model="m", max_retries=-1)
+
+    def test_empty_choices_retries_then_succeeds(self):
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return httpx.Response(200, json={"choices": []})
+            return httpx.Response(200, json=_chat_response("ok"))
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 3
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        result = provider.complete("prompt")
+        assert result == "ok"
+        assert call_count == 3
+
+    def test_empty_choices_exhausts_retries(self):
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(200, json={"choices": []})
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 2
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        with pytest.raises(LlmRetryableError, match="no choices"):
+            provider.complete("prompt")
+        assert call_count == 3
+
+    def test_empty_choices_zero_retries(self):
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(200, json={"choices": []})
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 0
+        with pytest.raises(LlmRetryableError, match="no choices"):
+            provider.complete("prompt")
+        assert call_count == 1
+
+    def test_empty_choices_no_fabricated_answer(self):
+        def handler(request):
+            return httpx.Response(200, json={"choices": []})
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 0
+        with pytest.raises(LlmRetryableError):
+            provider.complete("prompt")
 
 
 # ---------------------------------------------------------------------------
