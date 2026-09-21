@@ -634,6 +634,7 @@ async def test_malformed_proposals_raise_value_error(repositories, db):
         ([{"input": {}}], "tool_name"),
         ([{"tool_name": ""}], "tool_name"),
         ([{"tool_name": "echo_tool", "input": "not-an-object"}], "input"),
+        ([{"tool_name": "check_service_health", "parameters": {}}], "unknown fields"),
     ]
     for tool_calls, fragment in malformed_calls:
         with pytest.raises(ValueError, match=fragment):

@@ -595,6 +595,12 @@ class SkillExecutionService:
         for index, call in enumerate(tool_calls):
             if not isinstance(call, dict):
                 raise ValueError(f"Tool call {index} must be an object")
+            unknown = set(call) - {"tool_name", "input"}
+            if unknown:
+                raise ValueError(
+                    f"Tool call {index} has unknown fields: {sorted(unknown)}. "
+                    "Each tool call accepts only 'tool_name' and 'input'."
+                )
             tool_name = call.get("tool_name")
             if not isinstance(tool_name, str) or not tool_name:
                 raise ValueError(f"Tool call {index} requires a non-empty tool_name")
