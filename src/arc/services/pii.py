@@ -20,8 +20,8 @@ Behavior notes (implementation decisions, not product requirements):
 - The default category set and operator behavior are explicit and
   testable via PiiGuardConfig.
 - The default categories are globally applicable (PERSON, EMAIL_ADDRESS,
-  PHONE_NUMBER, CREDIT_CARD, IBAN_CODE, IP_ADDRESS, US_SSN). Additional
-  regional identifiers remain configurable through PiiGuardConfig.enabled_categories.
+  PHONE_NUMBER, CREDIT_CARD, IBAN_CODE, IP_ADDRESS, US_SSN, CREDENTIAL).
+  Additional regional identifiers remain configurable through PiiGuardConfig.enabled_categories.
 - Mask sizing is derived from the detected spans: the mask operator is
   configured to cover the longest merged span per entity type, so the
   complete detected entity is masked regardless of its length.
@@ -42,8 +42,29 @@ DEFAULT_ENABLED_CATEGORIES = frozenset(
         "IBAN_CODE",
         "IP_ADDRESS",
         "US_SSN",
+        "CREDENTIAL",
     }
 )
+
+_CREDENTIAL_PATTERNS = [
+    ("github_pat", r"ghp_[A-Za-z0-9]{20,}"),
+    ("github_oauth", r"gho_[A-Za-z0-9]{20,}"),
+    ("github_fine_grained", r"github_pat_[A-Za-z0-9_]{20,}"),
+    ("openai_project_key", r"sk-proj-[A-Za-z0-9_-]{20,}"),
+    ("openai_legacy_key", r"sk-[A-Za-z0-9]{20,}"),
+    ("aws_access_key", r"AKIA[0-9A-Z]{16}"),
+    ("private_key_header", r"-----BEGIN\s+(?:RSA|EC|DSA|OPENSSH)?\s*PRIVATE KEY-----"),
+    ("jwt_token", r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+]
+
+_CREDENTIAL_CONTEXT = [
+    "Authorization",
+    "Bearer",
+    "token",
+    "key",
+    "secret",
+    "credential",
+]
 
 
 class PiiGuardError(Exception):
@@ -280,9 +301,25 @@ class PiiGuardService:
 
     def _analyzer(self) -> Any:
         if self._analyzer_engine is None:
-            from presidio_analyzer import AnalyzerEngine
+            from presidio_analyzer import (
+                AnalyzerEngine,
+                Pattern,
+                PatternRecognizer,
+                RecognizerRegistry,
+            )
 
-            self._analyzer_engine = AnalyzerEngine()
+            registry = RecognizerRegistry()
+            registry.load_predefined_recognizers()
+
+            credential_recognizer = PatternRecognizer(
+                supported_entity="CREDENTIAL",
+                name="credential_detector",
+                patterns=[Pattern(name, pattern, 0.9) for name, pattern in _CREDENTIAL_PATTERNS],
+                context=_CREDENTIAL_CONTEXT,
+            )
+            registry.add_recognizer(credential_recognizer)
+
+            self._analyzer_engine = AnalyzerEngine(registry=registry)
         return self._analyzer_engine
 
     def _anonymizer(self) -> Any:
