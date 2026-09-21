@@ -1732,7 +1732,11 @@ async def create_credential(
         )
 
     credential_value = body.get("credential")
-    if not isinstance(credential_value, str) or not credential_value:
+    if (
+        not isinstance(credential_value, str)
+        or not credential_value
+        or not credential_value.strip()
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="credential must be a non-empty string",
@@ -1784,7 +1788,11 @@ async def rotate_credential(
         )
 
     credential_value = body.get("credential")
-    if not isinstance(credential_value, str) or not credential_value:
+    if (
+        not isinstance(credential_value, str)
+        or not credential_value
+        or not credential_value.strip()
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="credential must be a non-empty string",

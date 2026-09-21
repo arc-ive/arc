@@ -648,6 +648,28 @@ class TestCredentialMaxLength:
         finally:
             app.dependency_overrides.pop(_get_credential_service_or_503, None)
 
+    async def test_whitespace_only_credential_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Issue #233: whitespace-only credentials are invalid input."""
+        from unittest.mock import AsyncMock
+
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
+        try:
+            rejected = self._post_create(client, tenant.id, token, "github", "   ")
+            assert rejected.status_code == 400
+            assert rejected.json()["detail"] == "credential must be a non-empty string"
+            fake.create_credential.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)
+
 
 class TestRotateCredentialMaxLength:
     """Issue #185: the rotation path enforces the same 10,000-character bound."""
@@ -726,6 +748,28 @@ class TestRotateCredentialMaxLength:
             assert rejected.status_code == 400
             assert rejected.json()["detail"] == "Credential exceeds maximum length"
             assert oversized not in rejected.text
+            fake.rotate_credential.assert_not_awaited()
+        finally:
+            app.dependency_overrides.pop(_get_credential_service_or_503, None)
+
+    async def test_whitespace_only_rotation_credential_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Issue #233: the rotation path rejects whitespace-only input too."""
+        from unittest.mock import AsyncMock
+
+        from arc.api.controllers import _get_credential_service_or_503
+        from arc.main import app
+
+        tenant, user, _ = seeded
+        token = self._auth(authorization_override, make_token, user)
+
+        fake = AsyncMock()
+        app.dependency_overrides[_get_credential_service_or_503] = lambda: fake
+        try:
+            rejected = self._put_rotate(client, tenant.id, token, "github", "\t \n")
+            assert rejected.status_code == 400
+            assert rejected.json()["detail"] == "credential must be a non-empty string"
             fake.rotate_credential.assert_not_awaited()
         finally:
             app.dependency_overrides.pop(_get_credential_service_or_503, None)
