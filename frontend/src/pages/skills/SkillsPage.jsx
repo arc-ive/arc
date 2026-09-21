@@ -16,34 +16,45 @@ import { Spinner } from '../../components/ui/Spinner.jsx'
 import { Dialog } from '../../components/ui/Dialog.jsx'
 import { errorMessage } from '../../api/errors.js'
 
-function DeleteConfirmDialog({ open, onConfirm, onCancel, skillName, isPending }) {
-  if (!open) return null
+function DeleteConfirmDialog({ open, onConfirm, onCancel, skillName, isPending, error }) {
+  // The confirmation is driven entirely by Dialog's own `open`/`onClose`
+  // contract. Passing no props left Dialog's `open` undefined, so it returned
+  // null and the confirmation could never appear — the delete button set state
+  // and nothing happened. Dialog also supplies the overlay, focus management,
+  // Escape handling and the labelled heading, so none of that is re-created
+  // here.
   return (
-    <Dialog>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-        <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-red-950/50 border border-red-900/50">
-              <AlertTriangle className="size-5 text-red-400" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Delete skill</h3>
-              <p className="text-xs text-zinc-500">This action cannot be undone.</p>
-            </div>
-          </div>
-          <p className="text-sm text-zinc-400 mb-6">
-            Are you sure you want to delete <span className="font-medium text-zinc-200">{skillName}</span>?
-          </p>
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={onCancel} disabled={isPending}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={onConfirm} disabled={isPending}>
-              {isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </div>
+    <Dialog
+      open={open}
+      onClose={isPending ? () => {} : onCancel}
+      title="Delete skill"
+      description="This action cannot be undone."
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={onConfirm} disabled={isPending}>
+            {isPending ? 'Deleting…' : 'Delete'}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-red-900/50 bg-red-950/50">
+          <AlertTriangle className="size-5 text-red-400" />
         </div>
+        <p className="text-sm text-zinc-400">
+          Are you sure you want to delete{' '}
+          <span className="font-medium text-zinc-200">{skillName}</span>?
+        </p>
       </div>
+      {error && (
+        <p className="mt-4 text-sm text-red-400" role="alert">
+          {errorMessage(error)}
+        </p>
+      )}
     </Dialog>
   )
 }
@@ -492,8 +503,14 @@ function SkillList() {
         open={Boolean(deleteTarget)}
         skillName={deleteTarget?.name}
         isPending={deleteMutation.isPending}
+        error={deleteMutation.error}
         onConfirm={() => deleteTarget && deleteMutation.mutate({ skillId: deleteTarget.id })}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={() => {
+          // Reset so a failure from a previous attempt is not shown the next
+          // time the dialog opens.
+          deleteMutation.reset()
+          setDeleteTarget(null)
+        }}
       />
       <ExecuteSkillDialog
         open={Boolean(executeTarget)}
@@ -557,6 +574,7 @@ function SkillList() {
                     size="sm"
                     onClick={() => setDeleteTarget(skill)}
                     disabled={deleteMutation.isPending}
+                    title="Delete skill"
                   >
                     <Trash2 className="size-4 text-zinc-500" />
                   </Button>
