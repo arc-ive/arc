@@ -280,17 +280,29 @@ def _insert_skill_sql(skill: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def seed_reference_data(conn: asyncpg.Connection) -> None:
+async def seed_reference_data(conn: asyncpg.Connection, knowledge_service=None) -> None:
     """Seed the complete reference environment.
 
     This function is idempotent: calling it multiple times produces no
     duplicates. All INSERT statements use ``WHERE NOT EXISTS`` guards.
+
+    Knowledge documents are routed through the canonical
+    ``KnowledgeService`` ingestion path when a service is supplied
+    (Issue #214). That path creates chunks + embeddings and is itself
+    idempotent via ``(tenant_id, source, external_id)``. When no service
+    is supplied (legacy test callers) the raw INSERT fallback is used.
 
     Parameters
     ----------
     conn:
         An active asyncpg connection. The caller is responsible for
         connection lifecycle.
+    knowledge_service:
+        Optional ``KnowledgeService`` instance for canonical knowledge
+        ingestion. When supplied, reference knowledge documents are
+        created via ``KnowledgeService.ingest_document`` so they are
+        chunked, embedded and retrievable; existing unchunked rows are
+        backfilled on the next run (see ``KnowledgeService._reingest_existing``).
     """
     # 1. Tenants
     for tenant in _TENANTS:
@@ -332,19 +344,41 @@ async def seed_reference_data(conn: asyncpg.Connection) -> None:
             }
             await conn.execute(_insert_connector_sql(connector))
 
-    # 5. Knowledge documents (2 per tenant)
-    for tenant in _TENANTS:
-        tenant_slug = tenant["id"].replace("ref-", "")
-        for doc_def in _KNOWLEDGE_DOCUMENTS:
-            doc = {
-                "id": f"ref-{tenant_slug}-{doc_def['external_id_suffix']}",
-                "tenant_id": tenant["id"],
-                "source": doc_def["source"],
-                "external_id": doc_def["external_id_suffix"],
-                "provenance": doc_def["provenance"].replace("Acme Technologies", tenant["name"]),
-                "content": doc_def["content"].replace("Acme Technologies", tenant["name"]),
-            }
-            await conn.execute(_insert_knowledge_sql(doc))
+    # 5. Knowledge documents (2 per tenant) — canonical path when possible
+    if knowledge_service is not None:
+        from arc.domain.models import KnowledgeSource, TenantContext, UserRole
+
+        for tenant in _TENANTS:
+            tenant_slug = tenant["id"].replace("ref-", "")
+            ctx = TenantContext(
+                tenant_id=tenant["id"],
+                tenant_name=tenant["name"],
+                user_id="system:seed",
+                role=UserRole.OWNER,
+            )
+            for doc_def in _KNOWLEDGE_DOCUMENTS:
+                source = KnowledgeSource(doc_def["source"])
+                external_id = doc_def["external_id_suffix"]
+                provenance = doc_def["provenance"].replace("Acme Technologies", tenant["name"])
+                content = doc_def["content"].replace("Acme Technologies", tenant["name"])
+                await knowledge_service.ingest_document(
+                    ctx, source, provenance, content, external_id=external_id
+                )
+    else:
+        for tenant in _TENANTS:
+            tenant_slug = tenant["id"].replace("ref-", "")
+            for doc_def in _KNOWLEDGE_DOCUMENTS:
+                doc = {
+                    "id": f"ref-{tenant_slug}-{doc_def['external_id_suffix']}",
+                    "tenant_id": tenant["id"],
+                    "source": doc_def["source"],
+                    "external_id": doc_def["external_id_suffix"],
+                    "provenance": doc_def["provenance"].replace(
+                        "Acme Technologies", tenant["name"]
+                    ),
+                    "content": doc_def["content"].replace("Acme Technologies", tenant["name"]),
+                }
+                await conn.execute(_insert_knowledge_sql(doc))
 
     # 6. Skills (1 per tenant)
     for tenant in _TENANTS:

@@ -155,7 +155,12 @@ class KnowledgeService:
 
         if existing.content == sanitized_text:
             # Idempotent redelivery: same logical document, unchanged content.
-            return existing
+            # Backfill for Issue #214: reference documents seeded via raw
+            # SQL have no chunks. If the existing document has no chunks,
+            # treat it as needing chunk creation rather than returning it
+            # as-is.
+            if await self._has_chunks(existing.id, existing.tenant_id):
+                return existing
 
         updated = KnowledgeDocument(
             id=existing.id,
@@ -176,6 +181,30 @@ class KnowledgeService:
                 updated, prepared.chunks, prepared.embeddings
             )
         return await self.knowledge_repo.update_document_with_chunks(updated, [], [])
+
+    async def _has_chunks(self, document_id: str, tenant_id: str) -> bool:
+        """Return True if the document already has at least one chunk.
+
+        Used for Issue #214 backfill: reference documents created via raw
+        SQL have no chunks. When no chunks are found the re-ingestion path
+        falls through to chunk creation. For non-PostgreSQL fakes (tests)
+        that lack a ``db`` attribute we assume chunks exist to preserve the
+        original idempotent-return behaviour.
+        """
+        db = getattr(self.knowledge_repo, "db", None)
+        pool = getattr(db, "_connection_pool", None) if db is not None else None
+        if pool is None:
+            return True
+        try:
+            async with pool.acquire() as conn:
+                count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM knowledge_chunks WHERE document_id = $1 AND tenant_id = $2",  # noqa: E501
+                    document_id,
+                    tenant_id,
+                )
+                return int(count or 0) > 0
+        except Exception:
+            return True
 
     async def _prepare_or_none(self, context: TenantContext, document: KnowledgeDocument):
         """Prepare the retrieval index in memory, or None without an indexer.
