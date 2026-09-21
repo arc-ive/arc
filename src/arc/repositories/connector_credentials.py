@@ -68,8 +68,7 @@ class PostgreSQLConnectorCredentialRepository:
                 )
             except asyncpg.UniqueViolationError as exc:
                 raise DuplicateKeyError(
-                    f"Credential already exists for tenant "
-                    f"{credential.tenant_id} provider {credential.provider.value}"
+                    f"Credential already exists for provider {credential.provider.value}"
                 ) from exc
         return credential
 
@@ -91,10 +90,7 @@ class PostgreSQLConnectorCredentialRepository:
                 credential.provider.value,
             )
             if result == "UPDATE 0":
-                raise NotFoundError(
-                    f"No credential for tenant {credential.tenant_id} "
-                    f"provider {credential.provider.value}"
-                )
+                raise NotFoundError("Connector credential not found")
         return credential
 
     async def delete(self, tenant_id: str, provider: str) -> None:
@@ -109,7 +105,7 @@ class PostgreSQLConnectorCredentialRepository:
                 provider,
             )
             if result == "DELETE 0":
-                raise NotFoundError(f"No credential for tenant {tenant_id} provider {provider}")
+                raise NotFoundError("Connector credential not found")
 
     async def create_audit(self, audit: ConnectorCredentialAudit) -> ConnectorCredentialAudit:
         """Persist a credential lifecycle audit record."""

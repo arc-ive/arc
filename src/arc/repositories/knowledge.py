@@ -164,9 +164,7 @@ class PostgreSQLKnowledgeRepository:
                 tenant_id,
             )
             if not row:
-                raise NotFoundError(
-                    f"Knowledge document {document_id} not found in tenant {tenant_id}"
-                )
+                raise NotFoundError("Knowledge document not found")
             return self._row_to_document(row)
 
     async def delete_by_id(self, document_id: str, tenant_id: str) -> None:
@@ -178,9 +176,7 @@ class PostgreSQLKnowledgeRepository:
                 tenant_id,
             )
             if result == "DELETE 0":
-                raise NotFoundError(
-                    f"Knowledge document {document_id} not found in tenant {tenant_id}"
-                )
+                raise NotFoundError("Knowledge document not found")
 
     async def get_by_external_id(
         self, external_id: str, source: KnowledgeSource, tenant_id: str
@@ -202,10 +198,7 @@ class PostgreSQLKnowledgeRepository:
                 tenant_id,
             )
             if not row:
-                raise NotFoundError(
-                    f"Knowledge document with external identity "
-                    f"'{external_id}' not found in tenant {tenant_id}"
-                )
+                raise NotFoundError("Knowledge document not found")
             return self._row_to_document(row)
 
     async def update_document_with_chunks(
@@ -246,9 +239,7 @@ class PostgreSQLKnowledgeRepository:
                     document.updated_at,
                 )
                 if status == "UPDATE 0":
-                    raise NotFoundError(
-                        f"Knowledge document {document.id} not found in tenant {document.tenant_id}"
-                    )
+                    raise NotFoundError("Knowledge document not found")
                 await conn.execute(
                     """
                     DELETE FROM knowledge_chunks

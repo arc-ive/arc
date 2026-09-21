@@ -112,7 +112,7 @@ class PostgreSQLApprovalRequestRepository:
                 tenant_id,
             )
         if not row:
-            raise NotFoundError(f"Approval request {approval_id} not found in tenant {tenant_id}")
+            raise NotFoundError("Approval request not found")
         return self._from_row(row)
 
     async def list_for_tenant(self, tenant_id: str, limit: int = 100) -> List[ApprovalRequest]:

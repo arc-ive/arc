@@ -45,10 +45,10 @@ class PostgreSQLConnectorRepository:
             except asyncpg.UniqueViolationError as e:
                 raise DuplicateKeyError(
                     f"Connector '{connector.name}' already exists for provider "
-                    f"'{connector.provider.value}' in tenant {connector.tenant_id}"
+                    f"'{connector.provider.value}'"
                 ) from e
             except Exception as e:
-                raise Exception(f"Failed to create connector: {e}") from e
+                raise Exception("Failed to create connector") from e
 
     async def get_by_id(self, connector_id: str, tenant_id: str) -> ConnectorConfig:
         """Get a connector configuration by ID, scoped to a tenant."""
@@ -63,7 +63,7 @@ class PostgreSQLConnectorRepository:
                 tenant_id,
             )
             if not row:
-                raise NotFoundError(f"Connector {connector_id} not found in tenant {tenant_id}")
+                raise NotFoundError("Connector not found")
             return ConnectorConfig(
                 id=row["id"],
                 tenant_id=row["tenant_id"],

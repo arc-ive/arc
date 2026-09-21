@@ -80,7 +80,7 @@ class PostgreSQLWebhookEventRepository:
                 tenant_id,
             )
             if row is None:
-                raise NotFoundError(f"Webhook event '{event_id}' not found in tenant {tenant_id}")
+                raise NotFoundError("Webhook event not found")
             return self._row_to_event(row)
 
     async def list_for_tenant(self, tenant_id: str, limit: int = 50) -> List[WebhookEvent]:
@@ -142,10 +142,7 @@ class PostgreSQLWebhookEventRepository:
                 tenant_id,
             )
             if row is None:
-                raise NotFoundError(
-                    f"Webhook event '{event_id}' not found or not in 'received' "
-                    f"status in tenant {tenant_id}"
-                )
+                raise NotFoundError("Webhook event not found")
             return self._row_to_event(row)
 
     async def mark_processed(self, event_id: str, tenant_id: str) -> None:
@@ -166,9 +163,7 @@ class PostgreSQLWebhookEventRepository:
                 now,
             )
             if result == "UPDATE 0":
-                raise NotFoundError(
-                    f"Webhook event '{event_id}' not in 'processing' status in tenant {tenant_id}"
-                )
+                raise NotFoundError("Webhook event not found")
 
     async def mark_failed(self, event_id: str, tenant_id: str, error_kind: str) -> None:
         """Mark a 'processing' event as 'failed' with an error category.
@@ -191,9 +186,7 @@ class PostgreSQLWebhookEventRepository:
                 now,
             )
             if result == "UPDATE 0":
-                raise NotFoundError(
-                    f"Webhook event '{event_id}' not in 'processing' status in tenant {tenant_id}"
-                )
+                raise NotFoundError("Webhook event not found")
 
     async def mark_retrying(
         self, event_id: str, tenant_id: str, retry_count: int, next_retry_at: datetime
@@ -212,9 +205,7 @@ class PostgreSQLWebhookEventRepository:
                 next_retry_at,
             )
             if result == "UPDATE 0":
-                raise NotFoundError(
-                    f"Webhook event '{event_id}' not in 'processing' status in tenant {tenant_id}"
-                )
+                raise NotFoundError("Webhook event not found")
 
     async def claim_for_retry(self, tenant_id: str, limit: int = 10) -> List[WebhookEvent]:
         """Atomically claim retryable events for processing.
@@ -318,9 +309,7 @@ class PostgreSQLWebhookEventRepository:
                 now,
             )
             if result == "UPDATE 0":
-                raise NotFoundError(
-                    f"Webhook event '{event_id}' not in retryable status in tenant {tenant_id}"
-                )
+                raise NotFoundError("Webhook event not found")
 
     async def sweep_stuck_processing(
         self, tenant_id: str, stuck_threshold_seconds: int = 600

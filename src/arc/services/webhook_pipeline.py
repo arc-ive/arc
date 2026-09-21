@@ -184,10 +184,12 @@ class WebhookPipelineService:
             # claim (C1 fix: no longer claims unrelated events).
             claimed = await self._webhook_repository.claim_single_for_retry(event_id, tenant_id)
             if claimed is None:
-                raise NotFoundError(
-                    f"Webhook event '{event_id}' not found or not in "
-                    f"retryable status in tenant {tenant_id}"
+                logger.debug(
+                    "Webhook event %s not claimable for tenant %s",
+                    event_id,
+                    tenant_id,
                 )
+                raise NotFoundError("Webhook event not found")
             event = claimed
 
         # Compute deterministic idempotency key for downstream dedup.

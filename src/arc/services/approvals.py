@@ -181,6 +181,7 @@ class HumanApprovalService:
         try:
             request = await self.repository.get_by_id(approval_id, context.tenant_id)
         except NotFoundError as exc:
+            logger.debug("Approval %s not found for tenant %s", approval_id, context.tenant_id)
             raise ApprovalNotFoundError(str(exc)) from exc
         return self._with_effective_status(request)
 
@@ -208,6 +209,7 @@ class HumanApprovalService:
         try:
             current = await self.repository.get_by_id(approval_id, context.tenant_id)
         except NotFoundError as exc:
+            logger.debug("Approval %s not found for tenant %s", approval_id, context.tenant_id)
             raise ApprovalNotFoundError(str(exc)) from exc
 
         if current.status == ApprovalStatus.PENDING and self._clock() >= current.expires_at:
@@ -254,6 +256,7 @@ class HumanApprovalService:
             # rather than a generic consumption failure below.
             await self.repository.get_by_id(approval_id, context.tenant_id)
         except NotFoundError as exc:
+            logger.debug("Approval %s not found for tenant %s", approval_id, context.tenant_id)
             raise ApprovalNotFoundError(str(exc)) from exc
 
         performed = await self.repository.consume(
