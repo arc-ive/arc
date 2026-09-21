@@ -53,7 +53,8 @@ fail-closed (approval-gated Skills stop execution).
    (`propose_skill(goal, catalog_snapshot)`) mirrors ADR-004's
    `ToolProposingLlm`. The deterministic provider gains an optional test
    script; unarmed — the production default — the Agent fails closed
-   with `agent_capability_unavailable`.
+   with `agent_decision_unavailable` (distinct from the platform/tenant
+   capability gate `agent_capability_unavailable`).
 6. **No second audit path, no new persistence.** Tool-level audit rows
    remain owned exclusively by `ToolExecutionService`
    (`tool_execution_records`). Durable agent-run records and Agent

@@ -881,7 +881,7 @@ class AgentRunStatus(str, Enum):
 
 ### Agent Decision Enabled
 
-A decision capability must be configured. The default `DeterministicLlmProvider` without a `skill_decision_script` is NOT decision-capable. The Agent fails closed (`agent_capability_unavailable`) until a decision capability is explicitly configured.
+A decision capability must be configured. The default `DeterministicLlmProvider` without a `skill_decision_script` is NOT decision-capable. The Agent fails closed (`agent_decision_unavailable`, distinct from the platform/tenant capability gate `agent_capability_unavailable`) until a decision capability is explicitly configured.
 
 ---
 

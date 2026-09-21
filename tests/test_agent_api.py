@@ -128,7 +128,7 @@ class TestAgentSecurity:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "failed"
-        assert body["error_kind"] == "agent_capability_unavailable"
+        assert body["error_kind"] == "agent_decision_unavailable"
         assert body["steps"] == []
 
     async def test_tenant_mismatch_is_rejected_403(

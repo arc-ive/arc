@@ -173,7 +173,7 @@ class TestCapabilityGate:
         )
 
         assert result.status is AgentRunStatus.FAILED
-        assert result.error_kind == "agent_capability_unavailable"
+        assert result.error_kind == "agent_decision_unavailable"
         assert result.steps == []
         assert env["provider_calls"] == []
         assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
@@ -192,8 +192,25 @@ class TestCapabilityGate:
         )
 
         assert result.status is AgentRunStatus.FAILED
-        assert result.error_kind == "agent_capability_unavailable"
+        assert result.error_kind == "agent_decision_unavailable"
         assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+    async def test_capability_denial_takes_precedence_over_provider(self, repositories, db):
+        """Issue #228: the two causes stay distinguishable; gate order wins."""
+        from unittest.mock import AsyncMock
+
+        env = await _build_environment(repositories, db)
+        env["agent"].llm_provider = DeterministicLlmProvider()  # unarmed default
+        denying = AsyncMock()
+        denying.is_enabled.return_value = False
+        env["agent"].capability_service = denying
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "agent_capability_unavailable"
 
 
 class TestBoundedOrchestration:
@@ -584,7 +601,7 @@ class TestTracePersistence:
         assert len(traces) == 1
         assert traces[0].error_kind == "invalid_decision"
 
-    async def test_capability_unavailable_persists_trace(self, repositories, db):
+    async def test_decision_unavailable_persists_trace(self, repositories, db):
         env = await _build_environment_with_observability(repositories, db)
         env["agent"].llm_provider = DeterministicLlmProvider()  # unarmed
 
@@ -592,11 +609,11 @@ class TestTracePersistence:
             env["context"], env["principal"], "goal", env["authorization"]
         )
         assert result.status is AgentRunStatus.FAILED
-        assert result.error_kind == "agent_capability_unavailable"
+        assert result.error_kind == "agent_decision_unavailable"
 
         traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
-        assert traces[0].error_kind == "agent_capability_unavailable"
+        assert traces[0].error_kind == "agent_decision_unavailable"
 
 
 class TestTraceDuration:

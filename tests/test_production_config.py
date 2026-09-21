@@ -26,6 +26,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -67,6 +68,21 @@ def _paths_for(app_env):
 
 def _dev_routes(paths):
     return [p for p in paths if p.startswith(DEV_ROUTE_PREFIX)]
+
+
+def _env_example_text():
+    return (Path(__file__).resolve().parents[1] / ".env.example").read_text()
+
+
+class TestDocumentedAgentProviderRequirement:
+    """Issue #228: the documented default must state the agent's provider need."""
+
+    def test_env_example_states_agent_decision_requirement(self):
+        """The deterministic default's agent behaviour is documented, not silent."""
+        text = _env_example_text()
+        assert "agent_decision_unavailable" in text
+        assert "agent_capability_unavailable" in text
+        assert "LLM_PROVIDER=deterministic" in text
 
 
 class TestDevRoutesAreDevelopmentOnly:

@@ -37,8 +37,9 @@ Security invariants:
   they never fail the business response.
 
 The default deterministic provider carries no decision script, so the
-Agent fails closed (``agent_capability_unavailable``) until a decision
-capability is explicitly configured.
+Agent fails closed (``agent_decision_unavailable``) until a decision
+capability is explicitly configured. This is distinct from the
+platform/tenant capability gate (``agent_capability_unavailable``).
 """
 
 import logging
@@ -78,6 +79,7 @@ MAX_AGENT_STEPS = 3
 # Safe, generic error kinds surfaced in structured results. Raw
 # exceptions and internal details never cross this boundary.
 _ERROR_CAPABILITY_UNAVAILABLE = "agent_capability_unavailable"
+_ERROR_DECISION_UNAVAILABLE = "agent_decision_unavailable"
 _ERROR_INVALID_DECISION = "invalid_decision"
 _ERROR_SKILL_NOT_AVAILABLE = "skill_not_available"
 _ERROR_NO_DECISION = "no_decision"
@@ -171,7 +173,7 @@ class AgentExecutionService:
                 context,
                 goal,
                 AgentRunStatus.FAILED,
-                _ERROR_CAPABILITY_UNAVAILABLE,
+                _ERROR_DECISION_UNAVAILABLE,
                 steps=[],
             )
             await self._persist_trace(result, started_at)
