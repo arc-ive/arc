@@ -109,3 +109,42 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose down -v
+
+  production-config:
+    name: Production config boundary
+    runs-on: ubuntu-latest
+
+    # The sharded suite above runs with APP_ENV=development, which mounts the
+    # development auth routers and marks cookies Secure=False. That means the
+    # production boundary is never evaluated there. This job runs the same
+    # application with a production APP_ENV and asserts the boundary holds:
+    # no /internal/dev routes, and Secure cookies.
+    env:
+      APP_ENV: production
+      POSTGRES_DB: arc
+      POSTGRES_USER: arc
+      POSTGRES_PASSWORD: arc-ci-password
+      JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars
+      JWT_ISSUER: arc
+      JWT_AUDIENCE: arc-api
+      JWT_EXPIRY_SECONDS: "3600"
+      APPLICATION_ROLE_ASSIGNMENTS: "{}"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build application image
+        run: docker compose build arc
+
+      # --no-deps: these tests import the application and inspect its route
+      # table and cookie helpers. They never reach the database, so PostgreSQL
+      # is not started.
+      - name: Assert the production configuration boundary
+        run: |
+          docker compose run --rm --no-deps arc \
+            python -m pytest tests/test_production_config.py -q
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
