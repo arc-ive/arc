@@ -36,6 +36,7 @@ from arc.api.schemas import (
     ConnectorCreateRequest,
     IntelligenceQueryRequest,
     KnowledgeCreateRequest,
+    KnowledgeUpdateRequest,
     MembershipCreateRequest,
     SkillCreateRequest,
     SkillExecuteRequest,
@@ -55,6 +56,7 @@ from arc.domain.models import (
     KnowledgeDocument,
     KnowledgeMatch,
     KnowledgeSource,
+    KnowledgeStatus,
     Skill,
     SkillExecutionResult,
     SkillExecutionStepOutcome,
@@ -1376,6 +1378,72 @@ async def get_knowledge_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Knowledge document not found",
         )
+    return _knowledge_document_payload(document)
+
+
+@api_router.put(
+    "/tenants/{tenant_id}/knowledge/{document_id}", responses=AUTHENTICATED_ERROR_RESPONSES
+)
+async def update_knowledge_document(
+    tenant_id: str,
+    document_id: str,
+    knowledge_data: KnowledgeUpdateRequest,
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_CREATE)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> Dict[str, Any]:
+    """Update a knowledge document by ID within a tenant.
+
+    Protected: requires a trusted X-10 tenant context and the
+    ``knowledge:create`` permission (the canonical write permission for
+    knowledge documents). The path ``tenant_id`` is validated for
+    consistency against the trusted context. The document is identified
+    by its stable ``document_id``; ``external_id`` is not required and
+    is not modified by this operation.
+
+    Request body fields (all optional; omitted keys keep stored values):
+
+    - ``source``: optional, KnowledgeSource enum value.
+    - ``provenance``: optional, attribution string.
+    - ``content``: optional, raw document content (PII-sanitized before
+      persistence). Changing content increments the version and triggers
+      full re-indexing. Identical sanitized content is idempotent:
+      version does not increment and re-indexing is skipped.
+    - ``status``: optional, KnowledgeStatus enum value (active/archived).
+
+    Version semantics follow the existing ADR-003 re-ingestion model:
+    changed content bumps version exactly once and replaces the entire
+    chunk set atomically. Identical content results in no version bump
+    and no unnecessary re-indexing.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    try:
+        document = await knowledge_service.update_document(
+            context=context,
+            document_id=document_id,
+            source=knowledge_data.source,
+            provenance=knowledge_data.provenance,
+            content=knowledge_data.content,
+            status=knowledge_data.status,
+        )
+    except NotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge document not found",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except PiiGuardError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Knowledge update failed",
+        )
+    except EmbeddingError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Knowledge update failed",
+        )
+
     return _knowledge_document_payload(document)
 
 

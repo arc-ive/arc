@@ -1,11 +1,12 @@
 import { Link, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, BookOpen, FileText, SearchX } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { ArrowLeft, BookOpen, FileText, SearchX, Edit, Save, X, Loader2 } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
-import { getKnowledgeDocument } from '../../api/endpoints/knowledge.js'
+import { getKnowledgeDocument, updateKnowledge } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
-import { sourceLabels, sourceVariants } from '../../lib/sources.js'
+import { sourceLabels, sourceVariants, KNOWLEDGE_SOURCES } from '../../lib/sources.js'
 import { formatDateTime } from '../../lib/format.js'
 import { Card, CardHeader, CardContent } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
@@ -13,10 +14,20 @@ import { Button } from '../../components/ui/Button.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Skeleton, SkeletonText } from '../../components/ui/Skeleton.jsx'
+import { Textarea } from '../../components/ui/Textarea.jsx'
+import { Select } from '../../components/ui/Select.jsx'
 
 export function KnowledgeDetailPage() {
   const { tenantId, documentId } = useParams()
   const { isDemo } = useAuth()
+  const queryClient = useQueryClient()
+  const [isEditing, setIsEditing] = useState(false)
+  const [formData, setFormData] = useState({
+    source: '',
+    provenance: '',
+    content: '',
+    status: '',
+  })
 
   const documentQuery = useQuery({
     queryKey: queryKeys.knowledgeDocument(tenantId, documentId),
@@ -24,8 +35,32 @@ export function KnowledgeDetailPage() {
     enabled: !isDemo && Boolean(tenantId && documentId),
   })
 
-  const backTo = `/app/t/${encodeURIComponent(tenantId)}/knowledge`
+  const updateMutation = useMutation({
+    mutationFn: (payload) => updateKnowledge(tenantId, documentId, payload),
+    onSuccess: (updatedDoc) => {
+      queryClient.setQueryData(queryKeys.knowledgeDocument(tenantId, documentId), updatedDoc)
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge(tenantId) })
+      setIsEditing(false)
+    },
+    onError: (error) => {
+      console.error('Failed to update knowledge document:', error)
+    },
+  })
+
   const doc = documentQuery.data
+
+  useEffect(() => {
+    if (doc) {
+      setFormData({
+        source: doc.source,
+        provenance: doc.provenance,
+        content: doc.content || '',
+        status: doc.status,
+      })
+    }
+  }, [doc])
+
+  const backTo = `/app/t/${encodeURIComponent(tenantId)}/knowledge`
 
   if (documentQuery.isPending) {
     return (
@@ -102,6 +137,30 @@ export function KnowledgeDetailPage() {
     )
   }
 
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const payload = {}
+    if (formData.source !== doc.source) payload.source = formData.source
+    if (formData.provenance !== doc.provenance) payload.provenance = formData.provenance
+    if (formData.content !== doc.content) payload.content = formData.content
+    if (formData.status !== doc.status) payload.status = formData.status
+    if (Object.keys(payload).length > 0) {
+      updateMutation.mutate(payload)
+    } else {
+      setIsEditing(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setFormData({
+      source: doc.source,
+      provenance: doc.provenance,
+      content: doc.content || '',
+      status: doc.status,
+    })
+    setIsEditing(false)
+  }
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <section>
@@ -132,55 +191,145 @@ export function KnowledgeDetailPage() {
               </span>
             </div>
           </div>
+          <div className="ml-auto flex items-center gap-2">
+            {isEditing ? (
+              <>
+                <Button type="button" variant="ghost" size="sm" onClick={handleCancel} disabled={updateMutation.isPending}>
+                  <X className="size-3.5" />
+                  Cancel
+                </Button>
+                <Button type="submit" form="knowledge-edit-form" disabled={updateMutation.isPending}>
+                  {updateMutation.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                  Save
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
+                <Edit className="size-3.5" />
+                Edit
+              </Button>
+            )}
+          </div>
         </div>
       </section>
 
-      <Card className="overflow-hidden">
-        <CardHeader title="Content" />
-        <CardContent className="py-5">
-          {doc.content ? (
-            <div className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-zinc-300">
-              {doc.content}
-            </div>
-          ) : (
-            <p className="text-sm text-zinc-500">This document has no content.</p>
-          )}
-        </CardContent>
-      </Card>
+      <form id="knowledge-edit-form" onSubmit={handleSubmit}>
+        {isEditing ? (
+          <>
+            <Card className="overflow-hidden">
+              <CardHeader title="Content" />
+              <CardContent className="py-5">
+                <Textarea
+                  value={formData.content}
+                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                  className="font-mono text-[13px] min-h-[200px]"
+                  placeholder="Enter document content"
+                  required
+                />
+              </CardContent>
+            </Card>
 
-      <Card>
-        <CardHeader title="Metadata" />
-        <CardContent className="py-4">
-          <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-[13px] text-zinc-500">Source</dt>
-              <dd className="font-mono text-xs text-zinc-300">{doc.source}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-[13px] text-zinc-500">Version</dt>
-              <dd className="font-mono text-xs text-zinc-300">{doc.version}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4 sm:col-span-2">
-              <dt className="text-[13px] text-zinc-500">Document ID</dt>
-              <dd className="truncate font-mono text-xs text-zinc-400">
-                {doc.id}
-              </dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-[13px] text-zinc-500">Created</dt>
-              <dd className="text-xs text-zinc-400">
-                {formatDateTime(doc.created_at)}
-              </dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-[13px] text-zinc-500">Updated</dt>
-              <dd className="text-xs text-zinc-400">
-                {formatDateTime(doc.updated_at)}
-              </dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
+            <Card>
+              <CardHeader title="Properties" />
+              <CardContent className="py-4 space-y-4">
+                <div>
+                  <label htmlFor="edit-source" className="block text-sm font-medium text-zinc-300 mb-1">
+                    Source
+                  </label>
+                  <Select
+                    id="edit-source"
+                    value={formData.source}
+                    onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                    required
+                  >
+                    {KNOWLEDGE_SOURCES.map((s) => (
+                      <option key={s} value={s}>
+                        {sourceLabels[s] ?? s}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label htmlFor="edit-provenance" className="block text-sm font-medium text-zinc-300 mb-1">
+                    Provenance
+                  </label>
+                  <input
+                    id="edit-provenance"
+                    type="text"
+                    value={formData.provenance}
+                    onChange={(e) => setFormData({ ...formData, provenance: e.target.value })}
+                    className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    required
+                    minLength={1}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="edit-status" className="block text-sm font-medium text-zinc-300 mb-1">
+                    Status
+                  </label>
+                  <Select
+                    id="edit-status"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  >
+                    <option value="active">Active</option>
+                    <option value="archived">Archived</option>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="overflow-hidden">
+              <CardHeader title="Content" />
+              <CardContent className="py-5">
+                {doc.content ? (
+                  <div className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-zinc-300">
+                    {doc.content}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-500">This document has no content.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader title="Metadata" />
+              <CardContent className="py-4">
+                <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[13px] text-zinc-500">Source</dt>
+                    <dd className="font-mono text-xs text-zinc-300">{doc.source}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[13px] text-zinc-500">Version</dt>
+                    <dd className="font-mono text-xs text-zinc-300">{doc.version}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 sm:col-span-2">
+                    <dt className="text-[13px] text-zinc-500">Document ID</dt>
+                    <dd className="truncate font-mono text-xs text-zinc-400">
+                      {doc.id}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[13px] text-zinc-500">Created</dt>
+                    <dd className="text-xs text-zinc-400">
+                      {formatDateTime(doc.created_at)}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[13px] text-zinc-500">Updated</dt>
+                    <dd className="text-xs text-zinc-400">
+                      {formatDateTime(doc.updated_at)}
+                    </dd>
+                  </div>
+                </dl>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </form>
 
       <div className="flex items-center gap-2 text-xs text-zinc-600">
         <FileText className="size-3.5" />

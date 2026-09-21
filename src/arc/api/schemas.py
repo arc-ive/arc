@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator, m
 from arc.domain.models import (
     ConnectorProvider,
     KnowledgeSource,
+    KnowledgeStatus,
     SkillRiskLevel,
     SkillStatus,
     ToolExecutionStatus,
@@ -272,6 +273,20 @@ class KnowledgeCreateRequest(BaseModel):
     external_id: Optional[str] = None
 
 
+class KnowledgeUpdateRequest(BaseModel):
+    """Body of ``PUT /tenants/{tenant_id}/knowledge/{document_id}``.
+
+    Every field is optional; an omitted key keeps the stored value.
+    ``version`` and ``external_id`` are not editable: version is managed
+    by the service layer and external_id is the connector identity key.
+    """
+
+    source: Optional[KnowledgeSource] = None
+    provenance: Optional[str] = Field(default=None, min_length=1)
+    content: Optional[str] = Field(default=None, min_length=1)
+    status: Optional[KnowledgeStatus] = None
+
+
 class IntelligenceQueryRequest(BaseModel):
     """Body of ``POST /tenants/{tenant_id}/intelligence/query``.
 
@@ -338,6 +353,7 @@ __all__ = [
     "AgentRunRequest",
     "AgentResumeRequest",
     "KnowledgeCreateRequest",
+    "KnowledgeUpdateRequest",
     "IntelligenceQueryRequest",
     "ConnectorCreateRequest",
     "ApprovalDecisionRequest",

@@ -38,3 +38,11 @@ export async function searchKnowledge(tenantId, query, limit = 5) {
   )
   return data
 }
+
+export async function updateKnowledge(tenantId, documentId, payload) {
+  const { data } = await client.put(
+    `/tenants/${encodeURIComponent(tenantId)}/knowledge/${encodeURIComponent(documentId)}`,
+    payload,
+  )
+  return data
+}
