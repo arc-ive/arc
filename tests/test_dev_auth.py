@@ -394,55 +394,18 @@ class TestDevAuthNotMountedInProduction:
 
         assert len(dev_auth_router.routes) > 0
 
-    def test_dev_auth_not_mounted_when_app_env_production(self):
-        """Dev auth routes return 404 when APP_ENV is not 'development'."""
-        from unittest.mock import patch
-
-        from arc.api.controllers import api_router
-        from arc.api.dev_auth import dev_auth_router
-
-        app = FastAPI()
-        app.include_router(api_router)
-
-        # Simulate the mounting guard from main.py with APP_ENV=production
-        with patch("os.getenv", return_value="production"):
-            import os
-
-            if os.getenv("APP_ENV") == "development":
-                app.include_router(dev_auth_router)
-
-        client = TestClient(app, raise_server_exceptions=False)
-
-        response = client.post(
-            "/internal/dev/auth/login",
-            json={"user_id": "ref-platform-admin"},
-        )
-        assert response.status_code == 404
-
-    def test_dev_auth_not_mounted_when_app_env_unset(self):
-        """Dev auth routes return 404 when APP_ENV is unset."""
-        from unittest.mock import patch
-
-        from arc.api.controllers import api_router
-        from arc.api.dev_auth import dev_auth_router
-
-        app = FastAPI()
-        app.include_router(api_router)
-
-        # Simulate the mounting guard from main.py with APP_ENV unset (returns None)
-        with patch("os.getenv", return_value=None):
-            import os
-
-            if os.getenv("APP_ENV") == "development":
-                app.include_router(dev_auth_router)
-
-        client = TestClient(app, raise_server_exceptions=False)
-
-        response = client.post(
-            "/internal/dev/auth/login",
-            json={"user_id": "ref-platform-admin"},
-        )
-        assert response.status_code == 404
+    # The two tests that previously sat here built a throwaway FastAPI(),
+    # re-implemented main.py's mounting guard inside the test body, and then
+    # asserted 404. Because they never imported main.py, they passed whether
+    # or not the shipped gate was correct — verified by mutation: with the
+    # gate changed to mount unconditionally, both still passed while the real
+    # checks failed.
+    #
+    # The gate is a module-level `if` evaluated once at import time, so it
+    # cannot be re-checked by patching the environment in an already-imported
+    # process. tests/test_production_config.py imports the real module in a
+    # subprocess with APP_ENV set and asserts the route table it actually
+    # exposes; CI runs that file with a production APP_ENV.
 
 
 class TestProductionAuthUnchanged:
