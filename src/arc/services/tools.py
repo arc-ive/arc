@@ -451,6 +451,24 @@ class ToolExecutionResult:
     output: Dict[str, Any]
 
 
+def approval_arguments_digest(tool, raw_input: Dict[str, Any]) -> str:
+    """Canonical arguments digest (ADR-005) for approval binding.
+
+    Shared by the tool consumption path and skill-level resume
+    verification so both compute the identical digest. Raises
+    ``ValidationError`` when the input does not validate against the
+    tool's input model.
+    """
+    validated = tool.input_model.model_validate(raw_input)
+    return hashlib.sha256(
+        json.dumps(
+            validated.model_dump(mode="json"),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 class ToolExecutionService:
     """Controlled AI Tool execution (TRD 14.1) with observable records.
 
@@ -633,13 +651,7 @@ class ToolExecutionService:
 
             # ADR-005 canonical serialization: sorted keys, compact
             # separators, UTF-8, SHA-256 lowercase hex.
-            arguments_digest = hashlib.sha256(
-                json.dumps(
-                    validated.model_dump(mode="json"),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
+            arguments_digest = approval_arguments_digest(tool, raw_input)
 
             if approval_id is not None:
                 # --- CONSUMPTION PATH ---

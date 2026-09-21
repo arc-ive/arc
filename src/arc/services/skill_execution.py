@@ -79,7 +79,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
+from pydantic import ValidationError
+
 from arc.domain.models import (
+    ApprovalStatus,
     Skill,
     SkillExecutionRecord,
     SkillExecutionResult,
@@ -91,13 +94,22 @@ from arc.domain.models import (
 )
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
+from arc.services.approvals import (
+    ApprovalBindingError,
+    ApprovalConsumedError,
+    ApprovalError,
+    ApprovalExpiredError,
+    ApprovalStateError,
+)
 from arc.services.skills import SkillService
 from arc.services.tools import (
     ToolDeniedError,
     ToolExecutionError,
+    ToolExecutionPolicyMode,
     ToolExecutionService,
     ToolNotFoundError,
     ToolValidationError,
+    approval_arguments_digest,
 )
 
 # Upper bound on proposed tool calls per execution. A Skill execution is
@@ -118,6 +130,7 @@ _ERROR_TOOL_DENIED = "tool_denied"
 _ERROR_INVALID_INPUT = "invalid_input"
 _ERROR_EXECUTION_FAILED = "execution_error"
 _ERROR_CAPABILITY_DISABLED = "capability_disabled"
+_ERROR_INVALID_APPROVAL = "invalid_approval"
 
 logger = logging.getLogger("arc.skill_execution")
 
@@ -137,11 +150,13 @@ class SkillExecutionService:
         tool_service: ToolExecutionService,
         record_repo=None,
         capability_service=None,
+        approval_service=None,
     ):
         self.skill_service = skill_service
         self.tool_service = tool_service
         self.record_repo = record_repo
         self.capability_service = capability_service
+        self.approval_service = approval_service
 
     async def execute(
         self,
@@ -179,9 +194,12 @@ class SkillExecutionService:
             authorization: the application ``AuthorizationService``,
                 passed through to ``ToolExecutionService`` unchanged so
                 per-tool authorization uses the single centralized matrix.
-            approval_id: when provided, authorises execution of exactly
-                one tool call (the one at ``resume_from_step``). The
-                approval is atomically consumed by ToolExecutionService.
+            approval_id: when provided, must be a valid approved
+                approval authorising exactly the resumed tool call (the
+                one at ``resume_from_step``). It is verified against the
+                approval subsystem and never trusted blindly; the
+                approval is atomically consumed (by this service for
+                ``ALLOW`` tools, by ToolExecutionService otherwise).
             resume_from_step: zero-based index of the tool call to
                 resume from after a prior approval gate. Must be used
                 together with ``approval_id`` and ``previous_steps``.
@@ -287,8 +305,9 @@ class SkillExecutionService:
             )
 
         # Skill-level approval_required check: on first execution (no
-        # approval_id), stop before any tool call.  On resume, skip this
-        # gate — the approval was already granted.
+        # approval_id), stop before any tool call.  On resume, the
+        # supplied approval is verified against the approval subsystem
+        # (never trusted blindly) before any tool call runs.
         if skill.approval_required and approval_id is None:
             return await self._finalize(
                 record,
@@ -300,6 +319,28 @@ class SkillExecutionService:
                     steps=[],
                 ),
             )
+        if skill.approval_required and approval_id is not None:
+            try:
+                await self._verify_resume_approval(
+                    context, skill, approval_id, tool_calls, resume_from_step
+                )
+            except ApprovalError as exc:
+                logger.warning(
+                    "skill_resume_approval_rejected skill=%s tenant=%s reason=%s",
+                    skill.id,
+                    context.tenant_id,
+                    type(exc).__name__,
+                )
+                return await self._finalize(
+                    record,
+                    self._build_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.FAILED,
+                        error_kind=_ERROR_INVALID_APPROVAL,
+                        steps=[],
+                    ),
+                )
 
         # Collect completed steps: either from a fresh run or from the
         # prior attempt when resuming.
@@ -437,6 +478,70 @@ class SkillExecutionService:
         )
 
     # -- internals -----------------------------------------------------
+
+    async def _verify_resume_approval(
+        self,
+        context: TenantContext,
+        skill: Skill,
+        approval_id: str,
+        tool_calls: List[Dict[str, Any]],
+        resume_from_step: int,
+    ) -> None:
+        """Verify a skill-level resume approval.
+
+        A non-``None`` ``approval_id`` is never proof of approval: the
+        approval is resolved tenant-scoped through the approval
+        subsystem, must be in ``APPROVED`` state, and must bind the
+        exact resumed tool call (name, version, arguments digest).
+        Consumption stays with ``ToolExecutionService`` for tools that
+        require human approval; for ``ALLOW`` tools (which ignore the
+        approval) this method consumes atomically so the approval is
+        still single-use. Raises an :class:`ApprovalError` subclass on
+        any failure; callers must not execute any tool afterwards.
+        """
+        if self.approval_service is None:
+            raise ApprovalStateError("skill approval verification unavailable")
+        # Existence + tenant binding (tenant-scoped lookup). Fabricated,
+        # nonexistent, and cross-tenant IDs raise ApprovalNotFoundError.
+        approval = await self.approval_service.get_request(context, approval_id)
+        if approval.status is not ApprovalStatus.APPROVED:
+            if approval.status is ApprovalStatus.PENDING:
+                raise ApprovalStateError(f"Approval {approval_id} has not been approved yet")
+            if approval.status is ApprovalStatus.CONSUMED:
+                raise ApprovalConsumedError(f"Approval {approval_id} was already consumed")
+            if approval.status is ApprovalStatus.EXPIRED:
+                raise ApprovalExpiredError(f"Approval {approval_id} expired")
+            raise ApprovalStateError(f"Approval {approval_id} is not approved")
+        # Step binding: the approval must authorize the exact resumed
+        # tool call. Recompute the digest with the same canonical
+        # function the tool consumption path uses.
+        call = tool_calls[resume_from_step]
+        tool = self.tool_service.registry.get(call["tool_name"])
+        if tool is None:
+            raise ApprovalBindingError(f"Approval {approval_id} binds an unknown tool")
+        if approval.tool_name != tool.name or approval.tool_version != tool.version:
+            raise ApprovalBindingError(f"Approval {approval_id} does not match the resumed tool")
+        try:
+            digest = approval_arguments_digest(tool, call.get("input", {}))
+        except ValidationError:
+            raise ApprovalBindingError(
+                f"Approval {approval_id} does not match the resumed tool input"
+            )
+        if digest != approval.arguments_digest:
+            raise ApprovalBindingError(
+                f"Approval {approval_id} does not match the resumed tool input"
+            )
+        # Single-use for ALLOW tools: the tool layer ignores the
+        # approval_id for these, so consume here. Tools requiring human
+        # approval are consumed by ToolExecutionService itself.
+        if tool.execution_policy.mode is ToolExecutionPolicyMode.ALLOW:
+            await self.approval_service.consume_approval(
+                context,
+                approval_id,
+                tool.name,
+                tool.version,
+                digest,
+            )
 
     async def _persist_record(self, record: SkillExecutionRecord) -> None:
         """Best-effort record persistence. Failures are logged, not raised."""
