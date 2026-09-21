@@ -219,6 +219,7 @@ def test_default_categories_are_globally_applicable() -> None:
         "IBAN_CODE",
         "IP_ADDRESS",
         "US_SSN",
+        "CREDENTIAL",
     }
 
 
@@ -357,6 +358,27 @@ def test_errors_and_logs_never_contain_input_text(caplog: pytest.LogCaptureFixtu
         assert SAMPLE_SECRET not in record.getMessage()
 
 
+def test_credential_entity_in_default_categories() -> None:
+    assert "CREDENTIAL" in DEFAULT_ENABLED_CATEGORIES
+
+
+def test_credential_entity_filtered_when_disabled() -> None:
+    config = PiiGuardConfig(enabled_categories={"PERSON"})
+    service, analyzer, _ = make_service([], config=config)
+
+    service.sanitize("some text")
+
+    assert "CREDENTIAL" not in analyzer.entities_arg
+
+
+def test_credential_entity_included_when_defaults_used() -> None:
+    service, analyzer, _ = make_service([])
+
+    service.sanitize("some text")
+
+    assert "CREDENTIAL" in analyzer.entities_arg
+
+
 class TestPiiIntegration:
     """Real Presidio engines; requires the en_core_web_lg model."""
 
@@ -448,3 +470,120 @@ class TestPiiIntegration:
 
         assert "alice.smith@example.com" not in result.sanitized_text
         assert "#" in result.sanitized_text
+
+
+class TestCredentialDetection:
+    """Credential/secret detection (V2-ADR-025, issue #209)."""
+
+    @pytest.fixture(scope="class")
+    def service(self):
+        require_model()
+        return PiiGuardService()
+
+    def test_github_pat_is_redacted(self, service) -> None:
+        text = "GitHub token: ghp_auditsynthetictoken12345abcdefghij"
+        result = service.sanitize(text)
+
+        assert "ghp_auditsynthetictoken12345abcdefghij" not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_github_oauth_is_redacted(self, service) -> None:
+        text = "OAuth token: gho_auditsynthetictoken12345abcdefghij"
+        result = service.sanitize(text)
+
+        assert "gho_auditsynthetictoken12345abcdefghij" not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_github_fine_grained_pat_is_redacted(self, service) -> None:
+        text = "Fine-grained: github_pat_auditsynthetictoken12345abcdefghij"
+        result = service.sanitize(text)
+
+        assert "github_pat_auditsynthetictoken12345abcdefghij" not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_openai_project_key_is_redacted(self, service) -> None:
+        text = "OpenAI key: sk-proj-abc123def456ghi789jklmnop"
+        result = service.sanitize(text)
+
+        assert "sk-proj-abc123def456ghi789jklmnop" not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_openai_legacy_key_is_redacted(self, service) -> None:
+        text = "Legacy key: sk-aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567890"
+        result = service.sanitize(text)
+
+        assert "sk-aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567890" not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_aws_access_key_is_redacted(self, service) -> None:
+        text = "AWS key: AKIAIOSFODNN7EXAMPLE"
+        result = service.sanitize(text)
+
+        assert "AKIAIOSFODNN7EXAMPLE" not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_private_key_header_is_redacted(self, service) -> None:
+        text = "Key: -----BEGIN RSA PRIVATE KEY-----"
+        result = service.sanitize(text)
+
+        assert "-----BEGIN RSA PRIVATE KEY-----" not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_jwt_bearer_token_is_redacted(self, service) -> None:
+        jwt = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+            ".eyJzdWIiOiIxMjM0NTY3ODkwIn0"
+            ".dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        )
+        text = f"Authorization: Bearer {jwt}"
+        result = service.sanitize(text)
+
+        assert jwt not in result.sanitized_text
+        assert "CREDENTIAL" in {d.entity_type for d in result.detections}
+
+    def test_credential_enabled_by_default(self) -> None:
+        assert "CREDENTIAL" in DEFAULT_ENABLED_CATEGORIES
+
+    def test_credential_detection_respects_disabled_category(self) -> None:
+        config = PiiGuardConfig(enabled_categories={"PERSON"})
+        text = "GitHub: ghp_auditsynthetictoken12345abcdefghij"
+        result = PiiGuardService(config=config).sanitize(text)
+
+        assert "ghp_auditsynthetictoken12345abcdefghij" in result.sanitized_text
+
+    def test_safe_text_unaffected(self, service) -> None:
+        text = "The quarterly report is ready for review."
+        result = service.sanitize(text)
+
+        assert result.unchanged is True
+        assert result.sanitized_text == text
+
+    def test_multiple_credentials_in_one_text(self, service) -> None:
+        text = (
+            "GitHub: ghp_auditsynthetictoken12345abcdefghij, "
+            "AWS: AKIAIOSFODNN7EXAMPLE, "
+            "OpenAI: sk-proj-abc123def456ghi789jklmnop"
+        )
+        result = service.sanitize(text)
+
+        assert "ghp_auditsynthetictoken12345abcdefghij" not in result.sanitized_text
+        assert "AKIAIOSFODNN7EXAMPLE" not in result.sanitized_text
+        assert "sk-proj-abc123def456ghi789jklmnop" not in result.sanitized_text
+
+    def test_credential_not_in_error_messages(self) -> None:
+        class ExplodingAnalyzer:
+            def analyze(self, text, language, entities=None):
+                raise RuntimeError(f"boom {text}")
+
+        from arc.services.pii import PiiGuardError
+
+        service = PiiGuardService(
+            config=PiiGuardConfig(),
+            analyzer_engine=ExplodingAnalyzer(),
+            anonymizer_engine=FakeAnonymizer(),
+        )
+        secret = "ghp_auditsynthetictoken12345abcdefghij"
+        with pytest.raises(PiiGuardError) as excinfo:
+            service.sanitize(f"token: {secret}")
+
+        assert secret not in str(excinfo.value)
