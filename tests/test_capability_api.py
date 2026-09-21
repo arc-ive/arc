@@ -176,7 +176,9 @@ class TestTenantCapabilitiesAPI:
         data = resp.json()
         skill_cap = [d for d in data if d["capability_id"] == "skill_execution"]
         assert len(skill_cap) == 1
-        assert skill_cap[0]["effective_enabled"] is False  # no tenant config yet
+        assert (
+            skill_cap[0]["effective_enabled"] is True
+        )  # platform enabled, tenant absent -> enabled
 
     def test_set_and_get_tenant_capability(
         self, client, platform_admin_authorization, make_token, real_tenant
