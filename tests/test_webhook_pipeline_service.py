@@ -1047,8 +1047,13 @@ async def test_sweep_stuck_processing_finds_old_events():
 
 
 @pytest.mark.asyncio
-async def test_stuck_processing_recovery_marks_dead_letter():
-    """Stuck processing events are recovered to dead_letter by the sweep."""
+async def test_stuck_processing_recovery_processes_event():
+    """Stuck processing events are re-processed once before dead-lettering.
+
+    Behavior changed by Issue #178 (X-75): the sweep now attempts one
+    recovery through the pipeline instead of dead-lettering directly.
+    With succeeding downstream, the stuck event ends processed.
+    """
     from arc.services.webhook_retry_sweep import _sweep_stuck_for_tenant
 
     action = WebhookActionConfig(
@@ -1067,8 +1072,7 @@ async def test_stuck_processing_recovery_marks_dead_letter():
     await _sweep_stuck_for_tenant(svc, "tenant-1", stuck_threshold_seconds=600)
 
     stored = await repo.get_by_event_id("evt-stuck", "tenant-1")
-    assert stored.status is WebhookEventStatus.DEAD_LETTER
-    assert stored.error_kind == "stuck_processing"
+    assert stored.status is WebhookEventStatus.PROCESSED
 
 
 # --- Concurrency: atomic claiming ---

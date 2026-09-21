@@ -99,6 +99,19 @@ class FakeRepository:
                     break
         return claimed
 
+    async def list_due_retrying(self, tenant_id: str, limit: int = 10) -> List[WebhookEvent]:
+        now = datetime.now(timezone.utc)
+        return [
+            e
+            for e in list(self._events.values())
+            if (
+                e.tenant_id == tenant_id
+                and e.status is WebhookEventStatus.RETRYING
+                and e.next_retry_at is not None
+                and e.next_retry_at <= now
+            )
+        ][:limit]
+
     async def claim_for_processing(self, event_id: str, tenant_id: str) -> WebhookEvent:
         for e in self._events.values():
             if e.event_id == event_id and e.tenant_id == tenant_id:
@@ -344,10 +357,10 @@ class TestProcessRetryableForTenant:
 
         await _process_retryable_for_tenant(svc, "tenant-1")
 
-        # Event was claimed (RETRYING→PROCESSING) but process() failed,
-        # so it remains in PROCESSING status.
+        # The sweep no longer pre-claims: process() failed before any
+        # claim, so the event remains due in RETRYING status.
         stored = await repo.get_by_event_id("evt-fail", "tenant-1")
-        assert stored.status is WebhookEventStatus.PROCESSING
+        assert stored.status is WebhookEventStatus.RETRYING
 
 
 # --- _sweep_stuck_for_tenant ---
@@ -355,7 +368,8 @@ class TestProcessRetryableForTenant:
 
 @pytest.mark.asyncio
 class TestSweepStuckForTenant:
-    async def test_stuck_event_moves_to_dead_letter(self):
+    async def test_stuck_event_recovered_to_processed(self):
+        """Issue #178: stuck events are re-processed once before dead-lettering."""
         svc, repo = _build_pipeline_service()
         old_event = _make_event(
             "tenant-1",
@@ -368,8 +382,7 @@ class TestSweepStuckForTenant:
         await _sweep_stuck_for_tenant(svc, "tenant-1", stuck_threshold_seconds=600)
 
         stored = await repo.get_by_event_id("evt-stuck", "tenant-1")
-        assert stored.status is WebhookEventStatus.DEAD_LETTER
-        assert stored.error_kind == "stuck_processing"
+        assert stored.status is WebhookEventStatus.PROCESSED
 
     async def test_recent_event_not_swept(self):
         svc, repo = _build_pipeline_service()

@@ -3,7 +3,8 @@
 Provides a periodic asyncio task that:
 1. Claims events in 'retrying' status whose next_retry_at has passed.
 2. Re-processes them through the WebhookPipelineService.
-3. Sweeps stuck 'processing' events (crash recovery) to dead-letter.
+3. Recovers stuck 'processing' events (crash recovery) with exactly
+   one re-processing attempt before dead-lettering (Issue #178).
 
 Tenant iteration uses the WebhookEndpointStore to discover configured
 tenants. Events are processed per-tenant to maintain isolation.
@@ -16,8 +17,11 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Optional, Set
 
+from arc.db.connection import NotFoundError
+from arc.domain.models import WebhookEvent, WebhookEventStatus
 from arc.services.webhook_pipeline import WebhookPipelineService
 
 logger = logging.getLogger("arc.webhook_retry_sweep")
@@ -77,22 +81,35 @@ async def _process_retryable_for_tenant(
     pipeline_service: WebhookPipelineService,
     tenant_id: str,
 ) -> None:
-    """Claim and process retryable events for one tenant."""
+    """Process due retryable events for one tenant (Issue #178).
+
+    Due events are LISTED (never pre-claimed): each event is then
+    processed through the pipeline, which performs the atomic claim
+    itself. A pre-claim here would strand the event in 'processing'
+    status that the pipeline can no longer claim. A concurrent worker
+    that wins the race surfaces as NotFoundError and is skipped.
+    """
     repo = pipeline_service._webhook_repository
     try:
-        claimed = await repo.claim_for_retry(tenant_id, limit=10)
+        due_events = await repo.list_due_retrying(tenant_id, limit=10)
     except Exception:
         logger.exception(
-            "Failed to claim retryable events",
+            "Failed to list due retryable events",
             extra={"tenant_id": tenant_id},
         )
         return
 
-    for event in claimed:
+    for event in due_events:
         try:
             await pipeline_service.process(tenant_id, event.event_id)
             logger.info(
                 "Retry sweep processed event",
+                extra={"event_id": event.event_id, "tenant_id": tenant_id},
+            )
+        except NotFoundError:
+            # Concurrently claimed by another worker; nothing to do.
+            logger.info(
+                "Retry sweep skipped concurrently claimed event",
                 extra={"event_id": event.event_id, "tenant_id": tenant_id},
             )
         except Exception:
@@ -107,12 +124,18 @@ async def _sweep_stuck_for_tenant(
     tenant_id: str,
     stuck_threshold_seconds: int,
 ) -> None:
-    """Recover events stuck in 'processing' beyond the threshold.
+    """Recover events stuck in 'processing' beyond the threshold (Issue #178).
 
-    Stuck events are moved to 'dead_letter' to prevent indefinite
-    blocking. The idempotency key on downstream tool execution records
-    ensures that if the original processing succeeded before the crash,
-    a retry will not duplicate side effects.
+    Each stuck event gets exactly ONE recovery attempt through the
+    existing pipeline boundary: it is moved back to 'retrying'
+    (immediately due, retry metadata preserved) so the pipeline's
+    atomic single-event claim applies, then re-processed. A recovered
+    event ends in 'processed'; any other non-terminal outcome ends in
+    'dead_letter'. No recovery loops are created.
+
+    Downstream side effects stay idempotent: recovery reuses the same
+    (tenant_id, event_id) identity, hence the same deterministic
+    idempotency key, as normal processing.
     """
     repo = pipeline_service._webhook_repository
     try:
@@ -125,21 +148,81 @@ async def _sweep_stuck_for_tenant(
         return
 
     for event in stuck_events:
-        try:
-            await repo.mark_dead_letter(event.event_id, tenant_id, "stuck_processing")
-            logger.warning(
-                "Recovered stuck processing event to dead_letter",
-                extra={
-                    "event_id": event.event_id,
-                    "tenant_id": tenant_id,
-                    "created_at": event.created_at.isoformat(),
-                },
-            )
-        except Exception:
-            logger.exception(
-                "Failed to mark stuck event as dead_letter",
-                extra={"event_id": event.event_id, "tenant_id": tenant_id},
-            )
+        await _recover_stuck_event(pipeline_service, tenant_id, event)
+
+
+async def _recover_stuck_event(
+    pipeline_service: WebhookPipelineService,
+    tenant_id: str,
+    event: WebhookEvent,
+) -> None:
+    """Attempt exactly one recovery processing for a stuck event.
+
+    The event is first moved processing -> retrying (immediately due,
+    retry count preserved: this resumes the interrupted attempt, it is
+    not a new one) so ``pipeline.process`` can claim it. Afterwards the
+    authoritative record decides:
+
+    - ``processed``: recovery succeeded; nothing further to do.
+    - ``failed`` / ``dead_letter``: the pipeline already recorded its
+      terminal verdict; it stands.
+    - ``processing`` / ``retrying``: recovery did not complete; move
+      to ``dead_letter`` so the event cannot block indefinitely.
+
+    Every failure is contained per event; the sweep continues.
+    """
+    repo = pipeline_service._webhook_repository
+    try:
+        await repo.mark_retrying(
+            event.event_id, tenant_id, event.retry_count, datetime.now(timezone.utc)
+        )
+    except Exception:
+        logger.exception(
+            "Failed to re-queue stuck event for recovery",
+            extra={"event_id": event.event_id, "tenant_id": tenant_id},
+        )
+        return
+
+    try:
+        await pipeline_service.process(tenant_id, event.event_id)
+    except Exception:
+        logger.exception(
+            "Stuck event recovery processing failed",
+            extra={"event_id": event.event_id, "tenant_id": tenant_id},
+        )
+
+    try:
+        current = await repo.get_by_event_id(event.event_id, tenant_id)
+    except NotFoundError:
+        return
+    except Exception:
+        logger.exception(
+            "Failed to re-read stuck event after recovery",
+            extra={"event_id": event.event_id, "tenant_id": tenant_id},
+        )
+        return
+    if current.status is WebhookEventStatus.PROCESSED:
+        logger.info(
+            "Stuck event recovered to processed",
+            extra={"event_id": event.event_id, "tenant_id": tenant_id},
+        )
+        return
+    if current.status not in (WebhookEventStatus.PROCESSING, WebhookEventStatus.RETRYING):
+        # Pipeline already recorded a terminal verdict (failed/dead_letter).
+        return
+    try:
+        await repo.mark_dead_letter(event.event_id, tenant_id, "stuck_processing")
+        logger.warning(
+            "Stuck event recovery failed; moved to dead_letter",
+            extra={"event_id": event.event_id, "tenant_id": tenant_id},
+        )
+    except NotFoundError:
+        pass  # Reached a terminal state concurrently.
+    except Exception:
+        logger.exception(
+            "Failed to mark stuck event as dead_letter",
+            extra={"event_id": event.event_id, "tenant_id": tenant_id},
+        )
 
 
 class WebhookRetrySweepRunner:
