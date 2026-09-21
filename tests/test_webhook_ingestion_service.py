@@ -9,11 +9,16 @@ handling, and the never-persist/never-leak payload contract.
 import json
 import time
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
 from arc.domain.models import TenantContext, UserRole, WebhookEventStatus
-from arc.services.webhook_config import WebhookEndpointConfig, WebhookEndpointStore
+from arc.services.webhook_config import (
+    WebhookConfigurationError,
+    WebhookEndpointConfig,
+    WebhookEndpointStore,
+)
 from arc.services.webhook_ingestion import (
     MAX_BODY_BYTES,
     TIMESTAMP_TOLERANCE_SECONDS,
@@ -421,3 +426,109 @@ class TestWebhookEventTypePiiSanitization:
 
         with pytest.raises(PiiGuardError):
             await service.ingest("github-demo", headers["timestamp"], headers["signature"], body)
+
+
+class TestWebhookTimestampTolerance:
+    """Issue #184: the replay window defaults to 120s and is env-configurable.
+
+    A fixed clock is injected so boundary assertions are deterministic:
+    ``abs(now - delivered) == tolerance`` is accepted, ``tolerance + 1``
+    is rejected.
+    """
+
+    NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+    def _make_service_at(self, tenant_id, **kwargs):
+        config = WebhookEndpointConfig(
+            endpoint_id="github-demo", tenant_id=tenant_id, secret=SECRET
+        )
+        store = WebhookEndpointStore(
+            raw=json.dumps(
+                {
+                    "github-demo": {
+                        "tenant_id": config.tenant_id,
+                        "secret": config.secret,
+                    }
+                }
+            )
+        )
+        return WebhookIngestionService(
+            endpoint_store=store,
+            repository=FakeRepository(),
+            now=lambda: self.NOW,
+            **kwargs,
+        )
+
+    async def _ingest_at_offset(self, service, offset_seconds):
+        body = _valid_body()
+        delivered = int(self.NOW.timestamp()) + offset_seconds
+        headers = _signed_headers(SECRET, body, timestamp=delivered)
+        return await service.ingest("github-demo", headers["timestamp"], headers["signature"], body)
+
+    def test_default_tolerance_is_120_seconds(self):
+        assert TIMESTAMP_TOLERANCE_SECONDS == 120
+
+    async def test_timestamp_within_default_tolerance_is_accepted(self, monkeypatch):
+        monkeypatch.delenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", raising=False)
+        service = self._make_service_at(_unique("tenant"))
+        result = await self._ingest_at_offset(service, -60)
+        assert result.duplicate is False
+
+    async def test_timestamp_outside_default_tolerance_is_rejected(self, monkeypatch):
+        monkeypatch.delenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", raising=False)
+        service = self._make_service_at(_unique("tenant"))
+        with pytest.raises(WebhookAuthenticationError):
+            await self._ingest_at_offset(service, -(TIMESTAMP_TOLERANCE_SECONDS + 1))
+
+    @pytest.mark.parametrize("offset", [-120, 120])
+    async def test_boundary_exactly_at_tolerance_is_accepted(self, monkeypatch, offset):
+        monkeypatch.delenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", raising=False)
+        service = self._make_service_at(_unique("tenant"))
+        result = await self._ingest_at_offset(service, offset)
+        assert result.duplicate is False
+
+    @pytest.mark.parametrize("offset", [-121, 121])
+    async def test_boundary_just_outside_tolerance_is_rejected(self, monkeypatch, offset):
+        monkeypatch.delenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", raising=False)
+        service = self._make_service_at(_unique("tenant"))
+        with pytest.raises(WebhookAuthenticationError):
+            await self._ingest_at_offset(service, offset)
+
+    async def test_environment_variable_widens_the_window(self, monkeypatch):
+        monkeypatch.setenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", "300")
+        service = self._make_service_at(_unique("tenant"))
+        result = await self._ingest_at_offset(service, -200)
+        assert result.duplicate is False
+
+    async def test_environment_variable_narrows_the_window(self, monkeypatch):
+        monkeypatch.setenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", "10")
+        service = self._make_service_at(_unique("tenant"))
+        with pytest.raises(WebhookAuthenticationError):
+            await self._ingest_at_offset(service, -60)
+
+    async def test_explicit_argument_wins_over_environment(self, monkeypatch):
+        monkeypatch.setenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", "10")
+        service = self._make_service_at(_unique("tenant"), timestamp_tolerance_seconds=300)
+        result = await self._ingest_at_offset(service, -200)
+        assert result.duplicate is False
+
+    @pytest.mark.parametrize("value", ["abc", "3.5", "ten"])
+    def test_non_integer_tolerance_is_rejected(self, monkeypatch, value):
+        monkeypatch.setenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", value)
+        with pytest.raises(WebhookConfigurationError, match="WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS"):
+            self._make_service_at(_unique("tenant"))
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_non_positive_tolerance_is_rejected(self, monkeypatch, value):
+        monkeypatch.setenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", value)
+        with pytest.raises(WebhookConfigurationError, match="WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS"):
+            self._make_service_at(_unique("tenant"))
+
+    async def test_empty_tolerance_falls_back_to_default(self, monkeypatch):
+        """An unset variable in a .env file arrives as an empty string."""
+        monkeypatch.setenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", "")
+        service = self._make_service_at(_unique("tenant"))
+        result = await self._ingest_at_offset(service, -60)
+        assert result.duplicate is False
+        with pytest.raises(WebhookAuthenticationError):
+            await self._ingest_at_offset(service, -(TIMESTAMP_TOLERANCE_SECONDS + 1))
