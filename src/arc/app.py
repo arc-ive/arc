@@ -186,6 +186,11 @@ class Application:
 
         # Wire approval service to tool execution service
         self.services["tool_service"].approval_service = self.services["human_approval_service"]
+        # Wire approval service to skill execution service for
+        # skill-level resume verification (V2-ADR-011)
+        self.services["skill_execution_service"].approval_service = self.services[
+            "human_approval_service"
+        ]
 
         # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
         # read layer over AUTHORITATIVE subsystem records plus the HTTP
