@@ -281,7 +281,9 @@ class KnowledgeService:
         the update is idempotent: version does not increment and re-indexing
         is skipped. ``status`` changes do not increment the version.
         """
-        if not any([source is not None, provenance is not None, content is not None, status is not None]):
+        if not any(
+            [source is not None, provenance is not None, content is not None, status is not None]
+        ):
             raise ValueError("At least one field must be provided for update")
 
         existing = await self.knowledge_repo.get_by_id(document_id, context.tenant_id)

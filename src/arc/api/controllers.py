@@ -56,7 +56,6 @@ from arc.domain.models import (
     KnowledgeDocument,
     KnowledgeMatch,
     KnowledgeSource,
-    KnowledgeStatus,
     Skill,
     SkillExecutionResult,
     SkillExecutionStepOutcome,
