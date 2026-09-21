@@ -949,6 +949,7 @@ async def execute_skill(
             body.tool_calls,
             body.satisfied_preconditions,
             authorization,
+            skill_inputs=body.skill_inputs,
         )
     except NotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
@@ -2458,6 +2459,7 @@ async def resume_skill_execution(
     approval_id = body.approval_id
     tool_calls = body.tool_calls
     resume_from_step = body.resume_from_step
+    skill_inputs = body.skill_inputs
 
     previous_steps = [
         SkillExecutionStepOutcome(
@@ -2479,6 +2481,7 @@ async def resume_skill_execution(
             tool_calls,
             body.satisfied_preconditions,
             authorization,
+            skill_inputs=skill_inputs,
             approval_id=approval_id,
             resume_from_step=resume_from_step,
             previous_steps=previous_steps,
@@ -2513,6 +2516,7 @@ async def resume_agent_execution(
     skill_id = body.skill_id
     tool_calls = body.tool_calls
     resume_from_step = body.resume_from_step
+    skill_inputs = body.skill_inputs
 
     previous_steps = [
         SkillExecutionStepOutcome(
@@ -2534,6 +2538,7 @@ async def resume_agent_execution(
             tool_calls,
             body.satisfied_preconditions,
             authorization,
+            skill_inputs=skill_inputs,
             approval_id=approval_id,
             resume_from_step=resume_from_step,
             previous_steps=previous_steps,

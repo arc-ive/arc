@@ -176,6 +176,7 @@ class SkillExecuteRequest(BaseModel):
 
     tool_calls: Optional[Any] = None
     satisfied_preconditions: Any = Field(default_factory=list)
+    skill_inputs: Any = None
 
 
 class PreviousStepInput(BaseModel):
@@ -222,6 +223,7 @@ class SkillResumeRequest(BaseModel):
     resume_from_step: StrictInt = Field(ge=0)
     previous_steps: List[PreviousStepInput] = Field(default_factory=list)
     satisfied_preconditions: Any = Field(default_factory=list)
+    skill_inputs: Any = None
 
 
 class AgentRunRequest(BaseModel):
@@ -255,6 +257,7 @@ class AgentResumeRequest(BaseModel):
     resume_from_step: StrictInt = Field(ge=0)
     previous_steps: List[PreviousStepInput] = Field(default_factory=list)
     satisfied_preconditions: Any = Field(default_factory=list)
+    skill_inputs: Any = None
 
 
 # ---------------------------------------------------------------------------

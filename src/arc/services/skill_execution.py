@@ -136,6 +136,7 @@ _ERROR_INVALID_INPUT = "invalid_input"
 _ERROR_EXECUTION_FAILED = "execution_error"
 _ERROR_CAPABILITY_DISABLED = "capability_disabled"
 _ERROR_INVALID_APPROVAL = "invalid_approval"
+_ERROR_INVALID_SKILL_INPUTS = "invalid_skill_inputs"
 
 logger = logging.getLogger("arc.skill_execution")
 
@@ -172,6 +173,7 @@ class SkillExecutionService:
         satisfied_conditions: Iterable[str],
         authorization: AuthorizationService,
         *,
+        skill_inputs: Optional[Dict[str, str]] = None,
         approval_id: Optional[str] = None,
         resume_from_step: Optional[int] = None,
         previous_steps: Optional[List[SkillExecutionStepOutcome]] = None,
@@ -196,6 +198,9 @@ class SkillExecutionService:
                 ``ToolExecutionService``.
             satisfied_conditions: asserted condition labels used for the
                 deterministic precondition check.
+            skill_inputs: values for the skill's declared inputs. Must
+                supply every declared input and nothing undeclared;
+                otherwise execution is refused before any tool call.
             authorization: the application ``AuthorizationService``,
                 passed through to ``ToolExecutionService`` unchanged so
                 per-tool authorization uses the single centralized matrix.
@@ -307,6 +312,21 @@ class SkillExecutionService:
                         skill,
                         SkillExecutionStatus.PRECONDITION_FAILED,
                         error_kind=_ERROR_PRECONDITION_FAILED,
+                        steps=[],
+                    ),
+                )
+
+            # Declared skill inputs must be supplied exactly: every declared
+            # input present, nothing undeclared. Runs before any tool call.
+            provided_inputs = self._validated_skill_inputs(skill_inputs)
+            if not self.skill_service.skill_inputs_met(skill, provided_inputs):
+                return await self._finalize(
+                    record,
+                    self._build_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.FAILED,
+                        error_kind=_ERROR_INVALID_SKILL_INPUTS,
                         steps=[],
                     ),
                 )
@@ -624,6 +644,17 @@ class SkillExecutionService:
             tool_input = call.get("input", {})
             if not isinstance(tool_input, dict):
                 raise ValueError(f"Tool call {index} input must be an object")
+
+    @staticmethod
+    def _validated_skill_inputs(skill_inputs) -> Dict[str, str]:
+        """Validate the shape of supplied skill inputs (not the declaration)."""
+        if skill_inputs is None:
+            return {}
+        if not isinstance(skill_inputs, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in skill_inputs.items()
+        ):
+            raise ValueError("skill_inputs must be an object mapping input names to strings")
+        return dict(skill_inputs)
 
     @staticmethod
     def _validated_conditions(satisfied_conditions: Iterable[str]) -> List[str]:
