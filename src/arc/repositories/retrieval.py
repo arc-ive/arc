@@ -162,6 +162,7 @@ class PostgreSQLKnowledgeChunkRepository:
                     document_version=row["version"],
                     sequence=row["sequence"],
                     similarity=float(row["similarity"]),
+                    dense_score=float(row["similarity"]),
                 )
                 for row in rows
             ]
@@ -251,6 +252,7 @@ class PostgreSQLKnowledgeChunkRepository:
                     document_version=row["version"],
                     sequence=row["sequence"],
                     similarity=float(row["rank"]),
+                    lexical_score=float(row["rank"]),
                 )
                 for row in rows
             ]

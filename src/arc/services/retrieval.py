@@ -66,8 +66,6 @@ class ReciprocalRankFusion:
     ``KnowledgeMatch`` objects.
     """
 
-    K = 60
-
     @staticmethod
     def fuse(
         dense: List[KnowledgeMatch],
@@ -310,13 +308,11 @@ class RetrievalService:
             if match.tenant_id != context.tenant_id:
                 raise RuntimeError("Retrieval returned a match outside the trusted tenant")
 
-        dense_similarity = {m.chunk_id: m.similarity for m in dense_matches}
-
         def _passes_floor(match: KnowledgeMatch) -> bool:
-            sim = dense_similarity.get(match.chunk_id)
-            if sim is None:
+            dense = match.dense_score
+            if dense is None:
                 return True
-            return sim >= min_relevance_score
+            return dense >= min_relevance_score
 
         filtered = [match for match in fused if _passes_floor(match)]
 

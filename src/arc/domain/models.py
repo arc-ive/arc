@@ -491,6 +491,21 @@ class KnowledgeMatch:
     content: raw content never reaches persistence or retrieval.
     ``sequence`` is the chunk position within the owning document and is
     required for citation in the Approved Context Contract.
+
+    Score fields carry the raw signal from each retrieval method so that
+    downstream code never treats incompatible scales as interchangeable:
+
+    - ``dense_score``: cosine similarity from pgvector (range roughly
+      -1..1, typically 0..1 for meaningful results).  ``None`` when the
+      chunk was not retrieved via dense search.
+    - ``lexical_score``: ``ts_rank`` from PostgreSQL full-text search
+      (range 0..1).  ``None`` when the chunk was not retrieved via
+      lexical search.
+    - ``similarity``: the primary ranking score for the retrieval list
+      that produced this match.  For dense results this equals
+      ``dense_score``; for lexical results this equals
+      ``lexical_score``.  Callers should prefer the explicit fields
+      when comparing across retrieval methods.
     """
 
     chunk_id: str
@@ -502,6 +517,8 @@ class KnowledgeMatch:
     document_version: int
     sequence: int
     similarity: float
+    dense_score: Optional[float] = None
+    lexical_score: Optional[float] = None
 
     def __post_init__(self):
         if not self.chunk_id:
