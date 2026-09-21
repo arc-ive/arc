@@ -557,3 +557,80 @@ class TestConnectorPathTenantConsistency:
         connector_repo = PostgreSQLConnectorRepository(db)
         assert await connector_repo.list_for_tenant(tenant.id) == []
         assert await connector_repo.list_for_tenant(other_tenant_id) == []
+
+
+class TestCredentialMaxLength:
+    """Issue #185: credential plaintext input is bounded at 10,000 characters."""
+
+    def _post(self, client, tenant_id, token, provider, credential):
+        return client.post(
+            f"/tenants/{tenant_id}/connectors/credentials/{provider}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"credential": credential},
+        )
+
+    def _fake_service(self):
+        from unittest.mock import AsyncMock
+
+        from arc.api.controllers import app_context
+
+        fake = AsyncMock()
+        fake.create_credential.return_value = {"provider": "github"}
+        saved = app_context.services._services.get("connector_credential_service")
+        app_context.services._services["connector_credential_service"] = fake
+        return app_context, fake, saved
+
+    def _restore_service(self, app_context, saved):
+        if saved is not None:
+            app_context.services._services["connector_credential_service"] = saved
+        else:
+            app_context.services._services.pop("connector_credential_service", None)
+
+    async def test_short_credential_succeeds(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        app_context, fake, saved = self._fake_service()
+        try:
+            response = self._post(client, tenant.id, token, "github", "tok")
+            assert response.status_code == 200
+            fake.create_credential.assert_awaited_once()
+        finally:
+            self._restore_service(app_context, saved)
+
+    async def test_exactly_10000_characters_succeeds(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        app_context, fake, saved = self._fake_service()
+        try:
+            response = self._post(client, tenant.id, token, "github", "x" * 10_000)
+            assert response.status_code == 200
+            fake.create_credential.assert_awaited_once()
+        finally:
+            self._restore_service(app_context, saved)
+
+    async def test_10001_characters_rejected_before_service(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        app_context, fake, saved = self._fake_service()
+        try:
+            oversized = "y" * 10_001
+            rejected = self._post(client, tenant.id, token, "github", oversized)
+            assert rejected.status_code == 400
+            assert rejected.json()["detail"] == "Credential exceeds maximum length"
+            assert oversized not in rejected.text
+            # Rejected before encryption/persistence/downstream processing.
+            fake.create_credential.assert_not_awaited()
+        finally:
+            self._restore_service(app_context, saved)
