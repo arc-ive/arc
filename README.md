@@ -65,6 +65,31 @@ Linear is used for:
 
 AI tools are development aids. They do not replace the repository's authoritative documentation.
 
+## Quick Start (fresh clone)
+
+```powershell
+# 1. Clone and configure environment (safe development defaults)
+cp .env.example .env
+
+# 2. Start PostgreSQL + pgvector and the backend (schema is
+#    provisioned automatically from src/arc/db/schema.sql on first
+#    startup; restarts are idempotent and preserve data)
+docker compose up --build -d
+
+# 3. Verify health
+curl http://localhost:8000/health
+# {"status":"ok"}
+
+# 4. Start the frontend (requires Node 24)
+cd frontend
+npm install
+npm run dev
+# http://localhost:5173
+```
+
+Fresh database provisioning is exercised by CI (``schema-bootstrap``
+job) and covered by ``tests/test_schema_bootstrap.py``.
+
 ## Development Status
 
 X-10 (tenant membership boundary) is implemented and verified. The product modules are **not yet under implementation**.

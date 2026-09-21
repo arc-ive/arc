@@ -331,3 +331,112 @@ class TestAgentRuns:
         assert body["status"] == "failed"
         assert body["tenant_id"] == tenant.id
         assert body["steps"][-1]["error_kind"] == "invalid_input"
+
+
+class TestAgentResumeApprovalVerification:
+    """Issue #206: agent resume gets the same approval verification."""
+
+    async def _setup(
+        self, client, repositories, make_token, authorization_override, **skill_overrides
+    ):
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        skill_id = await _create_skill_via_api(client, tenant.id, token, **skill_overrides)
+        return tenant, token, skill_id
+
+    async def _approved_approval(self, db, tenant_id, user_id, tool_name="check_service_health"):
+        from arc.domain.models import ApprovalStatus, TenantContext, UserRole
+        from arc.repositories.approvals import PostgreSQLApprovalRequestRepository
+        from arc.services.approvals import HumanApprovalService
+        from arc.services.tools import approval_arguments_digest
+
+        # Own service instance over the test-loop pool: awaiting the
+        # app-owned service here would bind to a different event loop.
+        approval_service = HumanApprovalService(PostgreSQLApprovalRequestRepository(db))
+        tool = app_context.services.get("tool_service").registry.get(tool_name)
+        approval_id = await approval_service.record_required_approval(
+            tenant_id=tenant_id,
+            requester_user_id=user_id,
+            tool_name=tool.name,
+            tool_version=tool.version,
+            risk_level="low",
+            input_summary="test",
+            arguments_digest=approval_arguments_digest(tool, {}),
+        )
+        await approval_service.decide_request(
+            TenantContext(
+                tenant_id=tenant_id,
+                tenant_name="t",
+                user_id=user_id,
+                role=UserRole.MEMBER,
+            ),
+            "approver-1",
+            approval_id,
+            ApprovalStatus.APPROVED,
+        )
+        return approval_id
+
+    def _resume(self, client, tenant_id, token, skill_id, approval_id):
+        return client.post(
+            "/agent/runs/resume",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "tenant_id": tenant_id,
+                "approval_id": approval_id,
+                "skill_id": skill_id,
+                "tool_calls": [{"tool_name": "check_service_health", "input": {}}],
+                "resume_from_step": 0,
+                "previous_steps": [],
+                "satisfied_preconditions": [],
+            },
+        )
+
+    async def test_fabricated_approval_refused(
+        self, client, repositories, make_token, authorization_override
+    ):
+        tenant, token, skill_id = await self._setup(
+            client, repositories, make_token, authorization_override, approval_required=True
+        )
+
+        response = self._resume(client, tenant.id, token, skill_id, "fabricated-nope")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["error_kind"] == "invalid_approval"
+
+    async def test_cross_tenant_approval_refused(
+        self, client, repositories, db, make_token, authorization_override
+    ):
+        tenant, token, skill_id = await self._setup(
+            client, repositories, make_token, authorization_override, approval_required=True
+        )
+        other = await _seed_tenant(repositories, name="Other Tenant")
+        approval_id = await self._approved_approval(db, other.id, "user-1")
+
+        response = self._resume(client, tenant.id, token, skill_id, approval_id)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["error_kind"] == "invalid_approval"
+
+    async def test_valid_approval_succeeds_then_replay_refused(
+        self, client, repositories, db, make_token, authorization_override
+    ):
+        tenant, token, skill_id = await self._setup(
+            client, repositories, make_token, authorization_override, approval_required=True
+        )
+        approval_id = await self._approved_approval(db, tenant.id, "user-1")
+
+        first = self._resume(client, tenant.id, token, skill_id, approval_id)
+        assert first.status_code == 200
+        assert first.json()["status"] == "succeeded"
+
+        replay = self._resume(client, tenant.id, token, skill_id, approval_id)
+        assert replay.status_code == 200
+        assert replay.json()["status"] == "failed"
+        assert replay.json()["error_kind"] == "invalid_approval"

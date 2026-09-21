@@ -78,6 +78,12 @@ class Application:
         self.db = ArcDatabase(database_url)
         await self.db.connect()
 
+        # Provision the full schema from src/arc/db/schema.sql (single
+        # source of truth, Issue #207). Idempotent: safe to run on
+        # every startup against an already-provisioned database. Must
+        # happen before any query that touches application tables.
+        await self.db.ensure_schema()
+
         # Initialize repositories
         self.repositories = {
             "tenant": PostgreSQLTenantRepository(self.db),
@@ -180,6 +186,11 @@ class Application:
 
         # Wire approval service to tool execution service
         self.services["tool_service"].approval_service = self.services["human_approval_service"]
+        # Wire approval service to skill execution service for
+        # skill-level resume verification (V2-ADR-011)
+        self.services["skill_execution_service"].approval_service = self.services[
+            "human_approval_service"
+        ]
 
         # Initialize observability (PRD 17, TRD 17/28/31): aggregation/
         # read layer over AUTHORITATIVE subsystem records plus the HTTP

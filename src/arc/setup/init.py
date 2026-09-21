@@ -1,8 +1,17 @@
-"""Database setup utilities for Arc multi-tenant foundation."""
+"""Database setup utilities for Arc multi-tenant foundation.
+
+``src/arc/db/schema.sql`` is the single source of truth for the
+database schema (Issue #207, V2-ADR-028). This module contains no
+inline DDL; it provisions the schema by executing that file.
+
+Usage:
+    python -m arc.setup.init
+"""
 
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 
 def run_command(command: list[str], description: str) -> None:
@@ -26,10 +35,14 @@ def run_command(command: list[str], description: str) -> None:
 
 
 def setup_database(database_url: str) -> None:
-    """Set up the Arc database with required tables."""
-    # Parse database URL.
-    # Format:
-    # postgresql://user:password@localhost:5432/database
+    """Set up the Arc database with required tables.
+
+    Ensures the database exists (creating it if needed) and then
+    applies ``src/arc/db/schema.sql`` — the single authoritative
+    schema — via ``psql -f``. All statements in that file are
+    idempotent (``IF NOT EXISTS``), so this is safe to run
+    repeatedly.
+    """
     parts = database_url.replace("postgresql://", "").split("@")
     auth = parts[0].split(":")
     host_db = parts[1].split("/")
@@ -42,12 +55,10 @@ def setup_database(database_url: str) -> None:
     host = host_port.split(":")[0]
     port = host_port.split(":")[1]
 
-    # Set password environment for PostgreSQL commands.
     env = os.environ.copy()
     env["PGPASSWORD"] = password
 
     try:
-        # Try to connect to the existing database.
         run_command(
             [
                 "psql",
@@ -68,7 +79,6 @@ def setup_database(database_url: str) -> None:
         print(f"Database '{database}' already exists and is accessible.")
 
     except RuntimeError:
-        # Database doesn't exist, create it.
         print(f"Database '{database}' does not exist. Creating...")
 
         run_command(
@@ -85,7 +95,10 @@ def setup_database(database_url: str) -> None:
             "Creating database",
         )
 
-    # Run schema initialization.
+    schema_path = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
+    if not schema_path.exists():
+        raise RuntimeError(f"Schema file not found: {schema_path}")
+
     psql_cmd = [
         "psql",
         "-h",
@@ -96,55 +109,15 @@ def setup_database(database_url: str) -> None:
         user,
         "-d",
         database,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        str(schema_path),
     ]
 
-    init_script = """
-    -- Arc Multi-Tenant Database Schema
-    -- Created by Arc Platform Security Foundation setup
-
-    CREATE TABLE IF NOT EXISTS tenants (
-        id VARCHAR(255) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'active',
-        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-        id VARCHAR(255) PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        username VARCHAR(255),
-        status VARCHAR(50) NOT NULL DEFAULT 'active',
-        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(email)
-    );
-
-    CREATE TABLE IF NOT EXISTS memberships (
-        id VARCHAR(255) PRIMARY KEY,
-        user_id VARCHAR(255) NOT NULL,
-        tenant_id VARCHAR(255) NOT NULL,
-        role VARCHAR(50) NOT NULL DEFAULT 'member',
-        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, tenant_id),
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_memberships_user_id
-        ON memberships(user_id);
-
-    CREATE INDEX IF NOT EXISTS idx_memberships_tenant_id
-        ON memberships(tenant_id);
-
-    CREATE INDEX IF NOT EXISTS idx_users_email
-        ON users(email);
-    """
-
     run_command(
-        psql_cmd + ["-c", init_script.strip()],
-        "Initializing database schema",
+        psql_cmd,
+        f"Applying database schema from {schema_path.name}",
     )
 
 
