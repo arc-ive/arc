@@ -71,7 +71,10 @@ class FakeLlmProvider:
 
     def complete(self, prompt: str) -> str:
         self.prompts.append(prompt)
-        return "Deterministic response using 1 approved context item(s): doc-1#c0"
+        return (
+            "Deterministic response using 1 approved context item(s): doc-1#c0\n"
+            "[1] citation: doc-1#c0"
+        )
 
 
 class FakeRetrieval:
@@ -153,7 +156,10 @@ class TestUnifiedIntelligenceService:
         answer = await service.answer_query(_context(), "remote work policy")
 
         assert answer.context_used is True
-        assert answer.answer == "Deterministic response using 1 approved context item(s): doc-1#c0"
+        assert answer.answer == (
+            "Deterministic response using 1 approved context item(s): doc-1#c0\n"
+            "[1] citation: doc-1#c0"
+        )
         assert answer.citations == ["doc-1#c0"]
         assert answer.tenant_id == "tenant-1"
         assert answer.principal_id == "user-1"
@@ -268,3 +274,55 @@ class TestUnifiedIntelligenceService:
     async def test_default_provider_is_deterministic(self):
         service = UnifiedIntelligenceService(FakeRetrieval(_approved([])))
         assert isinstance(service.llm_provider, DeterministicLlmProvider)
+
+    async def test_partial_citations_only_grounded_items_returned(self):
+        """Only citations the LLM actually referenced are returned."""
+
+        class PartialCitationLlm:
+            def complete(self, prompt: str) -> str:
+                return "Answer using item 1 only.\n[1] citation: doc-1#c0"
+
+        items = [
+            _item(document_id="doc-1", content="Policy A.", sequence=0),
+            _item(document_id="doc-2", content="Policy B.", sequence=1),
+        ]
+        retrieval = FakeRetrieval(_approved(items))
+        service = UnifiedIntelligenceService(retrieval, PartialCitationLlm())
+
+        answer = await service.answer_query(_context(), "policy question")
+
+        assert answer.citations == ["doc-1#c0"]
+        assert "doc-2#c1" not in answer.citations
+
+    async def test_no_citations_when_llm_omits_references(self):
+        """When the LLM output contains no citation patterns, citations are empty."""
+
+        class NoCitationLlm:
+            def complete(self, prompt: str) -> str:
+                return "I cannot answer from the provided context."
+
+        retrieval = FakeRetrieval(_approved([_item()]))
+        service = UnifiedIntelligenceService(retrieval, NoCitationLlm())
+
+        answer = await service.answer_query(_context(), "remote work policy")
+
+        assert answer.citations == []
+        assert answer.answer == "I cannot answer from the provided context."
+
+    async def test_fabricated_citation_index_ignored(self):
+        """Citation indices not in the approved set are silently dropped."""
+
+        class FabricatingLlm:
+            def complete(self, prompt: str) -> str:
+                return (
+                    "Answer referencing a non-existent item.\n"
+                    "[1] citation: doc-1#c0\n"
+                    "[99] citation: fake-ref#x"
+                )
+
+        retrieval = FakeRetrieval(_approved([_item()]))
+        service = UnifiedIntelligenceService(retrieval, FabricatingLlm())
+
+        answer = await service.answer_query(_context(), "remote work policy")
+
+        assert answer.citations == ["doc-1#c0"]

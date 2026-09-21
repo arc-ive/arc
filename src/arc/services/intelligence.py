@@ -77,6 +77,31 @@ from arc.services.tools import (
 
 _OBSERVATION_MAX_CHARS = 1024
 
+_CITATION_REF_RE = __import__("re").compile(r"\[(\d+)\]\s*citation:\s*(\S+)")
+
+
+def _extract_grounded_citations(llm_output: str, approved_items: list) -> list:
+    """Return only the approved citations the LLM actually referenced.
+
+    Parses ``[N] citation: ref`` patterns from the model output and maps
+    them back to the corresponding ``citation_reference`` strings from the
+    approved context.  Indices outside the approved set are ignored (the
+    model fabricated them).  When no citations are found the list is empty.
+    """
+    if not llm_output or not approved_items:
+        return []
+    refs_by_index = {
+        str(idx + 1): item.citation_reference for idx, item in enumerate(approved_items)
+    }
+    cited = []
+    seen = set()
+    for match in _CITATION_REF_RE.finditer(llm_output):
+        ref = refs_by_index.get(match.group(1))
+        if ref and ref not in seen:
+            cited.append(ref)
+            seen.add(ref)
+    return cited
+
 
 class UnifiedIntelligenceService:
     """Domain service for tenant-scoped knowledge reasoning."""
@@ -135,7 +160,6 @@ class UnifiedIntelligenceService:
 
         approved = await self.retrieval.approved_search(context, query, limit=limit)
 
-        citations = [item.citation_reference for item in approved.items]
         if not approved.items:
             return IntelligenceAnswer(
                 request_id=str(uuid.uuid4()),
@@ -166,6 +190,7 @@ class UnifiedIntelligenceService:
         prompt = self._build_prompt(approved, query, observation)
         answer = self.llm_provider.complete(prompt)
         await self._record_usage(context, None, LLM_CALL_TYPE_COMPLETE, approved.request_id)
+        citations = _extract_grounded_citations(answer, approved.items)
 
         return IntelligenceAnswer(
             request_id=str(uuid.uuid4()),
