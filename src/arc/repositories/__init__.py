@@ -20,6 +20,7 @@ from arc.domain.models import (
     Membership,
     PlatformCapability,
     Skill,
+    SkillExecutionRecord,
     Tenant,
     TenantCapability,
     ToolExecutionActivityMetrics,
@@ -407,6 +408,49 @@ class ToolExecutionRepository(Protocol):
         given key and tenant, or None. Used by the webhook retry
         pipeline to prevent duplicate side effects (V2-ADR-019).
         """
+        ...
+
+
+class SkillExecutionRecordRepository(Protocol):
+    """Repository for SkillExecutionRecord entities (Issue #208).
+
+    Every operation is tenant scoped: callers pass the trusted tenant ID
+    and the repository enforces it in SQL. A record created for tenant A
+    must never be retrievable or listable by tenant B.
+
+    Records are append-oriented audit artifacts: each
+    ``SkillExecutionService.execute()`` call produces exactly one row,
+    created before execution and updated with the terminal state.
+    """
+
+    async def create_record(self, record: SkillExecutionRecord) -> SkillExecutionRecord:
+        """Persist a skill execution record (initial state, typically started)."""
+        ...
+
+    async def update_record(self, record: SkillExecutionRecord) -> SkillExecutionRecord:
+        """Update a skill execution record with terminal state."""
+        ...
+
+    async def get_record(self, record_id: str, tenant_id: str) -> Optional[SkillExecutionRecord]:
+        """Read one skill execution record within the trusted tenant."""
+        ...
+
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[SkillExecutionRecord]:
+        """List the most recent skill execution records for a tenant."""
+        ...
+
+    async def list_for_skill(
+        self, tenant_id: str, skill_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[SkillExecutionRecord]:
+        """List the most recent skill execution records for a specific skill."""
+        ...
+
+    async def list_for_agent_run(
+        self, agent_run_id: str, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> List[SkillExecutionRecord]:
+        """List skill execution records linked to a specific agent run."""
         ...
 
 

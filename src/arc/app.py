@@ -14,6 +14,7 @@ from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
 from arc.repositories.observability import PostgreSQLObservabilityRepository
 from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+from arc.repositories.skill_execution import PostgreSQLSkillExecutionRecordRepository
 from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tenancy import (
     PostgreSQLMembershipRepository,
@@ -94,6 +95,7 @@ class Application:
             "knowledge": PostgreSQLKnowledgeRepository(self.db),
             "knowledge_chunk": PostgreSQLKnowledgeChunkRepository(self.db),
             "skill": PostgreSQLSkillRepository(self.db),
+            "skill_execution_record": PostgreSQLSkillExecutionRecordRepository(self.db),
             "tool_execution": PostgreSQLToolExecutionRepository(self.db),
             "webhook_events": PostgreSQLWebhookEventRepository(self.db),
             "observability": PostgreSQLObservabilityRepository(self.db),
@@ -168,10 +170,13 @@ class Application:
         )
 
         # Initialize the skill execution engine (delegates ALL actions to
-        # the tool service above).
+        # the tool service above). The skill execution record repository
+        # is wired here (Issue #208) so every terminal outcome persists
+        # a skill_execution_records row for audit/observability.
         self.services["skill_execution_service"] = SkillExecutionService(
             skill_service=self.services["skill_service"],
             tool_service=self.services["tool_service"],
+            record_repo=self.repositories["skill_execution_record"],
             capability_service=self.services["capability_service"],
         )
 
