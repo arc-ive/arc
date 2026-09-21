@@ -1,13 +1,17 @@
 """PostgreSQL connection manager for Arc domain."""
 
+import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 import asyncpg
 
 from arc.domain.models import Membership, Session, Tenant, User, UserRole
 from arc.repositories import DEFAULT_LIST_LIMIT
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseError(Exception):
@@ -126,6 +130,71 @@ class ArcDatabase:
         """Close connection pool."""
         if self._connection_pool:
             await self._connection_pool.close()
+
+    async def ensure_schema(self) -> None:
+        """Provision the full Arc schema from ``schema.sql`` idempotently.
+
+        ``src/arc/db/schema.sql`` is the single source of truth
+        (Issue #207, V2-ADR-028). Every statement in that file is
+        idempotent (``IF NOT EXISTS``, ``ADD COLUMN IF NOT EXISTS``,
+        etc.) so this is safe to run on every startup.
+
+        The file is split on ``;`` — the same rule the test suite
+        uses — so the file must never contain a ``;`` inside a comment
+        (already enforced by a comment in ``schema.sql``).
+
+        Failures are not swallowed: a schema error fails startup
+        rather than serving a misleading healthy application.
+        """
+        if not self._connection_pool:
+            raise DatabaseError("Database not connected")
+
+        # Locate schema.sql — the single source of truth. Prefer the
+        # file alongside this module (works for both src layout and
+        # site-packages when package-data is configured), then fall
+        # back to importlib.resources and the known /app/src location
+        # for robustness across Docker/build layouts.
+        candidates: list[Path] = [Path(__file__).with_name("schema.sql")]
+        try:
+            import importlib.resources as _resources
+
+            candidates.append(Path(str(_resources.files("arc.db") / "schema.sql")))
+        except Exception:
+            pass
+        candidates.append(Path("/app/src/arc/db/schema.sql"))
+
+        schema_path: Path | None = next((p for p in candidates if p.exists()), None)
+        if schema_path is None:
+            raise DatabaseError(
+                f"Schema file not found (tried: {', '.join(str(p) for p in candidates)})"
+            )
+
+        schema_sql = schema_path.read_text(encoding="utf-8")
+
+        # Ensure pgvector is available before any vector column is created.
+        # The file itself also contains this statement, but executing it
+        # first guarantees correct ordering regardless of file layout.
+        async with self._connection_pool.acquire() as conn:
+            try:
+                await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            except Exception as exc:
+                raise DatabaseError(f"Failed to ensure pgvector extension: {exc}") from exc
+
+        # Execute each statement from schema.sql in order. Statements
+        # that are already satisfied are no-ops due to IF NOT EXISTS.
+        async with self._connection_pool.acquire() as conn:
+            for raw in schema_sql.split(";"):
+                stmt = raw.strip()
+                if not stmt:
+                    continue
+                try:
+                    await conn.execute(stmt)
+                except Exception as exc:
+                    raise DatabaseError(
+                        f"Failed to apply schema statement: {stmt[:120]!r}: {exc}"
+                    ) from exc
+
+        logger.info("Database schema ensured from %s", schema_path.name)
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[asyncpg.Connection, None]:

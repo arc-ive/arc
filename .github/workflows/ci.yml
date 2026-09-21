@@ -109,3 +109,40 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose down -v
+
+  schema-bootstrap:
+    name: Schema Bootstrap (fresh DB)
+    runs-on: ubuntu-latest
+
+    env:
+      APP_ENV: development
+      POSTGRES_DB: arc
+      POSTGRES_USER: arc
+      POSTGRES_PASSWORD: arc-ci-password
+      JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars
+      JWT_ISSUER: arc
+      JWT_AUDIENCE: arc-api
+      JWT_EXPIRY_SECONDS: "3600"
+      APPLICATION_ROLE_ASSIGNMENTS: "{}"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build application image
+        run: docker compose build arc
+
+      # This job proves the application provisions the full schema from
+      # src/arc/db/schema.sql on startup against a genuinely empty
+      # database — not via tests/conftest.py's DROP SCHEMA bootstrap.
+      # The test creates a temporary empty database (arc_bootstrap_*)
+      # and verifies ArcDatabase.ensure_schema() provisions all tables
+      # and is idempotent, leaving existing data intact.
+      - name: Run schema bootstrap tests (fresh DB)
+        run: |
+          docker compose run --rm arc \
+            python -m pytest tests/test_schema_bootstrap.py -v
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v

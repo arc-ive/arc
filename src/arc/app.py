@@ -78,6 +78,12 @@ class Application:
         self.db = ArcDatabase(database_url)
         await self.db.connect()
 
+        # Provision the full schema from src/arc/db/schema.sql (single
+        # source of truth, Issue #207). Idempotent: safe to run on
+        # every startup against an already-provisioned database. Must
+        # happen before any query that touches application tables.
+        await self.db.ensure_schema()
+
         # Initialize repositories
         self.repositories = {
             "tenant": PostgreSQLTenantRepository(self.db),
