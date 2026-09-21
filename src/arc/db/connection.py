@@ -149,9 +149,25 @@ class ArcDatabase:
         if not self._connection_pool:
             raise DatabaseError("Database not connected")
 
-        schema_path = Path(__file__).with_name("schema.sql")
-        if not schema_path.exists():
-            raise DatabaseError(f"Schema file not found: {schema_path}")
+        # Locate schema.sql — the single source of truth. Prefer the
+        # file alongside this module (works for both src layout and
+        # site-packages when package-data is configured), then fall
+        # back to importlib.resources and the known /app/src location
+        # for robustness across Docker/build layouts.
+        candidates: list[Path] = [Path(__file__).with_name("schema.sql")]
+        try:
+            import importlib.resources as _resources
+
+            candidates.append(Path(str(_resources.files("arc.db") / "schema.sql")))
+        except Exception:
+            pass
+        candidates.append(Path("/app/src/arc/db/schema.sql"))
+
+        schema_path: Path | None = next((p for p in candidates if p.exists()), None)
+        if schema_path is None:
+            raise DatabaseError(
+                f"Schema file not found (tried: {', '.join(str(p) for p in candidates)})"
+            )
 
         schema_sql = schema_path.read_text(encoding="utf-8")
 
