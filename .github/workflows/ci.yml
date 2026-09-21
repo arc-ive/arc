@@ -11,10 +11,72 @@ on:
 permissions:
   contents: read
 
+# Supersede an in-flight run when a PR is pushed again. Pushes to main are
+# never cancelled, so every commit on main keeps a complete result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
-    name: Lint, Format & Test
+  lint:
+    name: Lint & Format
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Ruff is pinned exactly in pyproject.toml and read from there, so the
+      # linter cannot drift between a developer's machine, this job, and the
+      # application image. Linting needs neither the application image nor
+      # PostgreSQL, so this job builds nothing.
+      - name: Resolve the pinned Ruff version
+        id: ruff
+        run: |
+          set -euo pipefail
+          version=$(python - <<'PY'
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as fh:
+              dev = tomllib.load(fh)["project"]["optional-dependencies"]["dev"]
+          pins = [d for d in dev if d.startswith("ruff==")]
+          if len(pins) != 1:
+              sys.exit(
+                  "pyproject.toml must pin Ruff exactly (ruff==X.Y.Z) so this job, "
+                  "the application image, and developer machines all lint with the "
+                  f"same version. Found: {[d for d in dev if d.startswith('ruff')]}"
+              )
+          print(pins[0].split("==", 1)[1])
+          PY
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Pinned Ruff version: $version"
+
+      - name: Install Ruff
+        run: python -m pip install "ruff==${{ steps.ruff.outputs.version }}"
+
+      - name: Run Ruff checks
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
+
+  test:
+    name: Test (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Every shard reports independently: one failing shard must not hide
+      # results from the other three.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     env:
       APP_ENV: development
@@ -34,14 +96,15 @@ jobs:
       - name: Build application image
         run: docker compose build arc
 
-      - name: Run Ruff checks
-        run: docker compose run --rm arc ruff check .
-
-      - name: Check formatting
-        run: docker compose run --rm arc ruff format --check .
-
-      - name: Run tests
-        run: docker compose run --rm arc python -m pytest -q
+      # Each shard is its own runner with its own PostgreSQL container, so the
+      # session fixture's DROP SCHEMA only ever affects that shard's database.
+      # pytest-split balances the four groups by the durations recorded in
+      # .test_durations; if that file is absent it falls back to splitting by
+      # test count, so a stale or missing file slows CI but never breaks it.
+      - name: Run tests (shard ${{ matrix.shard }} of 4)
+        run: |
+          docker compose run --rm arc \
+            python -m pytest -q --splits 4 --group ${{ matrix.shard }}
 
       - name: Cleanup
         if: always()
