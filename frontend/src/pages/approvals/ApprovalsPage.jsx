@@ -93,7 +93,7 @@ export function ApprovalsPage() {
   const canDecide = can('approval:decide')
 
   const { data: approvals, isPending, isError, error } = useQuery({
-    queryKey: queryKeys.approvals(tenantId),
+    queryKey: queryKeys.approvalsList(tenantId, statusFilter),
     queryFn: () => listApprovals(tenantId, { status: statusFilter }),
     enabled: !isDemo && Boolean(tenantId) && canRead,
   })
@@ -185,8 +185,16 @@ export function ApprovalsPage() {
 
       {!isPending && !isError && approvals?.length === 0 && (
         <EmptyState
-          title="No approvals"
-          description="There are no approval requests matching the current filter."
+          title={
+            statusFilter
+              ? `No ${STATUS_STYLES[statusFilter]?.label.toLowerCase() ?? statusFilter} approvals`
+              : 'No approvals'
+          }
+          description={
+            statusFilter
+              ? `No approval requests for this tenant have the status "${statusFilter}".`
+              : 'There are no approval requests for this tenant yet.'
+          }
         />
       )}
 
