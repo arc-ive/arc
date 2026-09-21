@@ -397,9 +397,7 @@ class TestRelevanceFloor:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "query", min_relevance_score=0.5
-        )
+        contract = await service.approved_search(_context(), "query", min_relevance_score=0.5)
 
         assert contract.items == []
 
@@ -411,9 +409,7 @@ class TestRelevanceFloor:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "query", min_relevance_score=0.5
-        )
+        contract = await service.approved_search(_context(), "query", min_relevance_score=0.5)
 
         assert len(contract.items) == 1
         assert contract.items[0].chunk_id == "high-sim"
@@ -427,9 +423,7 @@ class TestRelevanceFloor:
         service = _service(repo)
 
         # Even a very high threshold does not remove lexical-only chunks
-        contract = await service.approved_search(
-            _context(), "query", min_relevance_score=0.99
-        )
+        contract = await service.approved_search(_context(), "query", min_relevance_score=0.99)
 
         assert len(contract.items) == 1
         assert contract.items[0].chunk_id == "lex-only"
@@ -444,9 +438,7 @@ class TestRelevanceFloor:
         repo.lexical_search_results = [lex]
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "query", min_relevance_score=0.5
-        )
+        contract = await service.approved_search(_context(), "query", min_relevance_score=0.5)
 
         chunk_ids = [item.chunk_id for item in contract.items]
         assert "good" in chunk_ids
@@ -462,9 +454,7 @@ class TestRelevanceFloor:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "query", min_relevance_score=0.5
-        )
+        contract = await service.approved_search(_context(), "query", min_relevance_score=0.5)
 
         assert contract.items == []
 
@@ -481,9 +471,7 @@ class TestRelevanceFloor:
         assert len(contract_default.items) == 1
 
         # Threshold above similarity: excluded
-        contract_high = await service.approved_search(
-            _context(), "query", min_relevance_score=0.5
-        )
+        contract_high = await service.approved_search(_context(), "query", min_relevance_score=0.5)
         assert contract_high.items == []
 
     async def test_default_threshold_is_001(self):
