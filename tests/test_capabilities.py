@@ -68,28 +68,53 @@ class TestTenantCapability:
 
 
 class TestIsEffective:
-    """The heart of V2-ADR-004: the four-way resolution matrix."""
+    """The heart of V2-ADR-004: the nine-state resolution matrix (Issue #212)."""
 
-    def test_no_platform_row_passes_through(self):
-        """No platform row = no ceiling, capability passes through."""
+    def test_no_platform_row(self):
         assert CapabilityService.is_effective(None, None) is True
         assert CapabilityService.is_effective(None, True) is True
-        assert CapabilityService.is_effective(None, False) is True
+        assert CapabilityService.is_effective(None, False) is False
 
-    def test_platform_disabled_always_false(self):
+    def test_platform_disabled_hard_ceiling(self):
         assert CapabilityService.is_effective(False, None) is False
         assert CapabilityService.is_effective(False, True) is False
         assert CapabilityService.is_effective(False, False) is False
 
-    def test_platform_enabled_no_tenant_config_defaults_disabled(self):
-        """Global enabled does NOT auto-enable for every tenant (ADR-004)."""
-        assert CapabilityService.is_effective(True, None) is False
-
-    def test_platform_enabled_tenant_enabled(self):
+    def test_platform_enabled(self):
+        assert CapabilityService.is_effective(True, None) is True
         assert CapabilityService.is_effective(True, True) is True
-
-    def test_platform_enabled_tenant_disabled(self):
         assert CapabilityService.is_effective(True, False) is False
+
+    def test_nine_state_matrix_comprehensive(self):
+        """Explicitly assert all nine combinations."""
+        matrix = [
+            (None, None, True),
+            (None, True, True),
+            (None, False, False),
+            (True, None, True),
+            (True, True, True),
+            (True, False, False),
+            (False, None, False),
+            (False, True, False),
+            (False, False, False),
+        ]
+        for platform, tenant, expected in matrix:
+            assert CapabilityService.is_effective(platform, tenant) is expected, (
+                f"platform={platform!r} tenant={tenant!r} expected {expected!r}"
+            )
+
+    def test_enabling_platform_never_reduces_availability(self):
+        """Enabling the platform must not make a tenant unavailable (Issue #212)."""
+        for tenant in (None, True, False):
+            before = CapabilityService.is_effective(None, tenant)
+            after = CapabilityService.is_effective(True, tenant)
+            # Enabling platform cannot turn True -> False
+            assert not (before is True and after is False), f"tenant={tenant!r}"
+
+    def test_platform_disable_is_hard_ceiling(self):
+        """Platform False disables for every tenant state."""
+        for tenant in (None, True, False):
+            assert CapabilityService.is_effective(False, tenant) is False
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +190,10 @@ class TestCapabilityService:
         await svc.set_platform("skill_execution", False)
         assert await svc.is_enabled("tenant-1", "skill_execution") is False
 
-    async def test_is_enabled_no_tenant_config_returns_false(self, svc):
+    async def test_is_enabled_platform_enabled_no_tenant_override_is_enabled(self, svc):
+        """Platform true + tenant absent -> ENABLED (Issue #212)."""
         await svc.set_platform("skill_execution", True)
-        assert await svc.is_enabled("tenant-1", "skill_execution") is False
+        assert await svc.is_enabled("tenant-1", "skill_execution") is True
 
     async def test_is_enabled_platform_and_tenant_enabled(self, svc):
         await svc.set_platform("tool_execution", True)
@@ -218,3 +244,56 @@ class TestCapabilityService:
     async def test_get_tenant_unknown_capability_returns_none(self, svc):
         result = await svc.get_tenant("t1", "nonexistent")
         assert result is None
+
+    # ------------------------------------------------------------------
+    # Issue #212: platform enable must not disable tenants without override
+    # ------------------------------------------------------------------
+
+    async def test_platform_enable_preserves_tenant_with_no_override(self, svc):
+        """Regression: tenant with no row is enabled before and after platform enable."""
+        cap = "skill_execution"
+        # No platform row -> enabled (no ceiling)
+        assert await svc.is_enabled("tenant-1", cap) is True
+        # Enable platform, leave tenant absent -> still enabled
+        await svc.set_platform(cap, True)
+        assert await svc.is_enabled("tenant-1", cap) is True
+        # Disable platform -> hard ceiling, now disabled
+        await svc.set_platform(cap, False)
+        assert await svc.is_enabled("tenant-1", cap) is False
+
+    async def test_all_four_capabilities_share_semantics(self, svc):
+        """The same resolution applies to all four capability types."""
+        for cap in (
+            "skill_execution",
+            "tool_execution",
+            "agent_execution",
+            "connector_sync",
+        ):
+            # Absent/absent -> enabled, then platform true/absent -> enabled,
+            # then platform false -> disabled
+            fresh_repo = FakeCapabilityRepository()
+            fresh_svc = CapabilityService(fresh_repo)
+            assert await fresh_svc.is_enabled("t1", cap) is True
+            await fresh_svc.set_platform(cap, True)
+            assert await fresh_svc.is_enabled("t1", cap) is True
+            await fresh_svc.set_platform(cap, False)
+            assert await fresh_svc.is_enabled("t1", cap) is False
+
+    async def test_tenant_isolation_platform_enable(self, svc):
+        """Tenant A absent, tenant B explicitly disabled — platform enable respects both."""
+        cap = "tool_execution"
+        await svc.set_platform(cap, True)
+        # Tenant A has no override -> enabled
+        assert await svc.is_enabled("tenant-a", cap) is True
+        # Tenant B explicitly disabled -> disabled
+        await svc.set_tenant("tenant-b", cap, False)
+        assert await svc.is_enabled("tenant-b", cap) is False
+        # Tenant A still enabled after B's override
+        assert await svc.is_enabled("tenant-a", cap) is True
+        # Platform hard ceiling disables both
+        await svc.set_platform(cap, False)
+        assert await svc.is_enabled("tenant-a", cap) is False
+        assert await svc.is_enabled("tenant-b", cap) is False
+        # Tenant B true cannot override hard ceiling
+        await svc.set_tenant("tenant-b", cap, True)
+        assert await svc.is_enabled("tenant-b", cap) is False

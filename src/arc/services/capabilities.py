@@ -4,13 +4,26 @@ Central capability resolution: owns the effective-state logic that
 combines platform and tenant configuration. Each execution path calls
 ``is_enabled`` as a pre-check before proceeding.
 
-Effective-state semantics (V2-ADR-004, PRD 6):
+Effective-state semantics (V2-ADR-004, PRD 6, Issue #212):
 
-- No platform row -> no ceiling, capability passes through (backward compat).
-- Platform disabled -> DISABLED for all tenants (hard ceiling).
-- Platform enabled, tenant enabled -> ENABLED.
-- Platform enabled, tenant disabled or absent -> DISABLED.
-- Unknown capability ID -> DISABLED (fail closed).
+Platform disabled is a hard ceiling — no tenant override can re-enable.
+Platform enable does NOT implicitly disable tenants with no tenant override.
+
+Resolution matrix (platform × tenant → effective):
+
+| Platform | Tenant   | Effective |
+|----------|----------|-----------|
+| absent   | absent   | ENABLED   |
+| absent   | true     | ENABLED   |
+| absent   | false    | DISABLED  |
+| true     | absent   | ENABLED   |
+| true     | true     | ENABLED   |
+| true     | false    | DISABLED  |
+| false    | absent   | DISABLED  |
+| false    | true     | DISABLED  |
+| false    | false    | DISABLED  |
+
+Unknown capability ID -> DISABLED (fail closed).
 """
 
 from typing import List, Optional
@@ -37,17 +50,17 @@ class CapabilityService:
     def is_effective(platform_enabled: Optional[bool], tenant_enabled: Optional[bool]) -> bool:
         """Resolve the effective capability state.
 
-        ``platform_enabled`` is ``None`` when no platform row exists -
-        the capability passes through (no ceiling set).  A platform row
-        set to ``False`` is a hard ceiling: disabled for all tenants.
-        When the platform is enabled, ``tenant_enabled`` must be
-        explicitly ``True`` for the capability to take effect (V2-ADR-004).
+        Platform ``False`` is a hard ceiling — disabled for all tenants
+        regardless of tenant override. Tenant ``False`` explicitly
+        disables. Otherwise the capability is enabled (covers
+        platform-absent and platform-enabled with absent tenant
+        override — V2-ADR-004, Issue #212).
         """
-        if platform_enabled is None:
-            return True  # no ceiling, pass through
-        if not platform_enabled:
+        if platform_enabled is False:
             return False  # hard ceiling
-        return tenant_enabled is True
+        if tenant_enabled is False:
+            return False  # tenant explicitly disabled
+        return True
 
     async def is_enabled(self, tenant_id: str, capability_id: str) -> bool:
         """Check whether a capability is effective for a tenant.
