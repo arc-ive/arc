@@ -137,12 +137,13 @@ jobs:
       - name: Build application image
         run: docker compose build arc
 
-      # --no-deps: these tests import the application and inspect its route
-      # table and cookie helpers. They never reach the database, so PostgreSQL
-      # is not started.
+      # PostgreSQL is started even though these tests only inspect the route
+      # table and cookie helpers: tests/conftest.py has a session-scoped
+      # autouse fixture (_initialize_schema) that connects to the database
+      # before any test in tests/ runs, so --no-deps errors the whole file.
       - name: Assert the production configuration boundary
         run: |
-          docker compose run --rm --no-deps arc \
+          docker compose run --rm arc \
             python -m pytest tests/test_production_config.py -q
 
       - name: Cleanup
