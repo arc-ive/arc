@@ -320,9 +320,7 @@ class TestSkillResumeApprovalVerification:
         skill_id = await _create_skill_via_api(client, tenant.id, token, approval_required=True)
         return tenant, token, skill_id
 
-    async def _approved_approval(
-        self, db, tenant_id, user_id, tool_name="check_service_health"
-    ):
+    async def _approved_approval(self, db, tenant_id, user_id, tool_name="check_service_health"):
         from arc.api.controllers import app_context
         from arc.domain.models import ApprovalStatus, TenantContext, UserRole
         from arc.repositories.approvals import PostgreSQLApprovalRequestRepository
