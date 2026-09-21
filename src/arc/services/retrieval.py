@@ -245,6 +245,7 @@ class RetrievalService:
         query: str,
         limit: int = 5,
         source_type: Optional[KnowledgeSource] = None,
+        min_relevance_score: float = 0.01,
     ) -> ApprovedContext:
         """Return retrieval results as the Approved Context Contract.
 
@@ -255,6 +256,12 @@ class RetrievalService:
 
         V2 uses hybrid retrieval: dense semantic retrieval + lexical
         retrieval fused via Reciprocal Rank Fusion (``HYBRID_RRF``).
+
+        Items with an RRF fused score below ``min_relevance_score`` are
+        excluded from the approved context. When no items clear the
+        threshold the contract has an empty ``items`` list; the caller
+        (``UnifiedIntelligenceService.answer_query``) returns the
+        existing no-answer response in that case.
 
         The tenant boundary comes exclusively from the trusted context,
         the SQL similarity search is tenant-scoped, and every returned
@@ -283,6 +290,8 @@ class RetrievalService:
             if match.tenant_id != context.tenant_id:
                 raise RuntimeError("Retrieval returned a match outside the trusted tenant")
 
+        filtered = [match for match in fused if rrf_scores[match.chunk_id] >= min_relevance_score]
+
         items = [
             ApprovedContextItem(
                 document_id=match.document_id,
@@ -295,7 +304,7 @@ class RetrievalService:
                 relevance_score=rrf_scores[match.chunk_id],
                 citation_reference=f"{match.document_id}#c{match.sequence}",
             )
-            for match in fused
+            for match in filtered
         ]
 
         return ApprovedContext(

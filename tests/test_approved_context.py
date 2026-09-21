@@ -379,3 +379,105 @@ class TestApprovedSearchHybrid:
         assert contract.security_metadata.tenant_id == "tenant-1"
         assert contract.security_metadata.authorization_status == "approved"
         assert contract.security_metadata.pii_status == "sanitized"
+
+
+class TestRelevanceFloor:
+    """Relevance threshold filtering (PRD-17, issue #210)."""
+
+    async def test_items_below_threshold_are_excluded(self):
+        """Chunks in only one list at low rank get low RRF scores and are filtered."""
+        repo = FakeChunkRepository()
+        # 3 results in dense
+        repo.search_results = [_match(sequence=i, chunk_id=f"dense-{i}") for i in range(3)]
+        # 3 results in lexical
+        repo.lexical_search_results = [_match(sequence=i, chunk_id=f"lex-{i}") for i in range(3)]
+        service = _service(repo)
+
+        # Default threshold 0.01: single-list rank-3 score = 1/63 ≈ 0.016 → included
+        contract_default = await service.approved_search(_context(), "query", limit=3)
+        assert len(contract_default.items) == 6
+
+        # Raise threshold above single-list score: those items are excluded
+        contract_strict = await service.approved_search(
+            _context(), "query", limit=3, min_relevance_score=0.02
+        )
+        # Only items in both lists (score ≈ 0.033) survive
+        assert contract_strict.items == []
+
+    async def test_items_above_threshold_are_kept(self):
+        """A chunk in both lists at rank 1 gets a high RRF score."""
+        repo = FakeChunkRepository()
+        shared = _match(sequence=0, chunk_id="shared-high")
+        repo.search_results = [shared]
+        repo.lexical_search_results = [shared]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "query")
+
+        assert len(contract.items) == 1
+        assert contract.items[0].chunk_id == "shared-high"
+
+    async def test_all_items_below_threshold_returns_empty(self):
+        """When no chunk clears the threshold, items is empty."""
+        repo = FakeChunkRepository()
+        # 5 results in dense only, nothing in lexical
+        repo.search_results = [_match(sequence=i, chunk_id=f"dense-{i}") for i in range(5)]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        # Use a threshold higher than any single-list rank-5 score
+        contract = await service.approved_search(
+            _context(), "query", limit=5, min_relevance_score=0.02
+        )
+
+        assert contract.items == []
+
+    async def test_threshold_is_configurable(self):
+        """Custom threshold filters differently than default."""
+        repo = FakeChunkRepository()
+        shared = _match(sequence=0, chunk_id="chunk-a")
+        repo.search_results = [shared]
+        repo.lexical_search_results = [shared]
+        service = _service(repo)
+
+        # Default threshold (0.01): chunk should be included
+        contract_default = await service.approved_search(_context(), "query")
+        assert len(contract_default.items) == 1
+
+        # Very high threshold: same chunk should be excluded
+        contract_high = await service.approved_search(_context(), "query", min_relevance_score=0.99)
+        assert contract_high.items == []
+
+    async def test_default_threshold_is_001(self):
+        """Default threshold documents the boundary value."""
+        import inspect
+
+        sig = inspect.signature(RetrievalService.approved_search)
+        assert sig.parameters["min_relevance_score"].default == 0.01
+
+    async def test_filtered_items_still_carry_correct_scores(self):
+        """Remaining items have accurate RRF scores after filtering."""
+        repo = FakeChunkRepository()
+        # shared appears in BOTH lists at rank 1 → score = 2/61 ≈ 0.0328
+        shared = _match(sequence=0, chunk_id="shared-both")
+        # lex_only appears ONLY in lexical at rank 2 → score = 1/62 ≈ 0.0161
+        lex_only = _match(sequence=1, chunk_id="lex-only")
+        repo.search_results = [shared]
+        repo.lexical_search_results = [shared, lex_only]
+        service = _service(repo)
+
+        # With default threshold (0.01), both items survive
+        contract = await service.approved_search(_context(), "query")
+        assert len(contract.items) == 2
+        scores = {item.chunk_id: item.relevance_score for item in contract.items}
+        expected_shared = 1.0 / (60 + 1) + 1.0 / (60 + 1)
+        expected_lex_only = 1.0 / (60 + 2)
+        assert abs(scores["shared-both"] - expected_shared) < 1e-9
+        assert abs(scores["lex-only"] - expected_lex_only) < 1e-9
+
+        # Raise threshold: only the dual-list item survives
+        contract_strict = await service.approved_search(
+            _context(), "query", min_relevance_score=0.02
+        )
+        assert len(contract_strict.items) == 1
+        assert contract_strict.items[0].chunk_id == "shared-both"
