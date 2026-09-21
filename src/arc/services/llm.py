@@ -323,9 +323,7 @@ class OpenRouterProvider:
         data = response.json()
         choices = data.get("choices", [])
         if not choices:
-            raise LlmRetryableError(
-                f"OpenRouter returned no choices for model {self._model!r}"
-            )
+            raise LlmRetryableError(f"OpenRouter returned no choices for model {self._model!r}")
         # Capture usage data from the response (V2-ADR-006, TRD 13).
         usage = data.get("usage") or {}
         report = LlmUsageReport(
