@@ -25,7 +25,15 @@ dependencies = [
 dev = [
     "pytest>=8.4,<9.0",
     "pytest-asyncio>=0.23,<1.0",
-    "ruff>=0.12,<1.0",
+    # Splits the suite across CI shards by recorded duration (.test_durations).
+    # Shards are separate jobs with their own PostgreSQL, so the suite's
+    # schema-dropping session fixture stays isolated per shard.
+    "pytest-split>=0.9,<1.0",
+    # Pinned exactly, not ranged: Ruff's formatter output can change between
+    # releases, so a range lets a developer's machine and CI disagree about
+    # whether the tree is formatted. The CI lint job reads this pin, so all
+    # three environments lint with one version. Bump deliberately.
+    "ruff==0.16.8",
 ]
 
 [tool.setuptools.packages.find]
