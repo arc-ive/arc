@@ -14,6 +14,7 @@ from arc.domain.models import (
     ConnectorCredentialAudit,
     ConnectorProvider,
 )
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class PostgreSQLConnectorCredentialRepository:
@@ -131,7 +132,10 @@ class PostgreSQLConnectorCredentialRepository:
         return audit
 
     async def list_audit_for_tenant(
-        self, tenant_id: str, provider: Optional[str] = None
+        self,
+        tenant_id: str,
+        provider: Optional[str] = None,
+        limit: int = DEFAULT_LIST_LIMIT,
     ) -> List[ConnectorCredentialAudit]:
         """List audit records for a tenant, optionally filtered by provider."""
         async with self._db._connection_pool.acquire() as conn:
@@ -142,10 +146,12 @@ class PostgreSQLConnectorCredentialRepository:
                            key_version, created_at
                     FROM connector_credential_audit
                     WHERE tenant_id = $1 AND provider = $2
-                    ORDER BY created_at DESC
+                    ORDER BY created_at DESC, id ASC
+                    LIMIT $3
                     """,
                     tenant_id,
                     provider,
+                    limit,
                 )
             else:
                 rows = await conn.fetch(
@@ -154,9 +160,11 @@ class PostgreSQLConnectorCredentialRepository:
                            key_version, created_at
                     FROM connector_credential_audit
                     WHERE tenant_id = $1
-                    ORDER BY created_at DESC
+                    ORDER BY created_at DESC, id ASC
+                    LIMIT $2
                     """,
                     tenant_id,
+                    limit,
                 )
         return [self._audit_from_row(row) for row in rows]
 

@@ -7,6 +7,7 @@ from typing import AsyncGenerator
 import asyncpg
 
 from arc.domain.models import Membership, Session, Tenant, User, UserRole
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class DatabaseError(Exception):
@@ -225,11 +226,13 @@ class ArcDatabase:
                 raise NotFoundError(f"Tenant with id {tenant_id} not found")
             return _tenant_from_row(row)
 
-    async def list_tenants(self) -> list[Tenant]:
+    async def list_tenants(self, limit: int = DEFAULT_LIST_LIMIT) -> list[Tenant]:
         """List every tenant, newest first (platform-scoped, no membership filter)."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT {_tenant_select_list()} FROM tenants ORDER BY created_at DESC"
+                f"SELECT {_tenant_select_list()} FROM tenants "
+                "ORDER BY created_at DESC, id ASC LIMIT $1",
+                limit,
             )
             return [_tenant_from_row(row) for row in rows]
 
@@ -379,7 +382,9 @@ class ArcDatabase:
                 updated_at=row["updated_at"],
             )
 
-    async def get_tenants_for_user(self, user_id: str) -> list[Tenant]:
+    async def get_tenants_for_user(
+        self, user_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> list[Tenant]:
         """Get all tenants for a user."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -388,8 +393,11 @@ class ArcDatabase:
                 FROM tenants t
                 JOIN memberships m ON t.id = m.tenant_id
                 WHERE m.user_id = $1
+                ORDER BY t.created_at DESC, t.id ASC
+                LIMIT $2
                 """,
                 user_id,
+                limit,
             )
             return [_tenant_from_row(row) for row in rows]
 
@@ -416,7 +424,9 @@ class ArcDatabase:
             )
             return [_tenant_from_row(row) for row in rows], total
 
-    async def get_users_for_tenant(self, tenant_id: str) -> list[User]:
+    async def get_users_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> list[User]:
         """Get all users for a tenant."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -426,8 +436,11 @@ class ArcDatabase:
                 FROM users u
                 JOIN memberships m ON u.id = m.user_id
                 WHERE m.tenant_id = $1
+                ORDER BY u.created_at DESC, u.id ASC
+                LIMIT $2
                 """,
                 tenant_id,
+                limit,
             )
             users = []
             for row in rows:
@@ -443,7 +456,9 @@ class ArcDatabase:
                 )
             return users
 
-    async def get_memberships_for_user(self, user_id: str) -> list[Membership]:
+    async def get_memberships_for_user(
+        self, user_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> list[Membership]:
         """Get all memberships for a user."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -451,8 +466,11 @@ class ArcDatabase:
                 SELECT id, user_id, tenant_id, role, created_at, updated_at
                 FROM memberships
                 WHERE user_id = $1
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2
                 """,
                 user_id,
+                limit,
             )
             memberships = []
             for row in rows:
@@ -468,7 +486,9 @@ class ArcDatabase:
                 )
             return memberships
 
-    async def get_memberships_for_tenant(self, tenant_id: str) -> list[Membership]:
+    async def get_memberships_for_tenant(
+        self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
+    ) -> list[Membership]:
         """Get all memberships for a tenant."""
         async with self._connection_pool.acquire() as conn:
             rows = await conn.fetch(
@@ -476,8 +496,11 @@ class ArcDatabase:
                 SELECT id, user_id, tenant_id, role, created_at, updated_at
                 FROM memberships
                 WHERE tenant_id = $1
+                ORDER BY created_at DESC, id ASC
+                LIMIT $2
                 """,
                 tenant_id,
+                limit,
             )
             memberships = []
             for row in rows:

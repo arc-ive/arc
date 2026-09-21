@@ -35,6 +35,7 @@ from arc.domain.models import (
     ToolExecutionActivityMetrics,
     WebhookEventActivityMetrics,
 )
+from arc.repositories import DEFAULT_LIST_LIMIT
 
 
 class PostgreSQLObservabilityRepository:
@@ -331,7 +332,9 @@ class PostgreSQLObservabilityRepository:
             completed_at=row["completed_at"],
         )
 
-    async def list_agent_run_records(self, tenant_id: str, hours: int = 24) -> list:
+    async def list_agent_run_records(
+        self, tenant_id: str, hours: int = 24, limit: int = DEFAULT_LIST_LIMIT
+    ) -> list:
         """List agent run traces for a tenant within a time window."""
         import json
 
@@ -342,10 +345,12 @@ class PostgreSQLObservabilityRepository:
                        steps, created_at, started_at, completed_at
                 FROM agent_run_records
                 WHERE {self._scope_clause()}
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id ASC
+                LIMIT $3
                 """,
                 tenant_id,
                 hours,
+                limit,
             )
         results = []
         for row in rows:
