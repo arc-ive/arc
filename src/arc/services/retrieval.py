@@ -337,6 +337,7 @@ class RetrievalService:
             return dense >= min_relevance_score
 
         filtered = [match for match in fused if _passes_floor(match)]
+        filtered = filtered[:limit]
 
         items = [
             ApprovedContextItem(

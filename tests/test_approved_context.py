@@ -796,3 +796,81 @@ class TestScoreSeparation:
         contract = await service.approved_search(_context(), "query", min_relevance_score=0.50)
 
         assert [item.chunk_id for item in contract.items] == ["shared"]
+
+
+class TestLimitBounds:
+    """The caller's limit caps the final ApprovedContext item count (#217)."""
+
+    async def test_limit_1_returns_at_most_1_item(self):
+        """limit=1 cannot produce more than 1 item even with 2 retrieval paths."""
+        repo = FakeChunkRepository()
+        dense = _match(sequence=0, chunk_id="d1", similarity=0.9, dense_score=0.9)
+        lex = _match(sequence=0, chunk_id="l1", similarity=0.8, dense_score=None, lexical_score=0.8)
+        repo.search_results = [dense]
+        repo.lexical_search_results = [lex]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "query", limit=1)
+
+        assert len(contract.items) == 1
+
+    async def test_limit_2_caps_union_of_dense_and_lexical(self):
+        """limit=2 returns at most 2 items when dense and lexical each return 2."""
+        repo = FakeChunkRepository()
+        dense = [
+            _match(
+                sequence=i,
+                chunk_id=f"d{i}",
+                similarity=0.9 - i * 0.1,
+                dense_score=0.9 - i * 0.1,
+            )
+            for i in range(2)
+        ]
+        lex = [
+            _match(
+                sequence=i,
+                chunk_id=f"l{i}",
+                similarity=0.8 - i * 0.1,
+                dense_score=None,
+                lexical_score=0.8 - i * 0.1,
+            )
+            for i in range(2)
+        ]
+        repo.search_results = dense
+        repo.lexical_search_results = lex
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "query", limit=2)
+
+        assert len(contract.items) == 2
+
+    async def test_limit_never_exceeded_with_overlapping_results(self):
+        """Even when dense and lexical overlap, limit=3 returns at most 3."""
+        shared = _match(sequence=0, chunk_id="shared", similarity=0.9, dense_score=0.9)
+        dense_extra = _match(sequence=1, chunk_id="d-extra", similarity=0.8, dense_score=0.8)
+        lex_extra = _match(
+            sequence=1,
+            chunk_id="l-extra",
+            similarity=0.7,
+            dense_score=None,
+            lexical_score=0.7,
+        )
+        repo = FakeChunkRepository()
+        repo.search_results = [shared, dense_extra]
+        repo.lexical_search_results = [shared, lex_extra]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "query", limit=3)
+
+        assert len(contract.items) <= 3
+
+    async def test_limit_with_empty_results_returns_empty(self):
+        """limit=5 with no results returns empty items."""
+        repo = FakeChunkRepository()
+        repo.search_results = []
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "query", limit=5)
+
+        assert contract.items == []

@@ -420,3 +420,330 @@ class TestNaturalCitationIntegration:
 
         assert answer.citations == ["doc-a#c1", "doc-b#c2"]
         assert answer.context_used is True
+
+
+class TestContextBudget:
+    """Prompt assembly is bounded by a character budget (#217)."""
+
+    def test_budget_caps_total_content_chars(self):
+        """Items are included until the budget is exhausted."""
+        from arc.domain.models import (
+            ApprovedContext,
+            ApprovedContextItem,
+            ApprovedContextSecurityMetadata,
+            KnowledgeSource,
+            RetrievalMethod,
+        )
+        from arc.services.intelligence import UnifiedIntelligenceService
+
+        items = [
+            ApprovedContextItem(
+                document_id=f"doc-{i}",
+                chunk_id=f"chunk-{i}",
+                content="x" * 200,
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                relevance_score=0.9,
+                citation_reference=f"doc-{i}#c0",
+            )
+            for i in range(10)
+        ]
+        approved = ApprovedContext(
+            request_id="req-1",
+            tenant_id="tenant-1",
+            principal_id="user-1",
+            query="test",
+            retrieval_method=RetrievalMethod.HYBRID_RRF,
+            items=items,
+            security_metadata=ApprovedContextSecurityMetadata(tenant_id="tenant-1"),
+        )
+
+        prompt = UnifiedIntelligenceService._build_prompt(
+            approved, "test query", context_budget=500
+        )
+
+        # Budget is 500 chars. Each item has ~30 chars overhead + 200 content.
+        # Should include only a few items before budget is hit.
+        assert len(prompt) <= 500 + 200  # small margin for the fixed lines
+        assert "...[truncated]" in prompt or prompt.count("[") < 10
+
+    def test_budget_truncates_last_item_content(self):
+        """The last item's content is truncated when it overflows the budget."""
+        from arc.domain.models import (
+            ApprovedContext,
+            ApprovedContextItem,
+            ApprovedContextSecurityMetadata,
+            KnowledgeSource,
+            RetrievalMethod,
+        )
+        from arc.services.intelligence import UnifiedIntelligenceService
+
+        items = [
+            ApprovedContextItem(
+                document_id="doc-1",
+                chunk_id="chunk-1",
+                content="ab",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                relevance_score=0.9,
+                citation_reference="doc-1#c0",
+            ),
+            ApprovedContextItem(
+                document_id="doc-2",
+                chunk_id="chunk-2",
+                content="x" * 500,
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                relevance_score=0.8,
+                citation_reference="doc-2#c0",
+            ),
+        ]
+        approved = ApprovedContext(
+            request_id="req-1",
+            tenant_id="tenant-1",
+            principal_id="user-1",
+            query="test",
+            retrieval_method=RetrievalMethod.HYBRID_RRF,
+            items=items,
+            security_metadata=ApprovedContextSecurityMetadata(tenant_id="tenant-1"),
+        )
+
+        # Budget is large enough for first item + citation line of second,
+        # but not the full 500-char content of the second item.
+        prompt = UnifiedIntelligenceService._build_prompt(
+            approved, "test query", context_budget=300
+        )
+
+        # First item fits fully
+        assert "[1] citation: doc-1#c0" in prompt
+        assert "ab" in prompt
+        # Second item's citation line fits, content is truncated
+        assert "[2] citation: doc-2#c0" in prompt
+        assert "...[truncated]" in prompt
+
+    def test_empty_items_produces_valid_prompt(self):
+        """Empty approved context still produces a valid prompt."""
+        from arc.domain.models import (
+            ApprovedContext,
+            ApprovedContextSecurityMetadata,
+            RetrievalMethod,
+        )
+        from arc.services.intelligence import UnifiedIntelligenceService
+
+        approved = ApprovedContext(
+            request_id="req-1",
+            tenant_id="tenant-1",
+            principal_id="user-1",
+            query="test",
+            retrieval_method=RetrievalMethod.HYBRID_RRF,
+            items=[],
+            security_metadata=ApprovedContextSecurityMetadata(tenant_id="tenant-1"),
+        )
+
+        prompt = UnifiedIntelligenceService._build_prompt(approved, "test query")
+
+        assert "QUERY: test query" in prompt
+        assert "APPROVED CONTEXT:" in prompt
+
+    def test_budget_with_observations_still_works(self):
+        """Observations are appended after context, within or beyond budget."""
+        from arc.domain.models import (
+            ApprovedContext,
+            ApprovedContextItem,
+            ApprovedContextSecurityMetadata,
+            KnowledgeSource,
+            RetrievalMethod,
+        )
+        from arc.services.intelligence import UnifiedIntelligenceService
+
+        items = [
+            ApprovedContextItem(
+                document_id="doc-1",
+                chunk_id="chunk-1",
+                content="content",
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                relevance_score=0.9,
+                citation_reference="doc-1#c0",
+            ),
+        ]
+        approved = ApprovedContext(
+            request_id="req-1",
+            tenant_id="tenant-1",
+            principal_id="user-1",
+            query="test",
+            retrieval_method=RetrievalMethod.HYBRID_RRF,
+            items=items,
+            security_metadata=ApprovedContextSecurityMetadata(tenant_id="tenant-1"),
+        )
+
+        prompt = UnifiedIntelligenceService._build_prompt(
+            approved, "test query", observation={"status": "executed"}, context_budget=100
+        )
+
+        assert "TOOL OBSERVATION" in prompt
+        assert "QUERY: test query" in prompt
+
+
+class TestIntelligenceSettings:
+    """PROMPT_CONTEXT_MAX_CHARS validation (#217, review follow-up)."""
+
+    def test_default_is_8192(self, monkeypatch) -> None:
+        from arc.services.intelligence import get_intelligence_settings
+
+        monkeypatch.delenv("PROMPT_CONTEXT_MAX_CHARS", raising=False)
+        assert get_intelligence_settings().prompt_context_max_chars == 8192
+
+    def test_valid_configured_value(self, monkeypatch) -> None:
+        from arc.services.intelligence import get_intelligence_settings
+
+        monkeypatch.setenv("PROMPT_CONTEXT_MAX_CHARS", "4096")
+        assert get_intelligence_settings().prompt_context_max_chars == 4096
+
+    def test_malformed_value_raises_actionable_error(self, monkeypatch) -> None:
+        from arc.services.intelligence import (
+            IntelligenceConfigurationError,
+            get_intelligence_settings,
+        )
+
+        monkeypatch.setenv("PROMPT_CONTEXT_MAX_CHARS", "abc")
+        try:
+            get_intelligence_settings()
+            raise AssertionError("expected IntelligenceConfigurationError")
+        except IntelligenceConfigurationError as exc:
+            assert "PROMPT_CONTEXT_MAX_CHARS" in str(exc)
+
+    def test_non_positive_value_rejected(self, monkeypatch) -> None:
+        from arc.services.intelligence import (
+            IntelligenceConfigurationError,
+            get_intelligence_settings,
+        )
+
+        for bad in ("0", "-5"):
+            monkeypatch.setenv("PROMPT_CONTEXT_MAX_CHARS", bad)
+            try:
+                get_intelligence_settings()
+                raise AssertionError(f"expected error for {bad!r}")
+            except IntelligenceConfigurationError:
+                pass
+
+    def test_malformed_env_fails_service_construction(self, monkeypatch) -> None:
+        """Bad configuration fails fast at construction, not per query."""
+        from arc.services.intelligence import IntelligenceConfigurationError
+
+        monkeypatch.setenv("PROMPT_CONTEXT_MAX_CHARS", "abc")
+        try:
+            UnifiedIntelligenceService(FakeRetrieval(_approved([])))
+            raise AssertionError("expected IntelligenceConfigurationError")
+        except IntelligenceConfigurationError:
+            pass
+
+
+class TestContextBudgetPrecision:
+    """Exact budget accounting: suffix reservation and citation identity."""
+
+    def _approved_two(self):
+        from arc.domain.models import (
+            ApprovedContext,
+            ApprovedContextItem,
+            ApprovedContextSecurityMetadata,
+            KnowledgeSource,
+            RetrievalMethod,
+        )
+
+        items = [
+            ApprovedContextItem(
+                document_id="doc-1",
+                chunk_id="chunk-1",
+                content="y" * 500,
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                relevance_score=0.9,
+                citation_reference="doc-1#c0",
+            ),
+        ]
+        return ApprovedContext(
+            request_id="req-1",
+            tenant_id="tenant-1",
+            principal_id="user-1",
+            query="q",
+            retrieval_method=RetrievalMethod.HYBRID_RRF,
+            items=items,
+            security_metadata=ApprovedContextSecurityMetadata(tenant_id="tenant-1"),
+        )
+
+    def test_truncated_content_fits_budget_including_suffix(self) -> None:
+        """Truncation reserves the suffix length: no overshoot."""
+        from arc.services.intelligence import UnifiedIntelligenceService
+
+        approved = self._approved_two()
+        budget = 300
+        prompt = UnifiedIntelligenceService._build_prompt(approved, "q", context_budget=budget)
+
+        assert "...[truncated]" in prompt
+        # Context block (everything before QUERY:) fits the budget exactly.
+        context_block = prompt.split("QUERY:")[0]
+        assert len(context_block) <= budget + 1  # +1 trailing newline before QUERY
+        # Citation identity untouched by content truncation.
+        assert "[1] citation: doc-1#c0" in prompt
+
+    async def test_answer_query_uses_configured_budget(self) -> None:
+        """The service wires its configured budget into prompt assembly."""
+
+        class RecordingLlm:
+            def __init__(self):
+                self.prompts = []
+
+            def complete(self, prompt: str) -> str:
+                self.prompts.append(prompt)
+                return "answer [1]"
+
+        from arc.domain.models import (
+            ApprovedContext,
+            ApprovedContextItem,
+            ApprovedContextSecurityMetadata,
+            KnowledgeSource,
+            RetrievalMethod,
+        )
+
+        items = [
+            ApprovedContextItem(
+                document_id=f"doc-{i}",
+                chunk_id=f"chunk-{i}",
+                content="z" * 200,
+                source=KnowledgeSource.POLICY,
+                provenance="p",
+                document_version=1,
+                sequence=0,
+                relevance_score=0.9,
+                citation_reference=f"doc-{i}#c0",
+            )
+            for i in range(5)
+        ]
+        approved = ApprovedContext(
+            request_id="req-1",
+            tenant_id="tenant-1",
+            principal_id="user-1",
+            query="q",
+            retrieval_method=RetrievalMethod.HYBRID_RRF,
+            items=items,
+            security_metadata=ApprovedContextSecurityMetadata(tenant_id="tenant-1"),
+        )
+        llm = RecordingLlm()
+        service = UnifiedIntelligenceService(FakeRetrieval(approved), llm, context_budget=300)
+
+        answer = await service.answer_query(_context(), "budget question")
+
+        assert "...[truncated]" in llm.prompts[0]
+        assert llm.prompts[0].count("citation:") < 5
+        assert answer.context_used is True
