@@ -246,7 +246,7 @@ class RetrievalService:
         query: str,
         limit: int = 5,
         source_type: Optional[KnowledgeSource] = None,
-        min_relevance_score: float = None,  # type: ignore[assignment]
+        min_relevance_score: Optional[float] = None,
     ) -> ApprovedContext:
         """Return retrieval results as the Approved Context Contract.
 
@@ -293,7 +293,11 @@ class RetrievalService:
                 trusted tenant (invariant violation; fail closed).
         """
         if min_relevance_score is None:
-            min_relevance_score = float(os.getenv("MIN_RELEVANCE_SCORE", "0.0"))
+            raw = os.getenv("MIN_RELEVANCE_SCORE", "0.0")
+            try:
+                min_relevance_score = float(raw)
+            except ValueError:
+                raise ValueError(f"MIN_RELEVANCE_SCORE must be a numeric value, got {raw!r}")
         dense_matches = await self.search(context, query, limit=limit, source_type=source_type)
         lexical_matches = await self.lexical_search(
             context, query, limit=limit, source_type=source_type

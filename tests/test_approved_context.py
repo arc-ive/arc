@@ -502,6 +502,38 @@ class TestRelevanceFloor:
         finally:
             os.environ.pop("MIN_RELEVANCE_SCORE", None)
 
+    async def test_malformed_env_var_raises_value_error(self):
+        """MIN_RELEVANCE_SCORE=abc raises ValueError, not a silent 500."""
+        import os
+
+        os.environ["MIN_RELEVANCE_SCORE"] = "abc"
+        try:
+            repo = FakeChunkRepository()
+            repo.search_results = [_match(sequence=0, chunk_id="any", similarity=0.9)]
+            repo.lexical_search_results = []
+            service = _service(repo)
+
+            with pytest.raises(ValueError, match="MIN_RELEVANCE_SCORE"):
+                await service.approved_search(_context(), "query")
+        finally:
+            os.environ.pop("MIN_RELEVANCE_SCORE", None)
+
+    async def test_valid_configured_value_is_used(self):
+        """Valid MIN_RELEVANCE_SCORE env var is applied as threshold."""
+        import os
+
+        os.environ["MIN_RELEVANCE_SCORE"] = "0.5"
+        try:
+            repo = FakeChunkRepository()
+            repo.search_results = [_match(sequence=0, chunk_id="low", similarity=0.3)]
+            repo.lexical_search_results = []
+            service = _service(repo)
+
+            contract = await service.approved_search(_context(), "query")
+            assert contract.items == []
+        finally:
+            os.environ.pop("MIN_RELEVANCE_SCORE", None)
+
     async def test_filtered_items_carry_rrf_scores(self):
         """Remaining items have RRF fused scores, not raw cosine similarity."""
         repo = FakeChunkRepository()
