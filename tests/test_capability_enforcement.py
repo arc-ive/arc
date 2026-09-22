@@ -102,15 +102,35 @@ def _mock_authorization():
 
 class TestSkillExecutionCapability:
     async def test_disabled_blocks_execution(self, cap_svc):
-        """Skill execution blocked when skill_execution capability is disabled."""
+        """Skill execution blocked when skill_execution capability is disabled.
+
+        Issue #208: the capability-disabled terminal outcome must persist
+        a ``skill_execution_records`` row, which carries an FK to
+        ``skills`` — so the skill is resolved (one ``get_skill`` call)
+        before the gate, and the FAILED row is persisted best-effort.
+        """
         await cap_svc.set_platform("skill_execution", False)
 
         mock_skill_svc = AsyncMock()
         mock_tool_svc = AsyncMock()
+        mock_skill_svc.get_skill.return_value = MagicMock(
+            id="test-skill", name="test-skill", version="1"
+        )
+        stored = {}
+
+        class _MemoryRecordRepo:
+            async def create_record(self, record):
+                stored[record.id] = record
+                return record
+
+            async def update_record(self, record):
+                stored[record.id] = record
+                return record
 
         svc = SkillExecutionService(
             skill_service=mock_skill_svc,
             tool_service=mock_tool_svc,
+            record_repo=_MemoryRecordRepo(),
             capability_service=cap_svc,
         )
 
@@ -125,7 +145,15 @@ class TestSkillExecutionCapability:
             authorization=_mock_authorization(),
         )
         assert result.error_kind == "capability_disabled"
-        mock_skill_svc.get_skill.assert_not_called()
+        assert result.status.value == "failed"
+        mock_skill_svc.get_skill.assert_called_once()
+        mock_tool_svc.execute_tool.assert_not_called()
+        assert len(stored) == 1
+        record = next(iter(stored.values()))
+        assert record.tenant_id == ctx.tenant_id
+        assert record.skill_id == "test-skill"
+        assert record.status.value == "failed"
+        assert record.failure_code == "capability_disabled"
 
     async def test_enabled_proceeds(self, cap_svc):
         """Skill execution proceeds when skill_execution is enabled."""
