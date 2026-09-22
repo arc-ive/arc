@@ -16,6 +16,38 @@ const PERIODS = [
   { label: '30d', hours: 720 },
 ]
 
+// Issue #223: a metric the backend reports as 0 is a real measurement and
+// must read as 0. Only a value the backend did not supply is unavailable,
+// and it says so explicitly rather than claiming the metric is "not
+// tracked" when the platform does in fact track it.
+const UNAVAILABLE = 'Unavailable'
+
+function isMeasured(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function formatCount(value) {
+  return isMeasured(value) ? value.toLocaleString() : null
+}
+
+function formatUsd(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `$${value.toFixed(value < 1 ? 4 : 2)}`
+    : null
+}
+
+/** A tile whose value comes from the backend summary. */
+function MetricCard({ label, value, hint, unavailableHint = 'Not reported for this window' }) {
+  const measured = value !== null && value !== undefined
+  return (
+    <StatCard
+      label={label}
+      value={measured ? value : UNAVAILABLE}
+      hint={measured ? hint : unavailableHint}
+    />
+  )
+}
+
 function StatCard({ label, value, hint }) {
   return (
     <div className="rounded-xl border border-zinc-800/80 bg-panel p-4 shadow-card">
@@ -113,61 +145,80 @@ export function TenantUsagePage() {
       {data && !isDemo && (
         <>
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
+            <MetricCard
               label="API Requests"
-              value={data.http?.total_requests ?? 'N/A'}
+              value={formatCount(data.http?.total_requests)}
               hint="Total API calls"
             />
-            <StatCard
+            <MetricCard
               label="AI Requests"
-              value="N/A"
-              hint="Not tracked"
+              value={formatCount(data.llm?.total_calls)}
+              hint="LLM calls in this window"
             />
-            <StatCard
+            <MetricCard
               label="Tokens"
-              value="N/A"
-              hint="Not tracked"
+              value={formatCount(data.llm?.total_tokens)}
+              hint="Input and output tokens"
             />
-            <StatCard
+            <MetricCard
               label="Agent Runs"
-              value="N/A"
-              hint="Not tracked"
+              value={formatCount(data.agent_runs?.total_runs)}
+              hint="Bounded agent executions"
             />
           </section>
 
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
+            <MetricCard
               label="Tool Calls"
-              value={data.tools?.total_executions ?? 'N/A'}
+              value={formatCount(data.tools?.total_executions)}
               hint="External tool invocations"
             />
-            <StatCard
+            <MetricCard
               label="Webhook Events"
-              value={data.webhooks?.total_events ?? 'N/A'}
+              value={formatCount(data.webhooks?.total_events)}
               hint="Inbound webhook deliveries"
             />
-            <StatCard
+            <MetricCard
               label="Successful"
-              value={data.tools?.successful ?? 'N/A'}
+              value={formatCount(data.tools?.successful)}
               hint="Completed without error"
             />
-            <StatCard
+            <MetricCard
               label="Failed"
-              value={data.tools?.failed ?? 'N/A'}
+              value={formatCount(data.tools?.failed)}
               hint="Encountered an error"
             />
           </section>
 
-          <section className="grid gap-4 sm:grid-cols-2">
-            <StatCard
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
               label="Avg Latency"
-              value={data.http?.avg_duration_ms != null ? `${Math.round(data.http.avg_duration_ms)}ms` : 'N/A'}
+              value={isMeasured(data.http?.avg_duration_ms) ? `${Math.round(data.http.avg_duration_ms)}ms` : null}
               hint="Mean response time"
             />
-            <StatCard
+            <MetricCard
               label="Error Rate"
-              value={data.http?.error_rate != null ? `${(data.http.error_rate * 100).toFixed(1)}%` : 'N/A'}
+              value={isMeasured(data.http?.error_rate) ? `${(data.http.error_rate * 100).toFixed(1)}%` : null}
               hint="Failed / total requests"
+            />
+            <MetricCard
+              label="AI Latency"
+              value={isMeasured(data.llm?.avg_latency_ms) ? `${Math.round(data.llm.avg_latency_ms)}ms` : null}
+              hint="Mean LLM call duration"
+            />
+            <MetricCard
+              label="AI Cost"
+              value={formatUsd(data.llm?.total_cost_usd)}
+              hint={
+                data.llm?.cost_coverage === 'partial'
+                  ? `Partial: ${formatCount(data.llm?.unknown_cost_records)} call(s) without pricing`
+                  : 'Cost across all LLM calls'
+              }
+              unavailableHint={
+                data.llm?.cost_coverage === 'none' && data.llm?.total_calls === 0
+                  ? 'No LLM calls in this window'
+                  : 'Pricing unavailable for these calls'
+              }
             />
           </section>
 
