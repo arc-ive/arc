@@ -16,6 +16,7 @@ so the main test database (``arc``) is never disturbed.
 
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -201,6 +202,151 @@ async def test_schema_provisioning_is_idempotent_and_preserves_data(temp_db_url)
 
         async with db._connection_pool.acquire() as conn:
             assert await conn.fetchval("SELECT COUNT(*) FROM tenants WHERE id = $1", tenant_id) == 1
+    finally:
+        await db.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_expiry_constraint_upgrades_over_legacy_invalid_row(temp_db_url):
+    """Issue #239: bootstrap must survive a legacy expires_at <= created_at row.
+
+    Simulates an existing deployment whose approval_requests table predates
+    the expiry CHECK: the constraint is dropped (the pre-#239 schema
+    state), a legacy-invalid row is planted, then the production
+    ``ensure_schema`` path runs. Bootstrap must succeed, the legacy row
+    must remain untouched, new invalid writes must be rejected, and
+    remediating the legacy row to valid values must succeed. No automatic
+    cleanup of legacy rows is performed.
+    """
+    db = ArcDatabase(temp_db_url)
+    await db.connect()
+    try:
+        await db.ensure_schema()
+
+        tenant_id = f"legacy-tenant-{uuid.uuid4().hex[:8]}"
+        legacy_id = f"appr-legacy-{uuid.uuid4().hex[:8]}"
+        legacy_created = datetime.now(timezone.utc)
+        legacy_expires = legacy_created - timedelta(hours=1)
+
+        async with db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO tenants (id, name) VALUES ($1, $2)",
+                tenant_id,
+                "Legacy Tenant",
+            )
+            # Recreate the pre-#239 schema state, then plant the legacy row
+            # that a validated constraint would choke on.
+            await conn.execute(
+                "ALTER TABLE approval_requests DROP CONSTRAINT ck_approval_requests_expiry"
+            )
+            await conn.execute(
+                """
+                INSERT INTO approval_requests
+                    (id, tenant_id, requester_user_id, tool_name,
+                     tool_version, risk_level, input_summary,
+                     arguments_digest, status, created_at, expires_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                """,
+                legacy_id,
+                tenant_id,
+                "user-1",
+                "restart_service",
+                "1",
+                "high",
+                '{"target": "svc"}',
+                "b" * 64,
+                "pending",
+                legacy_created,
+                legacy_expires,
+            )
+
+        # The production upgrade path over the legacy row: must NOT fail.
+        await db.ensure_schema()
+
+        async with db._connection_pool.acquire() as conn:
+            # The constraint is installed but NOT VALID, grandfathering the
+            # legacy row instead of bricking bootstrap.
+            constraint = await conn.fetchrow(
+                "SELECT convalidated FROM pg_constraint "
+                "WHERE conname = 'ck_approval_requests_expiry'"
+            )
+            assert constraint is not None
+            assert constraint["convalidated"] is False
+
+            # The legacy row survived untouched.
+            assert (
+                await conn.fetchval(
+                    "SELECT COUNT(*) FROM approval_requests WHERE id = $1",
+                    legacy_id,
+                )
+                == 1
+            )
+
+            # A NEW invalid insert is rejected (strictly greater required).
+            with pytest.raises(asyncpg.CheckViolationError):
+                await conn.execute(
+                    """
+                    INSERT INTO approval_requests
+                        (id, tenant_id, requester_user_id, tool_name,
+                         tool_version, risk_level, input_summary,
+                         arguments_digest, status, created_at, expires_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    """,
+                    f"appr-legacy-{uuid.uuid4().hex[:8]}",
+                    tenant_id,
+                    "user-1",
+                    "restart_service",
+                    "1",
+                    "high",
+                    '{"target": "svc"}',
+                    "c" * 64,
+                    "pending",
+                    legacy_created,
+                    legacy_created,
+                )
+
+            # A valid insert is accepted.
+            await conn.execute(
+                """
+                INSERT INTO approval_requests
+                    (id, tenant_id, requester_user_id, tool_name,
+                     tool_version, risk_level, input_summary,
+                     arguments_digest, status, created_at, expires_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                """,
+                f"appr-legacy-{uuid.uuid4().hex[:8]}",
+                tenant_id,
+                "user-1",
+                "restart_service",
+                "1",
+                "high",
+                '{"target": "svc"}',
+                "d" * 64,
+                "pending",
+                legacy_created,
+                legacy_created + timedelta(hours=1),
+            )
+
+            # Remediating the legacy row to another invalid value is
+            # rejected; remediating it to a valid value succeeds.
+            with pytest.raises(asyncpg.CheckViolationError):
+                await conn.execute(
+                    "UPDATE approval_requests SET expires_at = $2 WHERE id = $1",
+                    legacy_id,
+                    legacy_created - timedelta(hours=2),
+                )
+            await conn.execute(
+                "UPDATE approval_requests SET expires_at = $2 WHERE id = $1",
+                legacy_id,
+                legacy_created + timedelta(hours=1),
+            )
+            assert (
+                await conn.fetchval(
+                    "SELECT expires_at > created_at FROM approval_requests WHERE id = $1",
+                    legacy_id,
+                )
+                is True
+            )
     finally:
         await db.disconnect()
 
