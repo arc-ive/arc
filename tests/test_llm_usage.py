@@ -1207,7 +1207,6 @@ class TestFailedCallUsageRecording:
         provider = OpenRouterProvider.__new__(OpenRouterProvider)
         provider._model = "test-model"
         provider._last_usage = None
-        provider._last_failed_usage = None
         provider._max_retries = 0
         provider._base_delay = 0.01
         provider._max_delay = 0.01
@@ -1254,9 +1253,11 @@ class TestFailedCallUsageRecording:
         finally:
             _current_llm_usage.reset(token)
 
-    def test_failed_call_stores_last_failed_usage(self):
-        """Provider error: _last_failed_usage captures usage if available."""
+    def test_failed_call_captures_request_scoped_usage(self):
+        """Provider error: failed-usage ContextVar captures usage if available."""
         import httpx
+
+        from arc.services.llm import _current_llm_failed_usage
 
         provider = self._make_provider()
         provider._max_retries = 0
@@ -1268,16 +1269,23 @@ class TestFailedCallUsageRecording:
         client.post.return_value = self._fake_response(200, body)
         provider._client = client
 
-        with pytest.raises(Exception):
-            provider._post([{"role": "user", "content": "test"}])
+        token = _current_llm_failed_usage.set(None)
+        try:
+            with pytest.raises(Exception):
+                provider._post([{"role": "user", "content": "test"}])
 
-        assert provider._last_failed_usage is not None
-        assert provider._last_failed_usage.input_tokens == 3
-        assert provider._last_failed_usage.output_tokens == 2
+            failed = _current_llm_failed_usage.get()
+            assert failed is not None
+            assert failed.input_tokens == 3
+            assert failed.output_tokens == 2
+        finally:
+            _current_llm_failed_usage.reset(token)
 
     def test_http_error_no_usage_data(self):
-        """HTTP 500: _last_failed_usage is None (no response body parsed)."""
+        """HTTP 500: failed-usage ContextVar is None (no response body parsed)."""
         import httpx
+
+        from arc.services.llm import _current_llm_failed_usage
 
         provider = self._make_provider()
         provider._max_retries = 0
@@ -1285,14 +1293,20 @@ class TestFailedCallUsageRecording:
         client.post.return_value = self._fake_response(500)
         provider._client = client
 
-        with pytest.raises(Exception):
-            provider._post([{"role": "user", "content": "test"}])
+        token = _current_llm_failed_usage.set(None)
+        try:
+            with pytest.raises(Exception):
+                provider._post([{"role": "user", "content": "test"}])
 
-        assert provider._last_failed_usage is None
+            assert _current_llm_failed_usage.get() is None
+        finally:
+            _current_llm_failed_usage.reset(token)
 
     def test_retry_exhaustion_captures_last_failure(self):
-        """Retries exhausted: _last_failed_usage has the last attempt's data."""
+        """Retries exhausted: failed-usage ContextVar has the last attempt's data."""
         import httpx
+
+        from arc.services.llm import _current_llm_failed_usage
 
         provider = self._make_provider()
         provider._max_retries = 2
@@ -1304,17 +1318,22 @@ class TestFailedCallUsageRecording:
         client.post.return_value = self._fake_response(200, body)
         provider._client = client
 
-        with pytest.raises(Exception):
-            provider._post([{"role": "user", "content": "test"}])
+        token = _current_llm_failed_usage.set(None)
+        try:
+            with pytest.raises(Exception):
+                provider._post([{"role": "user", "content": "test"}])
 
-        assert provider._last_failed_usage is not None
-        assert provider._last_failed_usage.input_tokens == 1
+            failed = _current_llm_failed_usage.get()
+            assert failed is not None
+            assert failed.input_tokens == 1
+        finally:
+            _current_llm_failed_usage.reset(token)
 
     def test_retry_then_success_clears_failed_usage(self):
-        """Retry succeeds: _last_failed_usage is cleared, ContextVar has success usage."""
+        """Retry succeeds: failed usage cleared, ContextVar has success usage."""
         import httpx
 
-        from arc.services.llm import _current_llm_usage
+        from arc.services.llm import _current_llm_failed_usage, _current_llm_usage
 
         provider = self._make_provider()
         provider._max_retries = 1
@@ -1341,15 +1360,17 @@ class TestFailedCallUsageRecording:
         provider._client = client
 
         token = _current_llm_usage.set(None)
+        failed_token = _current_llm_failed_usage.set(None)
         try:
             result = provider._post([{"role": "user", "content": "test"}])
             assert result == "ok"
-            assert provider._last_failed_usage is None
+            assert _current_llm_failed_usage.get() is None
             usage = _current_llm_usage.get()
             assert usage is not None
             assert usage.input_tokens == 10
         finally:
             _current_llm_usage.reset(token)
+            _current_llm_failed_usage.reset(failed_token)
 
     def test_succeeded_field_on_usage_record(self):
         """build_llm_usage_record propagates succeeded field."""
@@ -1406,3 +1427,216 @@ class TestFailedCallUsageRecording:
         assert "api_key" not in serialized.lower()
         assert "password" not in serialized.lower()
         assert "secret" not in serialized.lower()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_no_usage_request_never_sees_other_failed_usage(self):
+        """Misattribution direction: B fails without usage while A failed
+        WITH usage_A. B must observe None — never usage_A.
+
+        One shared provider AND one shared client (as in production);
+        the mock routes by message content. Under the old
+        shared-attribute design B reads the instance attribute still
+        holding usage_A.
+        """
+        import asyncio
+
+        import httpx
+
+        from arc.services.llm import _current_llm_failed_usage
+
+        provider = self._make_provider()
+        provider._max_retries = 0
+        body_a = {
+            "choices": [],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+        def post(*args, **kwargs):
+            content = kwargs["json"]["messages"][0]["content"]
+            if content == "a":
+                return self._fake_response(200, body_a)
+            raise httpx.ConnectError("connection refused")
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.side_effect = post
+        provider._client = client
+
+        async def run_a():
+            try:
+                provider._post([{"role": "user", "content": "a"}])
+            except Exception:
+                pass
+            return _current_llm_failed_usage.get()
+
+        async def run_b():
+            try:
+                provider._execute_request(client, "http://x", {"messages": [{"content": "b"}]}, {})
+            except Exception:
+                pass
+            return _current_llm_failed_usage.get()
+
+        failed_a, failed_b = await asyncio.gather(run_a(), run_b())
+
+        assert failed_a is not None
+        assert failed_a.input_tokens == 10
+        assert failed_a.total_tokens == 15
+        assert failed_b is None
+
+    @pytest.mark.asyncio
+    async def test_concurrent_late_reader_keeps_own_failed_usage(self):
+        """Loss direction: B starts (clearing shared state under the old
+        design) after A captured usage_A. A must still observe usage_A;
+        B observes None. Interleaving is forced with events so the test
+        does not depend on scheduling luck."""
+        import asyncio
+
+        import httpx
+
+        from arc.services.llm import _current_llm_failed_usage
+
+        provider = self._make_provider()
+        provider._max_retries = 0
+        body_a = {
+            "choices": [],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+        def post(*args, **kwargs):
+            content = kwargs["json"]["messages"][0]["content"]
+            if content == "a":
+                return self._fake_response(200, body_a)
+            raise httpx.ConnectError("connection refused")
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.side_effect = post
+        provider._client = client
+
+        a_done_post = asyncio.Event()
+        b_done_read = asyncio.Event()
+
+        async def run_a():
+            try:
+                provider._post([{"role": "user", "content": "a"}])
+            except Exception:
+                pass
+            a_done_post.set()
+            await b_done_read.wait()
+            return _current_llm_failed_usage.get()
+
+        async def run_b():
+            await a_done_post.wait()
+            try:
+                provider._post([{"role": "user", "content": "b"}])
+            except Exception:
+                pass
+            result = _current_llm_failed_usage.get()
+            b_done_read.set()
+            return result
+
+        failed_a, failed_b = await asyncio.gather(run_a(), run_b())
+
+        assert failed_a is not None
+        assert failed_a.input_tokens == 10
+        assert failed_b is None
+
+    @pytest.mark.asyncio
+    async def test_concurrent_tenants_record_own_failed_usage(self):
+        """Tenant X and tenant Y fail concurrently on one shared provider:
+        each tenant's usage record carries its own tenant_id and token
+        counts, marked succeeded=False. Proves end-to-end (provider ->
+        service -> record) request isolation."""
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        import httpx
+
+        from arc.services.intelligence import UnifiedIntelligenceService
+
+        provider = self._make_provider()
+        provider._max_retries = 0
+        bodies = {
+            "tenant-x": {
+                "choices": [],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10},
+            },
+            "tenant-y": {
+                "choices": [],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        }
+
+        def post(*args, **kwargs):
+            # Route by tenant marker embedded in the query (see contexts below).
+            prompt = kwargs["json"]["messages"][0]["content"]
+            key = "tenant-x" if "QUERY: qx" in prompt else "tenant-y"
+            return self._fake_response(200, bodies[key])
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.side_effect = post
+        provider._client = client
+
+        from arc.domain.models import (
+            ApprovedContext,
+            ApprovedContextItem,
+            ApprovedContextSecurityMetadata,
+            KnowledgeSource,
+            RetrievalMethod,
+            TenantContext,
+            UserRole,
+        )
+
+        def make_service(tenant_id, query):
+            class FakeRetrieval:
+                async def approved_search(self, context, q, limit=5, source_type=None):
+                    item = ApprovedContextItem(
+                        document_id="doc-1",
+                        chunk_id="chunk-1",
+                        content="Some approved content.",
+                        source=KnowledgeSource.POLICY,
+                        provenance="p",
+                        document_version=1,
+                        sequence=0,
+                        relevance_score=0.9,
+                        citation_reference="doc-1#c0",
+                    )
+                    return ApprovedContext(
+                        request_id="req-1",
+                        tenant_id=tenant_id,
+                        principal_id="u-1",
+                        query=query,
+                        retrieval_method=RetrievalMethod.HYBRID_RRF,
+                        items=[item],
+                        security_metadata=ApprovedContextSecurityMetadata(tenant_id=tenant_id),
+                    )
+
+            observability = AsyncMock()
+            service = UnifiedIntelligenceService(
+                FakeRetrieval(), provider, observability_service=observability
+            )
+            context = TenantContext(
+                tenant_id=tenant_id,
+                tenant_name="T",
+                user_id="u-1",
+                role=UserRole.MEMBER,
+            )
+            return service, context, observability
+
+        # NOTE: the shared mock routes on the QUERY line the production
+        # prompt always includes; contexts themselves are real and distinct.
+        async def run(tenant_id, query):
+            service, context, observability = make_service(tenant_id, query)
+            try:
+                await service.answer_query(context, query)
+            except Exception:
+                pass
+            await asyncio.sleep(0)  # yield: force context interleaving
+            return observability.record_llm_usage.await_args_list
+
+        calls_x, calls_y = await asyncio.gather(run("tenant-x", "qx"), run("tenant-y", "qy"))
+
+        assert len(calls_x) == 1 and len(calls_y) == 1
+        record_x = calls_x[0].args[0]
+        record_y = calls_y[0].args[0]
+        assert record_x.tenant_id == "tenant-x" and record_x.input_tokens == 7
+        assert record_y.tenant_id == "tenant-y" and record_y.input_tokens == 1
+        assert record_x.succeeded is False and record_y.succeeded is False
