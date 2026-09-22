@@ -43,6 +43,8 @@ export const queryKeys = {
   ],
   observabilityPlatform: () => ['observability', 'platform', 'summary'],
   healthComponents: () => ['observability', 'health'],
+  agentRuns: (tenantId, limit) => ['tenants', tenantId, 'agent-runs', limit],
+  agentRun: (tenantId, runId) => ['tenants', tenantId, 'agent-runs', 'detail', runId],
   approvals: (tenantId) => ['tenants', tenantId, 'approvals'],
   // The status filter is part of the key: the server filters, so two
   // filters are two different results and must not share a cache entry.
