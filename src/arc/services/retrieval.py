@@ -18,7 +18,7 @@ without a complete index, nor a partial chunk set.
 
 import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -78,6 +78,12 @@ class ReciprocalRankFusion:
         ``KnowledgeMatch`` objects are not mutated; the fused score is
         returned separately for the caller to use when constructing
         ``ApprovedContextItem.relevance_score``.
+
+        When a chunk appears in both lists, the retained object carries
+        both per-method scores: ``dense_score`` from the dense hit and
+        ``lexical_score`` from the lexical hit.  Without this merge the
+        lexical instance would overwrite the dense one and drop its
+        ``dense_score``, silently bypassing the relevance floor.
         """
         scores: Dict[str, float] = {}
         chunk_map: Dict[str, KnowledgeMatch] = {}
@@ -88,7 +94,23 @@ class ReciprocalRankFusion:
 
         for rank, match in enumerate(lexical, start=1):
             scores[match.chunk_id] = scores.get(match.chunk_id, 0.0) + 1.0 / (k + rank)
-            chunk_map[match.chunk_id] = match
+            existing = chunk_map.get(match.chunk_id)
+            if existing is None:
+                chunk_map[match.chunk_id] = match
+            else:
+                chunk_map[match.chunk_id] = replace(
+                    match,
+                    dense_score=(
+                        existing.dense_score
+                        if existing.dense_score is not None
+                        else match.dense_score
+                    ),
+                    lexical_score=(
+                        match.lexical_score
+                        if match.lexical_score is not None
+                        else existing.lexical_score
+                    ),
+                )
 
         ranked_ids = sorted(scores.keys(), key=lambda cid: (-scores[cid], cid))
         return [chunk_map[cid] for cid in ranked_ids]

@@ -490,7 +490,9 @@ class TestRelevanceFloor:
         # Without env var: falls back to 0.0 (no filtering)
         os.environ.pop("MIN_RELEVANCE_SCORE", None)
         repo = FakeChunkRepository()
-        repo.search_results = [_match(sequence=0, chunk_id="any", similarity=0.001)]
+        repo.search_results = [
+            _match(sequence=0, chunk_id="any", similarity=0.001, dense_score=0.001)
+        ]
         repo.lexical_search_results = []
         service = _service(repo)
         contract = await service.approved_search(_context(), "query")
@@ -527,7 +529,9 @@ class TestRelevanceFloor:
         os.environ["MIN_RELEVANCE_SCORE"] = "0.5"
         try:
             repo = FakeChunkRepository()
-            repo.search_results = [_match(sequence=0, chunk_id="low", similarity=0.3)]
+            repo.search_results = [
+                _match(sequence=0, chunk_id="low", similarity=0.3, dense_score=0.3)
+            ]
             repo.lexical_search_results = []
             service = _service(repo)
 
@@ -568,8 +572,8 @@ class TestRelevanceFloor:
         repo = FakeChunkRepository()
         # Simulate off-corpus: low cosine similarity
         repo.search_results = [
-            _match(sequence=0, chunk_id="off-1", similarity=0.08),
-            _match(sequence=1, chunk_id="off-2", similarity=0.06),
+            _match(sequence=0, chunk_id="off-1", similarity=0.08, dense_score=0.08),
+            _match(sequence=1, chunk_id="off-2", similarity=0.06, dense_score=0.06),
         ]
         repo.lexical_search_results = []
         service = _service(repo)
@@ -590,8 +594,8 @@ class TestRelevanceFloor:
         repo = FakeChunkRepository()
         # Simulate on-corpus: high cosine similarity
         repo.search_results = [
-            _match(sequence=0, chunk_id="on-1", similarity=0.35),
-            _match(sequence=1, chunk_id="on-2", similarity=0.30),
+            _match(sequence=0, chunk_id="on-1", similarity=0.35, dense_score=0.35),
+            _match(sequence=1, chunk_id="on-2", similarity=0.30, dense_score=0.30),
         ]
         repo.lexical_search_results = []
         service = _service(repo)
@@ -625,7 +629,7 @@ class TestRelevanceFloor:
 
         # Off-corpus: low dense similarity
         repo.search_results = [
-            _match(sequence=0, chunk_id="off-low", similarity=0.08),
+            _match(sequence=0, chunk_id="off-low", similarity=0.08, dense_score=0.08),
         ]
         repo.lexical_search_results = []
         service = _service(repo)
@@ -638,7 +642,7 @@ class TestRelevanceFloor:
 
         # On-corpus: high dense similarity
         repo.search_results = [
-            _match(sequence=0, chunk_id="on-high", similarity=0.30),
+            _match(sequence=0, chunk_id="on-high", similarity=0.30, dense_score=0.30),
         ]
         repo.lexical_search_results = []
         on_contract = await service.approved_search(
@@ -736,3 +740,59 @@ class TestScoreSeparation:
         expected = 1.0 / 61
         assert abs(scores["d1"] - expected) < 1e-9
         assert abs(scores["l1"] - expected) < 1e-9
+
+    async def test_shared_chunk_keeps_dense_score_for_floor(self):
+        """A chunk in both lists is still floored on its dense score.
+
+        Regression for the fused-object overwrite: the lexical instance
+        used to replace the dense one, dropping dense_score (None
+        short-circuits the floor) so a dense-0.10 chunk sailed through
+        a 0.50 floor.  The fused object must carry both scores.
+        """
+        repo = FakeChunkRepository()
+        dense = _match(sequence=0, chunk_id="shared", similarity=0.10, dense_score=0.10)
+        lex = _match(
+            sequence=0,
+            chunk_id="shared",
+            similarity=0.90,
+            dense_score=None,
+            lexical_score=0.90,
+        )
+        repo.search_results = [dense]
+        repo.lexical_search_results = [lex]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "query", min_relevance_score=0.50)
+
+        assert contract.items == []
+
+    async def test_shared_chunk_above_floor_keeps_both_scores(self):
+        """A shared chunk clearing the floor retains both per-method scores."""
+        from arc.services.retrieval import ReciprocalRankFusion
+
+        dense = _match(sequence=0, chunk_id="shared", similarity=0.80, dense_score=0.80)
+        lex = _match(
+            sequence=0,
+            chunk_id="shared",
+            similarity=0.90,
+            dense_score=None,
+            lexical_score=0.90,
+        )
+
+        fused = ReciprocalRankFusion.fuse([dense], [lex])
+
+        assert len(fused) == 1
+        assert fused[0].dense_score == 0.80
+        assert fused[0].lexical_score == 0.90
+        # Inputs are not mutated by the merge.
+        assert dense.lexical_score is None
+        assert lex.dense_score is None
+
+        repo = FakeChunkRepository()
+        repo.search_results = [dense]
+        repo.lexical_search_results = [lex]
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "query", min_relevance_score=0.50)
+
+        assert [item.chunk_id for item in contract.items] == ["shared"]
