@@ -11,9 +11,19 @@ describe('ErrorState', () => {
   })
 
   it('derives title and message from ApiError when not provided', () => {
-    const error = new ApiError('Resource not found', { status: 404 })
+    const error = new ApiError('Something broke', { status: 500 })
     render(<ErrorState error={error} />)
     expect(screen.getByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.getByText('Something broke')).toBeInTheDocument()
+  })
+
+  it('shows "Not found" title for 404 errors (Issue #225)', () => {
+    // A 404 is a distinct outcome, not a generic failure: the user is
+    // looking at something that does not exist, and retrying will not help
+    // unless the resource appears.
+    const error = new ApiError('Resource not found', { status: 404 })
+    render(<ErrorState error={error} />)
+    expect(screen.getByText('Not found')).toBeInTheDocument()
     expect(screen.getByText('Resource not found')).toBeInTheDocument()
   })
 

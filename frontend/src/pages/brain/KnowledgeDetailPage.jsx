@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/useAuth.js'
 import { getKnowledgeDocument, updateKnowledge } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
+import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryState.js'
 import { sourceLabels, sourceVariants, KNOWLEDGE_SOURCES } from '../../lib/sources.js'
 import { formatDateTime } from '../../lib/format.js'
 import { Card, CardHeader, CardContent } from '../../components/ui/Card.jsx'
@@ -62,7 +63,7 @@ export function KnowledgeDetailPage() {
 
   const backTo = `/app/t/${encodeURIComponent(tenantId)}/knowledge`
 
-  if (documentQuery.isPending) {
+  if (isQueryLoading(documentQuery)) {
     return (
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         <Skeleton className="h-4 w-40" />
@@ -77,8 +78,10 @@ export function KnowledgeDetailPage() {
     )
   }
 
-  if (documentQuery.isError) {
-    const forbidden = documentQuery.error?.status === 403
+  if (isQueryFailed(documentQuery)) {
+    const failure = documentQuery.error
+    const forbidden = failure?.status === 403
+    const notFound = failure?.status === 404
     return (
       <div className="mx-auto max-w-3xl">
         <Link
@@ -93,15 +96,21 @@ export function KnowledgeDetailPage() {
             title={
               forbidden
                 ? 'Permission denied'
-                : 'Could not load this document'
+                : notFound
+                  ? 'Document not found'
+                  : 'Could not load this document'
             }
             message={
               forbidden
                 ? 'You do not have read access to this tenant’s knowledge base.'
-                : errorMessage(documentQuery.error)
+                : notFound
+                  ? 'This document does not exist, or it has been deleted.'
+                  : failure
+                    ? errorMessage(failure)
+                    : STALLED_MESSAGE
             }
             onRetry={() => documentQuery.refetch()}
-            error={documentQuery.error}
+            error={failure}
           />
         </Card>
       </div>

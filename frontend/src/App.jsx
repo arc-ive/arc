@@ -65,7 +65,14 @@ function TenantLandingRedirect() {
   return <Navigate to={`/app/t/${encodeURIComponent(tenantId)}/${landing}`} replace />
 }
 
-function LegacyBrainDocumentRedirect() {
+export function LegacyBrainRedirect({ suffix = '' }) {
+  const { tenantId } = useParams()
+  return (
+    <Navigate to={`/app/t/${encodeURIComponent(tenantId)}/knowledge${suffix}`} replace />
+  )
+}
+
+export function LegacyBrainDocumentRedirect() {
   const { tenantId, documentId } = useParams()
   return (
     <Navigate
@@ -139,9 +146,12 @@ export default function App() {
               <Route path="approvals" element={<ApprovalsPage />} />
               <Route path="activity" element={<TenantActivityPage />} />
 
-              {/* Legacy Company Brain aliases */}
-              <Route path="company-brain" element={<Navigate to="knowledge" replace />} />
-              <Route path="company-brain/new" element={<Navigate to="knowledge/new" replace />} />
+              {/* Legacy Company Brain aliases. Issue #225: these must be
+                  ABSOLUTE. A relative `to` resolves against the matched
+                  route, so "knowledge" from /company-brain landed on
+                  /knowledge/knowledge — a 404 document id. */}
+              <Route path="company-brain" element={<LegacyBrainRedirect />} />
+              <Route path="company-brain/new" element={<LegacyBrainRedirect suffix="/new" />} />
               <Route
                 path="company-brain/:documentId"
                 element={<LegacyBrainDocumentRedirect />}
