@@ -15,7 +15,12 @@ from typing import List, Optional
 
 import asyncpg
 
-from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
+from arc.db.connection import (
+    ArcDatabase,
+    ConcurrentUpdateError,
+    DuplicateKeyError,
+    NotFoundError,
+)
 from arc.domain.models import (
     KnowledgeChunk,
     KnowledgeDocument,
@@ -206,6 +211,7 @@ class PostgreSQLKnowledgeRepository:
         document: KnowledgeDocument,
         chunks: List[KnowledgeChunk],
         embeddings: List[List[float]],
+        expected_version: Optional[int] = None,
     ) -> KnowledgeDocument:
         """Apply an accepted content change to an existing logical document.
 
@@ -214,6 +220,12 @@ class PostgreSQLKnowledgeRepository:
         failure rolls back so the prior version and its complete old index
         remain intact. ``document.version`` must already carry the bumped
         value computed by the service layer.
+
+        When ``expected_version`` is provided, the row is additionally
+        matched on its current version (optimistic locking, Issue #234):
+        a concurrent writer that committed first makes this update match
+        zero rows, which raises ``ConcurrentUpdateError`` instead of
+        silently overwriting the newer version and losing its increment.
         """
         if len(chunks) != len(embeddings):
             raise ValueError("chunks and embeddings must have the same length")
@@ -222,23 +234,47 @@ class PostgreSQLKnowledgeRepository:
 
         async with self.db.transaction() as conn:
             try:
-                status = await conn.execute(
-                    """
-                    UPDATE knowledge_documents
-                    SET content = $3,
-                        version = $4,
-                        status = $5,
-                        updated_at = $6
-                    WHERE id = $1 AND tenant_id = $2
-                    """,
-                    document.id,
-                    document.tenant_id,
-                    document.content,
-                    document.version,
-                    document.status.value,
-                    document.updated_at,
-                )
+                if expected_version is None:
+                    status = await conn.execute(
+                        """
+                        UPDATE knowledge_documents
+                        SET content = $3,
+                            version = $4,
+                            status = $5,
+                            updated_at = $6
+                        WHERE id = $1 AND tenant_id = $2
+                        """,
+                        document.id,
+                        document.tenant_id,
+                        document.content,
+                        document.version,
+                        document.status.value,
+                        document.updated_at,
+                    )
+                else:
+                    status = await conn.execute(
+                        """
+                        UPDATE knowledge_documents
+                        SET content = $3,
+                            version = $4,
+                            status = $5,
+                            updated_at = $6
+                        WHERE id = $1 AND tenant_id = $2 AND version = $7
+                        """,
+                        document.id,
+                        document.tenant_id,
+                        document.content,
+                        document.version,
+                        document.status.value,
+                        document.updated_at,
+                        expected_version,
+                    )
                 if status == "UPDATE 0":
+                    if expected_version is not None:
+                        raise ConcurrentUpdateError(
+                            f"Knowledge document {document.id} was modified "
+                            f"by a concurrent writer in tenant {document.tenant_id}"
+                        )
                     raise NotFoundError("Knowledge document not found")
                 await conn.execute(
                     """
