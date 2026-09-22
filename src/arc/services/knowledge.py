@@ -278,8 +278,10 @@ class KnowledgeService:
         sanitized text differs from the stored content, the version is
         incremented and the document is re-indexed atomically (reusing the
         ADR-003 re-ingestion path). If the sanitized content is identical,
-        the update is idempotent: version does not increment and re-indexing
-        is skipped. ``status`` changes do not increment the version.
+        the update is idempotent: version does not increment and the
+        existing chunk set is left untouched. Metadata-only changes
+        (source/provenance/status) never increment the version and never
+        touch the chunk set.
         """
         if not any(
             [source is not None, provenance is not None, content is not None, status is not None]
@@ -288,30 +290,40 @@ class KnowledgeService:
 
         existing = await self.knowledge_repo.get_by_id(document_id, context.tenant_id)
 
-        new_source = source if source is not None else existing.source
-        new_provenance = provenance if provenance is not None else existing.provenance
-        new_status = status if status is not None else existing.status
-
         if content is not None:
             if not content:
                 raise ValueError("Knowledge document content cannot be empty")
             sanitized_text = self.pii_guard.sanitize(content).sanitized_text
-            if existing.content == sanitized_text:
-                updated = KnowledgeDocument(
-                    id=existing.id,
-                    tenant_id=existing.tenant_id,
-                    source=new_source,
-                    provenance=new_provenance,
-                    version=existing.version,
-                    status=new_status,
-                    content=existing.content,
-                    external_id=existing.external_id,
-                    created_at=existing.created_at,
-                    updated_at=datetime.now(timezone.utc),
-                )
-                return await self.knowledge_repo.update_document_with_chunks(updated, [], [])
         else:
             sanitized_text = existing.content
+
+        new_source = source if source is not None else existing.source
+        new_provenance = provenance if provenance is not None else existing.provenance
+        new_status = status if status is not None else existing.status
+
+        content_changed = sanitized_text != existing.content
+        metadata_changed = (
+            new_source != existing.source
+            or new_provenance != existing.provenance
+            or new_status != existing.status
+        )
+        if not content_changed and not metadata_changed:
+            return existing
+
+        if not content_changed:
+            updated = KnowledgeDocument(
+                id=existing.id,
+                tenant_id=existing.tenant_id,
+                source=new_source,
+                provenance=new_provenance,
+                version=existing.version,
+                status=new_status,
+                content=existing.content,
+                external_id=existing.external_id,
+                created_at=existing.created_at,
+                updated_at=datetime.now(timezone.utc),
+            )
+            return await self.knowledge_repo.update_document_metadata(updated)
 
         updated = KnowledgeDocument(
             id=existing.id,

@@ -76,6 +76,7 @@ from arc.security.authorization import (
     KNOWLEDGE_CREATE,
     KNOWLEDGE_DELETE,
     KNOWLEDGE_READ,
+    KNOWLEDGE_UPDATE,
     MEMBERSHIP_CREATE,
     OBSERVABILITY_PLATFORM_READ,
     OBSERVABILITY_READ,
@@ -1387,14 +1388,13 @@ async def update_knowledge_document(
     tenant_id: str,
     document_id: str,
     knowledge_data: KnowledgeUpdateRequest,
-    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_CREATE)),
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_UPDATE)),
     knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
 ) -> Dict[str, Any]:
     """Update a knowledge document by ID within a tenant.
 
     Protected: requires a trusted X-10 tenant context and the
-    ``knowledge:create`` permission (the canonical write permission for
-    knowledge documents). The path ``tenant_id`` is validated for
+    ``knowledge:update`` permission. The path ``tenant_id`` is validated for
     consistency against the trusted context. The document is identified
     by its stable ``document_id``; ``external_id`` is not required and
     is not modified by this operation.

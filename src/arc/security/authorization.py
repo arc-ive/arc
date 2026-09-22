@@ -55,9 +55,10 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
   ``observability:platform_read`` grants the STRICTLY TENANT-AGNOSTIC
   platform operational summary to PLATFORM_ADMINISTRATOR only. Platform
   visibility never exposes per-tenant business data. EMPLOYEE has none.
-- Knowledge permissions (``knowledge:create``, ``knowledge:read``) exist for
-  the Company Brain foundation: COMPANY_ADMINISTRATOR manages and reads
-  company knowledge; OPERATIONS_USER reads it for operational workflows;
+- Knowledge permissions (``knowledge:create``, ``knowledge:read``,
+  ``knowledge:update``, ``knowledge:delete``) exist for the Company Brain
+  foundation: COMPANY_ADMINISTRATOR manages and reads company knowledge;
+  OPERATIONS_USER reads it for operational workflows;
   PLATFORM_ADMINISTRATOR retains global access; EMPLOYEE holds
   ``knowledge:read`` for Ask Arc (Unified Intelligence) and Company Brain
   read access per PRD §7.4.
@@ -110,6 +111,7 @@ MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
 TENANT_READ = Permission(resource="tenant", action="read")
 KNOWLEDGE_CREATE = Permission(resource="knowledge", action="create")
 KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
+KNOWLEDGE_UPDATE = Permission(resource="knowledge", action="update")
 KNOWLEDGE_DELETE = Permission(resource="knowledge", action="delete")
 SKILL_CREATE = Permission(resource="skill", action="create")
 SKILL_READ = Permission(resource="skill", action="read")
@@ -146,6 +148,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
+            KNOWLEDGE_UPDATE,
             SKILL_CREATE,
             SKILL_READ,
             SKILL_UPDATE,
@@ -174,6 +177,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
+            KNOWLEDGE_UPDATE,
             KNOWLEDGE_DELETE,
             SKILL_CREATE,
             SKILL_READ,

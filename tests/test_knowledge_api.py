@@ -49,6 +49,13 @@ class TestKnowledgeAuthentication:
         response = client.get(f"/tenants/{_unique('tenant')}/knowledge/{_unique('doc')}")
         assert response.status_code == 401
 
+    def test_update_requires_authentication(self, client):
+        response = client.put(
+            f"/tenants/{_unique('tenant')}/knowledge/{_unique('doc')}",
+            json={"content": "New content."},
+        )
+        assert response.status_code == 401
+
 
 class TestKnowledgeAuthorization:
     async def test_create_requires_knowledge_create_permission(
@@ -1013,3 +1020,384 @@ class TestKnowledgeDeleteBehavior:
             assert response.status_code == 403
         finally:
             app.dependency_overrides.pop(get_trusted_tenant_context, None)
+
+
+class TestKnowledgeUpdateAuthorization:
+    async def test_update_requires_knowledge_update_permission(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """OPERATIONS_USER holds knowledge:read but not knowledge:update."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        response = client.put(
+            f"/tenants/{tenant.id}/knowledge/{_unique('doc')}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": "New content."},
+        )
+        assert response.status_code == 403
+
+    async def test_employee_cannot_update(self, client, seeded, make_token, authorization_override):
+        """EMPLOYEE holds knowledge:read only, not knowledge:update."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+
+        response = client.put(
+            f"/tenants/{tenant.id}/knowledge/{_unique('doc')}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": "New content."},
+        )
+        assert response.status_code == 403
+
+    def test_update_route_requires_knowledge_update_permission(self):
+        """The PUT endpoint must be wired to knowledge:update, not knowledge:create."""
+        from arc.api.controllers import api_router
+        from arc.security.authorization import KNOWLEDGE_CREATE, KNOWLEDGE_UPDATE
+        from arc.security.models import Permission
+
+        routes = [
+            r
+            for r in api_router.routes
+            if getattr(r, "path", "") == "/tenants/{tenant_id}/knowledge/{document_id}"
+            and "PUT" in getattr(r, "methods", set())
+        ]
+        assert len(routes) == 1
+
+        wired = set()
+
+        def collect(node):
+            for dep in node.dependencies:
+                for cell in getattr(dep.call, "__closure__", None) or ():
+                    try:
+                        value = cell.cell_contents
+                    except ValueError:
+                        continue
+                    if isinstance(value, Permission):
+                        wired.add(value)
+                collect(dep)
+
+        collect(routes[0].dependant)
+        assert KNOWLEDGE_UPDATE in wired
+        assert KNOWLEDGE_CREATE not in wired
+
+
+class TestKnowledgeUpdate:
+    """PUT /tenants/{tenant_id}/knowledge/{document_id} (Issue #220)."""
+
+    async def _create_ui_document(self, client, tenant_id, token, **overrides):
+        """Create a UI-style document: no external_id is ever sent."""
+        payload = _knowledge_payload(**overrides)
+        assert "external_id" not in payload
+        create = client.post(
+            f"/tenants/{tenant_id}/knowledge",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        assert create.status_code == 200
+        body = create.json()
+        assert body["external_id"] is None
+        assert body["version"] == 1
+        return body
+
+    async def test_update_ui_created_document_bumps_version_and_preserves_id(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = await self._create_ui_document(
+            client,
+            tenant.id,
+            token,
+            provenance="update-flow-doc",
+            content="The office kitchen closes at six in the evening.",
+        )
+        document_id = created["id"]
+
+        update = client.put(
+            f"/tenants/{tenant.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": "The office kitchen closes at seven in the evening."},
+        )
+        assert update.status_code == 200
+        body = update.json()
+        assert body["id"] == document_id
+        assert body["tenant_id"] == tenant.id
+        assert body["version"] == 2
+        assert body["content"] == "The office kitchen closes at seven in the evening."
+        assert body["external_id"] is None
+
+        read = client.get(
+            f"/tenants/{tenant.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert read.status_code == 200
+        assert read.json()["version"] == 2
+        assert read.json()["content"] == "The office kitchen closes at seven in the evening."
+
+    async def test_update_identical_content_is_idempotent_and_preserves_chunks(
+        self, client, db, seeded, make_token, authorization_override
+    ):
+        """Same sanitized content: no version bump and no chunk churn."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = await self._create_ui_document(
+            client,
+            tenant.id,
+            token,
+            provenance="idempotent-doc",
+            content="The lobby fountain runs every morning.",
+        )
+        document_id = created["id"]
+
+        async with db._connection_pool.acquire() as conn:
+            before = await conn.fetch(
+                "SELECT content, sequence FROM knowledge_chunks"
+                " WHERE document_id = $1 AND tenant_id = $2 ORDER BY sequence",
+                document_id,
+                tenant.id,
+            )
+        assert len(before) >= 1
+
+        update = client.put(
+            f"/tenants/{tenant.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": created["content"]},
+        )
+        assert update.status_code == 200
+        assert update.json()["id"] == document_id
+        assert update.json()["version"] == 1
+
+        async with db._connection_pool.acquire() as conn:
+            after = await conn.fetch(
+                "SELECT content, sequence FROM knowledge_chunks"
+                " WHERE document_id = $1 AND tenant_id = $2 ORDER BY sequence",
+                document_id,
+                tenant.id,
+            )
+        assert [(row["content"], row["sequence"]) for row in after] == [
+            (row["content"], row["sequence"]) for row in before
+        ]
+
+    async def test_update_replaces_chunks_without_orphans(
+        self, client, db, seeded, make_token, authorization_override
+    ):
+        """Changed content re-indexes: old chunks gone, sequences restart at 0."""
+        from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        old_content = " ".join(["xylophone"] * 150)
+        created = await self._create_ui_document(
+            client, tenant.id, token, provenance="chunked-doc", content=old_content
+        )
+        document_id = created["id"]
+
+        chunk_repo = PostgreSQLKnowledgeChunkRepository(db)
+        old_matches = await chunk_repo.lexical_search(tenant.id, "xylophone", limit=10)
+        assert len(old_matches) == 2
+        assert {match.sequence for match in old_matches} == {0, 1}
+        assert all(match.document_id == document_id for match in old_matches)
+
+        update = client.put(
+            f"/tenants/{tenant.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": "The zephyr lounge opens at noon."},
+        )
+        assert update.status_code == 200
+        assert update.json()["version"] == 2
+
+        async with db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT content, sequence FROM knowledge_chunks"
+                " WHERE document_id = $1 AND tenant_id = $2 ORDER BY sequence",
+                document_id,
+                tenant.id,
+            )
+        assert len(rows) == 1
+        assert rows[0]["sequence"] == 0
+        assert "zephyr" in rows[0]["content"]
+
+        # Retrieval sees the new content; the old terms resolve nowhere.
+        assert await chunk_repo.lexical_search(tenant.id, "xylophone", limit=10) == []
+        new_matches = await chunk_repo.lexical_search(tenant.id, "zephyr", limit=10)
+        assert len(new_matches) == 1
+        assert new_matches[0].document_id == document_id
+        assert new_matches[0].sequence == 0
+        assert new_matches[0].document_version == 2
+
+    async def test_citation_remains_resolvable_after_update(
+        self, client, db, seeded, make_token, authorization_override
+    ):
+        """Citations are {document_id}#c{sequence}: stable id + sequence survive edits."""
+        from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = await self._create_ui_document(
+            client,
+            tenant.id,
+            token,
+            provenance="cited-doc",
+            content="The harbor library archives every maritime chart.",
+        )
+        document_id = created["id"]
+
+        chunk_repo = PostgreSQLKnowledgeChunkRepository(db)
+        before = await chunk_repo.lexical_search(tenant.id, "maritime", limit=10)
+        assert len(before) == 1
+        citation_before = f"{before[0].document_id}#c{before[0].sequence}"
+
+        update = client.put(
+            f"/tenants/{tenant.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": "The harbor library archives every maritime chart and atlas."},
+        )
+        assert update.status_code == 200
+
+        after = await chunk_repo.lexical_search(tenant.id, "atlas", limit=10)
+        assert len(after) == 1
+        citation_after = f"{after[0].document_id}#c{after[0].sequence}"
+        assert citation_after == citation_before == f"{document_id}#c0"
+
+        async with db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT content FROM knowledge_chunks"
+                " WHERE document_id = $1 AND tenant_id = $2 AND sequence = $3",
+                document_id,
+                tenant.id,
+                0,
+            )
+        assert row is not None
+        assert "atlas" in row["content"]
+
+    async def test_update_status_only_does_not_bump_version(
+        self, client, db, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = await self._create_ui_document(
+            client,
+            tenant.id,
+            token,
+            provenance="status-doc",
+            content="The rooftop garden opens in spring.",
+        )
+        document_id = created["id"]
+
+        async with db._connection_pool.acquire() as conn:
+            before = await conn.fetch(
+                "SELECT id FROM knowledge_chunks WHERE document_id = $1 AND tenant_id = $2",
+                document_id,
+                tenant.id,
+            )
+
+        update = client.put(
+            f"/tenants/{tenant.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"status": "archived"},
+        )
+        assert update.status_code == 200
+        assert update.json()["version"] == 1
+        assert update.json()["status"] == "archived"
+
+        async with db._connection_pool.acquire() as conn:
+            after = await conn.fetch(
+                "SELECT id FROM knowledge_chunks WHERE document_id = $1 AND tenant_id = $2",
+                document_id,
+                tenant.id,
+            )
+        assert {row["id"] for row in after} == {row["id"] for row in before}
+
+    async def test_update_missing_document_returns_404(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.put(
+            f"/tenants/{tenant.id}/knowledge/{_unique('doc')}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"content": "New content."},
+        )
+        assert response.status_code == 404
+
+    async def test_update_empty_body_is_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        created = await self._create_ui_document(
+            client, tenant.id, token, provenance="empty-body-doc"
+        )
+
+        response = client.put(
+            f"/tenants/{tenant.id}/knowledge/{created['id']}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={},
+        )
+        assert response.status_code == 400
+
+    async def test_cross_tenant_update_is_denied(
+        self, client, repositories, seeded, make_token, authorization_override
+    ):
+        """Tenant B cannot update a document belonging to Tenant A."""
+        tenant_a, user_a, _ = seeded
+        tenant_repo, user_repo, membership_repo = repositories
+
+        user_b = await user_repo.create(
+            User(id=_unique("user-b"), email=f"{uuid.uuid4().hex}@example.com", username="b")
+        )
+        tenant_b = await tenant_repo.create(Tenant(id=_unique("tenant-b"), name="Tenant B"))
+        membership_b = await membership_repo.create(
+            Membership(id=_unique("membership"), user_id=user_b.id, tenant_id=tenant_b.id)
+        )
+        authorization_override(
+            {
+                user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        token_a = make_token(user_a.id)
+        create = client.post(
+            f"/tenants/{tenant_a.id}/knowledge",
+            headers={"Authorization": f"Bearer {token_a}"},
+            json=_knowledge_payload(content="Tenant A original", provenance="tenant-a-doc"),
+        )
+        assert create.status_code == 200
+        document_id = create.json()["id"]
+
+        token_b = make_token(user_b.id)
+        response = client.put(
+            f"/tenants/{tenant_b.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token_b}"},
+            json={"content": "Tenant B rewrite attempt."},
+        )
+        assert response.status_code == 404
+
+        read = client.get(
+            f"/tenants/{tenant_a.id}/knowledge/{document_id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert read.status_code == 200
+        assert read.json()["content"] == "Tenant A original"
+        assert read.json()["version"] == 1
+
+        await membership_repo.delete(membership_b.id)
+        await user_repo.delete(user_b.id)
+        await tenant_repo.delete(tenant_b.id)

@@ -256,6 +256,34 @@ class PostgreSQLKnowledgeRepository:
                 ) from e
         return document
 
+    async def update_document_metadata(self, document: KnowledgeDocument) -> KnowledgeDocument:
+        """Apply a metadata-only change to an existing logical document.
+
+        Updates source/provenance/status/updated_at on the existing row
+        (matched by id AND tenant) without touching content, version, or
+        the chunk set.
+        """
+        async with self.db.transaction() as conn:
+            status = await conn.execute(
+                """
+                UPDATE knowledge_documents
+                SET source = $3,
+                    provenance = $4,
+                    status = $5,
+                    updated_at = $6
+                WHERE id = $1 AND tenant_id = $2
+                """,
+                document.id,
+                document.tenant_id,
+                document.source.value,
+                document.provenance,
+                document.status.value,
+                document.updated_at,
+            )
+            if status == "UPDATE 0":
+                raise NotFoundError("Knowledge document not found")
+        return document
+
     async def list_for_tenant(
         self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
     ) -> List[KnowledgeDocument]:
