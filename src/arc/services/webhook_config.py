@@ -31,9 +31,12 @@ per tenant.
 """
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("arc.services.webhook_config")
 
 MIN_SECRET_LENGTH = 16
 MAX_ENDPOINT_ID_LENGTH = 255
@@ -229,3 +232,47 @@ class WebhookEndpointStore:
         raw = self._raw if self._raw is not None else os.getenv("WEBHOOK_INGESTION_ENDPOINTS", "")
         endpoints = parse_webhook_endpoints(raw)
         return endpoints.get(endpoint_id)
+
+
+def validate_webhook_endpoints(raw: Optional[str] = None) -> Dict[str, WebhookEndpointConfig]:
+    """Validate webhook endpoint configuration at startup.
+
+    Parses the configuration and logs warnings for endpoints that have no
+    downstream action configured (ingestion-only endpoints). This allows
+    operators to verify that processing endpoints are correctly configured
+    before any webhook deliveries arrive.
+
+    Args:
+        raw: Optional raw JSON string. If None, reads from
+            WEBHOOK_INGESTION_ENDPOINTS environment variable.
+
+    Returns:
+        Dict of parsed endpoint configs for further validation if needed.
+
+    Raises:
+        WebhookConfigurationError: If the configuration is malformed or
+            violates structural requirements (fails closed).
+    """
+    raw = raw if raw is not None else os.getenv("WEBHOOK_INGESTION_ENDPOINTS", "")
+    endpoints = parse_webhook_endpoints(raw)
+
+    for endpoint_id, config in endpoints.items():
+        if config.action is None:
+            logger.warning(
+                "Webhook endpoint '%s' (tenant_id=%s) has no action configured; "
+                "events will be ingested but NOT processed downstream. "
+                "Add an 'action' block to enable Skill execution.",
+                endpoint_id,
+                config.tenant_id,
+            )
+        else:
+            logger.info(
+                "Webhook endpoint '%s' (tenant_id=%s) configured with "
+                "action type '%s', skill_id '%s'",
+                endpoint_id,
+                config.tenant_id,
+                config.action.type,
+                config.action.skill_id,
+            )
+
+    return endpoints
