@@ -114,7 +114,7 @@ class RecordingProvider:
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://arc:arc-dev-password@localhost:5432/arc",
+    "postgresql://arc:arc-dev-password@localhost:5432/arc_test",
 )
 
 

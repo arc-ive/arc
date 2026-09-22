@@ -8,7 +8,9 @@ import pytest
 from arc.db.connection import ArcDatabase, DatabaseError, NotFoundError
 from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc_test"
+)
 
 
 class TestDatabaseConnection:

@@ -26,7 +26,9 @@ from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
 from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
 from arc.repositories.tenancy import PostgreSQLTenantRepository
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc_test"
+)
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "arc" / "db" / "schema.sql"
 
 
