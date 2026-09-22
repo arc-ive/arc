@@ -26,7 +26,7 @@ from arc.domain.models import (
     UserRole,
 )
 from arc.services.embeddings import EmbeddingError
-from arc.services.intelligence import UnifiedIntelligenceService
+from arc.services.intelligence import UnifiedIntelligenceService, _extract_grounded_citations
 from arc.services.llm import DeterministicLlmProvider, LlmError
 
 
@@ -326,3 +326,97 @@ class TestUnifiedIntelligenceService:
         answer = await service.answer_query(_context(), "remote work policy")
 
         assert answer.citations == ["doc-1#c0"]
+
+
+def _two_items():
+    """Approved items with references doc-a#c1 and doc-b#c2."""
+    return [
+        _item(document_id="doc-a", content="Escalation procedure.", sequence=1),
+        _item(document_id="doc-b", content="Notification policy.", sequence=2),
+    ]
+
+
+class TestExtractGroundedCitations:
+    """Parser tests using raw model-output strings the deterministic
+    provider did NOT generate (#211, PR #257 review).
+
+    These prove the parser and the provider are not two halves of the
+    same assumption: every input here is a realistic shape a real LLM
+    emits, and resolution keys only on the approved set.
+    """
+
+    def test_explicit_citation_line(self) -> None:
+        output = "Escalate to on-call.\n[1] citation: doc-a#c1"
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_bare_index_marker(self) -> None:
+        output = "Escalate to on-call [1]."
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_multiple_citations_in_order(self) -> None:
+        output = "Follow the incident procedure [1] and notify the security team [2]."
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1", "doc-b#c2"]
+
+    def test_no_citations(self) -> None:
+        output = "Escalate to on-call immediately."
+        assert _extract_grounded_citations(output, _two_items()) == []
+
+    def test_fabricated_index_dropped(self) -> None:
+        output = "Use [9] citation: doc-evil#c1 and [1] citation: doc-a#c1"
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_fabricated_reference_resolves_by_index_only(self) -> None:
+        """An approved index with an injected reference yields the
+        approved reference, never the model-supplied string."""
+        output = "[1] citation: doc-evil#c1"
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_duplicate_citations_deduplicated(self) -> None:
+        output = "[1] citation: doc-a#c1\n[1] citation: doc-a#c1"
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_natural_reference_mention(self) -> None:
+        output = "According to doc-a#c1, you should escalate."
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_sources_list(self) -> None:
+        output = "Escalate.\n\nSources: doc-a#c1, doc-b#c2"
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1", "doc-b#c2"]
+
+    def test_parenthesized_reference(self) -> None:
+        output = "Escalate immediately (doc-a#c1)."
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_footnote_reference(self) -> None:
+        output = "Escalate.[^1]\n\n[^1]: doc-a#c1"
+        assert _extract_grounded_citations(output, _two_items()) == ["doc-a#c1"]
+
+    def test_unknown_raw_reference_ignored(self) -> None:
+        output = "See doc-evil#c1 for details."
+        assert _extract_grounded_citations(output, _two_items()) == []
+
+    def test_reference_prefix_collision(self) -> None:
+        """doc-a#c1 must not match inside a mention of doc-a#c10."""
+        items = _two_items() + [_item(document_id="doc-a", content="Extra.", sequence=10)]
+        output = "See doc-a#c10."
+        assert _extract_grounded_citations(output, items) == ["doc-a#c10"]
+
+    def test_empty_inputs(self) -> None:
+        assert _extract_grounded_citations("", _two_items()) == []
+        assert _extract_grounded_citations("Escalate [1].", []) == []
+
+
+class TestNaturalCitationIntegration:
+    """End-to-end grounding with a natural-format scripted LLM."""
+
+    async def test_natural_format_answer_cites_approved_items(self):
+        class NaturalLlm:
+            def complete(self, prompt: str) -> str:
+                return "Follow the incident procedure [1] and notify the security team [2]."
+
+        service = UnifiedIntelligenceService(FakeRetrieval(_approved(_two_items())), NaturalLlm())
+
+        answer = await service.answer_query(_context(), "how do we handle incidents?")
+
+        assert answer.citations == ["doc-a#c1", "doc-b#c2"]
+        assert answer.context_used is True
