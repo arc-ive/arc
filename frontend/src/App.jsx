@@ -16,7 +16,6 @@ import { TenantSettingsPage } from './pages/tenant/TenantSettingsPage.jsx'
 import { ConnectorsPage } from './pages/connectors/ConnectorsPage.jsx'
 import { WebhooksPage } from './pages/webhooks/WebhooksPage.jsx'
 import { ToolsPage } from './pages/tools/ToolsPage.jsx'
-import { ObservabilityPage } from './pages/observability/ObservabilityPage.jsx'
 import { TenantUsersPage } from './pages/tenant/TenantUsersPage.jsx'
 import { ApprovalsPage } from './pages/approvals/ApprovalsPage.jsx'
 import { EmployeeHomePage } from './pages/home/EmployeeHomePage.jsx'
@@ -178,8 +177,15 @@ export default function App() {
             </Route>
 
             <Route element={<RequirePermission permission={PERMISSIONS.OBSERVABILITY_READ} />}>
-              <Route path="observability" element={<ObservabilityPage />} />
               <Route path="usage" element={<TenantUsagePage />} />
+              {/* Observability rendered the same usage-summary endpoint as
+                  Usage, under a "Health" label that described neither. The
+                  two are merged; P95 latency moved across so nothing is
+                  lost, and the old path resolves rather than 404s. */}
+              <Route
+                path="observability"
+                element={<RemovedTenantRedirect to="usage" />}
+              />
             </Route>
 
             <Route element={<RequirePermission permission={PERMISSIONS.APPROVAL_READ} />}>

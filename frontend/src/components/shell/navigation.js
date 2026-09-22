@@ -6,6 +6,7 @@ import {
   BookOpen,
   Gauge,
   Workflow,
+  Wrench,
   Home,
   UserCircle2,
   Settings,
@@ -126,9 +127,8 @@ const AREAS = [
     icon: Gauge,
     children: [
       { to: 'approvals', label: 'Approvals', permission: PERMISSIONS.APPROVAL_READ },
-      { to: 'webhooks', label: 'Activity', permission: PERMISSIONS.WEBHOOK_READ },
+      { to: 'webhooks', label: 'Webhooks', permission: PERMISSIONS.WEBHOOK_READ },
       { to: 'usage', label: 'Usage', permission: PERMISSIONS.OBSERVABILITY_READ },
-      { to: 'observability', label: 'Health', permission: PERMISSIONS.OBSERVABILITY_READ },
     ],
   },
   {
@@ -193,13 +193,35 @@ export function tenantNavForCapabilities(can) {
     : [{ ...HOME_ITEM, id: 'home' }, ...areas]
 }
 
-/** Flat list of every reachable route, for the command palette. */
+/**
+ * Surfaces that are reachable and permitted but deliberately not in the
+ * sidebar.
+ *
+ * Tools stays out of the top-level IA — PRD §13 makes tools platform-owned
+ * and the tenant API has no create/update/delete, so there is nothing to
+ * manage there. But it remains a live executable capability, and removing
+ * it from navigation should not mean the only way to reach it is typing a
+ * URL. The command palette is where a capability like this belongs:
+ * findable on intent, absent from the permanent furniture.
+ */
+const UNLISTED = [
+  { to: 'tools', label: 'Tools', icon: Wrench, permission: PERMISSIONS.TOOL_READ },
+]
+
+/**
+ * Flat list of every reachable route, for the command palette.
+ *
+ * Includes UNLISTED, so the palette is a superset of the sidebar rather
+ * than a mirror of it.
+ */
 export function tenantRoutesForCapabilities(can) {
-  return tenantNavForCapabilities(can).flatMap((area) =>
+  if (typeof can !== 'function') return []
+  const fromAreas = tenantNavForCapabilities(can).flatMap((area) =>
     area.children
       ? area.children.map((c) => ({ ...c, icon: area.icon }))
       : [area],
   )
+  return [...fromAreas, ...UNLISTED.filter((item) => can(item.permission))]
 }
 
 /** Landing route within a tenant for the authenticated user. */

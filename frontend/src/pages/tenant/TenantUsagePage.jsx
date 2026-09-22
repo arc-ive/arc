@@ -180,6 +180,15 @@ export function TenantUsagePage() {
               value={isMeasured(data.http?.avg_duration_ms) ? `${Math.round(data.http.avg_duration_ms)}ms` : null}
               hint="Mean response time"
             />
+            {/* Carried over from the Observability page, which was a second
+                view of this same endpoint. P95 was the only figure it showed
+                that this page did not, so folding the two together must not
+                lose it. */}
+            <MetricCard
+              label="P95 Latency"
+              value={isMeasured(data.http?.p95_duration_ms) ? `${Math.round(data.http.p95_duration_ms)}ms` : null}
+              hint="Slowest 5% of requests"
+            />
             <MetricCard
               label="Error Rate"
               value={isMeasured(data.http?.error_rate) ? `${(data.http.error_rate * 100).toFixed(1)}%` : null}

@@ -166,7 +166,7 @@ describe('Sidebar permission-derived navigation', () => {
       // rather than Webhooks, Workspace rather than Overview.
       const shown = ['Ask Arc', 'Company Brain', 'Knowledge', 'Sources',
                      'AI Workflows', 'Skills', 'Agents',
-                     'Operations', 'Usage', 'Health',
+                     'Operations', 'Webhooks', 'Usage',
                      'Administration', 'People', 'Workspace']
       for (const label of shown) {
         expect(screen.getByText(label)).toBeInTheDocument()
@@ -207,7 +207,7 @@ describe('Sidebar permission-derived navigation', () => {
       const shown = ['Ask Arc',
                      'Company Brain', 'Knowledge', 'Sources',
                      'AI Workflows', 'Skills', 'Agents',
-                     'Operations', 'Approvals', 'Activity', 'Usage', 'Health',
+                     'Operations', 'Approvals', 'Webhooks', 'Usage',
                      'Administration', 'People', 'Workspace', 'Settings']
       for (const label of shown) {
         expect(screen.getByText(label)).toBeInTheDocument()
@@ -217,6 +217,24 @@ describe('Sidebar permission-derived navigation', () => {
     it('no longer offers Company — it duplicated Overview and Settings', () => {
       renderSidebar('company_administrator')
       expect(workspaceRoutes()).not.toContain('company')
+    })
+
+    it('labels the webhook route Webhooks, not Activity', () => {
+      // Review on #282: the route serves GET ~/webhooks/events — webhook
+      // deliveries. "Activity" promises all workspace activity (agent runs,
+      // skill executions, knowledge changes) and delivers one slice of it.
+      renderSidebar('company_administrator')
+      expect(screen.getByText('Webhooks')).toBeInTheDocument()
+      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
+    })
+
+    it('does not offer a second view of the usage endpoint', () => {
+      // Review on #282: Observability was labelled "Health" but called the
+      // same getTenantUsageSummary endpoint as Usage and rendered a card
+      // titled "Usage Summary". Two nav items, one dataset.
+      renderSidebar('company_administrator')
+      expect(screen.queryByText('Health')).not.toBeInTheDocument()
+      expect(workspaceRoutes()).not.toContain('observability')
     })
 
     it('no longer offers Tools as a top-level area', () => {
