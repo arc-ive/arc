@@ -195,10 +195,12 @@ class DeterministicLlmProvider:
         ]
         references = [citation.group(1) for citation in citations]
         if references:
-            return (
+            header = (
                 f"Deterministic response using {len(references)} approved context "
                 f"item(s): {', '.join(references)}"
             )
+            citation_lines = [f"[{idx}] citation: {ref}" for idx, ref in enumerate(references, 1)]
+            return header + "\n" + "\n".join(citation_lines)
         return "Deterministic response using 0 approved context item(s)."
 
 

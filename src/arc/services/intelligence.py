@@ -48,6 +48,7 @@ Security invariants:
 """
 
 import json
+import re
 import uuid
 from typing import List, Optional
 
@@ -76,6 +77,59 @@ from arc.services.tools import (
 )
 
 _OBSERVATION_MAX_CHARS = 1024
+
+_CITATION_INDEX_RE = re.compile(r"\[(\d+)\]")
+
+
+def _extract_grounded_citations(llm_output: str, approved_items: list) -> list:
+    """Return only the approved citations the LLM actually referenced.
+
+    Real models cite in varied shapes — ``[1]``, ``(doc-a#c1)``,
+    ``Sources: doc-a#c1, ...``, footnotes — never reliably the literal
+    ``[N] citation: ref`` context-block label.  Resolution therefore
+    keys on two signals, both checked against the approved set only:
+
+    - bare ``[N]`` markers, resolved by index (unknown indices dropped);
+    - verbatim approved ``citation_reference`` mentions (strings the
+      model was never given can never match).
+
+    Model-supplied reference text is never trusted: legacy
+    ``[N] citation: <ref>`` lines resolve by index alone, so ``[1]
+    citation: doc-evil#c1`` yields the approved item 1, never the
+    injected string.  Results are deduplicated in order of first
+    appearance.  Empty when nothing resolves.
+    """
+    if not llm_output or not approved_items:
+        return []
+    refs_by_index = {
+        str(idx + 1): item.citation_reference for idx, item in enumerate(approved_items)
+    }
+    events: list = []  # (position, citation_reference)
+    for match in _CITATION_INDEX_RE.finditer(llm_output):
+        ref = refs_by_index.get(match.group(1))
+        if ref is not None:
+            events.append((match.start(), ref))
+    for ref in refs_by_index.values():
+        start = 0
+        while True:
+            pos = llm_output.find(ref, start)
+            if pos == -1:
+                break
+            end = pos + len(ref)
+            # Guard the realistic collision where one reference is a
+            # string prefix of another (doc-a#c1 vs doc-a#c10): the
+            # character after a genuine mention is never a digit.
+            if end >= len(llm_output) or not llm_output[end].isdigit():
+                events.append((pos, ref))
+            start = pos + 1
+    events.sort(key=lambda event: event[0])
+    cited = []
+    seen = set()
+    for _, ref in events:
+        if ref not in seen:
+            cited.append(ref)
+            seen.add(ref)
+    return cited
 
 
 class UnifiedIntelligenceService:
@@ -135,7 +189,6 @@ class UnifiedIntelligenceService:
 
         approved = await self.retrieval.approved_search(context, query, limit=limit)
 
-        citations = [item.citation_reference for item in approved.items]
         if not approved.items:
             return IntelligenceAnswer(
                 request_id=str(uuid.uuid4()),
@@ -166,6 +219,7 @@ class UnifiedIntelligenceService:
         prompt = self._build_prompt(approved, query, observation)
         answer = self.llm_provider.complete(prompt)
         await self._record_usage(context, None, LLM_CALL_TYPE_COMPLETE, approved.request_id)
+        citations = _extract_grounded_citations(answer, approved.items)
 
         return IntelligenceAnswer(
             request_id=str(uuid.uuid4()),
@@ -281,8 +335,8 @@ class UnifiedIntelligenceService:
         """
         lines: List[str] = [
             "You are Arc's Unified Intelligence. Answer using ONLY the "
-            "approved context below. Cite sources with their citation "
-            "references.",
+            "approved context below. Cite the sources you used with the "
+            "[N] numbers shown in the approved context.",
             "APPROVED CONTEXT:",
         ]
         for index, item in enumerate(approved.items, start=1):
