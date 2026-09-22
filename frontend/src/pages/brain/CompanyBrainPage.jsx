@@ -30,7 +30,7 @@ const BRAIN_TABS = [
   { value: 'all', label: 'Knowledge' },
   { value: 'procedure', label: 'Procedures' },
   { value: 'policy', label: 'Policies' },
-  { value: 'incident_report', label: 'Incidents' },
+  { value: 'incident_report', label: 'Incident reports' },
   { value: 'solution', label: 'Solutions' },
   { value: 'troubleshooting', label: 'Troubleshooting' },
   { value: 'internal_knowledge', label: 'Internal' },
@@ -218,7 +218,7 @@ export function CompanyBrainPage() {
             <EmptyState
               icon={Search}
               title="No results found"
-              description="No knowledge chunks match your search."
+              description="No documents match your search."
               action={
                 <Button variant="secondary" size="sm" onClick={() => setQuery('')}>
                   Clear search

@@ -68,7 +68,7 @@ function CreateUserDialog({ open, onClose }) {
       open={open}
       onClose={handleClose}
       title="Create user"
-      description="Provision a platform user. Requires the user:create permission."
+      description="Add a user to the Arc platform."
       footer={
         <>
           <Button variant="secondary" onClick={handleClose}>

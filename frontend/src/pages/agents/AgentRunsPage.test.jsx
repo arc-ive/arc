@@ -130,7 +130,9 @@ describe('AgentRunsPage (Issue #226)', () => {
 
     expect(screen.queryByRole('button', { name: /start agent run/i })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/goal/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/do not have the agent:execute permission/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/don't have access to start agent runs/i),
+    ).toBeInTheDocument()
   })
 
   it('does not request run history without observability:read', async () => {
@@ -138,7 +140,7 @@ describe('AgentRunsPage (Issue #226)', () => {
     renderPage()
 
     expect(
-      await screen.findByText(/do not have the observability:read permission/i),
+      await screen.findByText(/don't have access to run history/i),
     ).toBeInTheDocument()
     expect(mockListAgentRuns).not.toHaveBeenCalled()
     // agent:execute alone still permits starting a run.

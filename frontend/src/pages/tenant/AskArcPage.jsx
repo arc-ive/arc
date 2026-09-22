@@ -40,7 +40,7 @@ const PIPELINE_STEPS = [
     icon: ShieldCheck,
     title: 'Reason',
     description:
-      'Unified Intelligence answers from retrieved company knowledge with source and provenance, never from unsanctioned context.',
+      'Arc answers from company knowledge it retrieved for you, always with its source — never from unverified content.',
   },
   {
     icon: Workflow,
@@ -297,7 +297,7 @@ export function AskArcPage() {
       <Card>
         <CardHeader
           title="How Arc answers"
-          description="Unified Intelligence pipeline — company-aware, sourced, and controlled."
+          description="Company-aware, sourced, and controlled."
         />
         <CardContent>
           <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -329,7 +329,7 @@ export function AskArcPage() {
       <Card>
         <CardHeader
           title="What an answer includes"
-          description="The response surface Arc renders for Unified Intelligence queries."
+          description="What Arc includes with every answer."
         />
         <CardContent>
           <div className="flex flex-col gap-3">

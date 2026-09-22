@@ -64,7 +64,7 @@ function AddMemberDialog({ open, onClose, tenantId }) {
       open={open}
       onClose={handleClose}
       title="Add member"
-      description="Provision a user's membership in this tenant. Requires membership:create permission."
+      description="Add a person to this workspace."
       footer={
         <>
           <Button variant="secondary" onClick={handleClose}>

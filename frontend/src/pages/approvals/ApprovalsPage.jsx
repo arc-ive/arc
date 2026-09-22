@@ -144,7 +144,7 @@ export function ApprovalsPage() {
         <Card>
           <CardContent>
             <p className="text-[13px] text-zinc-500">
-              You do not have the approval:read permission.
+              You don't have access to approvals in this workspace.
             </p>
           </CardContent>
         </Card>

@@ -45,7 +45,7 @@ function CreateTenantDialog({ open, onClose }) {
       open={open}
       onClose={handleClose}
       title="Create tenant"
-      description="Provision a new tenant. Requires the tenant:create permission (platform administrators only)."
+      description="Create a new customer workspace. Platform administrators only."
       footer={
         <>
           <Button variant="secondary" onClick={handleClose}>

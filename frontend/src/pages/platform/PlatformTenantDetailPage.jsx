@@ -111,7 +111,7 @@ export function PlatformTenantDetailPage() {
             </p>
           </div>
           <span className="text-[13px] text-zinc-600">
-            Requires membership + tenant:read
+            Requires workspace membership
           </span>
         </Card>
       </section>
@@ -155,7 +155,7 @@ export function PlatformTenantDetailPage() {
             <EmptyState
               icon={Building2}
               title="No members visible"
-              description="Either this tenant has no users, or your role does not grant tenant:read for it."
+              description="Either this tenant has no users, or your role does not grant access to them."
               compact
             />
           )}
@@ -185,11 +185,10 @@ export function PlatformTenantDetailPage() {
           )}
         </Card>
         <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
-          Platform administration and tenant data access are distinct: the
-          backend requires a trusted membership and the{' '}
-          <span className="font-mono text-zinc-400">tenant:read</span>{' '}
-          permission for tenant-scoped data. Administering the platform does
-          not automatically grant tenant data access.
+          Platform administration and customer data access are distinct.
+          Reading a customer workspace requires membership of that workspace
+          and permission to read it. Administering the platform does not
+          grant either.
         </p>
       </section>
     </div>
