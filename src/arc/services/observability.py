@@ -19,8 +19,11 @@ webhook-configuration component joins once the Webhooks foundation
 (PR #34) merges and its configuration module exists on main.
 """
 
+import dataclasses
 import logging
 from typing import Any, Dict
+
+import asyncpg
 
 from arc.domain.models import AgentRunRecord, ApiRequestRecord, LlmUsageRecord
 from arc.services.embeddings import build_embedding_provider, get_embedding_settings
@@ -49,18 +52,39 @@ class ObservabilityService:
         failure must never propagate into the served business response
         (approved failure semantics): failures are counted via the safe
         log line below, which carries metadata only.
+
+        Safety net (Issue #240): if the attributed tenant no longer
+        exists (foreign-key violation — e.g. raced with tenant deletion),
+        the event is retried exactly once with ``tenant_id=None`` so the
+        request record survives unattributed instead of disappearing.
+        Any other failure, or a second failure, drops the record.
         """
         try:
             await self.repository.create_api_request_record(record)
             return True
-        except Exception:
+        except asyncpg.ForeignKeyViolationError:
             logger.warning(
-                "telemetry_write_dropped method=%s route=%s status=%s",
+                "telemetry_tenant_unresolvable method=%s route=%s status=%s",
                 record.method,
                 record.route_template,
                 record.status_code,
             )
-            return False
+            try:
+                await self.repository.create_api_request_record(
+                    dataclasses.replace(record, tenant_id=None)
+                )
+                return True
+            except Exception:
+                pass
+        except Exception:
+            pass
+        logger.warning(
+            "telemetry_write_dropped method=%s route=%s status=%s",
+            record.method,
+            record.route_template,
+            record.status_code,
+        )
+        return False
 
     # ------------------------------------------------------------------
     # Agent execution trace write path (best effort; PRD 17 O-6)

@@ -54,6 +54,7 @@ const companyAdminTenantNav = [
   { to: 'company', label: 'Company', icon: Building2 },
   { to: 'knowledge', label: 'Company Brain', icon: BookOpen },
   { to: 'skills', label: 'Skills', icon: Workflow },
+  { to: 'agents', label: 'Agents', icon: Bot },
   { to: 'tools', label: 'Tools', icon: Wrench },
   { to: 'connectors', label: 'Connectors', icon: Plug },
   { to: 'webhooks', label: 'Webhooks', icon: Webhook },
@@ -72,6 +73,7 @@ const operationsTenantNav = [
   { to: 'incidents', label: 'Incidents', icon: AlertTriangle },
   { to: 'knowledge', label: 'Company Brain', icon: BookOpen },
   { to: 'skills', label: 'Skills', icon: Workflow },
+  { to: 'agents', label: 'Agents', icon: Bot },
   { to: 'activity', label: 'Activity', icon: History },
 ]
 

@@ -24,7 +24,7 @@ from typing import List, Optional
 
 import asyncpg
 
-from arc.db.connection import ArcDatabase, DuplicateKeyError, NotFoundError
+from arc.db.connection import ArcDatabase, CorruptDataError, DuplicateKeyError, NotFoundError
 from arc.domain.models import ApprovalRequest, ApprovalStatus
 
 _COLUMNS = """
@@ -42,22 +42,31 @@ class PostgreSQLApprovalRequestRepository:
 
     @staticmethod
     def _from_row(row) -> ApprovalRequest:
-        return ApprovalRequest(
-            id=row["id"],
-            tenant_id=row["tenant_id"],
-            requester_user_id=row["requester_user_id"],
-            tool_name=row["tool_name"],
-            tool_version=row["tool_version"],
-            risk_level=row["risk_level"],
-            input_summary=row["input_summary"],
-            arguments_digest=row["arguments_digest"].strip(),
-            status=ApprovalStatus(row["status"]),
-            created_at=row["created_at"],
-            expires_at=row["expires_at"],
-            decided_at=row["decided_at"],
-            decided_by_user_id=row["decided_by_user_id"],
-            consumed_at=row["consumed_at"],
-        )
+        try:
+            return ApprovalRequest(
+                id=row["id"],
+                tenant_id=row["tenant_id"],
+                requester_user_id=row["requester_user_id"],
+                tool_name=row["tool_name"],
+                tool_version=row["tool_version"],
+                risk_level=row["risk_level"],
+                input_summary=row["input_summary"],
+                arguments_digest=row["arguments_digest"].strip(),
+                status=ApprovalStatus(row["status"]),
+                created_at=row["created_at"],
+                expires_at=row["expires_at"],
+                decided_at=row["decided_at"],
+                decided_by_user_id=row["decided_by_user_id"],
+                consumed_at=row["consumed_at"],
+            )
+        except ValueError as exc:
+            # Defense-in-depth for legacy/corrupt rows that predate the
+            # database CHECK constraint (Issue #239): a malformed row must
+            # degrade to a controlled, fail-closed error at this canonical
+            # boundary — never an unhandled ValueError escaping to the API.
+            raise CorruptDataError(
+                f"Stored approval request '{row['id']}' violates an application invariant"
+            ) from exc
 
     async def create(self, request: ApprovalRequest) -> ApprovalRequest:
         try:

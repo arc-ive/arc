@@ -1,4 +1,4 @@
-import { AlertTriangle, ShieldX, WifiOff } from 'lucide-react'
+import { AlertTriangle, FileQuestion, ShieldX, WifiOff } from 'lucide-react'
 import { cn } from '../../lib/cn.js'
 import { Button } from './Button.jsx'
 import { toApiError } from '../../api/errors.js'
@@ -16,9 +16,14 @@ export function ErrorState({
   if (apiError) {
     if (apiError.isForbidden) Icon = ShieldX
     if (apiError.isNetwork) Icon = WifiOff
+    // Issue #225: a 404 is a distinct outcome, not a generic failure.
+    if (apiError.isNotFound) Icon = FileQuestion
   }
 
-  const displayTitle = title ?? (apiError?.isForbidden ? 'Permission denied' : 'Something went wrong')
+  let defaultTitle = 'Something went wrong'
+  if (apiError?.isForbidden) defaultTitle = 'Permission denied'
+  if (apiError?.isNotFound) defaultTitle = 'Not found'
+  const displayTitle = title ?? defaultTitle
   const displayMessage = message ?? apiError?.message ?? 'An unexpected error occurred.'
 
   return (

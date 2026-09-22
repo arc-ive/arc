@@ -103,7 +103,16 @@ async def get_authenticated_principal(
     return AuthenticatedPrincipal(user_id=user_id)
 
 
+#: Request-state attribute carrying the authorized tenant ID resolved by
+#: ``get_trusted_tenant_context``. Written only after membership is
+#: verified, so request telemetry can attribute the resolved tenant
+#: without ever trusting raw client input. Read by
+#: ``RequestTelemetryMiddleware``; nothing else uses this attribute.
+RESOLVED_TENANT_STATE_KEY = "resolved_tenant_id"
+
+
 async def get_trusted_tenant_context(
+    request: Request,
     tenant_id: str,
     principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
 ) -> TenantContext:
@@ -114,6 +123,9 @@ async def get_trusted_tenant_context(
     ``TenantContextService.create_tenant_context`` verifies the persisted
     membership and derives the membership role from the database.
 
+    On success the resolved tenant ID is published to request state for
+    telemetry attribution (bookkeeping only — never authorization).
+
     Raises:
         HTTPException 400: for invalid tenant context input.
         HTTPException 403: for missing membership / cross-tenant access /
@@ -122,7 +134,7 @@ async def get_trusted_tenant_context(
     from arc.api.controllers import app_context  # deferred: avoids import cycle
 
     try:
-        return await app_context.tenant_context_service.create_tenant_context(
+        context = await app_context.tenant_context_service.create_tenant_context(
             tenant_id=tenant_id,
             user_id=principal.user_id,
         )
@@ -132,6 +144,8 @@ async def get_trusted_tenant_context(
         )
     except NotFoundError:
         raise _forbidden("Access to the requested tenant is denied")
+    request.state.resolved_tenant_id = context.tenant_id
+    return context
 
 
 def require_permission(permission: Permission) -> Callable:

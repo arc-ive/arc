@@ -372,3 +372,100 @@ class TestBulkExpiry:
         for tenant in two_tenants:
             rows = await repo.list_for_tenant(tenant.id)
             assert all(r.status == ApprovalStatus.EXPIRED for r in rows)
+
+
+class TestExpiryOrderingConstraint:
+    """Issue #239: expires_at > created_at is enforced by the database itself."""
+
+    async def _raw_insert(self, db, tenant_id, digest, created_at, expires_at):
+        async with db._connection_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO approval_requests
+                        (id, tenant_id, requester_user_id, tool_name,
+                         tool_version, risk_level, input_summary,
+                         arguments_digest, status, created_at, expires_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    """,
+                    f"appr-{uuid.uuid4().hex[:14]}",
+                    tenant_id,
+                    "user-1",
+                    "restart_service",
+                    "1",
+                    "high",
+                    '{"target": "svc"}',
+                    digest,
+                    "pending",
+                    created_at,
+                    expires_at,
+                )
+
+    async def test_expires_before_created_is_rejected(self, db, two_tenants):
+        import asyncpg
+
+        now = datetime.now(timezone.utc)
+        with pytest.raises(asyncpg.CheckViolationError):
+            await self._raw_insert(db, two_tenants[0].id, "c" * 64, now, now - timedelta(hours=1))
+
+    async def test_expires_equal_to_created_is_rejected(self, db, two_tenants):
+        import asyncpg
+
+        now = datetime.now(timezone.utc)
+        with pytest.raises(asyncpg.CheckViolationError):
+            await self._raw_insert(db, two_tenants[0].id, "d" * 64, now, now)
+
+    async def test_expires_after_created_is_accepted(self, db, two_tenants):
+        now = datetime.now(timezone.utc)
+        await self._raw_insert(db, two_tenants[0].id, "e" * 64, now, now + timedelta(hours=1))
+        repo = PostgreSQLApprovalRequestRepository(db)
+        rows = await repo.list_for_tenant(two_tenants[0].id)
+        assert len(rows) == 1
+        assert rows[0].expires_at > rows[0].created_at
+
+
+class TestMalformedRowHandling:
+    """Issue #239: corrupt persisted rows degrade to a controlled error."""
+
+    def _row(self, **overrides):
+        now = datetime.now(timezone.utc)
+        row = {
+            "id": "appr-malformed-1",
+            "tenant_id": "tenant-1",
+            "requester_user_id": "user-1",
+            "tool_name": "restart_service",
+            "tool_version": "1",
+            "risk_level": "high",
+            "input_summary": '{"target": "svc"}',
+            "arguments_digest": "f" * 64,
+            "status": "pending",
+            "created_at": now,
+            "expires_at": now + timedelta(hours=24),
+            "decided_at": None,
+            "decided_by_user_id": None,
+            "consumed_at": None,
+        }
+        row.update(overrides)
+        return row
+
+    def test_inverted_expiry_raises_controlled_error(self):
+        from arc.db.connection import CorruptDataError
+
+        now = datetime.now(timezone.utc)
+        row = self._row(created_at=now, expires_at=now - timedelta(hours=1))
+        with pytest.raises(CorruptDataError) as exc_info:
+            PostgreSQLApprovalRequestRepository._from_row(row)
+        assert "appr-malformed-1" in str(exc_info.value)
+
+    def test_equal_expiry_raises_controlled_error(self):
+        from arc.db.connection import CorruptDataError
+
+        now = datetime.now(timezone.utc)
+        row = self._row(created_at=now, expires_at=now)
+        with pytest.raises(CorruptDataError):
+            PostgreSQLApprovalRequestRepository._from_row(row)
+
+    def test_valid_row_still_constructs_request(self):
+        request = PostgreSQLApprovalRequestRepository._from_row(self._row())
+        assert request.id == "appr-malformed-1"
+        assert request.status == ApprovalStatus.PENDING

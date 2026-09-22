@@ -17,6 +17,7 @@ OpenRouter provider is one concrete implementation.
 """
 
 import json
+import logging
 import os
 import random
 import re
@@ -26,6 +27,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 class LlmError(Exception):
@@ -369,6 +372,16 @@ class OpenRouterProvider:
         backoff. Permanent failures (401, 403, other 4xx) and application
         errors fail immediately.
 
+        Observability (#235): every scheduled retry logs attempt number,
+        error kind and delay at INFO; exhaustion logs once at WARNING.
+        Log records carry safe metadata only (attempt counts, error kind,
+        delay, provider name) — never prompts, responses, credentials, or
+        raw exception text.  ``error_kind`` names the existing
+        except-branch classification: ``retryable_error`` (429/5xx/empty
+        choices via ``LlmRetryableError``), ``timeout``
+        (``httpx.TimeoutException``), ``transport_error``
+        (``httpx.HTTPError``).
+
         Failed attempts that carry provider usage data (e.g. HTTP 200 with
         empty choices) have their usage snapshotted into the
         request-scoped ``_current_llm_failed_usage`` ContextVar so
@@ -398,6 +411,8 @@ class OpenRouterProvider:
         owned_client = self._client is None
         client = self._client or httpx.Client(timeout=self._timeout)
         last_error: Optional[Exception] = None
+        last_error_kind: Optional[str] = None
+        max_attempts = 1 + self._max_retries
         _current_llm_failed_usage.set(None)
         try:
             for attempt in range(1 + self._max_retries):
@@ -407,11 +422,22 @@ class OpenRouterProvider:
                     raise
                 except LlmRetryableError as exc:
                     last_error = exc
+                    last_error_kind = "retryable_error"
                     self._capture_failed_usage()
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
                             self._base_delay * (2**attempt) + random.uniform(0, self._base_delay),
+                        )
+                        logger.info(
+                            "LLM retry scheduled",
+                            extra={
+                                "provider": "openrouter",
+                                "attempt": attempt + 1,
+                                "max_attempts": max_attempts,
+                                "error_kind": last_error_kind,
+                                "delay_seconds": delay,
+                            },
                         )
                         time.sleep(delay)
                         continue
@@ -419,24 +445,55 @@ class OpenRouterProvider:
                     raise
                 except httpx.TimeoutException as exc:
                     last_error = LlmRetryableError(f"OpenRouter request timed out: {exc}")
+                    last_error_kind = "timeout"
                     self._capture_failed_usage()
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
                             self._base_delay * (2**attempt) + random.uniform(0, self._base_delay),
+                        )
+                        logger.info(
+                            "LLM retry scheduled",
+                            extra={
+                                "provider": "openrouter",
+                                "attempt": attempt + 1,
+                                "max_attempts": max_attempts,
+                                "error_kind": last_error_kind,
+                                "delay_seconds": delay,
+                            },
                         )
                         time.sleep(delay)
                         continue
                 except httpx.HTTPError as exc:
                     last_error = LlmRetryableError(f"OpenRouter HTTP error: {exc}")
+                    last_error_kind = "transport_error"
                     self._capture_failed_usage()
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
                             self._base_delay * (2**attempt) + random.uniform(0, self._base_delay),
                         )
+                        logger.info(
+                            "LLM retry scheduled",
+                            extra={
+                                "provider": "openrouter",
+                                "attempt": attempt + 1,
+                                "max_attempts": max_attempts,
+                                "error_kind": last_error_kind,
+                                "delay_seconds": delay,
+                            },
+                        )
                         time.sleep(delay)
                         continue
+            logger.warning(
+                "LLM retries exhausted",
+                extra={
+                    "provider": "openrouter",
+                    "attempts": max_attempts,
+                    "max_attempts": max_attempts,
+                    "error_kind": last_error_kind,
+                },
+            )
             raise last_error  # type: ignore[misc]
         finally:
             if owned_client:

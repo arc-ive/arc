@@ -9,16 +9,22 @@ import { Badge } from '../../components/ui/Badge.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
+import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryState.js'
 
 export function WebhooksPage() {
   const { tenantId } = useTenant()
   const { isDemo } = useAuth()
 
-  const { data: events, isLoading, error } = useQuery({
+  const eventsQuery = useQuery({
     queryKey: queryKeys.webhookEvents(tenantId),
     queryFn: () => listWebhookEvents(tenantId),
     enabled: !isDemo && Boolean(tenantId),
   })
+  const events = eventsQuery.data
+  const isLoading = isQueryLoading(eventsQuery)
+  // Issue #225: a failed-and-parked query is a failure, not loading.
+  const failed = isQueryFailed(eventsQuery)
+  const error = eventsQuery.error
 
   return (
     <div className="flex flex-col gap-6">
@@ -35,9 +41,15 @@ export function WebhooksPage() {
       </section>
 
       {isLoading && <Spinner />}
-      {error && <ErrorState error={error} />}
+      {failed && (
+        <ErrorState
+          error={error}
+          message={error ? undefined : STALLED_MESSAGE}
+          onRetry={() => eventsQuery.refetch()}
+        />
+      )}
 
-      {!isLoading && !error && (!events || events.length === 0) && (
+      {!isLoading && !failed && (!events || events.length === 0) && (
         <EmptyState
           icon={Webhook}
           title="No webhook events"
@@ -45,7 +57,7 @@ export function WebhooksPage() {
         />
       )}
 
-      {!isLoading && !error && events && events.length > 0 && (
+      {!isLoading && !failed && events && events.length > 0 && (
         <Card>
           <CardHeader
             title="Recent Events"
