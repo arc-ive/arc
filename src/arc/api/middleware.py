@@ -9,21 +9,26 @@ Responsibilities (Observability-owned correlation infrastructure):
 3. Measure request duration with a monotonic clock.
 4. Record a metadata-only ``ApiRequestRecord`` AFTER the response.
 
-Tenant attribution is SUCCESS-GATED PATH-PARAM LABELING (approved L1):
-a request is labelled with a tenant ONLY when it matched a tenant route
-AND completed with status < 400. This is telemetry bookkeeping — it must
-NEVER establish tenant identity or authorization; failed, unauthorized,
-malformed, and public requests are recorded with tenant_id = NULL.
+Tenant attribution is SUCCESS-GATED LABELING (approved L1):
+a request is labelled with a tenant ONLY when it completed with
+status < 400 and carries a tenant ID — first the ``tenant_id`` path
+parameter, then the ``tenant_id`` query parameter (some tenant-scoped
+routes such as ``GET /skills`` bind the tenant through the query
+string). This is telemetry bookkeeping — it must NEVER establish
+tenant identity or authorization; failed, unauthorized, malformed,
+and public requests are recorded with tenant_id = NULL.
 
 Telemetry writes are BEST-EFFORT: any failure is dropped by the
 observability service without ever failing the served business response.
-Route templates are normalized (never raw paths or query strings).
+Route templates are normalized (never raw paths or query strings);
+requests outside the route table share the single ``unrouted`` label.
 """
 
 import logging
 import time
 import uuid
 from typing import Callable, Optional
+from urllib.parse import parse_qsl
 
 from arc.api.correlation import request_id_var
 from arc.domain.models import ApiRequestRecord
@@ -31,10 +36,31 @@ from arc.domain.models import ApiRequestRecord
 logger = logging.getLogger("arc.http")
 
 
+def _query_tenant_id(query_string) -> Optional[str]:
+    """First non-empty ``tenant_id`` query value, else None.
+
+    Only this one explicitly supported key is ever read: no other query
+    parameter can become a telemetry dimension, and the raw query string
+    itself is never stored or logged.
+    """
+    if isinstance(query_string, (bytes, bytearray)):
+        # latin-1 never raises, so a hostile query string degrades to no
+        # attribution instead of breaking telemetry recording entirely.
+        raw = bytes(query_string).decode("latin-1")
+    elif isinstance(query_string, str):
+        raw = query_string
+    else:
+        return None
+    for key, value in parse_qsl(raw):
+        if key == "tenant_id" and value:
+            return value
+    return None
+
+
 class RequestTelemetryMiddleware:
     """Pure-ASGI middleware: correlate, measure, then record best-effort."""
 
-    UNMATCHED_ROUTE_TEMPLATE = "unmatched"
+    UNMATCHED_ROUTE_TEMPLATE = "unrouted"
 
     def __init__(self, app, service_provider: Callable[[], Optional[object]]):
         self.app = app
@@ -83,6 +109,8 @@ class RequestTelemetryMiddleware:
         error_kind: Optional[str] = None
         if status_code < 400:
             candidate = (scope.get("path_params") or {}).get("tenant_id")
+            if not (isinstance(candidate, str) and candidate):
+                candidate = _query_tenant_id(scope.get("query_string", b""))
             if isinstance(candidate, str) and candidate:
                 tenant_id = candidate
         else:
