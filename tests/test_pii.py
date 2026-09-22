@@ -472,6 +472,125 @@ class TestPiiIntegration:
         assert "#" in result.sanitized_text
 
 
+class TestSsnSampleDetection:
+    """SSN sample/placeholder detection (#167, #215).
+
+    Presidio's built-in UsSsnRecognizer deliberately rejects canonical
+    sample SSNs (123-45-6789, 987-65-4320, 078-05-1120).  Arc's custom
+    _ArcSsnRecognizer closes this gap while preserving structural
+    validation (area/group/serial zeros, all-same-digit rejection).
+    """
+
+    @pytest.fixture(scope="class")
+    def service(self):
+        require_model()
+        return PiiGuardService()
+
+    def test_canonical_sample_123_45_6789_is_redacted(self, service) -> None:
+        """#167 acceptance criteria: 123-45-6789 must be detected."""
+        result = service.sanitize("SSN: 123-45-6789")
+        assert "123-45-6789" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_canonical_sample_987_65_4320_is_redacted(self, service) -> None:
+        result = service.sanitize("SSN: 987-65-4320")
+        assert "987-65-4320" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_canonical_sample_078_05_1120_is_redacted(self, service) -> None:
+        result = service.sanitize("SSN: 078-05-1120")
+        assert "078-05-1120" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_canonical_sample_bare_123456789_is_redacted(self, service) -> None:
+        """#167 acceptance criteria: bare 9-digit SSNs must be detected."""
+        result = service.sanitize("SSN: 123456789")
+        assert "123456789" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_canonical_sample_bare_987654320_is_redacted(self, service) -> None:
+        result = service.sanitize("SSN: 987654320")
+        assert "987654320" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_ssn_with_context_is_redacted(self, service) -> None:
+        """#215 runtime evidence: context sentence must be redacted."""
+        result = service.sanitize("His social security number is 123-45-6789.")
+        assert "123-45-6789" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_bare_ssn_with_context_sentence_is_redacted(self, service) -> None:
+        """#215 AC2: bare 9 digits with SSN context must be redacted."""
+        result = service.sanitize("His social security number is 123456789.")
+        assert "123456789" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_bare_nine_digit_order_reference_not_redacted(self, service) -> None:
+        """#215 AC4: bare 9 digits without SSN context must NOT be redacted."""
+        result = service.sanitize("Order reference 123456789 shipped today.")
+        assert result.sanitized_text == "Order reference 123456789 shipped today."
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_bare_nine_digits_without_context_not_redacted(self, service) -> None:
+        """A lone 9-digit run carries no SSN context and must NOT be redacted."""
+        result = service.sanitize("123456789")
+        assert result.sanitized_text == "123456789"
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_us_ssn_with_default_config_still_works(self, service) -> None:
+        """Existing test value must not regress."""
+        result = service.sanitize("SSN: 111-22-3333")
+        assert "111-22-3333" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_area_000_not_caught(self, service) -> None:
+        """Structural validation: area number 000 is invalid."""
+        result = PiiGuardService(config=PiiGuardConfig(enabled_categories={"US_SSN"})).sanitize(
+            "000-12-3456"
+        )
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_area_666_not_caught(self, service) -> None:
+        """Structural validation: area number 666 is never issued."""
+        result = PiiGuardService(config=PiiGuardConfig(enabled_categories={"US_SSN"})).sanitize(
+            "666-12-3456"
+        )
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_group_00_not_caught(self, service) -> None:
+        """Structural validation: group number 00 is invalid."""
+        result = PiiGuardService(config=PiiGuardConfig(enabled_categories={"US_SSN"})).sanitize(
+            "123-00-6789"
+        )
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_serial_0000_not_caught(self, service) -> None:
+        """Structural validation: serial number 0000 is invalid."""
+        result = PiiGuardService(config=PiiGuardConfig(enabled_categories={"US_SSN"})).sanitize(
+            "123-45-0000"
+        )
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_all_same_digit_not_caught(self, service) -> None:
+        """Structural validation: all same digit is invalid."""
+        result = PiiGuardService(config=PiiGuardConfig(enabled_categories={"US_SSN"})).sanitize(
+            "111111111"
+        )
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_email_not_affected(self, service) -> None:
+        """SSN detection does not regress email detection."""
+        result = service.sanitize("Contact alice@example.com")
+        assert "alice@example.com" not in result.sanitized_text
+        assert "EMAIL_ADDRESS" in {d.entity_type for d in result.detections}
+
+    def test_multiple_ssn_in_text(self, service) -> None:
+        """Multiple SSNs in one text are all redacted."""
+        result = service.sanitize("SSNs: 123-45-6789 and 987-65-4320")
+        assert "123-45-6789" not in result.sanitized_text
+        assert "987-65-4320" not in result.sanitized_text
+
+
 class TestCredentialDetection:
     """Credential/secret detection (V2-ADR-025, issue #209)."""
 
