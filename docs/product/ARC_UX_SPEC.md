@@ -40,7 +40,7 @@ It must not invent backend capabilities, create fake functionality, expand V2 sc
 
 All roles use the same Arc product. Permissions determine navigation visibility, available actions and data access.
 
-Do not create completely separate visual products for Employee, Admin, Operations and Viewer.
+Do not create completely separate visual products for employee, company administrator, and operations user application roles. (Tenant membership roles — OWNER, MEMBER, VIEWER — are a separate authorization concept, not application personas.)
 
 ## 2. Primary Workspace Experience
 

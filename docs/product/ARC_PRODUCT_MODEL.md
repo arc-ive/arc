@@ -124,13 +124,23 @@ Remains separate from company workspace.
 
 ## 5. Role Model
 
-Existing V2 roles remain the source of truth:
+Existing V2 roles remain the source of truth. The authoritative
+application roles (`ApplicationRole`) are:
 
-- Platform Administrator
-- Company Administrator
-- Operations User
-- Employee
-- Viewer
+- platform_administrator
+- company_administrator
+- operations_user
+- employee
+- webhook_processor
+
+`webhook_processor` is a synthetic, non-interactive service role for
+webhook-triggered downstream execution — not a human persona, so the
+frontend redesign must not present it as one.
+
+Tenant membership roles (`OWNER`, `MEMBER`, `VIEWER`) are a separate
+authorization concept. The two role systems are intentionally
+independent with no mapping between them, and they must not be merged:
+"Viewer" is a tenant membership role, never an application role.
 
 These are permission/persona configurations within one coherent product, not five separate applications.
 
