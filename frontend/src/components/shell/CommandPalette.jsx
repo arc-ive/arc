@@ -5,7 +5,7 @@ import { Search, CornerDownLeft } from 'lucide-react'
 import { cn } from '../../lib/cn.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { useCapabilities } from '../../auth/capabilities.js'
-import { personalNav, platformNav, tenantNavForCapabilities } from './navigation.js'
+import { personalNav, platformNav, tenantRoutesForCapabilities } from './navigation.js'
 
 /**
  * Rendered only while open (AppShell conditionally mounts it), so all
@@ -33,7 +33,7 @@ export function CommandPalette({ onClose }) {
     if (tenantId) {
       push(
         'Tenant',
-        tenantNavForCapabilities(can).map((item) => ({
+        tenantRoutesForCapabilities(can).map((item) => ({
           ...item,
           to: `/app/t/${encodeURIComponent(tenantId)}/${item.to}`,
         })),

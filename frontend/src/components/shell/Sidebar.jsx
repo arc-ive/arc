@@ -26,16 +26,49 @@ function NavItem({ to, label, icon: Icon, onNavigate }) {
     >
       {({ isActive }) => (
         <>
-          <Icon
+          {Icon && <Icon
             className={cn(
               'size-4 shrink-0 transition-colors duration-150',
               isActive ? 'text-indigo-400' : 'text-fg-muted group-hover:text-zinc-400',
             )}
-          />
+          />}
           {label}
         </>
       )}
     </NavLink>
+  )
+}
+
+
+/**
+ * One of the five product areas, with its sub-navigation.
+ *
+ * The area heading is not itself a link: an area is a grouping, not a
+ * destination, and making it navigable would mean inventing a landing page
+ * for it. The children are the destinations.
+ *
+ * The left rule is what carries the grouping visually — it costs less than
+ * a card or a border box and stays legible at this density.
+ */
+function NavArea({ area, tenantPrefix, onNavigate }) {
+  const Icon = area.icon
+  return (
+    <div className="mt-1 first:mt-0">
+      <p className="flex items-center gap-2.5 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+        {Icon && <Icon className="size-3.5 shrink-0" aria-hidden />}
+        {area.label}
+      </p>
+      <div className="ml-[18px] flex flex-col gap-0.5 border-l border-line pl-2.5">
+        {area.children.map((child) => (
+          <NavItem
+            key={child.to}
+            to={`${tenantPrefix}/${child.to}`}
+            label={child.label}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -104,17 +137,26 @@ export function Sidebar({ mobile = false, onNavigate }) {
         ) : null}
 
         {showWorkspace && (
-          <NavGroup title="Workspace">
-            {tenantNav.map((item) => (
-              <NavItem
-                key={item.to}
-                to={`${tenantPrefix}/${item.to}`}
-                label={item.label}
-                icon={item.icon}
-                onNavigate={onNavigate}
-              />
-            ))}
-          </NavGroup>
+          <div className="flex flex-col gap-0.5">
+            {tenantNav.map((area) =>
+              area.children ? (
+                <NavArea
+                  key={area.id}
+                  area={area}
+                  tenantPrefix={tenantPrefix}
+                  onNavigate={onNavigate}
+                />
+              ) : (
+                <NavItem
+                  key={area.id ?? area.to}
+                  to={`${tenantPrefix}/${area.to}`}
+                  label={area.label}
+                  icon={area.icon}
+                  onNavigate={onNavigate}
+                />
+              ),
+            )}
+          </div>
         )}
 
         {!isEmployee && (

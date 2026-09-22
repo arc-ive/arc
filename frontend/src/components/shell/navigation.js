@@ -2,21 +2,14 @@ import {
   LayoutDashboard,
   Building2,
   Users,
-  Plug,
-  Bot,
   Activity,
   BookOpen,
-  Globe,
-  UserCog,
+  Gauge,
   Workflow,
   Home,
   UserCircle2,
-  BarChart3,
   Settings,
   Sparkles,
-  Webhook,
-  Wrench,
-  ShieldCheck,
 } from 'lucide-react'
 import { PERMISSIONS } from '../../auth/permissions.js'
 
@@ -68,21 +61,86 @@ export const platformNav = [
  * configuration surface, and read-only configuration a user cannot change
  * is not a job anyone has.
  */
-const TENANT_NAV = [
-  { to: 'ask', label: 'Ask Arc', icon: Sparkles, permission: PERMISSIONS.KNOWLEDGE_READ },
-  { to: 'overview', label: 'Overview', icon: Globe, permission: PERMISSIONS.TENANT_READ },
-  { to: 'company', label: 'Company', icon: Building2, permission: PERMISSIONS.TENANT_READ },
-  { to: 'knowledge', label: 'Company Brain', icon: BookOpen, permission: PERMISSIONS.KNOWLEDGE_READ },
-  { to: 'skills', label: 'Skills', icon: Workflow, permission: PERMISSIONS.SKILL_READ },
-  { to: 'agents', label: 'Agents', icon: Bot, permission: PERMISSIONS.AGENT_EXECUTE },
-  { to: 'tools', label: 'Tools', icon: Wrench, permission: PERMISSIONS.TOOL_READ },
-  { to: 'connectors', label: 'Connectors', icon: Plug, permission: PERMISSIONS.CONNECTOR_READ },
-  { to: 'webhooks', label: 'Webhooks', icon: Webhook, permission: PERMISSIONS.WEBHOOK_READ },
-  { to: 'users', label: 'Users', icon: UserCog, permission: PERMISSIONS.TENANT_READ },
-  { to: 'observability', label: 'Observability', icon: Activity, permission: PERMISSIONS.OBSERVABILITY_READ },
-  { to: 'approvals', label: 'Approvals', icon: ShieldCheck, permission: PERMISSIONS.APPROVAL_READ },
-  { to: 'usage', label: 'Usage', icon: BarChart3, permission: PERMISSIONS.OBSERVABILITY_READ },
-  { to: 'settings', label: 'Settings', icon: Settings, permission: PERMISSIONS.TENANT_UPDATE },
+/**
+ * The five product areas from ARC_UX_SPEC.md §8.
+ *
+ * Fourteen flat items became five areas with sub-navigation. §8 asks for
+ * primary navigation to be "intentionally small", with detailed
+ * capabilities in sub-navigation; ARC_PRODUCT_MODEL.md §4 adds that a
+ * backend endpoint does not automatically deserve a top-level slot.
+ *
+ * Grouping only — no route was renamed. The URLs are stable, so nothing
+ * that links to them breaks and no redirect table is needed. Where a
+ * surface belongs is an information-architecture question; what its path
+ * string is, is not.
+ *
+ * Two items are gone rather than regrouped:
+ *
+ *   Company   Its data is duplicated by Overview (name, id, status, member
+ *             and document counts) and its editable fields live in
+ *             Settings — the page said so itself, twice. A page that tells
+ *             you to go elsewhere for the real version is not earning a
+ *             navigation slot.
+ *
+ *   Tools     PRD §13: "Tools are platform-owned executable capabilities."
+ *             The tenant API is GET ~/tools and POST ~/tools/{name}/execute
+ *             — no create, update or delete. There is nothing for a tenant
+ *             administrator to manage, so §3's "expose tool management only
+ *             where an actual workflow requires it" resolves to: not as a
+ *             top-level area. The route stays reachable; PR-6 moves it
+ *             inside a skill's allowed-tools configuration.
+ *
+ * An area renders only if the user can reach at least one thing inside it,
+ * and an area with exactly one visible child renders as a single item
+ * rather than a group of one.
+ */
+const AREAS = [
+  {
+    id: 'ask',
+    label: 'Ask Arc',
+    icon: Sparkles,
+    to: 'ask',
+    permission: PERMISSIONS.KNOWLEDGE_READ,
+  },
+  {
+    id: 'brain',
+    label: 'Company Brain',
+    icon: BookOpen,
+    children: [
+      { to: 'knowledge', label: 'Knowledge', permission: PERMISSIONS.KNOWLEDGE_READ },
+      { to: 'connectors', label: 'Sources', permission: PERMISSIONS.CONNECTOR_READ },
+    ],
+  },
+  {
+    id: 'workflows',
+    label: 'AI Workflows',
+    icon: Workflow,
+    children: [
+      { to: 'skills', label: 'Skills', permission: PERMISSIONS.SKILL_READ },
+      { to: 'agents', label: 'Agents', permission: PERMISSIONS.AGENT_EXECUTE },
+    ],
+  },
+  {
+    id: 'operations',
+    label: 'Operations',
+    icon: Gauge,
+    children: [
+      { to: 'approvals', label: 'Approvals', permission: PERMISSIONS.APPROVAL_READ },
+      { to: 'webhooks', label: 'Activity', permission: PERMISSIONS.WEBHOOK_READ },
+      { to: 'usage', label: 'Usage', permission: PERMISSIONS.OBSERVABILITY_READ },
+      { to: 'observability', label: 'Health', permission: PERMISSIONS.OBSERVABILITY_READ },
+    ],
+  },
+  {
+    id: 'admin',
+    label: 'Administration',
+    icon: Settings,
+    children: [
+      { to: 'users', label: 'People', permission: PERMISSIONS.TENANT_READ },
+      { to: 'overview', label: 'Workspace', permission: PERMISSIONS.TENANT_READ },
+      { to: 'settings', label: 'Settings', permission: PERMISSIONS.TENANT_UPDATE },
+    ],
+  },
 ]
 
 /** Self-scoped landing page for members without workspace-level read access. */
@@ -99,12 +157,49 @@ const HOME_ITEM = { to: 'home', label: 'Home', icon: Home }
 export function tenantNavForCapabilities(can) {
   if (typeof can !== 'function') return []
 
-  const items = TENANT_NAV.filter((item) => can(item.permission))
+  const areas = []
+  for (const area of AREAS) {
+    if (area.children) {
+      const children = area.children.filter((c) => can(c.permission))
+      if (children.length === 0) continue
+      // A group of one is just an item wearing a group's clothes. When it
+      // collapses, keep the AREA label if the survivor is the area's primary
+      // child — "Company Brain" is the product concept a user should learn,
+      // and "Knowledge" is a worse name for the same destination. If a
+      // later child is the survivor, its own label is the specific one
+      // ("Agents" beats "AI Workflows" when agents are all you can reach).
+      if (children.length === 1) {
+        const [only] = children
+        const isPrimary = only.to === area.children[0].to
+        areas.push({
+          ...area,
+          to: only.to,
+          label: isPrimary ? area.label : only.label,
+          children: undefined,
+        })
+      } else {
+        areas.push({ ...area, children })
+      }
+    } else if (can(area.permission)) {
+      areas.push(area)
+    }
+  }
 
   // Home is the landing page for a member who cannot read the workspace
   // itself — today that is the Employee. Anyone with TENANT_READ lands on
-  // Overview instead, so offering both would be two names for one job.
-  return can(PERMISSIONS.TENANT_READ) ? items : [HOME_ITEM, ...items]
+  // Workspace instead, so offering both would be two names for one job.
+  return can(PERMISSIONS.TENANT_READ)
+    ? areas
+    : [{ ...HOME_ITEM, id: 'home' }, ...areas]
+}
+
+/** Flat list of every reachable route, for the command palette. */
+export function tenantRoutesForCapabilities(can) {
+  return tenantNavForCapabilities(can).flatMap((area) =>
+    area.children
+      ? area.children.map((c) => ({ ...c, icon: area.icon }))
+      : [area],
+  )
 }
 
 /** Landing route within a tenant for the authenticated user. */

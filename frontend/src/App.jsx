@@ -11,7 +11,6 @@ import { WorkspaceDispatch } from './pages/workspace/WorkspaceDispatch.jsx'
 import { ProfilePage } from './pages/profile/ProfilePage.jsx'
 import { TenantLayout } from './pages/tenant/TenantLayout.jsx'
 import { TenantOverviewPage } from './pages/tenant/TenantOverviewPage.jsx'
-import { TenantCompanyPage } from './pages/tenant/TenantCompanyPage.jsx'
 import { TenantUsagePage } from './pages/tenant/TenantUsagePage.jsx'
 import { TenantSettingsPage } from './pages/tenant/TenantSettingsPage.jsx'
 import { ConnectorsPage } from './pages/connectors/ConnectorsPage.jsx'
@@ -145,7 +144,7 @@ export default function App() {
 
             <Route element={<RequirePermission permission={PERMISSIONS.TENANT_READ} />}>
               <Route path="overview" element={<TenantOverviewPage />} />
-              <Route path="company" element={<TenantCompanyPage />} />
+              <Route path="company" element={<RemovedTenantRedirect to="overview" />} />
               <Route path="users" element={<TenantUsersPage />} />
             </Route>
 

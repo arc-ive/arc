@@ -161,9 +161,22 @@ describe('Sidebar permission-derived navigation', () => {
   describe('operations user role', () => {
     it('shows the operational surfaces its permissions cover', () => {
       renderSidebar('operations_user')
-      const shown = ['Ask Arc', 'Overview', 'Company Brain', 'Skills', 'Agents', 'Tools', 'Connectors', 'Webhooks', 'Observability', 'Usage']
+      // Five areas now, with sub-navigation. Labels are the product's, not
+      // the backend service's: Sources rather than Connectors, Activity
+      // rather than Webhooks, Workspace rather than Overview.
+      const shown = ['Ask Arc', 'Company Brain', 'Knowledge', 'Sources',
+                     'AI Workflows', 'Skills', 'Agents',
+                     'Operations', 'Usage', 'Health',
+                     'Administration', 'People', 'Workspace']
       for (const label of shown) {
         expect(screen.getByText(label)).toBeInTheDocument()
+      }
+    })
+
+    it('groups its surfaces into areas rather than a flat list', () => {
+      renderSidebar('operations_user')
+      for (const area of ['Company Brain', 'AI Workflows', 'Operations', 'Administration']) {
+        expect(screen.getByText(area)).toBeInTheDocument()
       }
     })
 
@@ -189,21 +202,39 @@ describe('Sidebar permission-derived navigation', () => {
   })
 
   describe('company administrator role', () => {
-    it('shows every workspace surface', () => {
+    it('shows every workspace surface, grouped into five areas', () => {
       renderSidebar('company_administrator')
-      const shown = ['Ask Arc', 'Overview', 'Company', 'Company Brain', 'Skills', 'Agents', 'Tools', 'Connectors', 'Webhooks', 'Users', 'Observability', 'Approvals', 'Usage', 'Settings']
+      const shown = ['Ask Arc',
+                     'Company Brain', 'Knowledge', 'Sources',
+                     'AI Workflows', 'Skills', 'Agents',
+                     'Operations', 'Approvals', 'Activity', 'Usage', 'Health',
+                     'Administration', 'People', 'Workspace', 'Settings']
       for (const label of shown) {
         expect(screen.getByText(label)).toBeInTheDocument()
       }
     })
 
-    it('does not show removed non-functional surfaces', () => {
-      // PR-1: Operations, Incidents and Activity called no API and rendered
-      // internal build status (UX_SPEC §1).
+    it('no longer offers Company — it duplicated Overview and Settings', () => {
       renderSidebar('company_administrator')
-      expect(screen.queryByText('Operations')).not.toBeInTheDocument()
-      expect(screen.queryByText('Incidents')).not.toBeInTheDocument()
-      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
+      expect(workspaceRoutes()).not.toContain('company')
+    })
+
+    it('no longer offers Tools as a top-level area', () => {
+      // PRD §13: tools are platform-owned, and the tenant API has no
+      // create/update/delete. There is nothing to manage here.
+      renderSidebar('company_administrator')
+      expect(workspaceRoutes()).not.toContain('tools')
+    })
+
+    it('does not route to the removed non-functional surfaces', () => {
+      // PR-1 deleted the Operations, Incidents and Activity SHELL PAGES.
+      // "Operations" and "Activity" now exist as an area name and a nav
+      // label, so this asserts on routes rather than on words.
+      renderSidebar('company_administrator')
+      const routes = workspaceRoutes()
+      expect(routes).not.toContain('operations')
+      expect(routes).not.toContain('incidents')
+      expect(routes).not.toContain('activity')
     })
 
     it('does not show the Platform section', () => {
