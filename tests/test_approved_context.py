@@ -460,13 +460,16 @@ class TestRelevanceFloor:
 
     async def test_threshold_is_configurable(self):
         """Custom threshold filters differently than default."""
+        import os
+
+        os.environ.pop("MIN_RELEVANCE_SCORE", None)
         repo = FakeChunkRepository()
         match = _match(sequence=0, chunk_id="chunk-a", similarity=0.3)
         repo.search_results = [match]
         repo.lexical_search_results = []
         service = _service(repo)
 
-        # Default threshold (0.01): similarity=0.3 → included
+        # Default (0.0): similarity=0.3 → included
         contract_default = await service.approved_search(_context(), "query")
         assert len(contract_default.items) == 1
 
@@ -474,12 +477,30 @@ class TestRelevanceFloor:
         contract_high = await service.approved_search(_context(), "query", min_relevance_score=0.5)
         assert contract_high.items == []
 
-    async def test_default_threshold_is_001(self):
-        """Default threshold documents the boundary value."""
+    async def test_default_threshold_is_env_var_or_zero(self):
+        """Default threshold reads MIN_RELEVANCE_SCORE env var, fallback 0.0."""
         import inspect
+        import os
 
         sig = inspect.signature(RetrievalService.approved_search)
-        assert sig.parameters["min_relevance_score"].default == 0.01
+        assert sig.parameters["min_relevance_score"].default is None
+
+        # Without env var: falls back to 0.0 (no filtering)
+        os.environ.pop("MIN_RELEVANCE_SCORE", None)
+        repo = FakeChunkRepository()
+        repo.search_results = [_match(sequence=0, chunk_id="any", similarity=0.001)]
+        repo.lexical_search_results = []
+        service = _service(repo)
+        contract = await service.approved_search(_context(), "query")
+        assert len(contract.items) == 1
+
+        # With env var set: uses that value
+        os.environ["MIN_RELEVANCE_SCORE"] = "0.5"
+        try:
+            contract2 = await service.approved_search(_context(), "query")
+            assert contract2.items == []
+        finally:
+            os.environ.pop("MIN_RELEVANCE_SCORE", None)
 
     async def test_filtered_items_carry_rrf_scores(self):
         """Remaining items have RRF fused scores, not raw cosine similarity."""
@@ -498,3 +519,97 @@ class TestRelevanceFloor:
         expected_lex_only = 1.0 / (60 + 2)
         assert abs(scores["shared-both"] - expected_shared) < 1e-9
         assert abs(scores["lex-only"] - expected_lex_only) < 1e-9
+
+    async def test_off_corpus_query_empty_contract(self):
+        """Off-corpus query with low similarity returns empty items.
+
+        Simulates the scenario from #210: a query completely unrelated to
+        the corpus produces dense matches with low cosine similarity.
+        With a threshold above those scores, the contract is empty — the
+        caller's existing no-answer path handles this correctly.
+        """
+        import os
+
+        os.environ.pop("MIN_RELEVANCE_SCORE", None)
+        repo = FakeChunkRepository()
+        # Simulate off-corpus: low cosine similarity
+        repo.search_results = [
+            _match(sequence=0, chunk_id="off-1", similarity=0.08),
+            _match(sequence=1, chunk_id="off-2", similarity=0.06),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        # With threshold above off-corpus scores: empty contract
+        contract = await service.approved_search(
+            _context(),
+            "airspeed velocity of an unladen swallow",
+            min_relevance_score=0.15,
+        )
+        assert contract.items == []
+
+    async def test_on_corpus_query_nonempty_contract(self):
+        """On-corpus query with high similarity returns items."""
+        import os
+
+        os.environ.pop("MIN_RELEVANCE_SCORE", None)
+        repo = FakeChunkRepository()
+        # Simulate on-corpus: high cosine similarity
+        repo.search_results = [
+            _match(sequence=0, chunk_id="on-1", similarity=0.35),
+            _match(sequence=1, chunk_id="on-2", similarity=0.30),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        # Same threshold: on-corpus passes
+        contract = await service.approved_search(
+            _context(),
+            "how do I escalate a severity one incident?",
+            min_relevance_score=0.15,
+        )
+        assert len(contract.items) == 2
+
+    async def test_eval_boundary_separates_off_from_on(self):
+        """Threshold at 0.15 separates off-corpus from on-corpus.
+
+        Uses the similarity distribution Chinthan measured with the
+        deterministic provider:
+          OFF: 0.06–0.23
+          ON:  0.18–0.34
+
+        At 0.15, off-corpus items (≤0.23 but dense_only sim=0.08) are
+        excluded while on-corpus items (≥0.18) pass.  Note: the highest
+        off-corpus score (0.2268) overlaps the lowest on-corpus (0.1839)
+        in Chinthan's measurement — this test uses a simplified
+        distribution that demonstrates the mechanism.
+        """
+        import os
+
+        os.environ.pop("MIN_RELEVANCE_SCORE", None)
+        repo = FakeChunkRepository()
+
+        # Off-corpus: low dense similarity
+        repo.search_results = [
+            _match(sequence=0, chunk_id="off-low", similarity=0.08),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+        off_contract = await service.approved_search(
+            _context(),
+            "unrelated query",
+            min_relevance_score=0.15,
+        )
+        assert off_contract.items == []
+
+        # On-corpus: high dense similarity
+        repo.search_results = [
+            _match(sequence=0, chunk_id="on-high", similarity=0.30),
+        ]
+        repo.lexical_search_results = []
+        on_contract = await service.approved_search(
+            _context(),
+            "related query",
+            min_relevance_score=0.15,
+        )
+        assert len(on_contract.items) == 1
