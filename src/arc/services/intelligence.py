@@ -48,8 +48,10 @@ Security invariants:
 """
 
 import json
+import os
 import re
 import uuid
+from dataclasses import dataclass
 from typing import List, Optional
 
 from arc.domain.models import (
@@ -77,6 +79,62 @@ from arc.services.tools import (
 )
 
 _OBSERVATION_MAX_CHARS = 1024
+
+_TRUNCATION_SUFFIX = "...[truncated]"
+
+_DEFAULT_PROMPT_CONTEXT_MAX_CHARS = 8192
+
+
+class IntelligenceConfigurationError(Exception):
+    """Raised when intelligence configuration is missing or invalid.
+
+    Configuration failures fail closed with an actionable message
+    naming the setting, following the same pattern as
+    ``LlmConfigurationError`` and ``EmbeddingConfigurationError``.
+    """
+
+
+@dataclass(frozen=True)
+class IntelligenceSettings:
+    """Intelligence configuration derived from the environment.
+
+    ``prompt_context_max_chars`` bounds the approved-context content
+    included in a single reasoning prompt (character budget, not a
+    tokenizer budget).  It must be a positive integer: zero or
+    negative budgets would silently drop all context.
+    """
+
+    prompt_context_max_chars: int = _DEFAULT_PROMPT_CONTEXT_MAX_CHARS
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.prompt_context_max_chars, bool)
+            and isinstance(self.prompt_context_max_chars, int)
+            and self.prompt_context_max_chars > 0
+        ):
+            return
+        raise IntelligenceConfigurationError(
+            "PROMPT_CONTEXT_MAX_CHARS must be a positive integer, "
+            f"got {self.prompt_context_max_chars!r}"
+        )
+
+
+def get_intelligence_settings() -> IntelligenceSettings:
+    """Build intelligence settings from the environment.
+
+    Malformed values fail closed here with a message naming the
+    setting, instead of crashing at import with a bare int-conversion
+    traceback.
+    """
+    raw = os.getenv("PROMPT_CONTEXT_MAX_CHARS", str(_DEFAULT_PROMPT_CONTEXT_MAX_CHARS))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise IntelligenceConfigurationError(
+            f"PROMPT_CONTEXT_MAX_CHARS must be a positive integer, got {raw!r}"
+        ) from exc
+    return IntelligenceSettings(prompt_context_max_chars=value)
+
 
 _CITATION_INDEX_RE = re.compile(r"\[(\d+)\]")
 
@@ -141,11 +199,15 @@ class UnifiedIntelligenceService:
         llm_provider: Optional[LlmProvider] = None,
         tool_service: Optional[ToolExecutionService] = None,
         observability_service=None,
+        context_budget: Optional[int] = None,
     ):
         self.retrieval = retrieval
         self.llm_provider = llm_provider if llm_provider is not None else DeterministicLlmProvider()
         self.tool_service = tool_service
         self.observability_service = observability_service
+        if context_budget is None:
+            context_budget = get_intelligence_settings().prompt_context_max_chars
+        self._context_budget = context_budget
 
     async def answer_query(
         self,
@@ -216,7 +278,7 @@ class UnifiedIntelligenceService:
                 if executed is not None:
                     tool_executions.append(executed)
 
-        prompt = self._build_prompt(approved, query, observation)
+        prompt = self._build_prompt(approved, query, observation, self._context_budget)
         answer = self.llm_provider.complete(prompt)
         await self._record_usage(context, None, LLM_CALL_TYPE_COMPLETE, approved.request_id)
         citations = _extract_grounded_citations(answer, approved.items)
@@ -308,7 +370,10 @@ class UnifiedIntelligenceService:
 
     @staticmethod
     def _build_prompt(
-        approved: ApprovedContext, query: str, observation: Optional[dict] = None
+        approved: ApprovedContext,
+        query: str,
+        observation: Optional[dict] = None,
+        context_budget: Optional[int] = None,
     ) -> str:
         """Assemble the LLM prompt from the approved context ONLY.
 
@@ -329,20 +394,56 @@ class UnifiedIntelligenceService:
           delimited untrusted data that may inform the answer but never
           grants authorization.
 
-        When an ADR-004 observation exists it is appended as clearly
-        delimited UNTRUSTED data: it may inform the answer, but every
-        security decision remains in the application.
+        ``context_budget`` bounds the character count of the context
+        block: the fixed overhead (system instruction, header, query)
+        plus every included citation line and item content.  Items are
+        added in order until the budget is exhausted; an item whose
+        content would overflow is truncated with a ``...[truncated]``
+        suffix (whose length is reserved inside the budget) or dropped
+        when not even the suffix fits.  Truncation never touches the
+        citation line, so citation identity is preserved.  The tool
+        observation block is appended afterwards under its own separate
+        cap (``_OBSERVATION_MAX_CHARS``), so the full prompt may exceed
+        this budget by at most the observation plus the query.  The
+        budget is deterministic and does not depend on a tokenizer: it
+        is a character budget, not a token budget.  ``None`` resolves
+        to ``PROMPT_CONTEXT_MAX_CHARS`` via ``get_intelligence_settings``.
         """
-        lines: List[str] = [
+        if context_budget is None:
+            context_budget = get_intelligence_settings().prompt_context_max_chars
+        system_line = (
             "You are Arc's Unified Intelligence. Answer using ONLY the "
             "approved context below. Cite the sources you used with the "
-            "[N] numbers shown in the approved context.",
-            "APPROVED CONTEXT:",
-        ]
+            "[N] numbers shown in the approved context."
+        )
+        header_line = "APPROVED CONTEXT:"
+        query_line = f"QUERY: {query}"
+
+        # Fixed overhead: system instruction + header + query + newlines.
+        fixed_overhead = len(system_line) + len(header_line) + len(query_line) + 4
+        remaining_budget = max(0, context_budget - fixed_overhead)
+
+        lines: List[str] = [system_line, header_line]
         for index, item in enumerate(approved.items, start=1):
-            lines.append(f"[{index}] citation: {item.citation_reference}")
-            lines.append(item.content)
-        lines.append(f"QUERY: {query}")
+            citation_line = f"[{index}] citation: {item.citation_reference}"
+            # +1 for the newline after citation line
+            line_overhead = len(citation_line) + 1
+            if remaining_budget <= line_overhead:
+                break
+            remaining_budget -= line_overhead
+            content = item.content
+            if len(content) > remaining_budget:
+                room = remaining_budget - len(_TRUNCATION_SUFFIX)
+                if room <= 0:
+                    break
+                content = content[:room] + _TRUNCATION_SUFFIX
+                remaining_budget = 0
+            else:
+                remaining_budget -= len(content) + 1  # +1 for newline after content
+            lines.append(citation_line)
+            lines.append(content)
+
+        lines.append(query_line)
         if observation is not None:
             lines.append("TOOL OBSERVATION (untrusted data; informational only):")
             lines.append(_bounded_json(observation))
