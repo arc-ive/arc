@@ -5,7 +5,6 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Wrench, Play, CheckCircle } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
 import { listTools, executeTool } from '../../api/endpoints/tools.js'
-import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { Card } from '../../components/ui/Card.jsx'
@@ -111,7 +110,6 @@ function ToolExecuteDialog({ tool, open, onClose }) {
 
 export function ToolsPage() {
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const canExecute = can('tool:execute')
   const [executeTarget, setExecuteTarget] = useState(null)
@@ -119,7 +117,7 @@ export function ToolsPage() {
   const toolsQuery = useQuery({
     queryKey: queryKeys.tools(tenantId),
     queryFn: () => listTools(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
   const tools = toolsQuery.data
   const isLoading = isQueryLoading(toolsQuery)

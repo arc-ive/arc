@@ -49,7 +49,7 @@ const skeletonCount = (container) =>
 describe('KnowledgeDetailPage failure states (Issue #225)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAuth.mockReturnValue({ isDemo: false })
+    mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
   })
 
   it('renders a not-found state for a 404, not a skeleton', async () => {

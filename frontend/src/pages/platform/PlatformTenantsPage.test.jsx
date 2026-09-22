@@ -8,7 +8,6 @@ import { PlatformTenantsPage } from './PlatformTenantsPage.jsx'
 vi.mock('../../auth/useAuth.js', () => ({
   useAuth: () => ({
     principal: { sub: 'demo-user', roles: ['platform_administrator'] },
-    isDemo: false,
   }),
 }))
 

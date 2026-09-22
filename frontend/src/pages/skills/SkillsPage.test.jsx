@@ -89,7 +89,6 @@ describe('SkillsPage — execution controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUseAuth.mockReturnValue({
-      isDemo: false,
       user: { user_id: 'test-user', role: 'platform_administrator', permissions: ['skill:execute'] },
     })
     mockUseTenant.mockReturnValue({ tenantId: 't-123' })
@@ -285,14 +284,11 @@ describe('SkillsPage — execution controls', () => {
     expect(await screen.findByText('Request body must be an object')).toBeInTheDocument()
   })
 
-  it('does not show Execute button in demo mode (no skills loaded)', async () => {
-    mockUseAuth.mockReturnValue({
-      isDemo: true,
-      user: null,
-    })
-
+  it('shows the empty state when the tenant has no skills', async () => {
+    // Replaces a demo-mode test. Demo Mode is gone (PR-2 decision D4); the
+    // behaviour worth pinning is the genuine empty state.
+    mockListSkills.mockResolvedValueOnce([])
     renderWithProviders(<SkillsPage view="list" />)
-
     expect(await screen.findByText('No skills yet')).toBeInTheDocument()
     expect(screen.queryByTitle('Execute skill')).not.toBeInTheDocument()
   })
@@ -658,7 +654,6 @@ describe('SkillsPage — edit flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUseAuth.mockReturnValue({
-      isDemo: false,
       user: { user_id: 'test-user', role: 'platform_administrator', permissions: ['skill:update'] },
     })
     mockUseTenant.mockReturnValue({ tenantId: 't-123' })
@@ -786,7 +781,6 @@ describe('SkillsPage — delete controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUseAuth.mockReturnValue({
-      isDemo: false,
       user: { user_id: 'test-user', role: 'platform_administrator', permissions: ['skill:delete'] },
     })
     mockUseTenant.mockReturnValue({ tenantId: 't-123' })

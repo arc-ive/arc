@@ -33,7 +33,7 @@ vi.mock('../../api/errors.js', () => ({
 }))
 
 vi.mock('../../auth/useAuth.js', () => ({
-  useAuth: () => ({ isDemo: false, principal: { sub: 'user-1' } }),
+  useAuth: () => ({ principal: { sub: 'user-1' } }),
 }))
 
 vi.mock('../../auth/capabilities.js', () => ({

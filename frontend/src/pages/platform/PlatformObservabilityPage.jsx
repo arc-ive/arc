@@ -1,40 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
-import { useAuth } from '../../auth/useAuth.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { getPlatformObservabilitySummary, getComponentHealth } from '../../api/endpoints/observability.js'
 import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
-import { EmptyState } from '../../components/ui/EmptyState.jsx'
-import { FlaskConical } from 'lucide-react'
 
 function ComponentHealth() {
-  const { isDemo } = useAuth()
 
   const healthQuery = useQuery({
     queryKey: queryKeys.healthComponents(),
     queryFn: getComponentHealth,
     refetchInterval: 30000,
-    enabled: !isDemo,
     retry: 2,
   })
-
-  if (isDemo) {
-    return (
-      <Card>
-        <CardHeader title="Component Health" description="Status of platform components." />
-        <CardContent>
-          <EmptyState
-            icon={FlaskConical}
-            title="Demo Mode"
-            description="Component health checks require a backend session. Sign in with a real JWT to view live component status."
-          />
-        </CardContent>
-      </Card>
-    )
-  }
 
   if (healthQuery.isLoading) return <Spinner />
   if (healthQuery.error) return <ErrorState error={healthQuery.error} onRetry={() => healthQuery.refetch()} />
@@ -65,30 +45,13 @@ function ComponentHealth() {
 }
 
 function PlatformSummary() {
-  const { isDemo } = useAuth()
 
   const summaryQuery = useQuery({
     queryKey: queryKeys.observabilityPlatform(),
     queryFn: getPlatformObservabilitySummary,
-    enabled: !isDemo,
     retry: 2,
     refetchOnWindowFocus: true,
   })
-
-  if (isDemo) {
-    return (
-      <Card>
-        <CardHeader title="Platform Summary" description="Aggregate platform metrics (tenant-agnostic)." />
-        <CardContent>
-          <EmptyState
-            icon={FlaskConical}
-            title="Demo Mode"
-            description="Platform metrics require a backend session. Sign in with a real JWT to view operational telemetry."
-          />
-        </CardContent>
-      </Card>
-    )
-  }
 
   if (summaryQuery.isLoading) return <Spinner />
   if (summaryQuery.error) return <ErrorState error={summaryQuery.error} onRetry={() => summaryQuery.refetch()} />

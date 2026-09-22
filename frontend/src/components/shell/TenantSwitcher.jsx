@@ -9,12 +9,12 @@ import { getUserTenants } from '../../api/endpoints/tenants.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { useDismissable } from '../../lib/useDismissable.js'
 import { cn } from '../../lib/cn.js'
-import { tenantLandingForRole } from './navigation.js'
+import { tenantLandingForCapabilities } from './navigation.js'
 
 export function TenantSwitcher() {
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
   const { tenantId, setTenantId } = useTenant()
-  const { role } = useCapabilities()
+  const { can } = useCapabilities()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -24,7 +24,7 @@ export function TenantSwitcher() {
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -33,7 +33,7 @@ export function TenantSwitcher() {
   const select = (tenant) => {
     setTenantId(tenant.id)
     setOpen(false)
-    const landing = tenantLandingForRole(role)
+    const landing = tenantLandingForCapabilities(can)
     navigate(`/app/t/${encodeURIComponent(tenant.id)}/${landing}`)
   }
 
@@ -51,7 +51,7 @@ export function TenantSwitcher() {
       >
         <Building2 className="size-4 shrink-0 text-fg-muted" />
         <span className="truncate text-[13px] font-medium text-zinc-200">
-          {isDemo ? 'Demo Mode' : (current?.name ?? 'Select tenant')}
+          {current?.name ?? 'Select workspace'}
         </span>
         <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-fg-muted" />
       </button>
@@ -66,23 +66,18 @@ export function TenantSwitcher() {
             Your tenants
           </p>
           <div className="max-h-64 overflow-y-auto p-1">
-            {isDemo && (
-              <p className="px-3 py-2.5 text-[13px] text-fg-muted">
-                Demo Mode — no tenant data
-              </p>
-            )}
-            {!isDemo && userTenants.isPending && (
+                        {userTenants.isPending && (
               <div className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-fg-muted">
                 <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
                 Loading…
               </div>
             )}
-            {!isDemo && userTenants.isError && (
+            {userTenants.isError && (
               <p className="px-3 py-2.5 text-[13px] text-red-400">
                 Could not load tenants
               </p>
             )}
-            {!isDemo &&
+            {
               userTenants.data?.map((tenant) => (
                 <button
                   key={tenant.id}
@@ -105,7 +100,7 @@ export function TenantSwitcher() {
                   )}
                 </button>
               ))}
-            {!isDemo &&
+            {
               !userTenants.isPending &&
               !userTenants.isError &&
               !userTenants.data?.length && (

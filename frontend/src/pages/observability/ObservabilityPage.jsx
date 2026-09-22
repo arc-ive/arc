@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
-import { useAuth } from '../../auth/useAuth.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { getTenantUsageSummary } from '../../api/endpoints/observability.js'
@@ -11,12 +10,11 @@ import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryS
 
 export function ObservabilityPage() {
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
 
   const usageQuery = useQuery({
     queryKey: queryKeys.observabilityTenant(tenantId),
     queryFn: () => getTenantUsageSummary(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
   const usage = usageQuery.data
   const isLoading = isQueryLoading(usageQuery)

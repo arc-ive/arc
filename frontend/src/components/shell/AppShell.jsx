@@ -7,8 +7,6 @@ import { CommandPalette } from './CommandPalette.jsx'
 import { TenantSwitcher } from './TenantSwitcher.jsx'
 import { UserMenu } from './UserMenu.jsx'
 import { IconButton } from '../ui/IconButton.jsx'
-import { Badge } from '../ui/Badge.jsx'
-import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { cn } from '../../lib/cn.js'
 
@@ -23,7 +21,6 @@ function Kbd({ children }) {
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const { isDemo } = useAuth()
   const { isPlatformAdministrator } = useCapabilities()
   const location = useLocation()
 
@@ -84,11 +81,6 @@ export function AppShell() {
           <Breadcrumbs />
 
           <div className="ml-auto flex items-center gap-2.5">
-            {isDemo && (
-              <Badge variant="info" dot className="hidden sm:inline-flex">
-                Demo
-              </Badge>
-            )}
             {showTenantSwitcher && <TenantSwitcher />}
             <button
               type="button"

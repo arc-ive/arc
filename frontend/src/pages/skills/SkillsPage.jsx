@@ -6,7 +6,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Edit, Play, Plus, Trash2, Workflow, AlertTriangle, CheckCircle2, XCircle, ShieldAlert, Ban, Clock } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
 import { listSkills, getSkill, createSkill, updateSkill, deleteSkill, executeSkill } from '../../api/endpoints/skills.js'
-import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { Badge } from '../../components/ui/Badge.jsx'
@@ -481,7 +480,6 @@ function EditSkillDialog({ open, skill, onClose }) {
 function SkillList() {
   const queryClient = useQueryClient()
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const canCreate = can('skill:create')
   const canUpdate = can('skill:update')
@@ -494,7 +492,7 @@ function SkillList() {
   const { data: skills, isLoading, error } = useQuery({
     queryKey: queryKeys.skills(tenantId),
     queryFn: () => listSkills(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const deleteMutation = useMutation({
@@ -626,14 +624,13 @@ function SkillList() {
 
 function SkillDetail({ skillId }) {
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const canUpdate = can('skill:update')
   const [editTarget, setEditTarget] = useState(null)
   const { data: skill, isLoading, error } = useQuery({
     queryKey: queryKeys.skill(tenantId, skillId),
     queryFn: () => getSkill(tenantId, skillId),
-    enabled: !isDemo && Boolean(tenantId && skillId),
+    enabled: Boolean(tenantId && skillId),
   })
 
   if (isLoading) return <Spinner />

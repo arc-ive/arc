@@ -4,7 +4,6 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Building2, Plus } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { createTenant, getPlatformTenants } from '../../api/endpoints/tenants.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -102,7 +101,6 @@ function CreateTenantDialog({ open, onClose }) {
 }
 
 export function PlatformTenantsPage() {
-  const { isDemo } = useAuth()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
   const handleCloseCreate = useCallback(() => setCreateOpen(false), [])
@@ -110,7 +108,6 @@ export function PlatformTenantsPage() {
   const userTenants = useQuery({
     queryKey: queryKeys.platformTenants,
     queryFn: () => getPlatformTenants(),
-    enabled: !isDemo,
     staleTime: 30 * 1000,
   })
 
@@ -121,23 +118,13 @@ export function PlatformTenantsPage() {
           <PageHeader title="Tenants"
           description="Platform-level tenant administration. Tenant boundaries are       enforced by the backend." />
         </div>
-        <Button variant="secondary" onClick={() => setCreateOpen(true)} disabled={isDemo}>
+        <Button variant="secondary" onClick={() => setCreateOpen(true)}>
           <Plus className="size-4" />
           New tenant
         </Button>
       </section>
 
-      {isDemo && (
-        <Card>
-          <EmptyState
-            icon={Building2}
-            title="Demo Mode — backend data unavailable"
-            description="No tenant data is fetched in Demo Mode. Sign in with a real session to load tenants."
-          />
-        </Card>
-      )}
-
-      {!isDemo && userTenants.isPending && (
+      {userTenants.isPending && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }, (_, i) => (
             <SkeletonCard key={i} />
@@ -145,7 +132,7 @@ export function PlatformTenantsPage() {
         </div>
       )}
 
-      {!isDemo && userTenants.isError && (
+      {userTenants.isError && (
         <Card>
           <ErrorState
             title="Could not load tenants"
@@ -156,7 +143,7 @@ export function PlatformTenantsPage() {
         </Card>
       )}
 
-      {!isDemo && userTenants.data?.length === 0 && (
+      {userTenants.data?.length === 0 && (
         <Card>
           <EmptyState
             icon={Building2}
@@ -172,7 +159,7 @@ export function PlatformTenantsPage() {
         </Card>
       )}
 
-      {!isDemo && userTenants.data?.length > 0 && (
+      {userTenants.data?.length > 0 && (
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {userTenants.data.map((tenant) => (
             <Card

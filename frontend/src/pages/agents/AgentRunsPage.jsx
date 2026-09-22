@@ -3,7 +3,6 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { CheckCircle2, Clock, ShieldAlert, XCircle } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { getAgentRun, listAgentRuns, runAgent } from '../../api/endpoints/agent.js'
 import { queryKeys } from '../../api/queryKeys.js'
@@ -143,7 +142,6 @@ function RunCard({ run, tenantId, canReadHistory }) {
 
 export function AgentRunsPage() {
   const { tenantId } = useParams()
-  const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const queryClient = useQueryClient()
   const [goal, setGoal] = useState('')
@@ -154,7 +152,7 @@ export function AgentRunsPage() {
   const runsQuery = useQuery({
     queryKey: queryKeys.agentRuns(tenantId, RUN_LIMIT),
     queryFn: () => listAgentRuns(tenantId, { limit: RUN_LIMIT }),
-    enabled: !isDemo && canReadHistory && Boolean(tenantId),
+    enabled: canReadHistory && Boolean(tenantId),
   })
 
   const startMutation = useMutation({
@@ -183,17 +181,7 @@ export function AgentRunsPage() {
         </div>
       </section>
 
-      {isDemo && (
-        <Card>
-          <CardContent>
-            <p className="text-[13px] text-fg-muted">
-              Demo Mode — agent runs require a backend session.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {!isDemo && canExecute && (
+      {canExecute && (
         <Card>
           <CardContent>
             <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
@@ -244,7 +232,7 @@ export function AgentRunsPage() {
         </Card>
       )}
 
-      {!isDemo && !canExecute && (
+      {!canExecute && (
         <Card>
           <CardContent>
             <p className="text-[13px] text-fg-muted">
@@ -254,7 +242,7 @@ export function AgentRunsPage() {
         </Card>
       )}
 
-      {!isDemo && !canReadHistory && (
+      {!canReadHistory && (
         <Card>
           <CardContent>
             <p className="text-[13px] text-fg-muted">
@@ -264,7 +252,7 @@ export function AgentRunsPage() {
         </Card>
       )}
 
-      {!isDemo && canReadHistory && (
+      {canReadHistory && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold text-zinc-200">Recent runs</h2>
 

@@ -9,7 +9,6 @@ import {
   createConnector,
   syncConnector,
 } from '../../api/endpoints/connectors.js'
-import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { Card } from '../../components/ui/Card.jsx'
@@ -122,7 +121,6 @@ function CreateConnectorDialog({ open, onClose }) {
 
 export function ConnectorsPage() {
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
   const queryClient = useQueryClient()
   const { can } = useCapabilities()
   const canCreate = can('connector:create')
@@ -132,7 +130,7 @@ export function ConnectorsPage() {
   const { data: connectors, isLoading, error } = useQuery({
     queryKey: queryKeys.connectors(tenantId),
     queryFn: () => listConnectors(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const syncMutation = useMutation({

@@ -2,7 +2,6 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { ArrowLeft, BookOpen, FileText, SearchX, Edit, Save, X, Loader2 } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { getKnowledgeDocument, updateKnowledge } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -20,7 +19,6 @@ import { Select } from '../../components/ui/Select.jsx'
 
 export function KnowledgeDetailPage() {
   const { tenantId, documentId } = useParams()
-  const { isDemo } = useAuth()
   const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
@@ -33,7 +31,7 @@ export function KnowledgeDetailPage() {
   const documentQuery = useQuery({
     queryKey: queryKeys.knowledgeDocument(tenantId, documentId),
     queryFn: () => getKnowledgeDocument(tenantId, documentId),
-    enabled: !isDemo && Boolean(tenantId && documentId),
+    enabled: Boolean(tenantId && documentId),
   })
 
   const updateMutation = useMutation({

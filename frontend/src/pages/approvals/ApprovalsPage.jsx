@@ -3,7 +3,6 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { listApprovals, decideApproval } from '../../api/endpoints/approvals.js'
 import { queryKeys } from '../../api/queryKeys.js'
@@ -85,7 +84,6 @@ function ApprovalCard({ approval, onDecide }) {
 
 export function ApprovalsPage() {
   const { tenantId } = useParams()
-  const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState(null)
@@ -96,7 +94,7 @@ export function ApprovalsPage() {
   const { data: approvals, isPending, isError, error } = useQuery({
     queryKey: queryKeys.approvalsList(tenantId, statusFilter),
     queryFn: () => listApprovals(tenantId, { status: statusFilter }),
-    enabled: !isDemo && Boolean(tenantId) && canRead,
+    enabled: Boolean(tenantId) && canRead,
   })
 
   const decideMutation = useMutation({
@@ -109,25 +107,6 @@ export function ApprovalsPage() {
 
   const handleDecide = (approvalId, decision) => {
     decideMutation.mutate({ approvalId, decision })
-  }
-
-  if (isDemo) {
-    return (
-      <div className="flex flex-col gap-8">
-        <section>
-          <PageHeader title="Approvals"
-          description="Human Intervention approval requests." />
-        </section>
-        <Card>
-          <CardContent>
-            <p className="text-[13px] text-fg-muted">
-              Demo Mode — approval data requires a backend session.
-              Sign in with a real JWT to view approvals.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
   }
 
   if (!canRead) {

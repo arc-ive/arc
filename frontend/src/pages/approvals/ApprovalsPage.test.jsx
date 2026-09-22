@@ -74,7 +74,7 @@ const MOCK_APPROVALS = [
 describe('ApprovalsPage status filter', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAuth.mockReturnValue({ isDemo: false })
+    mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
     mockCan.mockReturnValue(true)
     // Filtering is server-side: the mock honours the status argument the
     // same way the API does, so a stale cache entry is observable.

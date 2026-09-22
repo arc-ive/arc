@@ -5,9 +5,8 @@ import { useCapabilities } from '../../auth/capabilities.js'
 import {
   personalNav,
   platformNav,
-  tenantNavForRole,
+  tenantNavForCapabilities,
 } from './navigation.js'
-import { APPLICATION_ROLES } from '../../auth/useMe.js'
 
 function NavItem({ to, label, icon: Icon, onNavigate }) {
   return (
@@ -67,18 +66,30 @@ function Brand() {
 }
 
 /**
- * Persona-aware sidebar.
+ * Capability-aware sidebar.
  *
- * The sidebar is capability-aware: the platform console is offered only to
- * platform administrators, and the tenant workspace adapts to the user's
- * tenant persona. This is UX only — the backend enforces every operation.
+ * Two independent decisions:
+ *
+ *  - The platform console is offered only to platform administrators.
+ *  - Workspace navigation is offered only to an actual MEMBER of the tenant
+ *    in scope, and lists only the surfaces that member's permissions cover.
+ *
+ * Membership rather than role is what gates the workspace section, per
+ * V2-ADR-003: platform administration and tenant workspace administration
+ * remain distinct, and holding every permission is not membership. A
+ * platform administrator with no membership previously received all
+ * fifteen workspace items, every one of which dead-ended on the
+ * "not a member" state.
+ *
+ * This is UX only — the backend enforces every operation.
  */
 export function Sidebar({ mobile = false, onNavigate }) {
   const { tenantId } = useTenant()
-  const { role, isPlatformAdministrator, isDemo } = useCapabilities()
+  const { can, isMemberOf, isPlatformAdministrator, isEmployee } = useCapabilities()
 
   const tenantPrefix = tenantId ? `/app/t/${encodeURIComponent(tenantId)}` : null
-  const tenantNav = tenantNavForRole(role)
+  const tenantNav = tenantNavForCapabilities(can)
+  const showWorkspace = Boolean(tenantPrefix) && isMemberOf(tenantId) && tenantNav.length > 0
 
   return (
     <nav
@@ -90,7 +101,7 @@ export function Sidebar({ mobile = false, onNavigate }) {
     >
       <Brand />
       <div className="flex flex-1 flex-col gap-6">
-        {isPlatformAdministrator || isDemo ? (
+        {isPlatformAdministrator ? (
           <NavGroup title="Platform">
             {platformNav.map((item) => (
               <NavItem key={item.to} {...item} onNavigate={onNavigate} />
@@ -98,8 +109,8 @@ export function Sidebar({ mobile = false, onNavigate }) {
           </NavGroup>
         ) : null}
 
-        {tenantPrefix && (
-          <NavGroup title={isPlatformAdministrator ? 'Workspace' : 'Tenant'}>
+        {showWorkspace && (
+          <NavGroup title="Workspace">
             {tenantNav.map((item) => (
               <NavItem
                 key={item.to}
@@ -112,7 +123,7 @@ export function Sidebar({ mobile = false, onNavigate }) {
           </NavGroup>
         )}
 
-        {role !== APPLICATION_ROLES.EMPLOYEE && (
+        {!isEmployee && (
           <NavGroup title="Personal">
             {personalNav.map((item) => (
               <NavItem key={item.to} {...item} onNavigate={onNavigate} />

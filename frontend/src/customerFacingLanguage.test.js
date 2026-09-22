@@ -76,8 +76,14 @@ describe('customer-facing language (ARC_UX_SPEC §1)', () => {
   }
 
   it('never renders a raw permission identifier to a customer', () => {
+    // auth/permissions.js is the one place these strings are allowed to
+    // exist: it is the catalogue that lets every other file name a
+    // permission by constant instead of repeating the literal. Excluding it
+    // is what makes the rest of the codebase checkable.
+    const CATALOGUE = 'auth/permissions.js'
     const offenders = []
     for (const file of files) {
+      if (file.endsWith(CATALOGUE)) continue
       const body = strippedOfComments(readFileSync(file, 'utf8'))
       for (const line of body.split('\n')) {
         // Permission checks in code are correct and expected; only copy is in scope.

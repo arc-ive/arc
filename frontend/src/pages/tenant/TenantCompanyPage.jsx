@@ -17,25 +17,25 @@ import { formatDate } from '../../lib/format.js'
 
 export function TenantCompanyPage() {
   const { tenantId } = useParams()
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
   const users = useQuery({
     queryKey: queryKeys.tenantUsers(tenantId),
     queryFn: () => getTenantUsers(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const knowledge = useQuery({
     queryKey: queryKeys.knowledge(tenantId),
     queryFn: () => getKnowledge(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
     staleTime: 30 * 1000,
   })
 

@@ -4,7 +4,6 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, FilePlus2, Info } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { createKnowledge, KNOWLEDGE_SOURCES } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -19,7 +18,6 @@ export function NewKnowledgePage() {
   const { tenantId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { isDemo } = useAuth()
 
   const [form, setForm] = useState({
     source: 'policy',
@@ -169,7 +167,6 @@ export function NewKnowledgePage() {
                 type="submit"
                 isLoading={mutation.isPending}
                 loadingText="Creating…"
-                disabled={isDemo}
               >
                 <FilePlus2 className="size-4" />
                 Create document

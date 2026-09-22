@@ -1,7 +1,8 @@
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { RequireAuth } from './auth/RequireAuth.jsx'
 import { RequirePlatformAdmin } from './auth/RequirePlatformAdmin.jsx'
-import { RequireWorkspaceRole } from './auth/RequireWorkspaceRole.jsx'
+import { RequirePermission } from './auth/RequirePermission.jsx'
+import { PERMISSIONS } from './auth/permissions.js'
 import { useAuth } from './auth/useAuth.js'
 import { useCapabilities } from './auth/capabilities.js'
 import { AppShell } from './components/shell/AppShell.jsx'
@@ -31,7 +32,7 @@ import { PlatformTenantDetailPage } from './pages/platform/PlatformTenantDetailP
 import { PlatformUsersPage } from './pages/platform/PlatformUsersPage.jsx'
 import { PlatformObservabilityPage } from './pages/platform/PlatformObservabilityPage.jsx'
 import { NotFoundPage } from './pages/NotFoundPage.jsx'
-import { tenantLandingForRole } from './components/shell/navigation.js'
+import { tenantLandingForCapabilities } from './components/shell/navigation.js'
 import { AgentRunsPage } from './pages/agents/AgentRunsPage.jsx'
 
 /**
@@ -55,9 +56,9 @@ function RootRedirect() {
 
 function TenantLandingRedirect() {
   const { tenantId } = useParams()
-  const { role } = useCapabilities()
+  const { can } = useCapabilities()
   if (!tenantId) return <Navigate to="/app" replace />
-  const landing = tenantLandingForRole(role)
+  const landing = tenantLandingForCapabilities(can)
   return <Navigate to={`/app/t/${encodeURIComponent(tenantId)}/${landing}`} replace />
 }
 
@@ -124,34 +125,67 @@ export default function App() {
           <Route path="t/:tenantId" element={<TenantLayout />}>
             <Route index element={<TenantLandingRedirect />} />
             <Route path="home" element={<EmployeeHomePage />} />
-            <Route path="ask" element={<AskArcPage />} />
 
-            {/* Workspace admin routes — blocked for employees (UX guard).
-                Backend RBAC remains authoritative on every API call. */}
-            <Route
-              element={
-                <RequireWorkspaceRole>
-                  <Outlet />
-                </RequireWorkspaceRole>
-              }
-            >
+            {/* Every workspace route is gated on the permission its own
+                controller declares via `require_tenant_permission(...)`,
+                not on a role. The previous single `isEmployee` gate both
+                failed open while the profile loaded and stood in for
+                fourteen distinct permissions at once. */}
+            <Route element={<RequirePermission permission={PERMISSIONS.KNOWLEDGE_READ} />}>
+              {/* POST ~/intelligence/query requires KNOWLEDGE_READ, not
+                  AGENT_EXECUTE — Ask Arc is gated on what it actually calls. */}
+              <Route path="ask" element={<AskArcPage />} />
+              <Route path="knowledge" element={<CompanyBrainPage />} />
+              <Route path="knowledge/:documentId" element={<KnowledgeDetailPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.KNOWLEDGE_CREATE} />}>
+              <Route path="knowledge/new" element={<NewKnowledgePage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.TENANT_READ} />}>
               <Route path="overview" element={<TenantOverviewPage />} />
               <Route path="company" element={<TenantCompanyPage />} />
-              <Route path="knowledge" element={<CompanyBrainPage />} />
-              <Route path="knowledge/new" element={<NewKnowledgePage />} />
-              <Route path="knowledge/:documentId" element={<KnowledgeDetailPage />} />
-              <Route path="skills" element={<SkillsPage view="list" />} />
-              <Route path="skills/new" element={<SkillsPage view="new" />} />
-              <Route path="skills/:skillId" element={<SkillsPage view="detail" />} />
-              <Route path="tools" element={<ToolsPage />} />
-              <Route path="connectors" element={<ConnectorsPage />} />
-              <Route path="webhooks" element={<WebhooksPage />} />
               <Route path="users" element={<TenantUsersPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.TENANT_UPDATE} />}>
+              <Route path="settings" element={<TenantSettingsPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.SKILL_READ} />}>
+              <Route path="skills" element={<SkillsPage view="list" />} />
+              <Route path="skills/:skillId" element={<SkillsPage view="detail" />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.SKILL_CREATE} />}>
+              <Route path="skills/new" element={<SkillsPage view="new" />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.AGENT_EXECUTE} />}>
+              <Route path="agents" element={<AgentRunsPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.TOOL_READ} />}>
+              <Route path="tools" element={<ToolsPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.CONNECTOR_READ} />}>
+              <Route path="connectors" element={<ConnectorsPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.WEBHOOK_READ} />}>
+              <Route path="webhooks" element={<WebhooksPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.OBSERVABILITY_READ} />}>
               <Route path="observability" element={<ObservabilityPage />} />
               <Route path="usage" element={<TenantUsagePage />} />
-              <Route path="settings" element={<TenantSettingsPage />} />
+            </Route>
+
+            <Route element={<RequirePermission permission={PERMISSIONS.APPROVAL_READ} />}>
               <Route path="approvals" element={<ApprovalsPage />} />
-              <Route path="agents" element={<AgentRunsPage />} />
+            </Route>
 
               {/* Removed tenant surfaces (V2-ADR-021, PRD §24, UX_SPEC §1).
                   Operations, Incidents and Activity were shells that called
@@ -183,7 +217,6 @@ export default function App() {
                 path="company-brain/:documentId"
                 element={<LegacyBrainDocumentRedirect />}
               />
-            </Route>
           </Route>
         </Route>
 
