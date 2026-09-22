@@ -874,3 +874,157 @@ class TestLimitBounds:
         contract = await service.approved_search(_context(), "query", limit=5)
 
         assert contract.items == []
+
+
+class TestSupersessionDedup:
+    """Superseded lineage versions never compete with current ones (#219).
+
+    Lineage is ``(tenant_id, external_id, source)`` (ADR-003).  The
+    winning ``document_version`` per lineage is determined first, then
+    ALL chunks of that version are kept; RRF input order is preserved.
+    """
+
+    def _vchunk(
+        self,
+        chunk_id,
+        version,
+        sequence=0,
+        external_id="ext-1",
+        tenant_id="tenant-1",
+        dense=0.9,
+    ):
+        return _match(
+            chunk_id=chunk_id,
+            document_id=f"doc-v{version}",
+            tenant_id=tenant_id,
+            sequence=sequence,
+            similarity=dense,
+            dense_score=dense,
+            document_version=version,
+            external_id=external_id,
+        )
+
+    async def test_same_lineage_keeps_current_version_only(self):
+        """Old and new versions of one lineage: only v2 is retrievable."""
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            self._vchunk("old-chunk", version=1),
+            self._vchunk("new-chunk", version=2),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
+
+        assert [item.chunk_id for item in contract.items] == ["new-chunk"]
+        assert contract.items[0].citation_reference == "doc-v2#c0"
+
+    async def test_current_document_keeps_all_sibling_chunks(self):
+        """Three chunks of the current version must not evict each other."""
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            self._vchunk("c0", version=2, sequence=0),
+            self._vchunk("c1", version=2, sequence=1),
+            self._vchunk("c2", version=2, sequence=2),
+            self._vchunk("old", version=1, sequence=0),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
+
+        assert [item.chunk_id for item in contract.items] == ["c0", "c1", "c2"]
+
+    async def test_rank1_no_lineage_match_survives_limit(self):
+        """RRF order preserved: rank-1 entry without external_id stays
+        first and present after dedup + limit truncation."""
+        top = _match(
+            chunk_id="aaa-top",
+            document_id="doc-top",
+            sequence=0,
+            similarity=0.95,
+            dense_score=0.95,
+            external_id=None,
+        )
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            top,
+            self._vchunk("l-new", version=2),
+            self._vchunk("l-old", version=1),
+        ]
+        repo.lexical_search_results = [
+            _match(
+                chunk_id="aaa-top",
+                document_id="doc-top",
+                sequence=0,
+                similarity=0.9,
+                dense_score=None,
+                lexical_score=0.9,
+                external_id=None,
+            )
+        ]
+        service = _service(repo)
+
+        contract = await service.approved_search(
+            _context(), "policy", limit=2, min_relevance_score=0.0
+        )
+
+        assert [item.chunk_id for item in contract.items][0] == "aaa-top"
+        assert len(contract.items) == 2
+        assert "l-old" not in [item.chunk_id for item in contract.items]
+
+    async def test_different_external_ids_are_independent(self):
+        """Two lineages each keep their own current version."""
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            self._vchunk("a-old", version=1, external_id="ext-a"),
+            self._vchunk("a-new", version=2, external_id="ext-a"),
+            self._vchunk("b-old", version=1, external_id="ext-b"),
+            self._vchunk("b-new", version=3, external_id="ext-b"),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
+
+        assert sorted(item.chunk_id for item in contract.items) == ["a-new", "b-new"]
+
+    async def test_no_external_id_matches_pass_through(self):
+        """Documents without external_id are never deduplicated."""
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            _match(chunk_id="n1", similarity=0.9, dense_score=0.9, external_id=None),
+            _match(chunk_id="n2", similarity=0.8, dense_score=0.8, external_id=None),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
+
+        assert [item.chunk_id for item in contract.items] == ["n1", "n2"]
+
+    async def test_lineage_key_is_tenant_scoped(self):
+        """Same external_id in two tenants are distinct lineages (ADR-003)."""
+        from arc.services.retrieval import _dedup_by_lineage
+
+        matches = [
+            self._vchunk("a-v1", version=1, tenant_id="tenant-a"),
+            self._vchunk("b-v2", version=2, tenant_id="tenant-b"),
+        ]
+
+        assert [m.chunk_id for m in _dedup_by_lineage(matches)] == ["a-v1", "b-v2"]
+
+    async def test_floor_applies_to_lineage_winner(self):
+        """Dedup runs before the floor: a low-similarity current version
+        is filtered on its own merit, not replaced by an old version."""
+        repo = FakeChunkRepository()
+        repo.search_results = [
+            self._vchunk("old", version=1, dense=0.90),
+            self._vchunk("new", version=2, dense=0.10),
+        ]
+        repo.lexical_search_results = []
+        service = _service(repo)
+
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.50)
+
+        assert contract.items == []

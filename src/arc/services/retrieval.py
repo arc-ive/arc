@@ -137,6 +137,41 @@ class ReciprocalRankFusion:
         return result
 
 
+def _dedup_by_lineage(matches: List[KnowledgeMatch]) -> List[KnowledgeMatch]:
+    """Drop superseded chunks, keeping every chunk of the current version.
+
+    Documents sharing ``(tenant_id, external_id, source)`` are versions
+    of the same logical document (ADR-003).  The winning
+    ``document_version`` per lineage is determined first; then ALL
+    chunks belonging to that version are kept, so sibling chunks of the
+    current document (``sequence=0,1,2,...``) never evict each other.
+
+    Input order (RRF ranking) is preserved: the result is an in-place
+    filter, so the top-ranked match stays top-ranked and a later
+    ``[:limit]`` truncation cannot drop it.
+
+    Matches with ``external_id is None`` pass through unchanged; without
+    a lineage key we cannot determine which documents are related.
+    """
+    winning_version: Dict[tuple, int] = {}
+    for match in matches:
+        if match.external_id is None:
+            continue
+        key = (match.tenant_id, match.external_id, match.source)
+        if key not in winning_version or match.document_version > winning_version[key]:
+            winning_version[key] = match.document_version
+
+    kept = []
+    for match in matches:
+        if match.external_id is None:
+            kept.append(match)
+            continue
+        key = (match.tenant_id, match.external_id, match.source)
+        if match.document_version == winning_version[key]:
+            kept.append(match)
+    return kept
+
+
 class RetrievalService:
     """Domain service for tenant-scoped knowledge chunking and retrieval."""
 
@@ -305,6 +340,14 @@ class RetrievalService:
         When ``source_type`` is provided, only chunks belonging to
         documents of that source type are candidates.
 
+        **Supersession dedup** (issue #219): when multiple chunks belong
+        to documents sharing the same ``(tenant_id, external_id, source)``
+        lineage, only chunks from the highest ``document_version`` are
+        kept — every chunk of the current version, not just one.  This
+        prevents superseded and current versions of the same logical
+        document from appearing as competing sources.  Documents without
+        an ``external_id`` are not deduplicated against each other.
+
         Raises:
             ValueError: for an empty query or a non-positive limit.
             EmbeddingError: when the embedding provider fails; no
@@ -330,13 +373,15 @@ class RetrievalService:
             if match.tenant_id != context.tenant_id:
                 raise RuntimeError("Retrieval returned a match outside the trusted tenant")
 
+        deduped = _dedup_by_lineage(fused)
+
         def _passes_floor(match: KnowledgeMatch) -> bool:
             dense = match.dense_score
             if dense is None:
                 return True
             return dense >= min_relevance_score
 
-        filtered = [match for match in fused if _passes_floor(match)]
+        filtered = [match for match in deduped if _passes_floor(match)]
         filtered = filtered[:limit]
 
         items = [
