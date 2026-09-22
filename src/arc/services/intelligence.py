@@ -66,6 +66,7 @@ from arc.services.llm import (
     DeterministicLlmProvider,
     LlmProvider,
     ToolProposingLlm,
+    _current_llm_failed_usage,
     _current_llm_usage,
 )
 from arc.services.llm_pricing import build_llm_usage_record
@@ -266,9 +267,19 @@ class UnifiedIntelligenceService:
         observation = None
         tool_executions: List[dict] = []
         if self._tool_calling_enabled(principal, authorization):
-            raw_proposal = self.llm_provider.propose_tool(
-                query, [item.content for item in approved.items]
-            )
+            try:
+                raw_proposal = self.llm_provider.propose_tool(
+                    query, [item.content for item in approved.items]
+                )
+            except Exception:
+                await self._record_usage(
+                    context,
+                    None,
+                    LLM_CALL_TYPE_PROPOSE_TOOL,
+                    approved.request_id,
+                    succeeded=False,
+                )
+                raise
             await self._record_usage(context, None, LLM_CALL_TYPE_PROPOSE_TOOL, approved.request_id)
             proposal = ToolProposal.parse(raw_proposal)
             if proposal is not None:
@@ -279,7 +290,13 @@ class UnifiedIntelligenceService:
                     tool_executions.append(executed)
 
         prompt = self._build_prompt(approved, query, observation, self._context_budget)
-        answer = self.llm_provider.complete(prompt)
+        try:
+            answer = self.llm_provider.complete(prompt)
+        except Exception:
+            await self._record_usage(
+                context, None, LLM_CALL_TYPE_COMPLETE, approved.request_id, succeeded=False
+            )
+            raise
         await self._record_usage(context, None, LLM_CALL_TYPE_COMPLETE, approved.request_id)
         citations = _extract_grounded_citations(answer, approved.items)
 
@@ -295,21 +312,29 @@ class UnifiedIntelligenceService:
             tool_executions=tool_executions,
         )
 
-    async def _record_usage(self, context, agent_run_id, call_type, request_id=None) -> None:
+    async def _record_usage(
+        self, context, agent_run_id, call_type, request_id=None, succeeded=True
+    ) -> None:
         """Record LLM usage if usage data is available (best effort).
 
-        Reads from the ContextVar set by the provider after each call.
-        Deterministic provider with no usage report creates no record.
-        Persistence failure is logged and never raised (TRD 24).
+        Reads the request-scoped usage ContextVars set by the provider:
+        the latest attempt's report first, falling back to the
+        last failed attempt's snapshot (a later attempt may fail
+        without provider usage data).  Deterministic provider with no
+        usage report creates no record.  Persistence failure is logged
+        and never raised (TRD 24).
         """
         if self.observability_service is None:
             return
         usage = _current_llm_usage.get()
         if usage is None:
+            usage = _current_llm_failed_usage.get()
+        if usage is None:
             return
         record = build_llm_usage_record(
             usage,
             call_type=call_type,
+            succeeded=succeeded,
             tenant_id=context.tenant_id,
             request_id=request_id,
             agent_run_id=agent_run_id,

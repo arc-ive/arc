@@ -67,6 +67,7 @@ from arc.services.llm import (
     LlmError,
     LlmProvider,
     SkillSelectingLlm,
+    _current_llm_failed_usage,
     _current_llm_usage,
 )
 from arc.services.llm_pricing import build_llm_usage_record
@@ -203,6 +204,10 @@ class AgentExecutionService:
             try:
                 raw_decision = self.llm_provider.propose_skill(goal, snapshot)
             except (LlmError, LlmConfigurationError) as exc:
+                # Provider outage: record any billable usage for the failed
+                # call (#267), then follow the controlled-failure path with
+                # a persisted trace, never a raw 500 (#265).
+                await self._record_usage(context, run_id, succeeded=False)
                 # Provider outage: controlled failure with a persisted
                 # trace, never a raw 500 with no record of the attempt.
                 logger.warning(
@@ -380,21 +385,27 @@ class AgentExecutionService:
             and getattr(self.llm_provider, "skill_decision_capable", True)
         )
 
-    async def _record_usage(self, context, agent_run_id) -> None:
+    async def _record_usage(self, context, agent_run_id, succeeded=True) -> None:
         """Record LLM usage if usage data is available (best effort).
 
-        Reads from the ContextVar set by the provider after each call.
-        Deterministic provider with no usage report creates no record.
-        Persistence failure is logged and never raised (TRD 24).
+        Reads the request-scoped usage ContextVars set by the provider:
+        the latest attempt's report first, falling back to the
+        last failed attempt's snapshot (a later attempt may fail
+        without provider usage data).  Deterministic provider with no
+        usage report creates no record.  Persistence failure is logged
+        and never raised (TRD 24).
         """
         if self.observability_service is None:
             return
         usage = _current_llm_usage.get()
         if usage is None:
+            usage = _current_llm_failed_usage.get()
+        if usage is None:
             return
         record = build_llm_usage_record(
             usage,
             call_type=LLM_CALL_TYPE_PROPOSE_SKILL,
+            succeeded=succeeded,
             tenant_id=context.tenant_id,
             request_id=request_id_var.get(),
             agent_run_id=agent_run_id,

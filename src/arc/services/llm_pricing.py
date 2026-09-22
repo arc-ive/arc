@@ -111,6 +111,7 @@ def calculate_cost(
 def build_llm_usage_record(
     usage,
     call_type: str,
+    succeeded: bool = True,
     tenant_id: Optional[str] = None,
     request_id: Optional[str] = None,
     agent_run_id: Optional[str] = None,
@@ -132,6 +133,7 @@ def build_llm_usage_record(
         provider=usage.provider,
         model=usage.model,
         call_type=call_type,
+        succeeded=succeeded,
         tenant_id=tenant_id,
         request_id=request_id,
         agent_run_id=agent_run_id,
