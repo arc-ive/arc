@@ -519,6 +519,7 @@ class KnowledgeMatch:
     similarity: float
     dense_score: Optional[float] = None
     lexical_score: Optional[float] = None
+    external_id: Optional[str] = None
 
     def __post_init__(self):
         if not self.chunk_id:
