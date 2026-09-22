@@ -2,7 +2,7 @@
 
 Covers the Skills Engine execution endpoint:
 
-- POST /skills/{skill_id}/execute   (requires ``skill:execute``)
+- POST /tenants/{tenant_id}/skills/{skill_id}/execute   (requires ``skill:execute``)
 
 Every executed tool call is delegated to ``ToolExecutionService`` behind
 the scenes; these tests pin the HTTP contract: authentication, RBAC,

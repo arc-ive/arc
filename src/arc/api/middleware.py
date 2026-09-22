@@ -13,13 +13,13 @@ Tenant attribution is SUCCESS-GATED RESOLVED-CONTEXT LABELING (approved
 L1): a request is labelled with a tenant ONLY when it completed with
 status < 400 AND the application's tenant dependency resolved and
 authorized a tenant for this request (published to request state,
-covering both path- and query-bound tenant routes such as
-``GET /skills``). Raw client input — path parameters, query strings —
-is never trusted as the attribution source, so an unrelated endpoint
-cannot be attributed by merely adding ``?tenant_id=``. This is
-telemetry bookkeeping — it must NEVER establish tenant identity or
-authorization; failed, unauthorized, malformed, and public requests
-are recorded with tenant_id = NULL.
+covering path-bound tenant routes such as
+``GET /tenants/{tenant_id}/skills``). Raw client input — path
+parameters, query strings — is never trusted as the attribution
+source, so an unrelated endpoint cannot be attributed by merely adding
+``?tenant_id=``. This is telemetry bookkeeping — it must NEVER
+establish tenant identity or authorization; failed, unauthorized,
+malformed, and public requests are recorded with tenant_id = NULL.
 
 Telemetry writes are BEST-EFFORT: any failure is dropped by the
 observability service without ever failing the served business response.
