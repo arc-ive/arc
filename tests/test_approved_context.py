@@ -914,9 +914,7 @@ class TestSupersessionDedup:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "policy", min_relevance_score=0.0
-        )
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
 
         assert [item.chunk_id for item in contract.items] == ["new-chunk"]
         assert contract.items[0].citation_reference == "doc-v2#c0"
@@ -933,9 +931,7 @@ class TestSupersessionDedup:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "policy", min_relevance_score=0.0
-        )
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
 
         assert [item.chunk_id for item in contract.items] == ["c0", "c1", "c2"]
 
@@ -989,9 +985,7 @@ class TestSupersessionDedup:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "policy", min_relevance_score=0.0
-        )
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
 
         assert sorted(item.chunk_id for item in contract.items) == ["a-new", "b-new"]
 
@@ -1005,9 +999,7 @@ class TestSupersessionDedup:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "policy", min_relevance_score=0.0
-        )
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.0)
 
         assert [item.chunk_id for item in contract.items] == ["n1", "n2"]
 
@@ -1033,8 +1025,6 @@ class TestSupersessionDedup:
         repo.lexical_search_results = []
         service = _service(repo)
 
-        contract = await service.approved_search(
-            _context(), "policy", min_relevance_score=0.50
-        )
+        contract = await service.approved_search(_context(), "policy", min_relevance_score=0.50)
 
         assert contract.items == []

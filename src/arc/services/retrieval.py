@@ -161,12 +161,15 @@ def _dedup_by_lineage(matches: List[KnowledgeMatch]) -> List[KnowledgeMatch]:
         if key not in winning_version or match.document_version > winning_version[key]:
             winning_version[key] = match.document_version
 
-    return [
-        match
-        for match in matches
-        if match.external_id is None
-        or match.document_version == winning_version[(match.tenant_id, match.external_id, match.source)]
-    ]
+    kept = []
+    for match in matches:
+        if match.external_id is None:
+            kept.append(match)
+            continue
+        key = (match.tenant_id, match.external_id, match.source)
+        if match.document_version == winning_version[key]:
+            kept.append(match)
+    return kept
 
 
 class RetrievalService:
