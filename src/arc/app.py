@@ -54,6 +54,28 @@ from arc.services.webhook_pipeline import WebhookPipelineService
 logger = logging.getLogger(__name__)
 
 
+def build_credential_service(repositories) -> ConnectorCredentialService | None:
+    """Build the connector credential service or degrade loudly without a key.
+
+    Returns ``None`` when CONNECTOR_ENCRYPTION_KEY is missing or invalid:
+    DB credential management is then disabled (endpoints answer 503) and
+    only the ENV credential fallback remains. The degradation is logged
+    at WARNING so operators notice the missing capability.
+    """
+    try:
+        encryption_service = EncryptionService()
+    except EncryptionError:
+        logger.warning(
+            "Connector encryption key not configured; "
+            "DB credential management disabled, ENV fallback active"
+        )
+        return None
+    return ConnectorCredentialService(
+        credential_repo=repositories["connector_credentials"],
+        encryption_service=encryption_service,
+    )
+
+
 class Application:
     """Main application class for Arc."""
 
@@ -240,19 +262,9 @@ class Application:
         # encryption key is loaded from CONNECTOR_ENCRYPTION_KEY; if
         # unconfigured, credential management is skipped and ENV fallback
         # remains the only credential source.
-        try:
-            encryption_service = EncryptionService()
-            credential_service = ConnectorCredentialService(
-                credential_repo=self.repositories["connector_credentials"],
-                encryption_service=encryption_service,
-            )
+        credential_service = build_credential_service(self.repositories)
+        if credential_service is not None:
             self.services["connector_credential_service"] = credential_service
-        except EncryptionError:
-            logger.info(
-                "Connector encryption key not configured; "
-                "DB credential management disabled, ENV fallback active"
-            )
-            credential_service = None
 
         self.services["connector_sync_service"] = ConnectorSyncService(
             connector_repo=self.repositories["connector"],

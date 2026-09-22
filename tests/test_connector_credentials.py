@@ -610,6 +610,39 @@ class TestFailureSafety:
 
 
 # ---------------------------------------------------------------------------
+# Degraded mode without an encryption key (Issue #229)
+# ---------------------------------------------------------------------------
+
+
+class TestCredentialServiceDegradedMode:
+    def test_missing_key_returns_none_with_warning(self, monkeypatch, caplog):
+        """Without CONNECTOR_ENCRYPTION_KEY the service is disabled loudly."""
+        import logging
+
+        from arc.app import build_credential_service
+
+        monkeypatch.delenv("CONNECTOR_ENCRYPTION_KEY", raising=False)
+        with caplog.at_level(logging.WARNING, logger="arc.app"):
+            assert build_credential_service({}) is None
+        assert any(
+            record.levelno == logging.WARNING and "encryption key" in record.message
+            for record in caplog.records
+        )
+
+    def test_configured_key_builds_service(self, monkeypatch):
+        """A valid key builds the credential service (round-trip covered elsewhere)."""
+        import base64
+        import os
+
+        from arc.app import build_credential_service
+        from arc.services.connector_credentials import ConnectorCredentialService
+
+        monkeypatch.setenv("CONNECTOR_ENCRYPTION_KEY", base64.b64encode(os.urandom(32)).decode())
+        service = build_credential_service({"connector_credentials": object()})
+        assert isinstance(service, ConnectorCredentialService)
+
+
+# ---------------------------------------------------------------------------
 # Domain model validation
 # ---------------------------------------------------------------------------
 
