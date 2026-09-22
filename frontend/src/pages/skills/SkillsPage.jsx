@@ -75,6 +75,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
   const [apiError, setApiError] = useState(null)
   const [result, setResult] = useState(null)
   const [selectedPreconditions, setSelectedPreconditions] = useState([])
+  const [inputValues, setInputValues] = useState({})
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -82,6 +83,12 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
       const body = { tool_calls }
       if (selectedPreconditions.length > 0) {
         body.satisfied_preconditions = selectedPreconditions
+      }
+      const skill_inputs = Object.fromEntries(
+        Object.entries(inputValues).filter(([, value]) => value !== '')
+      )
+      if (Object.keys(skill_inputs).length > 0) {
+        body.skill_inputs = skill_inputs
       }
       return executeSkill(tenantId, skill.id, body)
     },
@@ -100,6 +107,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
     setApiError(null)
     setResult(null)
     setSelectedPreconditions([])
+    setInputValues({})
   }, [mutation.isPending, onClose])
 
   if (!open || !skill) return null
@@ -120,6 +128,11 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
   }
 
   const hasPreconditions = skill.preconditions && skill.preconditions.length > 0
+  const declaredInputs = skill.inputs && skill.inputs.length > 0 ? skill.inputs : []
+
+  const setInputValue = (name, value) => {
+    setInputValues((prev) => ({ ...prev, [name]: value }))
+  }
 
   const togglePrecondition = (pre) => {
     setSelectedPreconditions((prev) =>
@@ -218,6 +231,27 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
               {!hasPreconditions && (
                 <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3.5 py-2.5">
                   <p className="text-xs text-zinc-500">No preconditions required for this skill.</p>
+                </div>
+              )}
+              {declaredInputs.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                    Skill inputs
+                  </label>
+                  <div className="space-y-2">
+                    {declaredInputs.map((name) => (
+                      <label key={name} className="block">
+                        <span className="block text-xs text-zinc-400 mb-1">{name}</span>
+                        <input
+                          type="text"
+                          value={inputValues[name] ?? ''}
+                          onChange={(e) => setInputValue(name, e.target.value)}
+                          disabled={mutation.isPending}
+                          className="block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
               <div>

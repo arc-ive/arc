@@ -403,6 +403,7 @@ class WebhookPipelineService:
                 action.tool_calls,
                 action.satisfied_conditions,
                 authorization,
+                skill_inputs=action.skill_inputs,
                 idempotency_key=idempotency_key,
             )
         except (ValueError, NotFoundError) as exc:

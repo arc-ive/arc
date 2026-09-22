@@ -32,7 +32,7 @@ per tenant.
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 MIN_SECRET_LENGTH = 16
@@ -51,9 +51,12 @@ class WebhookActionConfig:
     The ``type`` field determines the routing strategy; only ``"skill"``
     is supported in V1. The ``skill_id`` is resolved within the
     endpoint's tenant via ``SkillService.get_skill()``. The
-    ``tool_calls`` and ``satisfied_conditions`` are passed directly to
-    ``SkillExecutionService.execute()`` which enforces all gates
-    (active status, preconditions, allowed tools, RBAC).
+    ``tool_calls``, ``satisfied_conditions``, and ``skill_inputs`` are
+    passed directly to ``SkillExecutionService.execute()`` which
+    enforces all gates (active status, preconditions, declared skill
+    inputs, allowed tools, RBAC). Static ``skill_inputs`` let an
+    operator satisfy an input-declaring skill; they are never derived
+    from webhook payload fields.
 
     This configuration is platform-operator-controlled (environment
     variable), not tenant-controlled. Tool calls are deterministic and
@@ -64,6 +67,7 @@ class WebhookActionConfig:
     skill_id: str
     tool_calls: List[Dict[str, Any]]
     satisfied_conditions: List[str]
+    skill_inputs: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -192,11 +196,20 @@ def _parse_action(raw: Any, endpoint_id: str) -> Optional[WebhookActionConfig]:
         raise WebhookConfigurationError(
             f"Webhook endpoint '{endpoint_id}' action 'satisfied_conditions' must be a list"
         )
+    skill_inputs = raw.get("skill_inputs", {})
+    if not isinstance(skill_inputs, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in skill_inputs.items()
+    ):
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action 'skill_inputs' must be an "
+            f"object mapping input names to strings"
+        )
     return WebhookActionConfig(
         type=action_type,
         skill_id=skill_id,
         tool_calls=tool_calls,
         satisfied_conditions=satisfied_conditions,
+        skill_inputs=skill_inputs,
     )
 
 

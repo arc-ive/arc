@@ -250,6 +250,21 @@ class TestBoundedOrchestration:
         assert result.steps[-1].error_kind == "unknown_tool"
         assert len(env["provider_calls"]) == 1  # no second decision, no retry
 
+    async def test_input_declaring_skill_fails_closed_without_inputs(self, repositories, db):
+        """Issue #241: agents supply no skill inputs, so the declaration is
+        enforced rather than silently ignored."""
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env, inputs=["incident_description"])
+        env["queue"].append(_decision(skill.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "invalid_skill_inputs"
+        assert len(await env["record_repo"].list_for_tenant(env["tenant"].id)) == 0
+
     async def test_approval_required_propagates_and_stops(self, repositories, db):
         env = await _build_environment(repositories, db)
         gated = await _create_skill(env, approval_required=True)

@@ -267,6 +267,7 @@ def _build_service(
                 "skill_id": action.skill_id,
                 "tool_calls": action.tool_calls,
                 "satisfied_conditions": action.satisfied_conditions,
+                "skill_inputs": action.skill_inputs,
             }
         endpoint_store = WebhookEndpointStore(raw=json.dumps({endpoint_id: endpoint_data}))
 
@@ -364,6 +365,47 @@ async def test_process_delegates_to_skill_execution():
 
     # Idempotency key is passed through.
     assert call_args.kwargs.get("idempotency_key") is not None
+
+
+@pytest.mark.asyncio
+async def test_process_passes_action_skill_inputs():
+    """Issue #241: configured static skill inputs reach skill execution."""
+    action = WebhookActionConfig(
+        type="skill",
+        skill_id="skill-42",
+        tool_calls=[{"tool_name": "noop", "input": {}}],
+        satisfied_conditions=[],
+        skill_inputs={"incident_description": "outage"},
+    )
+    svc, repo = _build_service(action=action)
+
+    event = _make_event("tenant-1", event_id="evt-inputs")
+    await repo.create(event)
+
+    await svc.process("tenant-1", event.event_id)
+
+    call_args = svc._skill_execution_service.execute.call_args
+    assert call_args.kwargs.get("skill_inputs") == {"incident_description": "outage"}
+
+
+@pytest.mark.asyncio
+async def test_process_defaults_to_empty_skill_inputs():
+    """Actions without skill_inputs execute with an empty mapping."""
+    action = WebhookActionConfig(
+        type="skill",
+        skill_id="skill-42",
+        tool_calls=[{"tool_name": "noop", "input": {}}],
+        satisfied_conditions=[],
+    )
+    svc, repo = _build_service(action=action)
+
+    event = _make_event("tenant-1", event_id="evt-noinputs")
+    await repo.create(event)
+
+    await svc.process("tenant-1", event.event_id)
+
+    call_args = svc._skill_execution_service.execute.call_args
+    assert call_args.kwargs.get("skill_inputs") == {}
 
 
 # --- No action configured ---

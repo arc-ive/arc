@@ -178,6 +178,45 @@ class TestWebhookEndpointParsing:
         with pytest.raises(WebhookConfigurationError):
             parse_webhook_endpoints(raw)
 
+    def test_action_skill_inputs_parsed(self):
+        """Issue #241: operator static skill inputs survive parsing."""
+        raw = json.dumps(
+            {
+                "github-demo": {
+                    "tenant_id": "tenant-1",
+                    "secret": "a-sufficient-secret",
+                    "action": {
+                        "type": "skill",
+                        "skill_id": "skill-1",
+                        "tool_calls": [{"tool_name": "noop", "input": {}}],
+                        "satisfied_conditions": [],
+                        "skill_inputs": {"incident_description": "outage"},
+                    },
+                }
+            }
+        )
+        endpoints = parse_webhook_endpoints(raw)
+        assert endpoints["github-demo"].action.skill_inputs == {"incident_description": "outage"}
+
+    def test_action_skill_inputs_must_be_string_mapping(self):
+        raw = json.dumps(
+            {
+                "github-demo": {
+                    "tenant_id": "tenant-1",
+                    "secret": "a-sufficient-secret",
+                    "action": {
+                        "type": "skill",
+                        "skill_id": "skill-1",
+                        "tool_calls": [{"tool_name": "noop", "input": {}}],
+                        "satisfied_conditions": [],
+                        "skill_inputs": {"incident_description": 42},
+                    },
+                }
+            }
+        )
+        with pytest.raises(WebhookConfigurationError):
+            parse_webhook_endpoints(raw)
+
     def test_endpoint_store_resolves_from_environment(self, monkeypatch):
         monkeypatch.setenv(
             "WEBHOOK_INGESTION_ENDPOINTS",
