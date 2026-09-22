@@ -40,14 +40,17 @@ def test_platform_catalog_contains_check_service_health():
     assert any(tool.name == "check_service_health" for tool in PLATFORM_TOOLS)
 
 
-def test_platform_catalog_has_exactly_one_approved_tool():
-    assert len(PLATFORM_TOOLS) == 1
-    assert PLATFORM_TOOLS[0].name == "check_service_health"
+def test_platform_catalog_has_expected_approved_tools():
+    assert len(PLATFORM_TOOLS) == 2
+    assert {tool.name for tool in PLATFORM_TOOLS} == {
+        "check_service_health",
+        "grant_temporary_access",
+    }
 
 
 def test_platform_registry_names():
     registry = build_platform_tool_registry()
-    assert registry.names() == frozenset({"check_service_health"})
+    assert registry.names() == frozenset({"check_service_health", "grant_temporary_access"})
 
 
 def test_definition_metadata_complete():
@@ -75,6 +78,16 @@ def test_check_service_health_is_low_risk():
     assert SERVICE_HEALTH_TOOL.risk_level == ToolRiskLevel.LOW
 
 
+def test_grant_temporary_access_is_high_risk_requiring_approval():
+    from arc.services.tools import GRANT_TEMPORARY_ACCESS_TOOL
+
+    assert GRANT_TEMPORARY_ACCESS_TOOL.risk_level == ToolRiskLevel.HIGH
+    assert (
+        GRANT_TEMPORARY_ACCESS_TOOL.execution_policy.mode
+        == ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+    )
+
+
 def test_check_service_health_input_schema_forbids_extra_fields():
     schema = SERVICE_HEALTH_TOOL.input_schema
     assert schema["additionalProperties"] is False
@@ -100,7 +113,10 @@ def test_registry_exposes_only_read_operations():
     assert callable(registry.get)
     assert callable(registry.list)
     assert callable(registry.names)
-    assert {tool.name for tool in registry.list()} == {"check_service_health"}
+    assert {tool.name for tool in registry.list()} == {
+        "check_service_health",
+        "grant_temporary_access",
+    }
 
 
 def test_empty_registry_approves_nothing():

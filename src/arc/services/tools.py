@@ -413,6 +413,60 @@ def _check_service_health_handler(input_data: Dict[str, Any], tenant_id: str) ->
     }
 
 
+# ---------------------------------------------------------------------------
+# High-risk tool that exercises the HumanApproval gate (Issue #213, PRD 15,
+# V2-ADR-011). The handler is deterministic and safe for tests: it performs
+# no real-world mutation and returns a synthetic grant record. Risk is HIGH
+# so the approval policy can be exercised without a genuinely dangerous
+# operation.
+# ---------------------------------------------------------------------------
+
+
+class GrantTemporaryAccessInput(BaseModel):
+    """Input for ``grant_temporary_access``: justification is required."""
+
+    justification: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GrantTemporaryAccessOutput(BaseModel):
+    """Output of ``grant_temporary_access``."""
+
+    tenant_id: str
+    justification: str
+    granted: bool
+
+
+def _grant_temporary_access_handler(input_data: Dict[str, Any], tenant_id: str) -> Dict[str, Any]:
+    """Deterministic handler for ``grant_temporary_access``.
+
+    No external mutation; the result is derived only from the trusted
+    tenant context and the validated justification.
+    """
+    return {
+        "tenant_id": tenant_id,
+        "justification": input_data["justification"],
+        "granted": True,
+    }
+
+
+GRANT_TEMPORARY_ACCESS_TOOL = ToolDefinition(
+    name="grant_temporary_access",
+    version="1",
+    description=(
+        "Grant temporary elevated access for the trusted tenant. "
+        "Classified HIGH risk and gated by human approval (V2-ADR-011, PRD 15)."
+    ),
+    input_model=GrantTemporaryAccessInput,
+    output_model=GrantTemporaryAccessOutput,
+    required_permissions=frozenset({TOOL_EXECUTE}),
+    risk_level=ToolRiskLevel.HIGH,
+    execution_policy=ToolExecutionPolicy(mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL),
+    audit_policy=ToolAuditPolicy(record_summary_only=True),
+    handler=_grant_temporary_access_handler,
+)
+
 SERVICE_HEALTH_TOOL = ToolDefinition(
     name="check_service_health",
     version="1",
@@ -429,7 +483,10 @@ SERVICE_HEALTH_TOOL = ToolDefinition(
     handler=_check_service_health_handler,
 )
 
-PLATFORM_TOOLS: Tuple[ToolDefinition, ...] = (SERVICE_HEALTH_TOOL,)
+PLATFORM_TOOLS: Tuple[ToolDefinition, ...] = (
+    SERVICE_HEALTH_TOOL,
+    GRANT_TEMPORARY_ACCESS_TOOL,
+)
 
 
 def build_platform_tool_registry() -> ToolRegistry:

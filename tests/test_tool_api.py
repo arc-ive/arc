@@ -99,8 +99,11 @@ class TestToolCatalog:
 
         assert response.status_code == 200
         tools = response.json()["items"]
-        assert [tool["name"] for tool in tools] == ["check_service_health"]
-        tool = tools[0]
+        assert {tool["name"] for tool in tools} == {
+            "check_service_health",
+            "grant_temporary_access",
+        }
+        tool = next(t for t in tools if t["name"] == "check_service_health")
         assert tool["version"] == "1"
         assert tool["description"]
         assert tool["risk_level"] == "low"
