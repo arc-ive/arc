@@ -23,7 +23,15 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
+from arc.domain.models import (
+    Membership,
+    Tenant,
+    TenantContext,
+    User,
+    UserRole,
+    WebhookEvent,
+    WebhookEventStatus,
+)
 from arc.main import app
 from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
 from arc.security.authorization import WEBHOOK_READ
@@ -603,3 +611,157 @@ class TestBodyCapHardening:
         result = await _read_capped_body(request, MAX_BODY_BYTES)
         assert result == body
         assert len(result) == MAX_BODY_BYTES
+
+
+class TestWebhookEventReliabilityFields:
+    """Event API exposes stored failure/retry state (Issue #222)."""
+
+    async def _owner_token(self, webhook_tenant, make_token, authorization_override, repositories):
+        _, user_repo, membership_repo = repositories
+        owner = await user_repo.create(
+            User(id=_unique("user"), email=f"{uuid.uuid4().hex}@example.com", username="u")
+        )
+        membership = await membership_repo.create(
+            Membership(id=_unique("membership"), user_id=owner.id, tenant_id=webhook_tenant.id)
+        )
+        authorization_override({owner.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        return make_token(owner.id), owner, membership
+
+    async def test_failed_event_exposes_error_kind_and_retry_state(
+        self, client, db, webhook_tenant, make_token, authorization_override, repositories
+    ):
+        """Real ingestion path: no-action endpoint -> auto-dispatch fails permanently."""
+        restore = _provision_endpoint(webhook_tenant.id)
+        try:
+            body = _valid_body()
+            ingest = client.post(
+                f"/webhooks/{ENDPOINT_ID}/events",
+                content=body,
+                headers=_signed_headers(body),
+            )
+            assert ingest.status_code == 200
+            envelope = ingest.json()
+            # Ingestion re-reads the post-dispatch state, so the failure
+            # reason is available right in the ingestion response.
+            assert envelope["status"] == "failed"
+            assert envelope["error_kind"] == "no_action_configured"
+        finally:
+            restore()
+
+        token, owner, membership = await self._owner_token(
+            webhook_tenant, make_token, authorization_override, repositories
+        )
+        _, user_repo, membership_repo = repositories
+        try:
+            listing = client.get(
+                f"/tenants/{webhook_tenant.id}/webhooks/events",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert listing.status_code == 200
+            events = listing.json()["items"]
+            assert len(events) == 1
+            event = events[0]
+            assert event["status"] == "failed"
+            assert event["error_kind"] == "no_action_configured"
+            assert event["retry_count"] == 0
+            assert event["max_retries"] == 5
+            assert event["next_retry_at"] is None
+            assert event["processed_at"] is not None
+            # Existing fields unchanged; no secret or payload content.
+            assert event["event_type"] == "issue.opened"
+            assert "external-content" not in json.dumps(events)
+            assert SECRET not in json.dumps(events)
+        finally:
+            await membership_repo.delete(membership.id)
+            await user_repo.delete(owner.id)
+
+    async def test_dead_letter_distinguishable_from_first_failure(
+        self, client, db, webhook_tenant, make_token, authorization_override, repositories
+    ):
+        """Terminal retry state via the real repository transitions.
+
+        Driving all 5 retries through the pipeline would wait out real
+        exponential backoff, so this uses the closest seam: the real
+        PostgreSQL claim/dead-letter transitions on a retries-exhausted
+        event. The retry state machine itself is covered by the pipeline
+        and retry-sweep suites.
+        """
+        repo = PostgreSQLWebhookEventRepository(db)
+        event = WebhookEvent(
+            id=_unique("event"),
+            tenant_id=webhook_tenant.id,
+            endpoint_id=ENDPOINT_ID,
+            event_id=_unique("sender-event"),
+            event_type="issue.opened",
+            status=WebhookEventStatus.RECEIVED,
+            payload_size_bytes=128,
+            retry_count=5,
+            max_retries=5,
+        )
+        await repo.create(event)
+        await repo.claim_for_processing(event.event_id, webhook_tenant.id)
+        await repo.mark_dead_letter(event.event_id, webhook_tenant.id, "downstream_execution_error")
+
+        token, owner, membership = await self._owner_token(
+            webhook_tenant, make_token, authorization_override, repositories
+        )
+        _, user_repo, membership_repo = repositories
+        try:
+            listing = client.get(
+                f"/tenants/{webhook_tenant.id}/webhooks/events",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert listing.status_code == 200
+            events = listing.json()["items"]
+            assert len(events) == 1
+            dead = events[0]
+            assert dead["status"] == "dead_letter"
+            assert dead["error_kind"] == "downstream_execution_error"
+            # Exhausted retries distinguish this from a first failure
+            # (retry_count 0, next_retry_at null).
+            assert dead["retry_count"] == 5
+            assert dead["max_retries"] == 5
+            assert dead["processed_at"] is not None
+        finally:
+            await membership_repo.delete(membership.id)
+            await user_repo.delete(owner.id)
+
+    async def test_processed_event_has_null_error_kind(
+        self, client, db, webhook_tenant, make_token, authorization_override, repositories
+    ):
+        """Successful events stay valid: null error, processed timestamp set."""
+        repo = PostgreSQLWebhookEventRepository(db)
+        event = WebhookEvent(
+            id=_unique("event"),
+            tenant_id=webhook_tenant.id,
+            endpoint_id=ENDPOINT_ID,
+            event_id=_unique("sender-event"),
+            event_type="issue.opened",
+            status=WebhookEventStatus.RECEIVED,
+            payload_size_bytes=128,
+        )
+        await repo.create(event)
+        await repo.claim_for_processing(event.event_id, webhook_tenant.id)
+        await repo.mark_processed(event.event_id, webhook_tenant.id)
+
+        token, owner, membership = await self._owner_token(
+            webhook_tenant, make_token, authorization_override, repositories
+        )
+        _, user_repo, membership_repo = repositories
+        try:
+            listing = client.get(
+                f"/tenants/{webhook_tenant.id}/webhooks/events",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert listing.status_code == 200
+            events = listing.json()["items"]
+            assert len(events) == 1
+            done = events[0]
+            assert done["status"] == "processed"
+            assert done["error_kind"] is None
+            assert done["retry_count"] == 0
+            assert done["next_retry_at"] is None
+            assert done["processed_at"] is not None
+        finally:
+            await membership_repo.delete(membership.id)
+            await user_repo.delete(owner.id)
