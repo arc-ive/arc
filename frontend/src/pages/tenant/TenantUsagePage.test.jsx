@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -26,6 +26,22 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx'
 
 const FIXTURE = {
   window_hours: 24,
+  // Issue #223: the backend has always returned these; the page ignored them.
+  llm: {
+    total_calls: 312,
+    total_tokens: 48210,
+    avg_latency_ms: 812.4,
+    total_cost_usd: 1.2345,
+    unknown_cost_records: 0,
+    cost_coverage: 'full',
+  },
+  agent_runs: {
+    total_runs: 27,
+    succeeded: 21,
+    failed: 4,
+    approval_required: 2,
+    max_steps_reached: 0,
+  },
   http: {
     total_requests: 1250,
     error_count: 37,
@@ -62,8 +78,10 @@ const FIXTURE = {
 }
 
 function renderWithProviders(ui, { queryClient } = {}) {
+  // `queries` must sit under `defaultOptions`; without it retries were
+  // never actually disabled in these tests.
   const client = queryClient ?? new QueryClient({
-    queries: { retry: false },
+    defaultOptions: { queries: { retry: false, networkMode: 'always' } },
   })
   return {
     ...render(
@@ -88,7 +106,7 @@ describe('TenantUsagePage field mapping', () => {
 
   it('displays http.total_requests in the API Requests card', async () => {
     renderWithProviders(<TenantUsagePage />)
-    expect(await screen.findByText('1250')).toBeInTheDocument()
+    expect(await screen.findByText('1,250')).toBeInTheDocument()
     expect(screen.getByText('API Requests')).toBeInTheDocument()
   })
 
@@ -123,35 +141,45 @@ describe('TenantUsagePage field mapping', () => {
     ).toBeInTheDocument()
   })
 
-  it('displays N/A for AI Requests', async () => {
+  it('displays llm.total_calls in the AI Requests card', async () => {
     renderWithProviders(<TenantUsagePage />)
-    await screen.findByText('1250')
+    await screen.findByText('1,250')
     expect(screen.getByText('AI Requests')).toBeInTheDocument()
-    expect(screen.getAllByText('N/A').length).toBe(3)
+    expect(screen.getByText('312')).toBeInTheDocument()
+    // The defect: three tiles hardcoded "N/A" / "Not tracked".
+    expect(screen.queryByText('Not tracked')).not.toBeInTheDocument()
   })
 
-  it('displays N/A for Tokens', async () => {
+  it('displays llm.total_tokens in the Tokens card', async () => {
     renderWithProviders(<TenantUsagePage />)
-    await screen.findByText('1250')
+    await screen.findByText('1,250')
     expect(screen.getByText('Tokens')).toBeInTheDocument()
-    expect(screen.getAllByText('N/A').length).toBe(3)
+    expect(screen.getByText('48,210')).toBeInTheDocument()
   })
 
-  it('displays N/A for Agent Runs', async () => {
+  it('displays agent_runs.total_runs in the Agent Runs card', async () => {
     renderWithProviders(<TenantUsagePage />)
-    await screen.findByText('1250')
+    await screen.findByText('1,250')
     expect(screen.getByText('Agent Runs')).toBeInTheDocument()
-    expect(screen.getAllByText('N/A').length).toBe(3)
+    expect(screen.getByText('27')).toBeInTheDocument()
   })
 
   it('does not render unavailable metrics as zero', async () => {
+    // A metric the backend did not report must read as unavailable, never
+    // as a fabricated 0 that looks like a real measurement.
+    mockGetTenantUsageSummary.mockResolvedValue({
+      ...FIXTURE,
+      llm: undefined,
+      agent_runs: undefined,
+    })
     renderWithProviders(<TenantUsagePage />)
-    await screen.findByText('1250')
+    await screen.findByText('1,250')
 
     const allText = document.body.textContent
     expect(allText).not.toMatch(/AI Requests\s*0/)
     expect(allText).not.toMatch(/Tokens\s*0/)
     expect(allText).not.toMatch(/Agent Runs\s*0/)
+    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   })
 
   it('renders 10 skeleton cards during loading', async () => {
@@ -172,5 +200,76 @@ describe('TenantUsagePage field mapping', () => {
     expect(screen.getByText('Could not load usage metrics')).toBeInTheDocument()
     expect(screen.getByText('Network timeout')).toBeInTheDocument()
     expect(screen.getByText('Try again')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Issue #223: the page reported metrics the backend does track as
+ * "Not tracked". These cover the distinction the issue asks for —
+ * a real zero, a genuinely absent metric, and a failed request.
+ */
+describe('TenantUsagePage metric honesty (Issue #223)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseAuth.mockReturnValue({ isDemo: false })
+    mockGetTenantUsageSummary.mockResolvedValue(FIXTURE)
+  })
+
+  it('renders a measured zero as 0, not as unavailable', async () => {
+    mockGetTenantUsageSummary.mockResolvedValue({
+      ...FIXTURE,
+      llm: {
+        total_calls: 0,
+        total_tokens: 0,
+        avg_latency_ms: 0,
+        total_cost_usd: null,
+        unknown_cost_records: 0,
+        cost_coverage: 'none',
+      },
+      agent_runs: { total_runs: 0, succeeded: 0, failed: 0, approval_required: 0, max_steps_reached: 0 },
+    })
+    renderWithProviders(<TenantUsagePage />)
+    await screen.findByText('1,250')
+
+    // A tenant with no AI activity has measured zeroes, not missing data.
+    expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(3)
+    expect(screen.queryByText('Not tracked')).not.toBeInTheDocument()
+  })
+
+  it('shows cost when coverage is full', async () => {
+    renderWithProviders(<TenantUsagePage />)
+    await screen.findByText('1,250')
+    expect(screen.getByText('AI Cost')).toBeInTheDocument()
+    expect(screen.getByText('$1.23')).toBeInTheDocument()
+  })
+
+  it('flags partial cost coverage instead of presenting it as complete', async () => {
+    mockGetTenantUsageSummary.mockResolvedValue({
+      ...FIXTURE,
+      llm: { ...FIXTURE.llm, total_cost_usd: 0.5, unknown_cost_records: 9, cost_coverage: 'partial' },
+    })
+    renderWithProviders(<TenantUsagePage />)
+    await screen.findByText('1,250')
+    expect(screen.getByText(/Partial: 9 call\(s\) without pricing/)).toBeInTheDocument()
+  })
+
+  it('explains an unavailable cost rather than showing a fake zero', async () => {
+    mockGetTenantUsageSummary.mockResolvedValue({
+      ...FIXTURE,
+      llm: { ...FIXTURE.llm, total_calls: 0, total_cost_usd: null, cost_coverage: 'none' },
+    })
+    renderWithProviders(<TenantUsagePage />)
+    await screen.findByText('1,250')
+    expect(screen.getByText('No LLM calls in this window')).toBeInTheDocument()
+  })
+
+  it('renders an error state on API failure, never "Not tracked"', async () => {
+    mockGetTenantUsageSummary.mockRejectedValue(new Error('boom'))
+    renderWithProviders(<TenantUsagePage />)
+
+    await waitFor(() =>
+      expect(screen.getByText('Could not load usage metrics')).toBeInTheDocument(),
+    )
+    expect(screen.queryByText('Not tracked')).not.toBeInTheDocument()
   })
 })
