@@ -112,6 +112,7 @@ class QuerySensitiveFakeChunkRepository:
                 document_version=meta.document_version,
                 sequence=meta.sequence,
                 similarity=similarity,
+                dense_score=similarity,
             )
             for meta, similarity in scored[:limit]
         ]

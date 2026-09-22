@@ -1169,6 +1169,8 @@ def _knowledge_match_response(match: KnowledgeMatch) -> Dict[str, Any]:
         "document_version": match.document_version,
         "sequence": match.sequence,
         "similarity": match.similarity,
+        "dense_score": match.dense_score,
+        "lexical_score": match.lexical_score,
     }
 
 
