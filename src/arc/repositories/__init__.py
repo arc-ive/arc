@@ -301,6 +301,16 @@ class KnowledgeRepository(Protocol):
         """
         ...
 
+    async def update_document_metadata(self, document: KnowledgeDocument) -> KnowledgeDocument:
+        """Apply a metadata-only change to an existing logical document.
+
+        Updates source/provenance/status/updated_at on the existing row
+        (matched by id AND tenant) without touching content, version, or
+        the chunk set. Raises ``NotFoundError`` when the document does not
+        exist in the given tenant.
+        """
+        ...
+
     async def get_by_id(self, document_id: str, tenant_id: str) -> KnowledgeDocument:
         """Get a knowledge document by ID, scoped to a tenant."""
         ...

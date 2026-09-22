@@ -258,6 +258,93 @@ class KnowledgeService:
         """
         await self.knowledge_repo.delete_by_id(document_id, context.tenant_id)
 
+    async def update_document(
+        self,
+        context: TenantContext,
+        document_id: str,
+        source: Optional[KnowledgeSource] = None,
+        provenance: Optional[str] = None,
+        content: Optional[str] = None,
+        status: Optional[KnowledgeStatus] = None,
+    ) -> KnowledgeDocument:
+        """Update a knowledge document by ID within a tenant.
+
+        The ``context`` must be an already-validated TenantContext
+        established by X-10's TenantContextService.  The tenant boundary is
+        derived exclusively from it.  The document is identified by its
+        stable ``document_id``; ``external_id`` is not modified.
+
+        Only provided fields are updated. If ``content`` is provided and the
+        sanitized text differs from the stored content, the version is
+        incremented and the document is re-indexed atomically (reusing the
+        ADR-003 re-ingestion path). If the sanitized content is identical,
+        the update is idempotent: version does not increment and the
+        existing chunk set is left untouched. Metadata-only changes
+        (source/provenance/status) never increment the version and never
+        touch the chunk set.
+        """
+        if not any(
+            [source is not None, provenance is not None, content is not None, status is not None]
+        ):
+            raise ValueError("At least one field must be provided for update")
+
+        existing = await self.knowledge_repo.get_by_id(document_id, context.tenant_id)
+
+        if content is not None:
+            if not content:
+                raise ValueError("Knowledge document content cannot be empty")
+            sanitized_text = self.pii_guard.sanitize(content).sanitized_text
+        else:
+            sanitized_text = existing.content
+
+        new_source = source if source is not None else existing.source
+        new_provenance = provenance if provenance is not None else existing.provenance
+        new_status = status if status is not None else existing.status
+
+        content_changed = sanitized_text != existing.content
+        metadata_changed = (
+            new_source != existing.source
+            or new_provenance != existing.provenance
+            or new_status != existing.status
+        )
+        if not content_changed and not metadata_changed:
+            return existing
+
+        if not content_changed:
+            updated = KnowledgeDocument(
+                id=existing.id,
+                tenant_id=existing.tenant_id,
+                source=new_source,
+                provenance=new_provenance,
+                version=existing.version,
+                status=new_status,
+                content=existing.content,
+                external_id=existing.external_id,
+                created_at=existing.created_at,
+                updated_at=datetime.now(timezone.utc),
+            )
+            return await self.knowledge_repo.update_document_metadata(updated)
+
+        updated = KnowledgeDocument(
+            id=existing.id,
+            tenant_id=existing.tenant_id,
+            source=new_source,
+            provenance=new_provenance,
+            version=existing.version + 1,
+            status=new_status,
+            content=sanitized_text,
+            external_id=existing.external_id,
+            created_at=existing.created_at,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+        prepared = await self._prepare_or_none(context, updated)
+        if prepared is not None:
+            return await self.knowledge_repo.update_document_with_chunks(
+                updated, prepared.chunks, prepared.embeddings
+            )
+        return await self.knowledge_repo.update_document_with_chunks(updated, [], [])
+
     async def list_documents(self, context: TenantContext) -> list:
         """List ACTIVE knowledge documents for a tenant."""
         return await self.knowledge_repo.list_for_tenant(context.tenant_id)
