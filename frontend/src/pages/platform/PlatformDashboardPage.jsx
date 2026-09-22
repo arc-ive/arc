@@ -1,16 +1,12 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Activity,
   ArrowUpRight,
-  Bot,
   Building2,
-  Plug,
   ShieldCheck,
   Users,
 } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
-import { useCapabilities } from '../../auth/capabilities.js'
 import { getHealth } from '../../api/endpoints/health.js'
 import { getUserTenants } from '../../api/endpoints/tenants.js'
 import { queryKeys } from '../../api/queryKeys.js'
@@ -39,35 +35,8 @@ function HealthPill() {
   )
 }
 
-function ModuleCard({ to, label, description, icon: Icon, available = false }) {
-  return (
-    <Link
-      to={to}
-      className="group flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-zinc-700 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500 transition-colors duration-150 group-hover:text-indigo-400">
-          <Icon className="size-4.5" />
-        </div>
-        {!available && (
-          <Badge variant="amber" size="sm">
-            Contract pending
-          </Badge>
-        )}
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-zinc-100">{label}</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-zinc-500">
-          {description}
-        </p>
-      </div>
-    </Link>
-  )
-}
-
 export function PlatformDashboardPage() {
   const { principal, isDemo } = useAuth()
-  const { role } = useCapabilities()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
@@ -91,7 +60,7 @@ export function PlatformDashboardPage() {
               </Badge>
             </div>
             <p className="mt-1 text-sm text-zinc-500">
-              Platform-level administration of tenants, users, and modules.
+              Platform-level administration of tenants and users.
             </p>
           </div>
           <HealthPill />
@@ -135,7 +104,7 @@ export function PlatformDashboardPage() {
               User provisioning
             </p>
             <p className="mt-0.5 text-[13px] text-zinc-500">
-              Create platform users ({role ?? '—'})
+              Create and manage platform users
             </p>
           </div>
           <Link
@@ -165,34 +134,6 @@ export function PlatformDashboardPage() {
         </Card>
       </section>
 
-      <section>
-        <div className="mb-4">
-          <h2 className="text-sm font-semibold text-zinc-200">
-            Platform modules
-          </h2>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <ModuleCard
-            to="/platform/connectors"
-            label="Connectors"
-            description="GitHub, Slack, and Linear integrations per the approved connector architecture."
-            icon={Plug}
-          />
-          <ModuleCard
-            to="/platform/agents"
-            label="Agents"
-            description="AI agents operating on tenant data through OmniRoute."
-            icon={Bot}
-          />
-          <ModuleCard
-            to="/platform/observability"
-            label="Observability"
-            description="Platform-level telemetry and operational insight."
-            icon={Activity}
-            available
-          />
-        </div>
-      </section>
     </div>
   )
 }

@@ -11,11 +11,8 @@ import {
   Workflow,
   Home,
   UserCircle2,
-  Gauge,
-  AlertTriangle,
   BarChart3,
   Settings,
-  History,
   Sparkles,
   Webhook,
   Wrench,
@@ -44,8 +41,6 @@ export const platformNav = [
   { to: '/platform/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/platform/tenants', label: 'Tenants', icon: Building2 },
   { to: '/platform/users', label: 'Users', icon: Users },
-  { to: '/platform/connectors', label: 'Connectors', icon: Plug },
-  { to: '/platform/agents', label: 'Agents', icon: Bot },
   { to: '/platform/observability', label: 'Observability', icon: Activity },
 ]
 
@@ -58,8 +53,6 @@ const companyAdminTenantNav = [
   { to: 'tools', label: 'Tools', icon: Wrench },
   { to: 'connectors', label: 'Connectors', icon: Plug },
   { to: 'webhooks', label: 'Webhooks', icon: Webhook },
-  { to: 'operations', label: 'Operations', icon: Gauge },
-  { to: 'incidents', label: 'Incidents', icon: AlertTriangle },
   { to: 'users', label: 'Users', icon: UserCog },
   { to: 'observability', label: 'Observability', icon: Activity },
   { to: 'approvals', label: 'Approvals', icon: ShieldCheck },
@@ -69,12 +62,9 @@ const companyAdminTenantNav = [
 
 const operationsTenantNav = [
   { to: 'overview', label: 'Overview', icon: Globe },
-  { to: 'operations', label: 'Operations', icon: Gauge },
-  { to: 'incidents', label: 'Incidents', icon: AlertTriangle },
   { to: 'knowledge', label: 'Company Brain', icon: BookOpen },
   { to: 'skills', label: 'Skills', icon: Workflow },
   { to: 'agents', label: 'Agents', icon: Bot },
-  { to: 'activity', label: 'Activity', icon: History },
 ]
 
 /**
@@ -122,14 +112,11 @@ export function tenantNavForRole(role) {
         { to: 'tools', label: 'Tools', icon: Wrench },
         { to: 'connectors', label: 'Connectors', icon: Plug },
         { to: 'webhooks', label: 'Webhooks', icon: Webhook },
-        { to: 'operations', label: 'Operations', icon: Gauge },
-        { to: 'incidents', label: 'Incidents', icon: AlertTriangle },
-        { to: 'users', label: 'Users', icon: UserCog },
+                    { to: 'users', label: 'Users', icon: UserCog },
         { to: 'observability', label: 'Observability', icon: Activity },
         { to: 'approvals', label: 'Approvals', icon: ShieldCheck },
         { to: 'usage', label: 'Usage', icon: BarChart3 },
-        { to: 'activity', label: 'Activity', icon: History },
-        { to: 'settings', label: 'Settings', icon: Settings },
+              { to: 'settings', label: 'Settings', icon: Settings },
       ]
   }
 }
@@ -149,13 +136,10 @@ export const tenantBreadcrumbLabels = {
   tools: 'Tools',
   connectors: 'Connectors',
   webhooks: 'Webhooks',
-  operations: 'Operations',
-  incidents: 'Incidents',
   users: 'Users',
   observability: 'Observability',
   usage: 'Usage',
   settings: 'Settings',
   approvals: 'Approvals',
-  activity: 'Activity',
   ask: 'Ask Arc',
 }

@@ -888,7 +888,7 @@ export function SkillsPage({ view = 'list' }) {
   const viewCopy = {
     list: {
       title: 'Skills',
-      description: 'Structured, reusable workflows that convert company procedures into capabilities Unified Intelligence can apply.',
+      description: 'Structured, reusable workflows that turn company procedures into capabilities Arc can apply.',
     },
     new: {
       title: 'New skill',

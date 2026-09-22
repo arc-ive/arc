@@ -11,16 +11,13 @@ import { ProfilePage } from './pages/profile/ProfilePage.jsx'
 import { TenantLayout } from './pages/tenant/TenantLayout.jsx'
 import { TenantOverviewPage } from './pages/tenant/TenantOverviewPage.jsx'
 import { TenantCompanyPage } from './pages/tenant/TenantCompanyPage.jsx'
-import { TenantIncidentsPage } from './pages/tenant/TenantIncidentsPage.jsx'
 import { TenantUsagePage } from './pages/tenant/TenantUsagePage.jsx'
 import { TenantSettingsPage } from './pages/tenant/TenantSettingsPage.jsx'
-import { TenantActivityPage } from './pages/tenant/TenantActivityPage.jsx'
 import { ConnectorsPage } from './pages/connectors/ConnectorsPage.jsx'
 import { WebhooksPage } from './pages/webhooks/WebhooksPage.jsx'
 import { ToolsPage } from './pages/tools/ToolsPage.jsx'
 import { ObservabilityPage } from './pages/observability/ObservabilityPage.jsx'
 import { TenantUsersPage } from './pages/tenant/TenantUsersPage.jsx'
-import { TenantOperationsPage } from './pages/tenant/TenantOperationsPage.jsx'
 import { ApprovalsPage } from './pages/approvals/ApprovalsPage.jsx'
 import { EmployeeHomePage } from './pages/home/EmployeeHomePage.jsx'
 import { AskArcPage } from './pages/tenant/AskArcPage.jsx'
@@ -32,8 +29,6 @@ import { PlatformDashboardPage } from './pages/platform/PlatformDashboardPage.js
 import { PlatformTenantsPage } from './pages/platform/PlatformTenantsPage.jsx'
 import { PlatformTenantDetailPage } from './pages/platform/PlatformTenantDetailPage.jsx'
 import { PlatformUsersPage } from './pages/platform/PlatformUsersPage.jsx'
-import { PlatformConnectorsPage } from './pages/platform/PlatformConnectorsPage.jsx'
-import { PlatformAgentsPage } from './pages/platform/PlatformAgentsPage.jsx'
 import { PlatformObservabilityPage } from './pages/platform/PlatformObservabilityPage.jsx'
 import { NotFoundPage } from './pages/NotFoundPage.jsx'
 import { tenantLandingForRole } from './components/shell/navigation.js'
@@ -64,6 +59,19 @@ function TenantLandingRedirect() {
   if (!tenantId) return <Navigate to="/app" replace />
   const landing = tenantLandingForRole(role)
   return <Navigate to={`/app/t/${encodeURIComponent(tenantId)}/${landing}`} replace />
+}
+
+/**
+ * Redirect for a tenant surface that has been removed.
+ *
+ * Absolute by construction, for the same reason as the Company Brain
+ * aliases below: a relative `to` resolves against the matched route and
+ * lands on a nested path that does not exist.
+ */
+export function RemovedTenantRedirect({ to }) {
+  const { tenantId } = useParams()
+  if (!tenantId) return <Navigate to="/app" replace />
+  return <Navigate to={`/app/t/${encodeURIComponent(tenantId)}/${to}`} replace />
 }
 
 export function LegacyBrainRedirect({ suffix = '' }) {
@@ -108,8 +116,8 @@ export default function App() {
           <Route path="home" element={<Navigate to="/app" replace />} />
           <Route path="tenants" element={<Navigate to="/platform/tenants" replace />} />
           <Route path="users" element={<Navigate to="/platform/users" replace />} />
-          <Route path="connectors" element={<Navigate to="/platform/connectors" replace />} />
-          <Route path="agents" element={<Navigate to="/platform/agents" replace />} />
+          <Route path="connectors" element={<Navigate to="/platform/dashboard" replace />} />
+          <Route path="agents" element={<Navigate to="/platform/dashboard" replace />} />
           <Route path="observability" element={<Navigate to="/platform/observability" replace />} />
 
           {/* Tenant workspace */}
@@ -138,15 +146,32 @@ export default function App() {
               <Route path="tools" element={<ToolsPage />} />
               <Route path="connectors" element={<ConnectorsPage />} />
               <Route path="webhooks" element={<WebhooksPage />} />
-              <Route path="operations" element={<TenantOperationsPage />} />
-              <Route path="incidents" element={<TenantIncidentsPage />} />
               <Route path="users" element={<TenantUsersPage />} />
               <Route path="observability" element={<ObservabilityPage />} />
               <Route path="usage" element={<TenantUsagePage />} />
               <Route path="settings" element={<TenantSettingsPage />} />
               <Route path="approvals" element={<ApprovalsPage />} />
               <Route path="agents" element={<AgentRunsPage />} />
-              <Route path="activity" element={<TenantActivityPage />} />
+
+              {/* Removed tenant surfaces (V2-ADR-021, PRD §24, UX_SPEC §1).
+                  Operations, Incidents and Activity were shells that called
+                  no API and rendered internal build status. Operations and
+                  Activity resolve to Observability — the operational
+                  surface that is actually wired. Incidents has no live
+                  equivalent by design, so it resolves to the workspace
+                  landing page rather than implying one exists. */}
+              <Route
+                path="operations"
+                element={<RemovedTenantRedirect to="observability" />}
+              />
+              <Route
+                path="activity"
+                element={<RemovedTenantRedirect to="observability" />}
+              />
+              <Route
+                path="incidents"
+                element={<RemovedTenantRedirect to="overview" />}
+              />
 
               {/* Legacy Company Brain aliases. Issue #225: these must be
                   ABSOLUTE. A relative `to` resolves against the matched
@@ -176,9 +201,13 @@ export default function App() {
           <Route path="tenants" element={<PlatformTenantsPage />} />
           <Route path="tenants/:tenantId" element={<PlatformTenantDetailPage />} />
           <Route path="users" element={<PlatformUsersPage />} />
-          <Route path="connectors" element={<PlatformConnectorsPage />} />
-          <Route path="agents" element={<PlatformAgentsPage />} />
           <Route path="observability" element={<PlatformObservabilityPage />} />
+
+          {/* Removed platform surfaces. Neither was backed by a usable
+              workflow; both exposed implementation detail. Old links
+              resolve to the console root rather than 404. */}
+          <Route path="connectors" element={<Navigate to="/platform/dashboard" replace />} />
+          <Route path="agents" element={<Navigate to="/platform/dashboard" replace />} />
         </Route>
       </Route>
 

@@ -146,6 +146,14 @@ describe('Sidebar role-based rendering', () => {
       renderSidebar('company_administrator')
       expect(screen.queryByText('Platform')).not.toBeInTheDocument()
     })
+    // PR-1: these three tenant surfaces were removed — they called no API
+    // and rendered internal build status to customers (UX_SPEC §1).
+    it('does not show removed non-functional surfaces', () => {
+      renderSidebar('company_administrator')
+      expect(screen.queryByText('Operations')).not.toBeInTheDocument()
+      expect(screen.queryByText('Incidents')).not.toBeInTheDocument()
+      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
+    })
   })
 
   describe('platform administrator role', () => {
@@ -163,12 +171,46 @@ describe('Sidebar role-based rendering', () => {
       renderSidebar('platform_administrator')
       expect(screen.getByText('Profile')).toBeInTheDocument()
     })
+    // PR-1: Platform Connectors and Platform Agents were removed — neither
+    // called an API and both exposed implementation detail (ADR ids, the
+    // internal provider chain).
+    // Asserted by href, not label: a platform administrator currently also
+    // renders the tenant workspace nav, which has its own Connectors and
+    // Agents entries. Only the /platform/* links are in PR-1 scope.
+    it('does not show removed platform surfaces', () => {
+      renderSidebar('platform_administrator')
+      const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
+      expect(hrefs).not.toContain('/platform/connectors')
+      expect(hrefs).not.toContain('/platform/agents')
+    })
+
+    it('still shows the platform surfaces that are wired', () => {
+      renderSidebar('platform_administrator')
+      const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
+      expect(hrefs).toContain('/platform/dashboard')
+      expect(hrefs).toContain('/platform/tenants')
+      expect(hrefs).toContain('/platform/users')
+      expect(hrefs).toContain('/platform/observability')
+    })
   })
 
   describe('operations user role', () => {
-    it('shows Operations in tenant navigation', () => {
+    // PR-1: Operations, Incidents and Activity were shells that called no
+    // API and rendered internal build status (UX_SPEC §1). Incidents also
+    // contradicted V2-ADR-021 and PRD §24. All three are gone from
+    // navigation; the operations user keeps the surfaces that are wired.
+    it('does not show removed non-functional surfaces in tenant navigation', () => {
       renderSidebar('operations_user')
-      expect(screen.getByText('Operations')).toBeInTheDocument()
+      expect(screen.queryByText('Operations')).not.toBeInTheDocument()
+      expect(screen.queryByText('Incidents')).not.toBeInTheDocument()
+      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
+    })
+
+    it('still shows the operational surfaces that are wired', () => {
+      renderSidebar('operations_user')
+      expect(screen.getByText('Company Brain')).toBeInTheDocument()
+      expect(screen.getByText('Skills')).toBeInTheDocument()
+      expect(screen.getByText('Agents')).toBeInTheDocument()
     })
 
     it('shows Personal section', () => {

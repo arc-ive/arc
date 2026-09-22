@@ -252,7 +252,7 @@ export function AgentRunsPage() {
         <Card>
           <CardContent>
             <p className="text-[13px] text-zinc-500">
-              You do not have the agent:execute permission, so you cannot start agent runs.
+              You don't have access to start agent runs in this workspace.
             </p>
           </CardContent>
         </Card>
@@ -262,7 +262,7 @@ export function AgentRunsPage() {
         <Card>
           <CardContent>
             <p className="text-[13px] text-zinc-500">
-              You do not have the observability:read permission, so run history is unavailable.
+              You don't have access to run history for this workspace.
             </p>
           </CardContent>
         </Card>

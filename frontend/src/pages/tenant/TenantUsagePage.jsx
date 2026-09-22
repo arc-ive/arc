@@ -91,7 +91,7 @@ export function TenantUsagePage() {
               Usage
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Tenant-scoped metrics for AI and platform usage.
+              AI and platform usage for this workspace.
             </p>
           </div>
           <div className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900/60 p-0.5">
