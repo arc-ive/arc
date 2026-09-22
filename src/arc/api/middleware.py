@@ -9,14 +9,17 @@ Responsibilities (Observability-owned correlation infrastructure):
 3. Measure request duration with a monotonic clock.
 4. Record a metadata-only ``ApiRequestRecord`` AFTER the response.
 
-Tenant attribution is SUCCESS-GATED LABELING (approved L1):
-a request is labelled with a tenant ONLY when it completed with
-status < 400 and carries a tenant ID — first the ``tenant_id`` path
-parameter, then the ``tenant_id`` query parameter (some tenant-scoped
-routes such as ``GET /skills`` bind the tenant through the query
-string). This is telemetry bookkeeping — it must NEVER establish
-tenant identity or authorization; failed, unauthorized, malformed,
-and public requests are recorded with tenant_id = NULL.
+Tenant attribution is SUCCESS-GATED RESOLVED-CONTEXT LABELING (approved
+L1): a request is labelled with a tenant ONLY when it completed with
+status < 400 AND the application's tenant dependency resolved and
+authorized a tenant for this request (published to request state,
+covering both path- and query-bound tenant routes such as
+``GET /skills``). Raw client input — path parameters, query strings —
+is never trusted as the attribution source, so an unrelated endpoint
+cannot be attributed by merely adding ``?tenant_id=``. This is
+telemetry bookkeeping — it must NEVER establish tenant identity or
+authorization; failed, unauthorized, malformed, and public requests
+are recorded with tenant_id = NULL.
 
 Telemetry writes are BEST-EFFORT: any failure is dropped by the
 observability service without ever failing the served business response.
@@ -28,33 +31,12 @@ import logging
 import time
 import uuid
 from typing import Callable, Optional
-from urllib.parse import parse_qsl
 
 from arc.api.correlation import request_id_var
 from arc.domain.models import ApiRequestRecord
+from arc.security.dependencies import RESOLVED_TENANT_STATE_KEY
 
 logger = logging.getLogger("arc.http")
-
-
-def _query_tenant_id(query_string) -> Optional[str]:
-    """First non-empty ``tenant_id`` query value, else None.
-
-    Only this one explicitly supported key is ever read: no other query
-    parameter can become a telemetry dimension, and the raw query string
-    itself is never stored or logged.
-    """
-    if isinstance(query_string, (bytes, bytearray)):
-        # latin-1 never raises, so a hostile query string degrades to no
-        # attribution instead of breaking telemetry recording entirely.
-        raw = bytes(query_string).decode("latin-1")
-    elif isinstance(query_string, str):
-        raw = query_string
-    else:
-        return None
-    for key, value in parse_qsl(raw):
-        if key == "tenant_id" and value:
-            return value
-    return None
 
 
 class RequestTelemetryMiddleware:
@@ -108,9 +90,8 @@ class RequestTelemetryMiddleware:
         tenant_id: Optional[str] = None
         error_kind: Optional[str] = None
         if status_code < 400:
-            candidate = (scope.get("path_params") or {}).get("tenant_id")
-            if not (isinstance(candidate, str) and candidate):
-                candidate = _query_tenant_id(scope.get("query_string", b""))
+            state = scope.get("state") or {}
+            candidate = state.get(RESOLVED_TENANT_STATE_KEY) if isinstance(state, dict) else None
             if isinstance(candidate, str) and candidate:
                 tenant_id = candidate
         else:

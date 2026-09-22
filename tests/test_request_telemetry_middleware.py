@@ -2,12 +2,13 @@
 
 Drives ``RequestTelemetryMiddleware`` directly over minimal ASGI scopes:
 unmatched requests must log the single bounded ``unrouted`` label (never
-the raw path), and tenant-scoped routes carrying ``tenant_id`` in the
-query string must attribute the tenant. No other query parameter may
-become a telemetry dimension.
+the raw path), and attribution must come exclusively from the resolved
+tenant context published to request state by the tenant dependency —
+never from raw path or query input.
 """
 
 from arc.api.middleware import RequestTelemetryMiddleware
+from arc.security.dependencies import RESOLVED_TENANT_STATE_KEY
 
 
 class _Route:
@@ -23,7 +24,16 @@ class _Service:
         self.records.append(record)
 
 
-async def _run(path, *, status=200, route=None, path_params=None, query=b"", method="GET"):
+async def _run(
+    path,
+    *,
+    status=200,
+    route=None,
+    path_params=None,
+    query=b"",
+    method="GET",
+    resolved_tenant=None,
+):
     service = _Service()
 
     async def app(scope, receive, send):
@@ -31,6 +41,10 @@ async def _run(path, *, status=200, route=None, path_params=None, query=b"", met
             scope["route"] = route
         if path_params is not None:
             scope["path_params"] = path_params
+        if resolved_tenant is not None:
+            # What get_trusted_tenant_context publishes after verifying
+            # membership; request.state writes land in scope["state"].
+            scope.setdefault("state", {})[RESOLVED_TENANT_STATE_KEY] = resolved_tenant
         await send({"type": "http.response.start", "status": status, "headers": []})
         await send({"type": "http.response.body", "body": b""})
 
@@ -69,19 +83,24 @@ async def test_unrouted_paths_share_one_bounded_label():
     assert first.error_kind == second.error_kind == "client_error"
 
 
-async def test_query_scoped_tenant_route_logs_tenant():
+async def test_resolved_tenant_is_attributed():
+    # Query-bound route shape (/skills?tenant_id=...): attribution comes
+    # from the resolved context, not from parsing the query string.
     record = await _run(
         "/skills",
         status=200,
         route=_Route("/skills"),
         path_params={},
         query=b"tenant_id=t-1&limit=5",
+        resolved_tenant="t-1",
     )
     assert record.route_template == "/skills"
     assert record.tenant_id == "t-1"
 
 
-async def test_path_param_tenant_takes_precedence_over_query():
+async def test_raw_client_input_is_never_trusted():
+    # Neither path params nor query params attribute anything on their
+    # own: only the resolved context does.
     record = await _run(
         "/tenants/t-path/skills",
         status=200,
@@ -89,7 +108,7 @@ async def test_path_param_tenant_takes_precedence_over_query():
         path_params={"tenant_id": "t-path"},
         query=b"tenant_id=t-query",
     )
-    assert record.tenant_id == "t-path"
+    assert record.tenant_id is None
 
 
 async def test_failed_request_stays_unattributed():
@@ -122,6 +141,7 @@ async def test_matched_route_template_preserved():
         status=200,
         route=_Route("/tenants/{tenant_id}/knowledge"),
         path_params={"tenant_id": "t-1"},
+        resolved_tenant="t-1",
     )
     assert record.route_template == "/tenants/{tenant_id}/knowledge"
     assert record.tenant_id == "t-1"

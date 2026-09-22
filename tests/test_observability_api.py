@@ -428,6 +428,56 @@ class TestCorrelationAndTelemetry:
             arc_application.services["observability_service"] = original
 
 
+class TestQueryTenantAttributionIntegrity:
+    """Issue #240: attribution follows resolved context, never raw query input."""
+
+    async def _telemetry_row(self, request_id):
+        database = await _fresh_db()
+        try:
+            async with database._connection_pool.acquire() as conn:
+                return await conn.fetchrow(
+                    """SELECT tenant_id, route_template, status_code
+                       FROM api_request_records WHERE request_id = $1""",
+                    request_id,
+                )
+        finally:
+            await database.disconnect()
+
+    async def test_bogus_query_tenant_still_records_unattributed_row(self, client):
+        """GET /health?tenant_id=bogus: the row must exist with NULL tenant."""
+        response = client.get("/health?tenant_id=bogus-not-a-real-tenant")
+        assert response.status_code == 200
+        row = await self._telemetry_row(response.headers["x-request-id"])
+        assert row is not None
+        assert row["tenant_id"] is None
+        assert row["status_code"] == 200
+
+    async def test_valid_query_tenant_on_unrelated_endpoint_is_not_attributed(
+        self, client, two_tenants
+    ):
+        """A valid tenant on /health must NOT attribute: no context resolved it."""
+        tenant, _ = two_tenants[0]
+        response = client.get(f"/health?tenant_id={tenant.id}")
+        assert response.status_code == 200
+        row = await self._telemetry_row(response.headers["x-request-id"])
+        assert row is not None
+        assert row["tenant_id"] is None
+
+    async def test_authorized_query_scoped_route_is_attributed(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        """GET /skills?tenant_id=... resolves the tenant: telemetry attributes it."""
+        tenant, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+        response = _authed_get(client, f"/skills?tenant_id={tenant.id}", token)
+        assert response.status_code == 200
+        row = await self._telemetry_row(response.headers["x-request-id"])
+        assert row is not None
+        assert row["tenant_id"] == tenant.id
+        assert row["route_template"] == "/skills"
+
+
 # ------------------------------------------------------------------
 # Agent execution trace endpoints (PRD 17 O-6)
 # ------------------------------------------------------------------
