@@ -380,21 +380,26 @@ class AgentExecutionService:
             and getattr(self.llm_provider, "skill_decision_capable", True)
         )
 
-    async def _record_usage(self, context, agent_run_id) -> None:
+    async def _record_usage(self, context, agent_run_id, succeeded=True) -> None:
         """Record LLM usage if usage data is available (best effort).
 
         Reads from the ContextVar set by the provider after each call.
+        Falls back to the provider's ``_last_failed_usage`` when the
+        ContextVar is empty (failed call with provider usage data).
         Deterministic provider with no usage report creates no record.
         Persistence failure is logged and never raised (TRD 24).
         """
         if self.observability_service is None:
             return
         usage = _current_llm_usage.get()
+        if usage is None and hasattr(self.llm_provider, "_last_failed_usage"):
+            usage = self.llm_provider._last_failed_usage
         if usage is None:
             return
         record = build_llm_usage_record(
             usage,
             call_type=LLM_CALL_TYPE_PROPOSE_SKILL,
+            succeeded=succeeded,
             tenant_id=context.tenant_id,
             request_id=request_id_var.get(),
             agent_run_id=agent_run_id,

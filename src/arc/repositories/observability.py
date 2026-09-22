@@ -489,8 +489,8 @@ class PostgreSQLObservabilityRepository:
                 INSERT INTO llm_usage_records
                     (id, tenant_id, request_id, agent_run_id, principal_id,
                      provider, model, input_tokens, output_tokens, total_tokens,
-                     latency_ms, cost_usd, call_type, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                     latency_ms, cost_usd, call_type, succeeded, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 """,
                 record.id,
                 record.tenant_id,
@@ -505,6 +505,7 @@ class PostgreSQLObservabilityRepository:
                 record.latency_ms,
                 str(record.cost_usd) if record.cost_usd is not None else None,
                 record.call_type,
+                record.succeeded,
                 record.created_at,
             )
 

@@ -295,21 +295,28 @@ class UnifiedIntelligenceService:
             tool_executions=tool_executions,
         )
 
-    async def _record_usage(self, context, agent_run_id, call_type, request_id=None) -> None:
+    async def _record_usage(
+        self, context, agent_run_id, call_type, request_id=None, succeeded=True
+    ) -> None:
         """Record LLM usage if usage data is available (best effort).
 
         Reads from the ContextVar set by the provider after each call.
+        Falls back to the provider's ``_last_failed_usage`` when the
+        ContextVar is empty (failed call with provider usage data).
         Deterministic provider with no usage report creates no record.
         Persistence failure is logged and never raised (TRD 24).
         """
         if self.observability_service is None:
             return
         usage = _current_llm_usage.get()
+        if usage is None and hasattr(self.llm_provider, "_last_failed_usage"):
+            usage = self.llm_provider._last_failed_usage
         if usage is None:
             return
         record = build_llm_usage_record(
             usage,
             call_type=call_type,
+            succeeded=succeeded,
             tenant_id=context.tenant_id,
             request_id=request_id,
             agent_run_id=agent_run_id,

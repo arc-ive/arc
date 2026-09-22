@@ -295,6 +295,7 @@ class OpenRouterProvider:
         self._base_delay = base_delay
         self._max_delay = max_delay
         self._last_usage: Optional[LlmUsageReport] = None
+        self._last_failed_usage: Optional[LlmUsageReport] = None
 
     @property
     def last_usage(self) -> Optional[LlmUsageReport]:
@@ -312,10 +313,12 @@ class OpenRouterProvider:
 
         Lifecycle: the per-call ContextVar ``_current_llm_usage`` is
         **cleared before** the HTTP call so that stale usage from a
-        prior call is never accidentally consumed.  On a successful
-        response the ContextVar is set to the new usage report.  If the
-        call raises, the ContextVar remains ``None`` — callers observe
-        no usage from a failed call.
+        prior call is never accidentally consumed.  Usage is captured
+        from the response whenever the provider supplies it — even when
+        the response carries empty choices (the usage payload is still
+        valid and billable).  On success the ContextVar is set and the
+        content is returned.  On failure the ContextVar carries whatever
+        usage the provider supplied (possibly None).
         """
         _current_llm_usage.set(None)
         started = time.monotonic()
@@ -323,10 +326,9 @@ class OpenRouterProvider:
         elapsed_ms = int((time.monotonic() - started) * 1000)
         _raise_for_status(response)
         data = response.json()
-        choices = data.get("choices", [])
-        if not choices:
-            raise LlmRetryableError(f"OpenRouter returned no choices for model {self._model!r}")
-        # Capture usage data from the response (V2-ADR-006, TRD 13).
+
+        # Capture usage data from the response (V2-ADR-006, TRD 13)
+        # BEFORE checking choices — the provider may bill for empty responses.
         usage = data.get("usage") or {}
         report = LlmUsageReport(
             provider="openrouter",
@@ -338,6 +340,11 @@ class OpenRouterProvider:
         )
         self._last_usage = report
         _current_llm_usage.set(report)
+        self._last_failed_usage = None
+
+        choices = data.get("choices", [])
+        if not choices:
+            raise LlmRetryableError(f"OpenRouter returned no choices for model {self._model!r}")
         return choices[0]["message"]["content"]
 
     def _post(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
@@ -347,6 +354,11 @@ class OpenRouterProvider:
         choices) are retried up to ``max_retries`` times with exponential
         backoff. Permanent failures (401, 403, other 4xx) and application
         errors fail immediately.
+
+        Failed attempts that carry provider usage data (e.g. HTTP 200 with
+        empty choices) have their usage preserved in
+        ``_last_failed_usage`` so callers can persist it.  Successful
+        attempts leave their usage in the per-call ContextVar as usual.
         """
         url = f"{self._base_url}/chat/completions"
         headers = {
@@ -362,6 +374,7 @@ class OpenRouterProvider:
         owned_client = self._client is None
         client = self._client or httpx.Client(timeout=self._timeout)
         last_error: Optional[Exception] = None
+        self._last_failed_usage = None
         try:
             for attempt in range(1 + self._max_retries):
                 try:
@@ -370,6 +383,7 @@ class OpenRouterProvider:
                     raise
                 except LlmRetryableError as exc:
                     last_error = exc
+                    self._capture_failed_usage()
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
@@ -381,6 +395,7 @@ class OpenRouterProvider:
                     raise
                 except httpx.TimeoutException as exc:
                     last_error = LlmRetryableError(f"OpenRouter request timed out: {exc}")
+                    self._capture_failed_usage()
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
@@ -390,6 +405,7 @@ class OpenRouterProvider:
                         continue
                 except httpx.HTTPError as exc:
                     last_error = LlmRetryableError(f"OpenRouter HTTP error: {exc}")
+                    self._capture_failed_usage()
                     if attempt < self._max_retries:
                         delay = min(
                             self._max_delay,
@@ -401,6 +417,19 @@ class OpenRouterProvider:
         finally:
             if owned_client:
                 client.close()
+
+    def _capture_failed_usage(self) -> None:
+        """Snapshot the current per-call usage as a failed-attempt record.
+
+        Called after each failed attempt in the retry loop.  If the
+        provider supplied usage data before the error (e.g. HTTP 200
+        with empty choices), it is preserved.  If no usage exists
+        (e.g. HTTP error before response body), ``_last_failed_usage``
+        remains ``None``.
+        """
+        usage = _current_llm_usage.get()
+        if usage is not None:
+            self._last_failed_usage = usage
 
     # -- LlmProvider -------------------------------------------------------
 

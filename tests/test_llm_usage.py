@@ -1194,3 +1194,215 @@ class TestLlmUsageRecordsTotal:
 
         assert result["total"] == 3
         repo.llm_usage_records_page.assert_awaited_once_with("t-1", 24, "complete", 10, 0)
+
+
+class TestFailedCallUsageRecording:
+    """Issue #230: failed and empty-choices LLM calls produce usage records."""
+
+    def _make_provider(self):
+        import httpx
+
+        from arc.services.llm import OpenRouterProvider
+
+        provider = OpenRouterProvider.__new__(OpenRouterProvider)
+        provider._model = "test-model"
+        provider._last_usage = None
+        provider._last_failed_usage = None
+        provider._max_retries = 0
+        provider._base_delay = 0.01
+        provider._max_delay = 0.01
+        provider._timeout = httpx.Timeout(5.0)
+        provider._client = None
+        provider._api_key = "test-key"
+        provider._base_url = "http://localhost"
+        return provider
+
+    def _fake_response(self, status_code=200, body=None):
+        class FakeResponse:
+            pass
+
+        resp = FakeResponse()
+        resp.status_code = status_code
+        resp.text = "error"
+        if body is not None:
+            resp.json = lambda: body
+        return resp
+
+    def test_empty_choices_with_usage_preserves_usage(self):
+        """HTTP 200 with empty choices: usage payload is captured in ContextVar."""
+        import httpx
+
+        from arc.services.llm import LlmRetryableError, _current_llm_usage
+
+        provider = self._make_provider()
+        body = {
+            "choices": [],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = self._fake_response(200, body)
+
+        token = _current_llm_usage.set(None)
+        try:
+            with pytest.raises(LlmRetryableError):
+                provider._execute_request(client, "http://x", {}, {})
+            usage = _current_llm_usage.get()
+            assert usage is not None
+            assert usage.input_tokens == 10
+            assert usage.output_tokens == 5
+            assert usage.total_tokens == 15
+        finally:
+            _current_llm_usage.reset(token)
+
+    def test_failed_call_stores_last_failed_usage(self):
+        """Provider error: _last_failed_usage captures usage if available."""
+        import httpx
+
+        provider = self._make_provider()
+        provider._max_retries = 0
+        body = {
+            "choices": [],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        }
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = self._fake_response(200, body)
+        provider._client = client
+
+        with pytest.raises(Exception):
+            provider._post([{"role": "user", "content": "test"}])
+
+        assert provider._last_failed_usage is not None
+        assert provider._last_failed_usage.input_tokens == 3
+        assert provider._last_failed_usage.output_tokens == 2
+
+    def test_http_error_no_usage_data(self):
+        """HTTP 500: _last_failed_usage is None (no response body parsed)."""
+        import httpx
+
+        provider = self._make_provider()
+        provider._max_retries = 0
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = self._fake_response(500)
+        provider._client = client
+
+        with pytest.raises(Exception):
+            provider._post([{"role": "user", "content": "test"}])
+
+        assert provider._last_failed_usage is None
+
+    def test_retry_exhaustion_captures_last_failure(self):
+        """Retries exhausted: _last_failed_usage has the last attempt's data."""
+        import httpx
+
+        provider = self._make_provider()
+        provider._max_retries = 2
+        body = {
+            "choices": [],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        client = MagicMock(spec=httpx.Client)
+        client.post.return_value = self._fake_response(200, body)
+        provider._client = client
+
+        with pytest.raises(Exception):
+            provider._post([{"role": "user", "content": "test"}])
+
+        assert provider._last_failed_usage is not None
+        assert provider._last_failed_usage.input_tokens == 1
+
+    def test_retry_then_success_clears_failed_usage(self):
+        """Retry succeeds: _last_failed_usage is cleared, ContextVar has success usage."""
+        import httpx
+
+        from arc.services.llm import _current_llm_usage
+
+        provider = self._make_provider()
+        provider._max_retries = 1
+
+        fail_body = {
+            "choices": [],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        }
+        success_body = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+        call_count = [0]
+
+        def side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return self._fake_response(200, fail_body)
+            return self._fake_response(200, success_body)
+
+        client = MagicMock(spec=httpx.Client)
+        client.post.side_effect = side_effect
+        provider._client = client
+
+        token = _current_llm_usage.set(None)
+        try:
+            result = provider._post([{"role": "user", "content": "test"}])
+            assert result == "ok"
+            assert provider._last_failed_usage is None
+            usage = _current_llm_usage.get()
+            assert usage is not None
+            assert usage.input_tokens == 10
+        finally:
+            _current_llm_usage.reset(token)
+
+    def test_succeeded_field_on_usage_record(self):
+        """build_llm_usage_record propagates succeeded field."""
+        from arc.services.llm import LlmUsageReport
+        from arc.services.llm_pricing import build_llm_usage_record
+
+        usage = LlmUsageReport(
+            provider="openrouter", model="m", input_tokens=1, output_tokens=1, total_tokens=2
+        )
+        record = build_llm_usage_record(usage, call_type="complete", succeeded=False)
+        assert record.succeeded is False
+
+        record2 = build_llm_usage_record(usage, call_type="complete", succeeded=True)
+        assert record2.succeeded is True
+
+    def test_succeeded_defaults_to_true(self):
+        """build_llm_usage_record defaults succeeded to True."""
+        from arc.services.llm import LlmUsageReport
+        from arc.services.llm_pricing import build_llm_usage_record
+
+        usage = LlmUsageReport(provider="openrouter", model="m")
+        record = build_llm_usage_record(usage, call_type="complete")
+        assert record.succeeded is True
+
+    def test_no_prompt_content_in_usage_record(self):
+        """Usage records never contain prompt content or API keys."""
+        from arc.services.llm import LlmUsageReport
+        from arc.services.llm_pricing import build_llm_usage_record
+
+        usage = LlmUsageReport(
+            provider="openrouter",
+            model="m",
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            latency_ms=100,
+        )
+        record = build_llm_usage_record(
+            usage,
+            call_type="complete",
+            tenant_id="t-1",
+            request_id="r-1",
+        )
+        record_dict = {
+            "provider": record.provider,
+            "model": record.model,
+            "call_type": record.call_type,
+            "input_tokens": record.input_tokens,
+            "output_tokens": record.output_tokens,
+            "total_tokens": record.total_tokens,
+            "latency_ms": record.latency_ms,
+        }
+        serialized = str(record_dict)
+        assert "api_key" not in serialized.lower()
+        assert "password" not in serialized.lower()
+        assert "secret" not in serialized.lower()

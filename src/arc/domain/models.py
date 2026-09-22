@@ -1771,12 +1771,14 @@ class LlmUsageRecord:
 
     ``cost_usd`` is NULL when pricing is unavailable or required token
     data is missing — never a partial calculation.
+    ``succeeded`` records whether the LLM call produced a usable answer.
     """
 
     id: str
     provider: str
     model: str
     call_type: str
+    succeeded: bool = True
     tenant_id: Optional[str] = None
     request_id: Optional[str] = None
     agent_run_id: Optional[str] = None
