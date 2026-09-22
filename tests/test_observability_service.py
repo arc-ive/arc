@@ -142,6 +142,44 @@ async def test_telemetry_write_failure_is_swallowed_not_raised():
     assert await service.record_api_request(record) is False
 
 
+class TenantlessFallbackRepository:
+    """Fake whose first write fails the tenant FK, then accepts anything."""
+
+    def __init__(self):
+        import asyncpg
+
+        self._fk_error = asyncpg.ForeignKeyViolationError("tenant fk")
+        self.seen = []
+
+    async def create_api_request_record(self, record):
+        self.seen.append(record)
+        if len(self.seen) == 1:
+            raise self._fk_error
+        return record
+
+
+@pytest.mark.asyncio
+async def test_tenant_fk_failure_retries_once_unattributed():
+    """Issue #240 safety net: the event survives with NULL tenant, not dropped."""
+    repo = TenantlessFallbackRepository()
+    service = ObservabilityService(repository=repo)
+    record = ApiRequestRecord(
+        id="r3",
+        request_id="cr3",
+        method="GET",
+        route_template="/skills",
+        status_code=200,
+        duration_ms=1,
+        tenant_id="vanished-tenant",
+    )
+    assert await service.record_api_request(record) is True
+    assert len(repo.seen) == 2
+    assert repo.seen[0].tenant_id == "vanished-tenant"
+    assert repo.seen[1].tenant_id is None
+    assert repo.seen[1].route_template == "/skills"
+    assert repo.seen[1].request_id == "cr3"
+
+
 def test_window_bounds_enforced():
     service = ObservabilityService(repository=RecordingRepository())
     with pytest.raises(ValueError):

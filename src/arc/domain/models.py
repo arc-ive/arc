@@ -973,7 +973,9 @@ class ApiRequestRecord:
 
     - the correlation ID minted by the request-telemetry middleware
       (``request_id``; distinct from future Agent execution IDs);
-    - the tenant label applied by SUCCESS-GATED PATH-PARAM attribution:
+    - the tenant label applied by SUCCESS-GATED resolved-context
+      attribution (the authorized tenant published to request state by
+      the tenant dependency, covering path- and query-bound routes):
       a request is labelled with a tenant ONLY when it resolved through
       an authenticated tenant route AND completed with status < 400.
       Attribution is telemetry bookkeeping and NEVER establishes tenant

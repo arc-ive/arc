@@ -9,15 +9,22 @@ Responsibilities (Observability-owned correlation infrastructure):
 3. Measure request duration with a monotonic clock.
 4. Record a metadata-only ``ApiRequestRecord`` AFTER the response.
 
-Tenant attribution is SUCCESS-GATED PATH-PARAM LABELING (approved L1):
-a request is labelled with a tenant ONLY when it matched a tenant route
-AND completed with status < 400. This is telemetry bookkeeping — it must
-NEVER establish tenant identity or authorization; failed, unauthorized,
-malformed, and public requests are recorded with tenant_id = NULL.
+Tenant attribution is SUCCESS-GATED RESOLVED-CONTEXT LABELING (approved
+L1): a request is labelled with a tenant ONLY when it completed with
+status < 400 AND the application's tenant dependency resolved and
+authorized a tenant for this request (published to request state,
+covering both path- and query-bound tenant routes such as
+``GET /skills``). Raw client input — path parameters, query strings —
+is never trusted as the attribution source, so an unrelated endpoint
+cannot be attributed by merely adding ``?tenant_id=``. This is
+telemetry bookkeeping — it must NEVER establish tenant identity or
+authorization; failed, unauthorized, malformed, and public requests
+are recorded with tenant_id = NULL.
 
 Telemetry writes are BEST-EFFORT: any failure is dropped by the
 observability service without ever failing the served business response.
-Route templates are normalized (never raw paths or query strings).
+Route templates are normalized (never raw paths or query strings);
+requests outside the route table share the single ``unrouted`` label.
 """
 
 import logging
@@ -27,6 +34,7 @@ from typing import Callable, Optional
 
 from arc.api.correlation import request_id_var
 from arc.domain.models import ApiRequestRecord
+from arc.security.dependencies import RESOLVED_TENANT_STATE_KEY
 
 logger = logging.getLogger("arc.http")
 
@@ -34,7 +42,7 @@ logger = logging.getLogger("arc.http")
 class RequestTelemetryMiddleware:
     """Pure-ASGI middleware: correlate, measure, then record best-effort."""
 
-    UNMATCHED_ROUTE_TEMPLATE = "unmatched"
+    UNMATCHED_ROUTE_TEMPLATE = "unrouted"
 
     def __init__(self, app, service_provider: Callable[[], Optional[object]]):
         self.app = app
@@ -82,7 +90,8 @@ class RequestTelemetryMiddleware:
         tenant_id: Optional[str] = None
         error_kind: Optional[str] = None
         if status_code < 400:
-            candidate = (scope.get("path_params") or {}).get("tenant_id")
+            state = scope.get("state") or {}
+            candidate = state.get(RESOLVED_TENANT_STATE_KEY) if isinstance(state, dict) else None
             if isinstance(candidate, str) and candidate:
                 tenant_id = candidate
         else:
