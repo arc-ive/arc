@@ -13,6 +13,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { errorMessage } from '../../api/errors.js'
+import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryState.js'
 
 function ToolExecuteDialog({ tool, open, onClose }) {
   const { tenantId } = useTenant()
@@ -113,11 +114,16 @@ export function ToolsPage() {
   const canExecute = can('tool:execute')
   const [executeTarget, setExecuteTarget] = useState(null)
 
-  const { data: tools, isLoading, error } = useQuery({
+  const toolsQuery = useQuery({
     queryKey: queryKeys.tools(tenantId),
     queryFn: () => listTools(tenantId),
     enabled: !isDemo && Boolean(tenantId),
   })
+  const tools = toolsQuery.data
+  const isLoading = isQueryLoading(toolsQuery)
+  // Issue #225: a failed-and-parked query is a failure, not loading.
+  const failed = isQueryFailed(toolsQuery)
+  const error = toolsQuery.error
 
   return (
     <div className="flex flex-col gap-6">
@@ -140,9 +146,15 @@ export function ToolsPage() {
       />
 
       {isLoading && <Spinner />}
-      {error && <ErrorState error={error} />}
+      {failed && (
+        <ErrorState
+          error={error}
+          message={error ? undefined : STALLED_MESSAGE}
+          onRetry={() => toolsQuery.refetch()}
+        />
+      )}
 
-      {!isLoading && !error && (!tools || tools.length === 0) && (
+      {!isLoading && !failed && (!tools || tools.length === 0) && (
         <EmptyState
           icon={Wrench}
           title="No tools available"
@@ -150,7 +162,7 @@ export function ToolsPage() {
         />
       )}
 
-      {!isLoading && !error && tools && tools.length > 0 && (
+      {!isLoading && !failed && tools && tools.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2">
           {tools.map((tool) => (
             <Card key={tool.name} className="flex flex-col gap-3 p-5">

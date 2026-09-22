@@ -7,16 +7,22 @@ import { getTenantUsageSummary } from '../../api/endpoints/observability.js'
 import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
+import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryState.js'
 
 export function ObservabilityPage() {
   const { tenantId } = useTenant()
   const { isDemo } = useAuth()
 
-  const { data: usage, isLoading, error } = useQuery({
+  const usageQuery = useQuery({
     queryKey: queryKeys.observabilityTenant(tenantId),
     queryFn: () => getTenantUsageSummary(tenantId),
     enabled: !isDemo && Boolean(tenantId),
   })
+  const usage = usageQuery.data
+  const isLoading = isQueryLoading(usageQuery)
+  // Issue #225: a failed-and-parked query is a failure, not loading.
+  const failed = isQueryFailed(usageQuery)
+  const error = usageQuery.error
 
   return (
     <div className="flex flex-col gap-6">
@@ -33,9 +39,15 @@ export function ObservabilityPage() {
       </section>
 
       {isLoading && <Spinner />}
-      {error && <ErrorState error={error} />}
+      {failed && (
+        <ErrorState
+          error={error}
+          message={error ? undefined : STALLED_MESSAGE}
+          onRetry={() => usageQuery.refetch()}
+        />
+      )}
 
-      {!isLoading && !error && (
+      {!isLoading && !failed && (
         <Card>
           <CardHeader title="Usage Summary" description={`Metrics over the last ${usage?.window_hours || 24} hours.`} />
           <CardContent>
