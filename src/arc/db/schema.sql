@@ -532,11 +532,14 @@ CREATE TABLE IF NOT EXISTS llm_usage_records (
     latency_ms INTEGER,
     cost_usd NUMERIC(12,6),
     call_type VARCHAR(50) NOT NULL,
+    succeeded BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT ck_llm_usage_records_call_type
         CHECK (call_type IN ('complete', 'propose_tool', 'propose_skill'))
 );
+
+ALTER TABLE llm_usage_records ADD COLUMN IF NOT EXISTS succeeded BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_llm_usage_records_tenant_id
     ON llm_usage_records(tenant_id);

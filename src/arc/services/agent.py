@@ -37,8 +37,9 @@ Security invariants:
   they never fail the business response.
 
 The default deterministic provider carries no decision script, so the
-Agent fails closed (``agent_capability_unavailable``) until a decision
-capability is explicitly configured.
+Agent fails closed (``agent_decision_unavailable``) until a decision
+capability is explicitly configured. This is distinct from the
+platform/tenant capability gate (``agent_capability_unavailable``).
 """
 
 import logging
@@ -61,7 +62,14 @@ from arc.domain.models import (
 )
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
-from arc.services.llm import LlmProvider, SkillSelectingLlm, _current_llm_usage
+from arc.services.llm import (
+    LlmConfigurationError,
+    LlmError,
+    LlmProvider,
+    SkillSelectingLlm,
+    _current_llm_failed_usage,
+    _current_llm_usage,
+)
 from arc.services.llm_pricing import build_llm_usage_record
 from arc.services.observability import ObservabilityService
 from arc.services.pii import PiiGuardService
@@ -78,6 +86,8 @@ MAX_AGENT_STEPS = 3
 # Safe, generic error kinds surfaced in structured results. Raw
 # exceptions and internal details never cross this boundary.
 _ERROR_CAPABILITY_UNAVAILABLE = "agent_capability_unavailable"
+_ERROR_DECISION_UNAVAILABLE = "agent_decision_unavailable"
+_ERROR_PROVIDER_UNAVAILABLE = "agent_provider_unavailable"
 _ERROR_INVALID_DECISION = "invalid_decision"
 _ERROR_SKILL_NOT_AVAILABLE = "skill_not_available"
 _ERROR_NO_DECISION = "no_decision"
@@ -171,7 +181,7 @@ class AgentExecutionService:
                 context,
                 goal,
                 AgentRunStatus.FAILED,
-                _ERROR_CAPABILITY_UNAVAILABLE,
+                _ERROR_DECISION_UNAVAILABLE,
                 steps=[],
             )
             await self._persist_trace(result, started_at)
@@ -191,7 +201,29 @@ class AgentExecutionService:
 
         completed: List[AgentStepOutcome] = []
         for sequence in range(MAX_AGENT_STEPS):
-            raw_decision = self.llm_provider.propose_skill(goal, snapshot)
+            try:
+                raw_decision = self.llm_provider.propose_skill(goal, snapshot)
+            except (LlmError, LlmConfigurationError) as exc:
+                # Provider outage: record any billable usage for the failed
+                # call (#267), then follow the controlled-failure path with
+                # a persisted trace, never a raw 500 (#265).
+                await self._record_usage(context, run_id, succeeded=False)
+                # Provider outage: controlled failure with a persisted
+                # trace, never a raw 500 with no record of the attempt.
+                logger.warning(
+                    "agent_provider_failed tenant=%s reason=%s",
+                    context.tenant_id,
+                    type(exc).__name__,
+                )
+                result = self._failed_at_decision_boundary(
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_PROVIDER_UNAVAILABLE,
+                    run_id=run_id,
+                )
+                await self._persist_trace(result, started_at)
+                return result
             # run_id, not a second identifier: the usage record has to carry
             # the same id the run is persisted under, or it correlates to
             # nothing.
@@ -353,21 +385,27 @@ class AgentExecutionService:
             and getattr(self.llm_provider, "skill_decision_capable", True)
         )
 
-    async def _record_usage(self, context, agent_run_id) -> None:
+    async def _record_usage(self, context, agent_run_id, succeeded=True) -> None:
         """Record LLM usage if usage data is available (best effort).
 
-        Reads from the ContextVar set by the provider after each call.
-        Deterministic provider with no usage report creates no record.
-        Persistence failure is logged and never raised (TRD 24).
+        Reads the request-scoped usage ContextVars set by the provider:
+        the latest attempt's report first, falling back to the
+        last failed attempt's snapshot (a later attempt may fail
+        without provider usage data).  Deterministic provider with no
+        usage report creates no record.  Persistence failure is logged
+        and never raised (TRD 24).
         """
         if self.observability_service is None:
             return
         usage = _current_llm_usage.get()
         if usage is None:
+            usage = _current_llm_failed_usage.get()
+        if usage is None:
             return
         record = build_llm_usage_record(
             usage,
             call_type=LLM_CALL_TYPE_PROPOSE_SKILL,
+            succeeded=succeeded,
             tenant_id=context.tenant_id,
             request_id=request_id_var.get(),
             agent_run_id=agent_run_id,

@@ -70,7 +70,7 @@ def _parse_database_url(url: str) -> dict:
 
 
 def _base_database_url() -> str:
-    return os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+    return os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc_test")
 
 
 def _maintenance_url(parts: dict) -> str:

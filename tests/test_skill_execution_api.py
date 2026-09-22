@@ -308,6 +308,61 @@ class TestSkillExecutionValidation:
         assert response.status_code == 422
 
 
+class TestSkillInputsApi:
+    """Issue #241: declared inputs supplied through the API reach execution."""
+
+    async def test_declared_inputs_accepted(
+        self, client, repositories, make_token, authorization_override
+    ):
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        skill_id = await _create_skill_via_api(
+            client, tenant.id, token, inputs=["incident_description"]
+        )
+
+        response = client.post(
+            f"/skills/{skill_id}/execute?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "tool_calls": [{"tool_name": "check_service_health", "input": {}}],
+                "satisfied_preconditions": [],
+                "skill_inputs": {"incident_description": "outage"},
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "succeeded"
+
+    async def test_missing_declared_inputs_refused(
+        self, client, repositories, make_token, authorization_override
+    ):
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        skill_id = await _create_skill_via_api(
+            client, tenant.id, token, inputs=["incident_description"]
+        )
+
+        response = client.post(
+            f"/skills/{skill_id}/execute?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "tool_calls": [{"tool_name": "check_service_health", "input": {}}],
+                "satisfied_preconditions": [],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["error_kind"] == "invalid_skill_inputs"
+
+
 class TestSkillResumeApprovalVerification:
     """Issue #206: resume verifies the approval instead of trusting the ID."""
 

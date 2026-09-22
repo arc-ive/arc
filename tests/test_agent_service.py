@@ -173,7 +173,7 @@ class TestCapabilityGate:
         )
 
         assert result.status is AgentRunStatus.FAILED
-        assert result.error_kind == "agent_capability_unavailable"
+        assert result.error_kind == "agent_decision_unavailable"
         assert result.steps == []
         assert env["provider_calls"] == []
         assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
@@ -192,8 +192,63 @@ class TestCapabilityGate:
         )
 
         assert result.status is AgentRunStatus.FAILED
-        assert result.error_kind == "agent_capability_unavailable"
+        assert result.error_kind == "agent_decision_unavailable"
         assert await env["record_repo"].list_for_tenant(env["tenant"].id) == []
+
+    async def test_capability_denial_takes_precedence_over_provider(self, repositories, db):
+        """Issue #228: the two causes stay distinguishable; gate order wins."""
+        from unittest.mock import AsyncMock
+
+        env = await _build_environment(repositories, db)
+        env["agent"].llm_provider = DeterministicLlmProvider()  # unarmed default
+        denying = AsyncMock()
+        denying.is_enabled.return_value = False
+        env["agent"].capability_service = denying
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "agent_capability_unavailable"
+
+
+class TestProviderFailure:
+    """Issue #216: provider outage is a controlled failure with a trace."""
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            "LlmError",
+            "LlmRetryableError",
+            "LlmConfigurationError",
+        ],
+    )
+    async def test_provider_error_returns_controlled_failure(self, repositories, db, error):
+        import arc.services.llm as llm_module
+
+        exc_class = getattr(llm_module, error)
+
+        class _ExplodingProvider:
+            skill_decision_capable = True
+
+            def propose_skill(self, goal, catalog):
+                raise exc_class("connection refused")
+
+        env = await _build_environment_with_observability(repositories, db)
+        env["agent"].llm_provider = _ExplodingProvider()
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "agent_provider_unavailable"
+        assert result.steps == []
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].error_kind == "agent_provider_unavailable"
 
 
 class TestBoundedOrchestration:
@@ -249,6 +304,21 @@ class TestBoundedOrchestration:
         assert len(result.steps) == 1
         assert result.steps[-1].error_kind == "unknown_tool"
         assert len(env["provider_calls"]) == 1  # no second decision, no retry
+
+    async def test_input_declaring_skill_fails_closed_without_inputs(self, repositories, db):
+        """Issue #241: agents supply no skill inputs, so the declaration is
+        enforced rather than silently ignored."""
+        env = await _build_environment(repositories, db)
+        skill = await _create_skill(env, inputs=["incident_description"])
+        env["queue"].append(_decision(skill.id))
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "invalid_skill_inputs"
+        assert len(await env["record_repo"].list_for_tenant(env["tenant"].id)) == 0
 
     async def test_approval_required_propagates_and_stops(self, repositories, db):
         env = await _build_environment(repositories, db)
@@ -584,7 +654,7 @@ class TestTracePersistence:
         assert len(traces) == 1
         assert traces[0].error_kind == "invalid_decision"
 
-    async def test_capability_unavailable_persists_trace(self, repositories, db):
+    async def test_decision_unavailable_persists_trace(self, repositories, db):
         env = await _build_environment_with_observability(repositories, db)
         env["agent"].llm_provider = DeterministicLlmProvider()  # unarmed
 
@@ -592,11 +662,11 @@ class TestTracePersistence:
             env["context"], env["principal"], "goal", env["authorization"]
         )
         assert result.status is AgentRunStatus.FAILED
-        assert result.error_kind == "agent_capability_unavailable"
+        assert result.error_kind == "agent_decision_unavailable"
 
         traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
         assert len(traces) == 1
-        assert traces[0].error_kind == "agent_capability_unavailable"
+        assert traces[0].error_kind == "agent_decision_unavailable"
 
 
 class TestTraceDuration:

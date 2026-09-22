@@ -634,6 +634,7 @@ async def test_malformed_proposals_raise_value_error(repositories, db):
         ([{"input": {}}], "tool_name"),
         ([{"tool_name": ""}], "tool_name"),
         ([{"tool_name": "echo_tool", "input": "not-an-object"}], "input"),
+        ([{"tool_name": "check_service_health", "parameters": {}}], "unknown fields"),
     ]
     for tool_calls, fragment in malformed_calls:
         with pytest.raises(ValueError, match=fragment):
@@ -1071,6 +1072,83 @@ async def test_non_string_precondition_labels_rejected(repositories, db):
             [_call("check_service_health")],
             ["ok", 42],
             env["authorization"],
+        )
+    assert env["calls"] == []
+
+
+# ---------------------------------------------------------------------------
+# Declared skill inputs (Issue #241)
+# ---------------------------------------------------------------------------
+
+
+async def test_missing_declared_inputs_refused(repositories, db):
+    env = await _build_environment(repositories, db)
+    skill = await _create_skill(env, inputs=["incident_description"])
+
+    result = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("check_service_health")],
+        [],
+        env["authorization"],
+    )
+
+    assert result.status is SkillExecutionStatus.FAILED
+    assert result.error_kind == "invalid_skill_inputs"
+    assert env["calls"] == []
+
+
+async def test_unexpected_inputs_refused(repositories, db):
+    env = await _build_environment(repositories, db)
+    skill = await _create_skill(env)
+
+    result = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("check_service_health")],
+        [],
+        env["authorization"],
+        skill_inputs={"surprise": "x"},
+    )
+
+    assert result.status is SkillExecutionStatus.FAILED
+    assert result.error_kind == "invalid_skill_inputs"
+    assert env["calls"] == []
+
+
+async def test_declared_inputs_accepted(repositories, db):
+    env = await _build_environment(repositories, db)
+    skill = await _create_skill(env, inputs=["incident_description", "severity_level"])
+
+    result = await env["engine"].execute(
+        env["context"],
+        env["principal"],
+        skill.id,
+        [_call("check_service_health")],
+        [],
+        env["authorization"],
+        skill_inputs={"incident_description": "outage", "severity_level": "high"},
+    )
+
+    assert result.status is SkillExecutionStatus.SUCCEEDED
+    assert [step.tool_name for step in result.steps] == ["check_service_health"]
+
+
+async def test_malformed_skill_inputs_raise_value_error(repositories, db):
+    env = await _build_environment(repositories, db)
+    skill = await _create_skill(env, inputs=["incident_description"])
+
+    with pytest.raises(ValueError, match="skill_inputs must be an object"):
+        await env["engine"].execute(
+            env["context"],
+            env["principal"],
+            skill.id,
+            [_call("check_service_health")],
+            [],
+            env["authorization"],
+            skill_inputs=["not-a-dict"],
         )
     assert env["calls"] == []
 

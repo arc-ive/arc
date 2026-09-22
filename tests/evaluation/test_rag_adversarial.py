@@ -93,7 +93,8 @@ def test_injection_does_not_alter_system_instructions(fixture):
     prompt = UnifiedIntelligenceService._build_prompt(approved, "test query")
 
     assert "Answer using ONLY the approved context" in prompt
-    assert "Cite sources with their citation references" in prompt
+    assert "Cite the sources you used with the" in prompt
+    assert "[N] numbers shown in the approved context" in prompt
 
 
 @pytest.mark.parametrize("fixture", adversarial_fixtures(), ids=lambda f: f["description"])

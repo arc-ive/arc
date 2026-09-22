@@ -290,6 +290,7 @@ class KnowledgeRepository(Protocol):
         document: KnowledgeDocument,
         chunks: List[KnowledgeChunk],
         embeddings: List[List[float]],
+        expected_version: Optional[int] = None,
     ) -> KnowledgeDocument:
         """Apply an accepted content change to an existing logical document.
 
@@ -298,6 +299,23 @@ class KnowledgeRepository(Protocol):
         chunk set, and inserts the new prepared chunk set. A failure at
         any point rolls back so the prior document version and its complete
         old index remain intact.
+
+        When ``expected_version`` is provided, the row is additionally
+        matched on its current version (optimistic locking): if another
+        writer committed first, no row matches and ``ConcurrentUpdateError``
+        is raised instead of silently overwriting the newer version. With
+        ``expected_version=None`` the update is unconditional and a missing
+        row raises ``NotFoundError``.
+        """
+        ...
+
+    async def update_document_metadata(self, document: KnowledgeDocument) -> KnowledgeDocument:
+        """Apply a metadata-only change to an existing logical document.
+
+        Updates source/provenance/status/updated_at on the existing row
+        (matched by id AND tenant) without touching content, version, or
+        the chunk set. Raises ``NotFoundError`` when the document does not
+        exist in the given tenant.
         """
         ...
 

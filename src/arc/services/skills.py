@@ -32,7 +32,7 @@ These are validation helpers only; no execution engine is implemented.
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 from arc.domain.models import Skill, TenantContext
 from arc.services.pii import PiiGuardService
@@ -162,6 +162,16 @@ class SkillService:
         """
         satisfied = set(satisfied_conditions)
         return all(precondition in satisfied for precondition in skill.preconditions)
+
+    def skill_inputs_met(self, skill: Skill, provided: Mapping) -> bool:
+        """Return whether the supplied inputs match the declaration exactly.
+
+        Every declared input must be present and no undeclared input may
+        be supplied. A Skill with no declared inputs accepts only an
+        empty mapping, so tool parameters cannot be confused with skill
+        inputs. It performs no execution.
+        """
+        return set(provided) == set(skill.inputs)
 
     def is_tool_allowed(self, skill: Skill, tool_name: str) -> bool:
         """Return whether a tool is within the Skill's allowed tools.

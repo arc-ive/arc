@@ -20,6 +20,7 @@ from arc.security.authorization import (
     CONNECTOR_SYNC,
     KNOWLEDGE_CREATE,
     KNOWLEDGE_READ,
+    KNOWLEDGE_UPDATE,
     MEMBERSHIP_CREATE,
     OBSERVABILITY_PLATFORM_READ,
     OBSERVABILITY_READ,
@@ -81,6 +82,7 @@ def test_exactly_five_application_roles_exist():
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
                 KNOWLEDGE_READ,
+                KNOWLEDGE_UPDATE,
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_UPDATE,
@@ -107,6 +109,7 @@ def test_exactly_five_application_roles_exist():
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
                 KNOWLEDGE_READ,
+                KNOWLEDGE_UPDATE,
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_UPDATE,
@@ -147,6 +150,7 @@ def test_exactly_five_application_roles_exist():
                 USER_READ,
                 MEMBERSHIP_CREATE,
                 KNOWLEDGE_CREATE,
+                KNOWLEDGE_UPDATE,
                 SKILL_CREATE,
                 SKILL_UPDATE,
                 SKILL_DELETE,
@@ -167,6 +171,7 @@ def test_exactly_five_application_roles_exist():
                 MEMBERSHIP_CREATE,
                 TENANT_READ,
                 KNOWLEDGE_CREATE,
+                KNOWLEDGE_UPDATE,
                 SKILL_CREATE,
                 SKILL_READ,
                 SKILL_UPDATE,
@@ -326,6 +331,32 @@ def test_unknown_connector_permission_is_never_granted():
         assert not service.has_permission(principal, unknown), (
             f"{role.value} must never hold the unknown permission"
         )
+
+
+def test_knowledge_crud_permissions_are_distinct_resource_actions():
+    """Knowledge create/update/delete are separate grantable permissions.
+
+    Creation requires ``knowledge:create`` while document updates require
+    ``knowledge:update``; both administrator roles hold both, and the
+    update permission is enforced through the matrix (not assumed).
+    """
+    from arc.security.authorization import KNOWLEDGE_DELETE, KNOWLEDGE_UPDATE
+
+    assert (KNOWLEDGE_CREATE.resource, KNOWLEDGE_CREATE.action) == ("knowledge", "create")
+    assert (KNOWLEDGE_UPDATE.resource, KNOWLEDGE_UPDATE.action) == ("knowledge", "update")
+    assert (KNOWLEDGE_DELETE.resource, KNOWLEDGE_DELETE.action) == ("knowledge", "delete")
+
+    for role in (
+        ApplicationRole.PLATFORM_ADMINISTRATOR,
+        ApplicationRole.COMPANY_ADMINISTRATOR,
+    ):
+        service = AuthorizationService({f"u-{role.value}": role})
+        principal = AuthenticatedPrincipal(user_id=f"u-{role.value}")
+        assert service.has_permission(principal, KNOWLEDGE_CREATE)
+        assert service.has_permission(principal, KNOWLEDGE_UPDATE)
+
+    denied = AuthorizationService({"ops": ApplicationRole.OPERATIONS_USER})
+    assert not denied.has_permission(AuthenticatedPrincipal(user_id="ops"), KNOWLEDGE_UPDATE)
 
 
 def test_connector_permissions_are_tenant_scoped_operations():

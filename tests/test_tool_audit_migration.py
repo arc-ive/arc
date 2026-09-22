@@ -46,7 +46,7 @@ MIGRATION_DB_NAME = "arc_tool_audit_migration"
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://arc:arc-dev-password@localhost:5432/arc",
+    "postgresql://arc:arc-dev-password@localhost:5432/arc_test",
 )
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "arc" / "db" / "schema.sql"
 

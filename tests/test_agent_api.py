@@ -128,7 +128,7 @@ class TestAgentSecurity:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "failed"
-        assert body["error_kind"] == "agent_capability_unavailable"
+        assert body["error_kind"] == "agent_decision_unavailable"
         assert body["steps"] == []
 
     async def test_tenant_mismatch_is_rejected_403(
@@ -331,6 +331,48 @@ class TestAgentRuns:
         assert body["status"] == "failed"
         assert body["tenant_id"] == tenant.id
         assert body["steps"][-1]["error_kind"] == "invalid_input"
+
+
+class TestAgentProviderFailure:
+    """Issue #216: provider outage is a controlled error, not a raw 500."""
+
+    async def _setup(self, client, repositories, make_token, authorization_override):
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        skill_id = await _create_skill_via_api(client, tenant.id, token)
+        return tenant, token, skill_id
+
+    async def test_unreachable_provider_returns_controlled_failure(
+        self, client, repositories, make_token, authorization_override
+    ):
+        from arc.services.llm import LlmError
+
+        tenant, token, skill_id = await self._setup(
+            client, repositories, make_token, authorization_override
+        )
+
+        class _ExplodingProvider:
+            skill_decision_capable = True
+
+            def propose_skill(self, goal, catalog):
+                raise LlmError("connection refused")
+
+        previous = _install_agent_service(_ExplodingProvider())
+        try:
+            response = _run(client, tenant.id, token)
+        finally:
+            if previous is None:
+                app_context.services._services.pop("agent_service", None)
+            else:
+                app_context.services.register("agent_service", previous)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["error_kind"] == "agent_provider_unavailable"
 
 
 class TestAgentResumeApprovalVerification:
