@@ -33,7 +33,7 @@ async def _fresh_db():
     from arc.db.connection import ArcDatabase
 
     database = ArcDatabase(
-        os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+        os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc_test")
     )
     await database.connect()
     return database
