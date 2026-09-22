@@ -16,6 +16,7 @@ failure prevents any persistence at all — there is never a document
 without a complete index, nor a partial chunk set.
 """
 
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -245,6 +246,7 @@ class RetrievalService:
         query: str,
         limit: int = 5,
         source_type: Optional[KnowledgeSource] = None,
+        min_relevance_score: Optional[float] = None,
     ) -> ApprovedContext:
         """Return retrieval results as the Approved Context Contract.
 
@@ -255,6 +257,25 @@ class RetrievalService:
 
         V2 uses hybrid retrieval: dense semantic retrieval + lexical
         retrieval fused via Reciprocal Rank Fusion (``HYBRID_RRF``).
+
+        Items whose dense cosine similarity falls below
+        ``min_relevance_score`` are excluded from the approved context.
+        Lexical-only matches (no dense retrieval hit) are not floored
+        because their score is ts_rank, which is not comparable to
+        cosine similarity.  Note: an off-corpus query that lands a
+        lexical hit (e.g. a word overlap) bypasses the floor entirely.
+        When no items clear the threshold the contract has an empty
+        ``items`` list; the caller
+        (``UnifiedIntelligenceService.answer_query``) returns the
+        existing no-answer response in that case.
+
+        The threshold defaults to the ``MIN_RELEVANCE_SCORE`` env var,
+        falling back to ``0.0`` (no filtering).  A value of ``0.0``
+        disables the floor, which is correct for the ``deterministic``
+        provider used in CI where cosine similarity values do not
+        separate on- from off-corpus queries.  Production deployments
+        with a real embedding provider should set this to a measured
+        threshold that rejects known off-corpus queries.
 
         The tenant boundary comes exclusively from the trusted context,
         the SQL similarity search is tenant-scoped, and every returned
@@ -271,6 +292,12 @@ class RetrievalService:
             RuntimeError: when the repository returns a match outside the
                 trusted tenant (invariant violation; fail closed).
         """
+        if min_relevance_score is None:
+            raw = os.getenv("MIN_RELEVANCE_SCORE", "0.0")
+            try:
+                min_relevance_score = float(raw)
+            except ValueError:
+                raise ValueError(f"MIN_RELEVANCE_SCORE must be a numeric value, got {raw!r}")
         dense_matches = await self.search(context, query, limit=limit, source_type=source_type)
         lexical_matches = await self.lexical_search(
             context, query, limit=limit, source_type=source_type
@@ -282,6 +309,16 @@ class RetrievalService:
         for match in fused:
             if match.tenant_id != context.tenant_id:
                 raise RuntimeError("Retrieval returned a match outside the trusted tenant")
+
+        dense_similarity = {m.chunk_id: m.similarity for m in dense_matches}
+
+        def _passes_floor(match: KnowledgeMatch) -> bool:
+            sim = dense_similarity.get(match.chunk_id)
+            if sim is None:
+                return True
+            return sim >= min_relevance_score
+
+        filtered = [match for match in fused if _passes_floor(match)]
 
         items = [
             ApprovedContextItem(
@@ -295,7 +332,7 @@ class RetrievalService:
                 relevance_score=rrf_scores[match.chunk_id],
                 citation_reference=f"{match.document_id}#c{match.sequence}",
             )
-            for match in fused
+            for match in filtered
         ]
 
         return ApprovedContext(

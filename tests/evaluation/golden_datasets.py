@@ -1104,3 +1104,85 @@ def unauthorized_execution_fixtures():
             "description": "Fail-closed when authorization unavailable",
         },
     ]
+
+
+# ---------------------------------------------------------------------------
+# RAG: Relevance Floor — Off-Corpus (Issue #210)
+# ---------------------------------------------------------------------------
+
+
+def relevance_floor_off_corpus_fixtures():
+    """Off-corpus queries that must return no-answer when a relevance floor is set.
+
+    These are the exact queries from issue #210's reproduction.  With a
+    properly tuned ``MIN_RELEVANCE_SCORE`` against a real embedding
+    provider, each query's dense cosine similarity should fall below the
+    threshold, producing an empty ApprovedContext and therefore
+    ``answer: null, context_used: false``.
+
+    Under the deterministic provider these queries DO return results
+    (cosine overlap), so the tests are marked xfail until a production
+    provider is configured.
+    """
+    return [
+        {
+            "query": "What is the airspeed velocity of an unladen swallow?",
+            "expected_empty": True,
+            "description": "Off-corpus: classic nonsense query (#210)",
+        },
+        {
+            "query": "Who won the 1998 World Cup final?",
+            "expected_empty": True,
+            "description": "Off-corpus: sports trivia (#210)",
+        },
+        {
+            "query": "What is our parental leave entitlement?",
+            "expected_empty": True,
+            "description": "Off-corpus: absent from corpus (#210)",
+        },
+        {
+            "query": "best recipe for sourdough bread with rye flour",
+            "expected_empty": True,
+            "description": "Off-corpus: cooking query (#210)",
+        },
+        {
+            "query": "zzzz qqqq xyzzy plugh frobnicate",
+            "expected_empty": True,
+            "description": "Off-corpus: nonsense words (#210)",
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# RAG: Relevance Floor — On-Corpus (Issue #210)
+# ---------------------------------------------------------------------------
+
+
+def relevance_floor_on_corpus_fixtures():
+    """On-corpus queries that must still answer when a relevance floor is set.
+
+    These queries target content that should be in the corpus and
+    should produce non-empty ApprovedContext with relevant citations.
+
+    Under the deterministic provider these queries DO return results
+    (the floor is disabled), so these pass regardless.  They serve as
+    regression guards: if a future change to the relevance floor
+    accidentally blocks on-corpus queries, these will fail.
+    """
+    return [
+        {
+            "query": "how do I escalate a severity one incident?",
+            "expected_empty": False,
+            "description": "On-corpus: incident escalation",
+        },
+        {
+            "query": "how many vacation days do employees accrue?",
+            "expected_empty": False,
+            "description": "On-corpus: PTO policy",
+        },
+        {
+            "query": "how often must API credentials be rotated?",
+            "expected_empty": False,
+            "description": "On-corpus: credential rotation",
+        },
+    ]
