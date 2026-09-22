@@ -603,3 +603,137 @@ class TestBodyCapHardening:
         result = await _read_capped_body(request, MAX_BODY_BYTES)
         assert result == body
         assert len(result) == MAX_BODY_BYTES
+
+
+class TestWebhookProcessingIntegration:
+    """Integration tests for documented webhook processing configuration (Issue #221)."""
+
+    async def test_documented_processing_configuration_works(self, client, db, webhook_tenant):
+        """
+        Verify the exact documented processing configuration from .env.example
+        successfully authenticates AND processes an event.
+
+        This is the regression test for Issue #221: the documented configuration
+        must produce a working processing endpoint.
+        """
+        from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
+
+        # Use the exact configuration shape from .env.example (processing endpoint)
+        endpoint_id = "github-issues"
+        secret = "github-webhook-signing-secret-min-16-chars"
+        skill_id = "github-issue-processor"
+        tool_name = "create_task"
+
+        # Provision endpoint with the documented action configuration
+        previous = os.environ.get("WEBHOOK_INGESTION_ENDPOINTS")
+        os.environ["WEBHOOK_INGESTION_ENDPOINTS"] = json.dumps(
+            {
+                endpoint_id: {
+                    "tenant_id": webhook_tenant.id,
+                    "secret": secret,
+                    "action": {
+                        "type": "skill",
+                        "skill_id": skill_id,
+                        "tool_calls": [
+                            {
+                                "tool_name": tool_name,
+                                "input": {"title": "Issue from webhook", "project": "acme"},
+                            }
+                        ],
+                        "satisfied_conditions": ["user_authenticated"],
+                    },
+                }
+            }
+        )
+
+        try:
+            body = json.dumps(
+                {
+                    "event_id": _unique("sender-event"),
+                    "event_type": "issue.opened",
+                    "data": {"note": "external-content"},
+                }
+            ).encode("utf-8")
+
+            ts = str(int(time.time()))
+            headers = {
+                "X-Arc-Timestamp": ts,
+                "X-Arc-Signature": compute_signature(secret, ts, body),
+            }
+
+            # Ingest the event - this triggers auto-dispatch to the pipeline
+            response = client.post(f"/webhooks/{endpoint_id}/events", content=body, headers=headers)
+
+            assert response.status_code == 200
+            envelope = response.json()
+
+            # Verify authentication succeeded
+            assert envelope["tenant_id"] == webhook_tenant.id
+            assert envelope["endpoint_id"] == endpoint_id
+
+            # The auto-dispatch should have processed the event successfully
+            # (not failed with no_action_configured)
+            assert envelope["status"] == "processed", (
+                f"Expected 'processed', got '{envelope['status']}': {envelope}"
+            )
+
+            # Verify the event was actually processed in the database
+            records = await PostgreSQLWebhookEventRepository(db).list_for_tenant(webhook_tenant.id)
+            assert len(records) == 1
+            assert records[0].status.value == "processed"
+            assert records[0].error_kind is None
+
+        finally:
+            if previous is None:
+                os.environ.pop("WEBHOOK_INGESTION_ENDPOINTS", None)
+            else:
+                os.environ["WEBHOOK_INGESTION_ENDPOINTS"] = previous
+
+    async def test_ingestion_only_configuration_does_not_process(self, client, db, webhook_tenant):
+        """
+        Verify ingestion-only endpoints (no action) authenticate but fail processing.
+
+        This documents the expected behavior: ingestion-only endpoints are valid
+        but will not process events downstream.
+        """
+        endpoint_id = "ingestion-only"
+        secret = "a-sufficient-secret-value"
+
+        previous = os.environ.get("WEBHOOK_INGESTION_ENDPOINTS")
+        os.environ["WEBHOOK_INGESTION_ENDPOINTS"] = json.dumps(
+            {endpoint_id: {"tenant_id": webhook_tenant.id, "secret": secret}}
+        )
+
+        try:
+            body = json.dumps(
+                {
+                    "event_id": _unique("sender-event"),
+                    "event_type": "issue.opened",
+                    "data": {"note": "external-content"},
+                }
+            ).encode("utf-8")
+
+            ts = str(int(time.time()))
+            headers = {
+                "X-Arc-Timestamp": ts,
+                "X-Arc-Signature": compute_signature(secret, ts, body),
+            }
+
+            response = client.post(f"/webhooks/{endpoint_id}/events", content=body, headers=headers)
+
+            assert response.status_code == 200
+            envelope = response.json()
+
+            # Authentication succeeded
+            assert envelope["tenant_id"] == webhook_tenant.id
+            assert envelope["endpoint_id"] == endpoint_id
+
+            # But processing failed because no action configured
+            assert envelope["status"] == "failed"
+            assert envelope["error_kind"] == "no_action_configured"
+
+        finally:
+            if previous is None:
+                os.environ.pop("WEBHOOK_INGESTION_ENDPOINTS", None)
+            else:
+                os.environ["WEBHOOK_INGESTION_ENDPOINTS"] = previous

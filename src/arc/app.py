@@ -46,7 +46,7 @@ from arc.services.retrieval import RetrievalService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 from arc.services.tools import ToolExecutionService, build_platform_tool_registry
-from arc.services.webhook_config import WebhookEndpointStore
+from arc.services.webhook_config import WebhookEndpointStore, validate_webhook_endpoints
 from arc.services.webhook_ingestion import WebhookIngestionService
 from arc.services.webhook_pipeline import WebhookPipelineService
 
@@ -268,6 +268,11 @@ class Application:
         # WEBHOOK_INGESTION_ENDPOINTS environment configuration; secrets
         # are never logged, returned, or persisted.
         webhook_endpoint_store = WebhookEndpointStore()
+
+        # Validate webhook endpoint configuration at startup.
+        # Logs warnings for ingestion-only endpoints (no action configured).
+        validate_webhook_endpoints()
+
         self.services["webhook_ingestion_service"] = WebhookIngestionService(
             endpoint_store=webhook_endpoint_store,
             repository=self.repositories["webhook_events"],
