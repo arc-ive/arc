@@ -32,6 +32,18 @@ class NotFoundError(DatabaseError):
     pass
 
 
+class CorruptDataError(DatabaseError):
+    """Raised when a persisted row violates a domain invariant.
+
+    The row exists but cannot be materialized (e.g. an approval whose
+    expiry does not follow its creation). Distinct from connection
+    failures so callers translate only this case into a controlled
+    domain error; the message carries identifiers, never secrets.
+    """
+
+    pass
+
+
 _TENANT_COLUMNS: tuple[str, ...] = (
     "id",
     "name",

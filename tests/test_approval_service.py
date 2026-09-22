@@ -422,3 +422,60 @@ async def test_requester_can_consume_approved_request_by_another():
         _context("tenant-1"), approval_id, "restart_service", "1", _DIGEST
     )
     assert consumed.status == ApprovalStatus.CONSUMED
+
+
+class CorruptApprovalRepository(FakeApprovalRepository):
+    """Fake whose reads surface a corrupt persisted row (Issue #239)."""
+
+    async def get_by_id(self, approval_id, tenant_id):
+        from arc.db.connection import CorruptDataError
+
+        raise CorruptDataError(f"Stored approval request '{approval_id}' violates an invariant")
+
+    async def list_for_tenant(self, tenant_id, limit=100):
+        from arc.db.connection import CorruptDataError
+
+        raise CorruptDataError("Stored approval request violates an invariant")
+
+    async def list_for_tenant_paginated(self, tenant_id, limit, offset):
+        from arc.db.connection import CorruptDataError
+
+        raise CorruptDataError("Stored approval request violates an invariant")
+
+
+@pytest.mark.asyncio
+async def test_corrupt_row_on_read_surfaces_controlled_error():
+    from arc.services.approvals import ApprovalCorruptError
+
+    service, _ = _service(CorruptApprovalRepository())
+    with pytest.raises(ApprovalCorruptError):
+        await service.get_request(_context("tenant-1"), "appr-corrupt")
+
+
+@pytest.mark.asyncio
+async def test_corrupt_row_on_list_surfaces_controlled_error():
+    from arc.services.approvals import ApprovalCorruptError
+
+    service, _ = _service(CorruptApprovalRepository())
+    with pytest.raises(ApprovalCorruptError):
+        await service.list_requests(_context("tenant-1"))
+    with pytest.raises(ApprovalCorruptError):
+        await service.list_requests_paginated(_context("tenant-1"), 10, 0)
+
+
+@pytest.mark.asyncio
+async def test_corrupt_row_on_decide_surfaces_controlled_error():
+    from arc.services.approvals import ApprovalCorruptError
+
+    service, _ = _service(CorruptApprovalRepository())
+    with pytest.raises(ApprovalCorruptError):
+        await service.decide_request(
+            _context("tenant-1"), "approver-1", "appr-corrupt", ApprovalStatus.APPROVED
+        )
+
+
+@pytest.mark.asyncio
+async def test_corrupt_error_is_a_controlled_approval_error():
+    from arc.services.approvals import ApprovalCorruptError, ApprovalError
+
+    assert issubclass(ApprovalCorruptError, ApprovalError)

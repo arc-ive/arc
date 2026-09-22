@@ -338,3 +338,87 @@ class TestEmptyListingAndFieldMapping:
         rejected_url = _url(tenant.id) + "?status=rejected"
         rejected = _authed(client, "get", rejected_url, token).json()["items"]
         assert len(rejected) == 0
+
+
+class TestCorruptRowControlledError:
+    """Issue #239: a corrupt persisted row is a controlled 500, never an unhandled one."""
+
+    def _install_failing_service(self, method, exc):
+        from unittest.mock import AsyncMock
+
+        from arc.api.controllers import app_context
+
+        mock = AsyncMock()
+        setattr(mock, method, AsyncMock(side_effect=exc))
+        previous = app_context.services._services.get("human_approval_service")
+        app_context.services.register("human_approval_service", mock)
+        return previous
+
+    def _restore_service(self, previous):
+        from arc.api.controllers import app_context
+
+        if previous is None:
+            app_context.services._services.pop("human_approval_service", None)
+        else:
+            app_context.services.register("human_approval_service", previous)
+
+    async def test_corrupt_row_on_detail_is_controlled_500(
+        self, client, seeded, make_token, authorization_override
+    ):
+        from arc.services.approvals import ApprovalCorruptError
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        previous = self._install_failing_service("get_request", ApprovalCorruptError("unreadable"))
+        try:
+            response = _authed(client, "get", _url(tenant.id, "/appr-corrupt"), token)
+        finally:
+            self._restore_service(previous)
+        assert response.status_code == 500
+        body = response.json()
+        assert body == {"detail": "Approval request data is invalid"}
+        assert "Traceback" not in response.text
+        assert "approval_requests" not in response.text
+
+    async def test_corrupt_row_on_list_is_controlled_500(
+        self, client, seeded, make_token, authorization_override
+    ):
+        from arc.services.approvals import ApprovalCorruptError
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        previous = self._install_failing_service(
+            "list_requests_paginated", ApprovalCorruptError("unreadable")
+        )
+        try:
+            response = _authed(client, "get", _url(tenant.id), token)
+        finally:
+            self._restore_service(previous)
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Approval request data is invalid"}
+
+    async def test_corrupt_row_on_decide_is_controlled_500(
+        self, client, seeded, make_token, authorization_override
+    ):
+        from arc.services.approvals import ApprovalCorruptError
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        previous = self._install_failing_service(
+            "decide_request", ApprovalCorruptError("unreadable")
+        )
+        try:
+            response = _authed(
+                client,
+                "post",
+                _url(tenant.id, "/appr-corrupt/decisions"),
+                token,
+                json={"decision": "approve"},
+            )
+        finally:
+            self._restore_service(previous)
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Approval decision failed"}
