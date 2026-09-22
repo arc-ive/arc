@@ -34,7 +34,11 @@ from arc.domain.models import (
     TenantContext,
 )
 from arc.repositories import KnowledgeChunkRepository
-from arc.services.chunking import KnowledgeChunker
+from arc.services.chunking import (
+    KnowledgeChunker,
+    build_knowledge_chunker,
+    get_chunking_settings,
+)
 from arc.services.embeddings import (
     EMBEDDING_DIMENSIONS,
     EmbeddingError,
@@ -182,7 +186,12 @@ class RetrievalService:
         embedding_provider: EmbeddingProvider = None,  # type: ignore[assignment]
     ):
         self.chunk_repo = chunk_repo
-        self.chunker = chunker if chunker is not None else KnowledgeChunker()
+        # No injected chunker: fall back to the configured policy rather
+        # than the bare mechanism default, so no path reaches production
+        # with zero overlap (Issue #227).
+        self.chunker = (
+            chunker if chunker is not None else build_knowledge_chunker(get_chunking_settings())
+        )
         if embedding_provider is None:
             raise TypeError("embedding_provider is required")
         self.embedding_provider = embedding_provider
