@@ -1,6 +1,7 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../../lib/cn.js'
 import { useTenant } from '../../tenant/useTenant.js'
+import { ContextHeader } from './ContextHeader.jsx'
 import { useCapabilities } from '../../auth/capabilities.js'
 import {
   personalNav,
@@ -49,22 +50,6 @@ function NavGroup({ title, children }) {
   )
 }
 
-function Brand() {
-  return (
-    <div className="flex items-center gap-2.5 px-2 py-1">
-      <div className="flex size-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900">
-        <svg viewBox="0 0 32 32" className="size-4" aria-hidden>
-          <path d="M8 10.5h9a4.5 4.5 0 0 1 0 9h-3v6h-6v-15Z" fill="#e4e4e7" />
-          <path d="M8 13.5h6v6H8v-6Z" fill="#6366f1" />
-        </svg>
-      </div>
-      <span className="text-[15px] font-semibold tracking-tight text-zinc-100">
-        Arc
-      </span>
-    </div>
-  )
-}
-
 /**
  * Capability-aware sidebar.
  *
@@ -86,10 +71,19 @@ function Brand() {
 export function Sidebar({ mobile = false, onNavigate }) {
   const { tenantId } = useTenant()
   const { can, isMemberOf, isPlatformAdministrator, isEmployee } = useCapabilities()
+  const location = useLocation()
+
+  // The two contexts are mutually exclusive. Previously both stacked, which
+  // is how a platform administrator ended up with fifteen workspace items
+  // under their platform items. One context's navigation shows at a time;
+  // ContextHeader carries the link across.
+  const inPlatform = location.pathname.startsWith('/platform')
 
   const tenantPrefix = tenantId ? `/app/t/${encodeURIComponent(tenantId)}` : null
   const tenantNav = tenantNavForCapabilities(can)
-  const showWorkspace = Boolean(tenantPrefix) && isMemberOf(tenantId) && tenantNav.length > 0
+  const showWorkspace =
+    !inPlatform && Boolean(tenantPrefix) && isMemberOf(tenantId) && tenantNav.length > 0
+  const showPlatform = inPlatform && isPlatformAdministrator
 
   return (
     <nav
@@ -99,10 +93,10 @@ export function Sidebar({ mobile = false, onNavigate }) {
         mobile ? '' : 'border-r',
       )}
     >
-      <Brand />
+      <ContextHeader onNavigate={onNavigate} />
       <div className="flex flex-1 flex-col gap-6">
-        {isPlatformAdministrator ? (
-          <NavGroup title="Platform">
+        {showPlatform ? (
+          <NavGroup title="Console">
             {platformNav.map((item) => (
               <NavItem key={item.to} {...item} onNavigate={onNavigate} />
             ))}

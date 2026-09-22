@@ -28,6 +28,12 @@ vi.mock('../../tenant/useTenant.js', () => ({
   useTenant: () => ({ tenantId: 'test-tenant' }),
 }))
 
+// ContextHeader fetches the workspace name and has its own test file.
+// These tests are about which nav items render, not the identity block.
+vi.mock('./ContextHeader.jsx', () => ({
+  ContextHeader: () => <div data-testid="context-header" />,
+}))
+
 import { Sidebar } from '../shell/Sidebar.jsx'
 
 /**
@@ -89,7 +95,7 @@ function capabilitiesFor(role, memberOf) {
   }
 }
 
-function renderSidebar(role, { memberOf = ['test-tenant'] } = {}) {
+function renderSidebar(role, { memberOf = ['test-tenant'], path = '/app/t/test-tenant/overview' } = {}) {
   const caps = capabilitiesFor(role, memberOf)
   mockUseCapabilities.mockReturnValue(caps)
   mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
@@ -99,9 +105,10 @@ function renderSidebar(role, { memberOf = ['test-tenant'] } = {}) {
   })
 
   return render(
-    <MemoryRouter initialEntries={['/app/t/test-tenant/overview']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/app/t/:tenantId/*" element={<Sidebar />} />
+        <Route path="/platform/*" element={<Sidebar />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -206,9 +213,17 @@ describe('Sidebar permission-derived navigation', () => {
   })
 
   describe('platform administrator role (V2-ADR-003)', () => {
-    it('shows the platform console', () => {
-      renderSidebar('platform_administrator', { memberOf: [] })
-      expect(screen.getByText('Platform')).toBeInTheDocument()
+    it('shows the console navigation when in the console', () => {
+      renderSidebar('platform_administrator', { memberOf: [], path: '/platform/dashboard' })
+      expect(screen.getByText('Console')).toBeInTheDocument()
+    })
+
+    it('does NOT show console navigation from inside a workspace', () => {
+      // The two contexts are mutually exclusive: stacking them is what
+      // produced fifteen workspace items under the platform items.
+      // ContextHeader carries the link across instead.
+      renderSidebar('platform_administrator', { memberOf: ['test-tenant'] })
+      expect(screen.queryByText('Console')).not.toBeInTheDocument()
     })
 
     it('shows NO workspace navigation without tenant membership', () => {
@@ -229,14 +244,14 @@ describe('Sidebar permission-derived navigation', () => {
     })
 
     it('does not show removed platform surfaces', () => {
-      renderSidebar('platform_administrator', { memberOf: [] })
+      renderSidebar('platform_administrator', { memberOf: [], path: '/platform/dashboard' })
       const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
       expect(hrefs).not.toContain('/platform/connectors')
       expect(hrefs).not.toContain('/platform/agents')
     })
 
     it('still shows the platform surfaces that are wired', () => {
-      renderSidebar('platform_administrator', { memberOf: [] })
+      renderSidebar('platform_administrator', { memberOf: [], path: '/platform/dashboard' })
       const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
       expect(hrefs).toContain('/platform/dashboard')
       expect(hrefs).toContain('/platform/tenants')
