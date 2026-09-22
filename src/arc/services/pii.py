@@ -32,8 +32,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from presidio_analyzer import Pattern, PatternRecognizer
-
 SUPPORTED_OPERATORS = frozenset({"replace", "mask", "redact"})
 
 DEFAULT_ENABLED_CATEGORIES = frozenset(
@@ -75,8 +73,9 @@ _CREDENTIAL_CONTEXT = [
 # Presidio's built-in UsSsnRecognizer deliberately rejects canonical
 # sample/placeholder SSNs (123-45-6789, 987-65-4320, 078-05-1120 and
 # their bare-digit equivalents).  This is correct for general-purpose
-# PII detection but Arc's acceptance criteria (#167, #215) require
-# detecting every value that *looks* like an SSN, including samples.
+# PII detection but Arc's acceptance criteria (#215, from closed #167)
+# require detecting every value that *looks* like an SSN, including
+# samples.
 #
 # ArcSsnRecognizer uses the same patterns and context words as the
 # built-in recognizer but overrides invalidate_result to preserve the
@@ -84,6 +83,13 @@ _CREDENTIAL_CONTEXT = [
 # digit rejection, mismatched delimiters) while removing the canonical-
 # sample check.  Presidio's analyzer takes the max score when multiple
 # recognizers fire, so there is no conflict with the built-in.
+#
+# Bare 9-digit matches are context-gated (#215 AC2/AC4): the bare
+# pattern scores 0.05, which Presidio's context enhancer raises to
+# ~0.40 only when SSN context words appear nearby.  The US_SSN minimum
+# score below drops unboosted bare matches (order references, ticket
+# numbers) while keeping dashed SSNs (0.50 base) and context-supported
+# bare SSNs.  No other entity type is affected.
 # ---------------------------------------------------------------------------
 
 _SSN_CONTEXT = [
@@ -94,61 +100,79 @@ _SSN_CONTEXT = [
     "ssid",
 ]
 
+# Minimum score for a US_SSN detection to be applied.  Bare 9-digit
+# matches score 0.05 without SSN context and ~0.40 with it; dashed
+# matches score 0.50 before any boost.  0.20 sits between with margin
+# on both sides.  Entity-specific: no other PII category is affected.
+_US_SSN_MIN_SCORE = 0.20
 
-class _ArcSsnRecognizer(PatternRecognizer):
-    """SSN recognizer that does not reject canonical sample SSNs.
 
-    Uses the same patterns as Presidio's built-in UsSsnRecognizer but
-    overrides the validation that rejects well-known placeholder SSNs
-    like 123-45-6789.  Structural checks (area/group/serial zeros,
-    all-same-digit, mismatched delimiters) are preserved.
+def _build_arc_ssn_recognizer():
+    """Create the Arc SSN recognizer, importing Presidio lazily.
+
+    The class is defined here (rather than at module scope) so that
+    importing this module never pulls in presidio/spaCy: those imports
+    happen only when an analyzer is actually built.  Keeps module
+    import ~10ms instead of ~1s on the app-startup path.
     """
+    from presidio_analyzer import Pattern, PatternRecognizer
 
-    def __init__(
-        self,
-        supported_language: str = "en",
-        supported_entity: str = "US_SSN",
-        name: str = "arc_us_ssn_detector",
-    ) -> None:
-        patterns = [
-            Pattern(
-                "arc_ssn_dash",
-                r"\b([0-9]{3})[- .]([0-9]{2})[- .]([0-9]{4})\b",
-                0.5,
-            ),
-            Pattern(
-                "arc_ssn_bare",
-                r"\b[0-9]{9}\b",
-                0.05,
-            ),
-        ]
-        super().__init__(
-            supported_entity=supported_entity,
-            patterns=patterns,
-            context=_SSN_CONTEXT,
-            supported_language=supported_language,
-            name=name,
-        )
+    class _ArcSsnRecognizer(PatternRecognizer):
+        """SSN recognizer that does not reject canonical sample SSNs.
 
-    def invalidate_result(self, pattern_text: str) -> bool:
-        # -- structural checks (keep) --
-        delimiter_counts: dict[str, int] = defaultdict(int)
-        for c in pattern_text:
-            if c in (".", "-", " "):
-                delimiter_counts[c] += 1
-        if len(delimiter_counts) > 1:
-            return True
+        Uses the same patterns as Presidio's built-in UsSsnRecognizer
+        but overrides the validation that rejects well-known placeholder
+        SSNs like 123-45-6789.  Structural checks (area/group/serial
+        zeros, all-same-digit, mismatched delimiters) are preserved.
+        """
 
-        only_digits = "".join(c for c in pattern_text if c.isdigit())
-        if len(only_digits) == 9:
-            if all(only_digits[0] == c for c in only_digits):
+        def __init__(
+            self,
+            supported_language: str = "en",
+            supported_entity: str = "US_SSN",
+            name: str = "arc_us_ssn_detector",
+        ) -> None:
+            patterns = [
+                Pattern(
+                    "arc_ssn_dash",
+                    r"\b([0-9]{3})[- .]([0-9]{2})[- .]([0-9]{4})\b",
+                    0.5,
+                ),
+                Pattern(
+                    "arc_ssn_bare",
+                    r"\b[0-9]{9}\b",
+                    0.05,
+                ),
+            ]
+            super().__init__(
+                supported_entity=supported_entity,
+                patterns=patterns,
+                context=_SSN_CONTEXT,
+                supported_language=supported_language,
+                name=name,
+            )
+
+        def invalidate_result(self, pattern_text: str) -> bool:
+            # -- structural checks (keep) --
+            delimiter_counts: dict[str, int] = defaultdict(int)
+            for c in pattern_text:
+                if c in (".", "-", " "):
+                    delimiter_counts[c] += 1
+            if len(delimiter_counts) > 1:
                 return True
-            if only_digits[3:5] == "00" or only_digits[5:] == "0000":
-                return True
-            if only_digits[:3] in ("000", "666"):
-                return True
 
-        return False
+            only_digits = "".join(c for c in pattern_text if c.isdigit())
+            if len(only_digits) == 9:
+                if all(only_digits[0] == c for c in only_digits):
+                    return True
+                if only_digits[3:5] == "00" or only_digits[5:] == "0000":
+                    return True
+                if only_digits[:3] in ("000", "666"):
+                    return True
+
+            return False
+
+    return _ArcSsnRecognizer()
 
 
 class PiiGuardError(Exception):
@@ -299,13 +323,24 @@ class PiiGuardService:
     def _analyze(self, text: str) -> Any:
         entities = self._entity_filter()
         try:
-            return self._analyzer().analyze(
+            results = self._analyzer().analyze(
                 text=text,
                 language=self.config.analyzer_language,
                 entities=entities,
             )
         except Exception as exc:
             raise PiiGuardError("PII analysis failed") from exc
+        # Context gate for bare SSNs (#215 AC2/AC4): the bare 9-digit
+        # pattern scores 0.05, boosted to ~0.40 only by nearby SSN
+        # context.  Dropping sub-threshold US_SSN results keeps dashed
+        # SSNs (0.50+) and context-supported bare SSNs while leaving
+        # order references and other bare 9-digit non-SSNs untouched.
+        # Entity-specific: every other category passes through unchanged.
+        return [
+            result
+            for result in results
+            if result.entity_type != "US_SSN" or result.score >= _US_SSN_MIN_SCORE
+        ]
 
     def _anonymize(self, text: str, analyzer_results: Any) -> str:
         operators = self._operators(text, analyzer_results)
@@ -385,7 +420,12 @@ class PiiGuardService:
 
     def _analyzer(self) -> Any:
         if self._analyzer_engine is None:
-            from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
+            from presidio_analyzer import (
+                AnalyzerEngine,
+                Pattern,
+                PatternRecognizer,
+                RecognizerRegistry,
+            )
 
             registry = RecognizerRegistry()
             registry.load_predefined_recognizers()
@@ -398,7 +438,7 @@ class PiiGuardService:
             )
             registry.add_recognizer(credential_recognizer)
 
-            registry.add_recognizer(_ArcSsnRecognizer())
+            registry.add_recognizer(_build_arc_ssn_recognizer())
 
             self._analyzer_engine = AnalyzerEngine(registry=registry)
         return self._analyzer_engine

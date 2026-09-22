@@ -519,6 +519,24 @@ class TestSsnSampleDetection:
         assert "123-45-6789" not in result.sanitized_text
         assert "US_SSN" in {d.entity_type for d in result.detections}
 
+    def test_bare_ssn_with_context_sentence_is_redacted(self, service) -> None:
+        """#215 AC2: bare 9 digits with SSN context must be redacted."""
+        result = service.sanitize("His social security number is 123456789.")
+        assert "123456789" not in result.sanitized_text
+        assert "US_SSN" in {d.entity_type for d in result.detections}
+
+    def test_bare_nine_digit_order_reference_not_redacted(self, service) -> None:
+        """#215 AC4: bare 9 digits without SSN context must NOT be redacted."""
+        result = service.sanitize("Order reference 123456789 shipped today.")
+        assert result.sanitized_text == "Order reference 123456789 shipped today."
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
+    def test_bare_nine_digits_without_context_not_redacted(self, service) -> None:
+        """A lone 9-digit run carries no SSN context and must NOT be redacted."""
+        result = service.sanitize("123456789")
+        assert result.sanitized_text == "123456789"
+        assert "US_SSN" not in {d.entity_type for d in result.detections}
+
     def test_us_ssn_with_default_config_still_works(self, service) -> None:
         """Existing test value must not regress."""
         result = service.sanitize("SSN: 111-22-3333")
