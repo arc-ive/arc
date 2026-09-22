@@ -703,7 +703,7 @@ def _skill_response(skill: Skill) -> Dict[str, Any]:
     }
 
 
-@api_router.post("/skills", responses=AUTHENTICATED_ERROR_RESPONSES)
+@api_router.post("/tenants/{tenant_id}/skills", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def create_skill(
     skill_data: SkillCreateRequest,
     tenant_id: str,
@@ -750,7 +750,7 @@ async def create_skill(
     return _skill_response(created_skill)
 
 
-@api_router.get("/skills", responses=AUTHENTICATED_ERROR_RESPONSES)
+@api_router.get("/tenants/{tenant_id}/skills", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def list_skills(
     tenant_id: str,
     limit: Optional[int] = Query(default=None),
@@ -772,7 +772,7 @@ async def list_skills(
     return paginate([_skill_response(skill) for skill in skills], total, params)
 
 
-@api_router.get("/skills/{skill_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
+@api_router.get("/tenants/{tenant_id}/skills/{skill_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def get_skill(
     skill_id: str,
     tenant_id: str,
@@ -796,7 +796,7 @@ async def get_skill(
     return _skill_response(skill)
 
 
-@api_router.put("/skills/{skill_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
+@api_router.put("/tenants/{tenant_id}/skills/{skill_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def update_skill(
     skill_id: str,
     skill_data: SkillUpdateRequest,
@@ -855,7 +855,7 @@ async def update_skill(
 
 
 @api_router.delete(
-    "/skills/{skill_id}",
+    "/tenants/{tenant_id}/skills/{skill_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=AUTHENTICATED_ERROR_RESPONSES,
 )
@@ -915,7 +915,9 @@ def _skill_execution_response(result: SkillExecutionResult) -> Dict[str, Any]:
     return response
 
 
-@api_router.post("/skills/{skill_id}/execute", responses=AUTHENTICATED_ERROR_RESPONSES)
+@api_router.post(
+    "/tenants/{tenant_id}/skills/{skill_id}/execute", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def execute_skill(
     skill_id: str,
     tenant_id: str,
@@ -2536,7 +2538,9 @@ async def decide_approval_request(
     return _approval_payload(approval)
 
 
-@api_router.post("/skills/{skill_id}/resume", responses=AUTHENTICATED_ERROR_RESPONSES)
+@api_router.post(
+    "/tenants/{tenant_id}/skills/{skill_id}/resume", responses=AUTHENTICATED_ERROR_RESPONSES
+)
 async def resume_skill_execution(
     skill_id: str,
     tenant_id: str,

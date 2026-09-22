@@ -2,19 +2,19 @@
 
 Covers the approved Skills management endpoints:
 
-- POST /skills                (requires ``skill:create``)
-- GET /skills                 (requires ``skill:read``)
-- GET /skills/{skill_id}      (requires ``skill:read``)
-- DELETE /skills/{skill_id}   (requires ``skill:delete``)
+- POST /tenants/{tenant_id}/skills                (requires ``skill:create``)
+- GET /tenants/{tenant_id}/skills                 (requires ``skill:read``)
+- GET /tenants/{tenant_id}/skills/{skill_id}      (requires ``skill:read``)
+- DELETE /tenants/{tenant_id}/skills/{skill_id}   (requires ``skill:delete``)
 
-The client-supplied ``tenant_id`` (query) is request input only: the X-10
+The client-supplied ``tenant_id`` (path) is request input only: the X-10
 trusted tenant context verifies the authenticated principal's persisted
 membership, and the SkillService derives tenant ownership exclusively from
 that context. Cross-tenant access never reveals resource existence.
 
 Consistency invariant: a client-supplied ``tenant_id`` that does not match
 the trusted ``TenantContext`` is rejected with 403 on every Skills
-endpoint (the trusted context is never overridden by the query parameter).
+endpoint (the trusted context is never overridden by the path parameter).
 """
 
 import uuid
@@ -74,7 +74,7 @@ async def _seed_membership(repositories, user_id, tenant_id):
 async def _create_skill_via_api(client, tenant_id, token):
     """Create a Skill through the API and return the created response."""
     return client.post(
-        f"/skills?tenant_id={tenant_id}",
+        f"/tenants/{tenant_id}/skills",
         headers={"Authorization": f"Bearer {token}"},
         json=_skill_payload(),
     )
@@ -102,23 +102,23 @@ class TestSkillRolePermissions:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
         )
         assert created.status_code == 200
         skill_id = created.json()["id"]
 
-        listed = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+        listed = client.get(f"/tenants/{tenant.id}/skills", headers=headers)
         assert listed.status_code == 200
         assert any(skill["id"] == skill_id for skill in listed.json()["items"])
 
-        fetched = client.get(f"/skills/{skill_id}?tenant_id={tenant.id}", headers=headers)
+        fetched = client.get(f"/tenants/{tenant.id}/skills/{skill_id}", headers=headers)
         assert fetched.status_code == 200
         assert fetched.json()["id"] == skill_id
 
-        deleted = client.delete(f"/skills/{skill_id}?tenant_id={tenant.id}", headers=headers)
+        deleted = client.delete(f"/tenants/{tenant.id}/skills/{skill_id}", headers=headers)
         assert deleted.status_code == 204
 
-        gone = client.get(f"/skills/{skill_id}?tenant_id={tenant.id}", headers=headers)
+        gone = client.get(f"/tenants/{tenant.id}/skills/{skill_id}", headers=headers)
         assert gone.status_code == 404
 
     async def test_operations_user_can_read_but_not_create_or_delete(
@@ -132,17 +132,15 @@ class TestSkillRolePermissions:
         token = make_token(user.id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+        response = client.get(f"/tenants/{tenant.id}/skills", headers=headers)
         assert response.status_code == 200
 
         response = client.post(
-            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
         )
         assert response.status_code == 403
 
-        response = client.delete(
-            f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
-        )
+        response = client.delete(f"/tenants/{tenant.id}/skills/{_unique('skill')}", headers=headers)
         assert response.status_code == 403
 
     async def test_employee_cannot_create_read_or_delete(
@@ -156,22 +154,22 @@ class TestSkillRolePermissions:
         token = make_token(user.id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        assert client.get(f"/skills?tenant_id={tenant.id}", headers=headers).status_code == 403
+        assert client.get(f"/tenants/{tenant.id}/skills", headers=headers).status_code == 403
         assert (
             client.get(
-                f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+                f"/tenants/{tenant.id}/skills/{_unique('skill')}", headers=headers
             ).status_code
             == 403
         )
         assert (
             client.post(
-                f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+                f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
             ).status_code
             == 403
         )
         assert (
             client.delete(
-                f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+                f"/tenants/{tenant.id}/skills/{_unique('skill')}", headers=headers
             ).status_code
             == 403
         )
@@ -182,31 +180,30 @@ class TestSkillAuthentication:
 
     def test_missing_credentials_are_rejected_on_all_skill_endpoints(self, client):
         """Every Skills endpoint returns 401 without credentials."""
-        assert client.get(f"/skills?tenant_id={_unique('tenant')}").status_code == 401
+        assert client.get(f"/tenants/{_unique('tenant')}/skills").status_code == 401
         assert (
-            client.get(f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}").status_code
-            == 401
+            client.get(f"/tenants/{_unique('tenant')}/skills/{_unique('skill')}").status_code == 401
         )
         assert (
             client.put(
-                f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}",
+                f"/tenants/{_unique('tenant')}/skills/{_unique('skill')}",
                 json={"name": "Updated"},
             ).status_code
             == 401
         )
         assert (
-            client.delete(f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}").status_code
+            client.delete(f"/tenants/{_unique('tenant')}/skills/{_unique('skill')}").status_code
             == 401
         )
         assert (
-            client.post(f"/skills?tenant_id={_unique('tenant')}", json=_skill_payload()).status_code
+            client.post(f"/tenants/{_unique('tenant')}/skills", json=_skill_payload()).status_code
             == 401
         )
 
     def test_malformed_credentials_are_rejected(self, client):
         """A malformed bearer token produces a generic 401."""
         response = client.get(
-            f"/skills?tenant_id={_unique('tenant')}",
+            f"/tenants/{_unique('tenant')}/skills",
             headers={"Authorization": "Bearer not-a-jwt"},
         )
         assert response.status_code == 401
@@ -215,7 +212,7 @@ class TestSkillAuthentication:
         """A token signed with a different secret produces a generic 401."""
         token = wrong_secret_token("user-1")
         response = client.get(
-            f"/skills?tenant_id={_unique('tenant')}",
+            f"/tenants/{_unique('tenant')}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
@@ -235,7 +232,7 @@ class TestSkillAuthorization:
         token = make_token(user.id)
 
         response = client.get(
-            f"/skills?tenant_id={tenant.id}", headers={"Authorization": f"Bearer {token}"}
+            f"/tenants/{tenant.id}/skills", headers={"Authorization": f"Bearer {token}"}
         )
         assert response.status_code == 403
 
@@ -250,7 +247,7 @@ class TestSkillAuthorization:
         token = make_token(user.id)
 
         response = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
             json=_skill_payload(),
         )
@@ -271,7 +268,7 @@ class TestSkillTenantIsolation:
         token = make_token(user.id)
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
             json=_skill_payload(tenant_id="malicious-tenant"),
         )
@@ -279,7 +276,7 @@ class TestSkillTenantIsolation:
         assert created.json()["tenant_id"] == tenant.id
 
         listed = client.get(
-            f"/skills?tenant_id={tenant.id}", headers={"Authorization": f"Bearer {token}"}
+            f"/tenants/{tenant.id}/skills", headers={"Authorization": f"Bearer {token}"}
         )
         assert listed.status_code == 200
         items = listed.json()["items"]
@@ -298,16 +295,16 @@ class TestSkillTenantIsolation:
         token = make_token(user.id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = client.get(f"/skills?tenant_id={tenant_b.id}", headers=headers)
+        response = client.get(f"/tenants/{tenant_b.id}/skills", headers=headers)
         assert response.status_code == 403
 
         response = client.post(
-            f"/skills?tenant_id={tenant_b.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant_b.id}/skills", headers=headers, json=_skill_payload()
         )
         assert response.status_code == 403
 
         response = client.delete(
-            f"/skills/{_unique('skill')}?tenant_id={tenant_b.id}", headers=headers
+            f"/tenants/{tenant_b.id}/skills/{_unique('skill')}", headers=headers
         )
         assert response.status_code == 403
 
@@ -335,7 +332,7 @@ class TestSkillTenantIsolation:
         authorization_override({user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR})
         token_a = make_token(user_a.id)
         listed = client.get(
-            f"/skills?tenant_id={tenant_a.id}", headers={"Authorization": f"Bearer {token_a}"}
+            f"/tenants/{tenant_a.id}/skills", headers={"Authorization": f"Bearer {token_a}"}
         )
         assert listed.status_code == 200
         assert [skill["id"] for skill in listed.json()["items"]] == [created_a.json()["id"]]
@@ -352,13 +349,11 @@ class TestSkillTenantIsolation:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
         )
         assert created.status_code == 200
 
-        fetched = client.get(
-            f"/skills/{created.json()['id']}?tenant_id={tenant.id}", headers=headers
-        )
+        fetched = client.get(f"/tenants/{tenant.id}/skills/{created.json()['id']}", headers=headers)
         assert fetched.status_code == 200
         assert fetched.json()["id"] == created.json()["id"]
         assert fetched.json()["tenant_id"] == tenant.id
@@ -382,13 +377,13 @@ class TestSkillTenantIsolation:
         authorization_override({user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR})
         token_a = make_token(user_a.id)
         response = client.get(
-            f"/skills/{created_b.json()['id']}?tenant_id={tenant_a.id}",
+            f"/tenants/{tenant_a.id}/skills/{created_b.json()['id']}",
             headers={"Authorization": f"Bearer {token_a}"},
         )
         assert response.status_code == 404
 
         response = client.get(
-            f"/skills/{created_b.json()['id']}?tenant_id={tenant_b.id}",
+            f"/tenants/{tenant_b.id}/skills/{created_b.json()['id']}",
             headers={"Authorization": f"Bearer {token_a}"},
         )
         assert response.status_code == 403
@@ -405,16 +400,16 @@ class TestSkillTenantIsolation:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
         )
         assert created.status_code == 200
 
         deleted = client.delete(
-            f"/skills/{created.json()['id']}?tenant_id={tenant.id}", headers=headers
+            f"/tenants/{tenant.id}/skills/{created.json()['id']}", headers=headers
         )
         assert deleted.status_code == 204
 
-        gone = client.get(f"/skills/{created.json()['id']}?tenant_id={tenant.id}", headers=headers)
+        gone = client.get(f"/tenants/{tenant.id}/skills/{created.json()['id']}", headers=headers)
         assert gone.status_code == 404
 
     async def test_delete_another_tenants_skill_does_not_leak_existence(
@@ -436,7 +431,7 @@ class TestSkillTenantIsolation:
         authorization_override({user_a.id: ApplicationRole.COMPANY_ADMINISTRATOR})
         token_a = make_token(user_a.id)
         deleted = client.delete(
-            f"/skills/{created_b.json()['id']}?tenant_id={tenant_a.id}",
+            f"/tenants/{tenant_a.id}/skills/{created_b.json()['id']}",
             headers={"Authorization": f"Bearer {token_a}"},
         )
         assert deleted.status_code == 204
@@ -444,7 +439,7 @@ class TestSkillTenantIsolation:
         authorization_override({user_b.id: ApplicationRole.COMPANY_ADMINISTRATOR})
         token_b = make_token(user_b.id)
         still_there = client.get(
-            f"/skills/{created_b.json()['id']}?tenant_id={tenant_b.id}",
+            f"/tenants/{tenant_b.id}/skills/{created_b.json()['id']}",
             headers={"Authorization": f"Bearer {token_b}"},
         )
         assert still_there.status_code == 200
@@ -469,7 +464,7 @@ class TestSkillTenantIdConsistency:
         token = make_token(user.id)
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
             json=_skill_payload(),
         )
@@ -497,18 +492,18 @@ class TestSkillTenantIdConsistency:
         app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
         try:
             create = client.post(
-                f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+                f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
             )
             assert create.status_code == 403
 
-            listing = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+            listing = client.get(f"/tenants/{tenant.id}/skills", headers=headers)
             assert listing.status_code == 403
 
-            fetch = client.get(f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers)
+            fetch = client.get(f"/tenants/{tenant.id}/skills/{_unique('skill')}", headers=headers)
             assert fetch.status_code == 403
 
             delete = client.delete(
-                f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
+                f"/tenants/{tenant.id}/skills/{_unique('skill')}", headers=headers
             )
             assert delete.status_code == 403
         finally:
@@ -534,7 +529,7 @@ class TestSkillTenantIdConsistency:
         app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
         try:
             create = client.post(
-                f"/skills?tenant_id={tenant.id}",
+                f"/tenants/{tenant.id}/skills",
                 headers={"Authorization": f"Bearer {token}"},
                 json=_skill_payload(),
             )
@@ -564,7 +559,7 @@ class TestSkillNotFound:
         token = make_token(user.id)
 
         response = client.get(
-            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{_unique('skill')}",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 404
@@ -581,18 +576,16 @@ class TestSkillNegativeCases:
     async def test_unauthenticated_requests_rejected_on_all_endpoints(self, client):
         """Every Skills endpoint returns 401 without credentials."""
         tenant_id = _unique("tenant")
-        assert client.get(f"/skills?tenant_id={tenant_id}").status_code == 401
-        assert client.get(f"/skills/{_unique('skill')}?tenant_id={tenant_id}").status_code == 401
-        assert (
-            client.post(f"/skills?tenant_id={tenant_id}", json=_skill_payload()).status_code == 401
-        )
-        assert client.delete(f"/skills/{_unique('skill')}?tenant_id={tenant_id}").status_code == 401
+        assert client.get(f"/tenants/{tenant_id}/skills").status_code == 401
+        assert client.get(f"/tenants/{tenant_id}/skills/{_unique('skill')}").status_code == 401
+        assert client.post(f"/tenants/{tenant_id}/skills", json=_skill_payload()).status_code == 401
+        assert client.delete(f"/tenants/{tenant_id}/skills/{_unique('skill')}").status_code == 401
 
     async def test_malformed_credentials_rejected(self, client, repositories):
         """A malformed bearer token produces a generic 401."""
         tenant = await _seed_tenant(repositories)
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": "Bearer not-a-jwt"},
         )
         assert response.status_code == 401
@@ -602,7 +595,7 @@ class TestSkillNegativeCases:
         tenant = await _seed_tenant(repositories)
         token = wrong_secret_token("user-1")
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
@@ -612,7 +605,7 @@ class TestSkillNegativeCases:
         tenant = await _seed_tenant(repositories)
         token = make_token("user-1", expires_in_seconds=-10)
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
@@ -622,7 +615,7 @@ class TestSkillNegativeCases:
         tenant = await _seed_tenant(repositories)
         token = make_token("user-1", issuer="other-issuer")
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
@@ -632,7 +625,7 @@ class TestSkillNegativeCases:
         tenant = await _seed_tenant(repositories)
         token = make_token("user-1", audience="other-audience")
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 401
@@ -647,7 +640,7 @@ class TestSkillNegativeCases:
         unsigned = pyjwt.encode({}, settings.jwt_secret, algorithm="HS256")
         tenant = await _seed_tenant(repositories)
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {unsigned}"},
         )
         assert response.status_code == 401
@@ -655,11 +648,11 @@ class TestSkillNegativeCases:
     @pytest.mark.parametrize(
         "endpoint,method",
         [
-            ("/skills?tenant_id={tenant_id}", "GET"),
-            ("/skills/{skill_id}?tenant_id={tenant_id}", "GET"),
-            ("/skills?tenant_id={tenant_id}", "POST"),
-            ("/skills/{skill_id}?tenant_id={tenant_id}", "PUT"),
-            ("/skills/{skill_id}?tenant_id={tenant_id}", "DELETE"),
+            ("/tenants/{tenant_id}/skills", "GET"),
+            ("/tenants/{tenant_id}/skills/{skill_id}", "GET"),
+            ("/tenants/{tenant_id}/skills", "POST"),
+            ("/tenants/{tenant_id}/skills/{skill_id}", "PUT"),
+            ("/tenants/{tenant_id}/skills/{skill_id}", "DELETE"),
         ],
     )
     async def test_employee_role_denied_on_all_endpoints(
@@ -695,7 +688,7 @@ class TestSkillNegativeCases:
         token = make_token(user.id)
 
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 403
@@ -711,7 +704,7 @@ class TestSkillNegativeCases:
         token = make_token(user.id)
 
         response = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
             json=_skill_payload(),
         )
@@ -728,17 +721,15 @@ class TestSkillNegativeCases:
         token = make_token(user.id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = client.get(f"/skills?tenant_id={tenant.id}", headers=headers)
+        response = client.get(f"/tenants/{tenant.id}/skills", headers=headers)
         assert response.status_code == 200
 
         response = client.post(
-            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
         )
         assert response.status_code == 403
 
-        response = client.delete(
-            f"/skills/{_unique('skill')}?tenant_id={tenant.id}", headers=headers
-        )
+        response = client.delete(f"/tenants/{tenant.id}/skills/{_unique('skill')}", headers=headers)
         assert response.status_code == 403
 
     async def test_missing_tenant_membership_denied(
@@ -752,7 +743,7 @@ class TestSkillNegativeCases:
         token = make_token(user.id)
 
         response = client.get(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 403
@@ -769,16 +760,16 @@ class TestSkillNegativeCases:
         token = make_token(user.id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        response = client.get(f"/skills?tenant_id={tenant_b.id}", headers=headers)
+        response = client.get(f"/tenants/{tenant_b.id}/skills", headers=headers)
         assert response.status_code == 403
 
         response = client.post(
-            f"/skills?tenant_id={tenant_b.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant_b.id}/skills", headers=headers, json=_skill_payload()
         )
         assert response.status_code == 403
 
         response = client.delete(
-            f"/skills/{_unique('skill')}?tenant_id={tenant_b.id}", headers=headers
+            f"/tenants/{tenant_b.id}/skills/{_unique('skill')}", headers=headers
         )
         assert response.status_code == 403
 
@@ -795,7 +786,7 @@ class TestSkillNegativeCases:
         token = make_token(user.id)
 
         response = client.get(
-            f"/skills?tenant_id={_unique('missing')}",
+            f"/tenants/{_unique('missing')}/skills",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 403
@@ -823,10 +814,10 @@ class TestSkillDuplicateCreation:
 
         payload = _skill_payload(name="test-skill", version="1")
 
-        r1 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        r1 = client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
         assert r1.status_code == 200
 
-        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        r2 = client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
         assert r2.status_code == 409
 
     async def test_duplicate_skill_error_message_is_descriptive(
@@ -842,8 +833,8 @@ class TestSkillDuplicateCreation:
 
         payload = _skill_payload(name="deploy-pipeline", version="2")
 
-        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
-        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
+        r2 = client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
         assert r2.status_code == 409
 
         body = r2.json()
@@ -865,8 +856,8 @@ class TestSkillDuplicateCreation:
 
         payload = _skill_payload(name="secret-skill", version="1")
 
-        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
-        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
+        r2 = client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
         assert r2.status_code == 409
 
         detail = r2.json()["detail"]
@@ -885,8 +876,8 @@ class TestSkillDuplicateCreation:
 
         payload = _skill_payload(name="internal-skill", version="3")
 
-        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
-        r2 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
+        r2 = client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
         assert r2.status_code == 409
 
         detail = r2.json()["detail"].lower()
@@ -907,18 +898,18 @@ class TestSkillDuplicateCreation:
 
         payload = _skill_payload(name="stable-skill", version="1")
 
-        r1 = client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        r1 = client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
         original_id = r1.json()["id"]
 
-        client.post(f"/skills?tenant_id={tenant.id}", headers=headers, json=payload)
+        client.post(f"/tenants/{tenant.id}/skills", headers=headers, json=payload)
 
-        fetched = client.get(f"/skills/{original_id}?tenant_id={tenant.id}", headers=headers)
+        fetched = client.get(f"/tenants/{tenant.id}/skills/{original_id}", headers=headers)
         assert fetched.status_code == 200
         assert fetched.json()["name"] == "stable-skill"
 
 
 class TestSkillUpdate:
-    """PUT /skills/{skill_id} endpoint tests."""
+    """PUT /tenants/{tenant_id}/skills/{skill_id} endpoint tests."""
 
     async def test_update_skill_succeeds(
         self, client, repositories, make_token, authorization_override
@@ -932,13 +923,13 @@ class TestSkillUpdate:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
         )
         assert created.status_code == 200
         skill_id = created.json()["id"]
 
         updated = client.put(
-            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{skill_id}",
             headers=headers,
             json={"name": "Updated Skill", "purpose": "Updated purpose"},
         )
@@ -959,7 +950,7 @@ class TestSkillUpdate:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers=headers,
             json=_skill_payload(name="Original", purpose="Original purpose", version="3"),
         )
@@ -967,7 +958,7 @@ class TestSkillUpdate:
         skill_id = created.json()["id"]
 
         updated = client.put(
-            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{skill_id}",
             headers=headers,
             json={"name": "Updated"},
         )
@@ -987,7 +978,7 @@ class TestSkillUpdate:
         token = make_token(user.id)
 
         response = client.put(
-            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{_unique('skill')}",
             headers={"Authorization": f"Bearer {token}"},
             json={"name": "Updated"},
         )
@@ -1005,7 +996,7 @@ class TestSkillUpdate:
         headers = {"Authorization": f"Bearer {token}"}
 
         response = client.put(
-            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{_unique('skill')}",
             headers=headers,
             json={"name": "Updated"},
         )
@@ -1022,7 +1013,7 @@ class TestSkillUpdate:
         token = make_token(user.id)
 
         response = client.put(
-            f"/skills/{_unique('skill')}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{_unique('skill')}",
             headers={"Authorization": f"Bearer {token}"},
             json={"name": "Updated"},
         )
@@ -1040,7 +1031,7 @@ class TestSkillUpdate:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}", headers=headers, json=_skill_payload()
+            f"/tenants/{tenant.id}/skills", headers=headers, json=_skill_payload()
         )
         assert created.status_code == 200
         skill_id = created.json()["id"]
@@ -1054,7 +1045,7 @@ class TestSkillUpdate:
         app.dependency_overrides[get_trusted_tenant_context] = lambda: mismatched_context
         try:
             response = client.put(
-                f"/skills/{skill_id}?tenant_id={tenant.id}",
+                f"/tenants/{tenant.id}/skills/{skill_id}",
                 headers=headers,
                 json={"name": "Hacked"},
             )
@@ -1063,9 +1054,9 @@ class TestSkillUpdate:
             app.dependency_overrides.pop(get_trusted_tenant_context, None)
 
     async def test_update_skill_returns_401_without_credentials(self, client):
-        """PUT /skills/{skill_id} returns 401 without credentials."""
+        """PUT /tenants/{tenant_id}/skills/{skill_id} returns 401 without credentials."""
         response = client.put(
-            f"/skills/{_unique('skill')}?tenant_id={_unique('tenant')}",
+            f"/tenants/{_unique('tenant')}/skills/{_unique('skill')}",
             json={"name": "Updated"},
         )
         assert response.status_code == 401
@@ -1086,7 +1077,7 @@ class TestSkillRiskField:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers=headers,
             json=_skill_payload(risk="high"),
         )
@@ -1105,7 +1096,7 @@ class TestSkillRiskField:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers=headers,
             json=_skill_payload(),
         )
@@ -1124,7 +1115,7 @@ class TestSkillRiskField:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers=headers,
             json=_skill_payload(),
         )
@@ -1132,7 +1123,7 @@ class TestSkillRiskField:
         skill_id = created.json()["id"]
 
         updated = client.put(
-            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{skill_id}",
             headers=headers,
             json={"risk": "medium"},
         )
@@ -1151,7 +1142,7 @@ class TestSkillRiskField:
         headers = {"Authorization": f"Bearer {token}"}
 
         response = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers=headers,
             json=_skill_payload(risk="critical"),
         )
@@ -1170,7 +1161,7 @@ class TestSkillRiskField:
         headers = {"Authorization": f"Bearer {token}"}
 
         created = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             headers=headers,
             json=_skill_payload(),
         )
@@ -1178,7 +1169,7 @@ class TestSkillRiskField:
         skill_id = created.json()["id"]
 
         response = client.put(
-            f"/skills/{skill_id}?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{skill_id}",
             headers=headers,
             json={"risk": "invalid"},
         )
@@ -1202,11 +1193,71 @@ class TestSkillRouteSurface:
         }
         skills_paths = {path for path in paths if "/skills" in path}
         assert skills_paths == {
-            "POST /skills",
-            "GET /skills",
-            "GET /skills/{skill_id}",
-            "PUT /skills/{skill_id}",
-            "DELETE /skills/{skill_id}",
-            "POST /skills/{skill_id}/execute",
-            "POST /skills/{skill_id}/resume",
+            "POST /tenants/{tenant_id}/skills",
+            "GET /tenants/{tenant_id}/skills",
+            "GET /tenants/{tenant_id}/skills/{skill_id}",
+            "PUT /tenants/{tenant_id}/skills/{skill_id}",
+            "DELETE /tenants/{tenant_id}/skills/{skill_id}",
+            "POST /tenants/{tenant_id}/skills/{skill_id}/execute",
+            "POST /tenants/{tenant_id}/skills/{skill_id}/resume",
         }
+
+
+class TestSkillsTenantPathContract:
+    """Issue #242: tenant-scoped skills live under /tenants/{tenant_id}/skills."""
+
+    async def test_old_query_scoped_route_is_gone(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """GET /skills?tenant_id=... no longer matches any route (404)."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/skills?tenant_id={tenant.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 404
+
+    async def test_missing_tenant_segment_has_no_duplicate_validation_error(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """GET /skills matches nothing: 404, not a duplicated 422 tenant_id error."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.get("/skills", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 404
+        assert "Field required" not in response.text
+
+    async def test_successful_list_is_attributed_to_tenant(
+        self, client, db, repositories, make_token, authorization_override
+    ):
+        """Telemetry records the resolved tenant for the path-scoped route."""
+        tenant = await _seed_tenant(repositories)
+        user = await _seed_user(repositories)
+        await _seed_membership(repositories, user.id, tenant.id)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.get(
+            f"/tenants/{tenant.id}/skills",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        request_id = response.headers["x-request-id"]
+
+        async with db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT tenant_id, route_template FROM api_request_records WHERE request_id = $1",
+                request_id,
+            )
+        assert row is not None
+        assert row["tenant_id"] == tenant.id
+        assert row["route_template"] == "/tenants/{tenant_id}/skills"

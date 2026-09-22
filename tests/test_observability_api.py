@@ -463,19 +463,19 @@ class TestQueryTenantAttributionIntegrity:
         assert row is not None
         assert row["tenant_id"] is None
 
-    async def test_authorized_query_scoped_route_is_attributed(
+    async def test_authorized_tenant_scoped_route_is_attributed(
         self, client, two_tenants, make_token, authorization_override
     ):
-        """GET /skills?tenant_id=... resolves the tenant: telemetry attributes it."""
+        """GET /tenants/{id}/skills resolves the tenant: telemetry attributes it."""
         tenant, user = two_tenants[0]
         authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
         token = make_token(user.id)
-        response = _authed_get(client, f"/skills?tenant_id={tenant.id}", token)
+        response = _authed_get(client, f"/tenants/{tenant.id}/skills", token)
         assert response.status_code == 200
         row = await self._telemetry_row(response.headers["x-request-id"])
         assert row is not None
         assert row["tenant_id"] == tenant.id
-        assert row["route_template"] == "/skills"
+        assert row["route_template"] == "/tenants/{tenant_id}/skills"
 
 
 # ------------------------------------------------------------------

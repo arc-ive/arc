@@ -84,8 +84,9 @@ async def test_unrouted_paths_share_one_bounded_label():
 
 
 async def test_resolved_tenant_is_attributed():
-    # Query-bound route shape (/skills?tenant_id=...): attribution comes
-    # from the resolved context, not from parsing the query string.
+    # Attribution comes from the resolved context published to request
+    # state, not from parsing path or query input (the query string here
+    # is deliberately distrusted).
     record = await _run(
         "/skills",
         status=200,

@@ -52,7 +52,7 @@ class TestMissingRequiredFieldsReturn422:
 
     async def test_create_skill_with_empty_body(self, client, admin):
         tenant, _, token = admin
-        response = client.post(f"/skills?tenant_id={tenant.id}", json={}, headers=_auth(token))
+        response = client.post(f"/tenants/{tenant.id}/skills", json={}, headers=_auth(token))
         _assert_structured_422(response)
 
     async def test_create_tenant_with_empty_string_id(self, client, admin):
@@ -80,7 +80,7 @@ class TestResumeStepsReturn422:
     async def test_skill_resume_with_missing_step_key(self, client, admin):
         tenant, _, token = admin
         response = client.post(
-            f"/skills/does-not-matter/resume?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/does-not-matter/resume",
             json={
                 "approval_id": "a-1",
                 "tool_calls": [{"tool": "x"}],
@@ -123,7 +123,7 @@ class TestResumeStepsReturn422:
         """
         tenant, _, token = admin
         response = client.post(
-            f"/skills/does-not-matter/resume?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/does-not-matter/resume",
             json={
                 "approval_id": "a-1",
                 "tool_calls": [{"tool": "x"}],
@@ -184,7 +184,7 @@ class TestInvalidEnumValuesReturn422:
     async def test_skill_status(self, client, admin):
         tenant, _, token = admin
         response = client.post(
-            f"/skills?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills",
             json={"name": "S", "purpose": "P", "status": "banana"},
             headers=_auth(token),
         )

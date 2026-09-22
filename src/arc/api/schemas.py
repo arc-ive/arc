@@ -120,7 +120,7 @@ class DevMembershipCreateRequest(BaseModel):
 
 
 class SkillCreateRequest(BaseModel):
-    """Body of ``POST /skills``.
+    """Body of ``POST /tenants/{tenant_id}/skills``.
 
     Field defaults mirror ``Skill``'s own dataclass defaults, so a minimal
     request produces the same Skill it did before this model existed.
@@ -144,7 +144,7 @@ class SkillCreateRequest(BaseModel):
 
 
 class SkillUpdateRequest(BaseModel):
-    """Body of ``PUT /skills/{skill_id}``.
+    """Body of ``PUT /tenants/{tenant_id}/skills/{skill_id}``.
 
     Every field is optional; an omitted key keeps the stored value.
     """
@@ -176,7 +176,7 @@ class SkillUpdateRequest(BaseModel):
 
 
 class SkillExecuteRequest(BaseModel):
-    """Body of ``POST /skills/{skill_id}/execute``.
+    """Body of ``POST /tenants/{tenant_id}/skills/{skill_id}/execute``.
 
     Deliberately loose: the handler only ever required the body to be a JSON
     object, and ``SkillExecutionService`` owns validation of the tool calls
@@ -225,7 +225,7 @@ class PreviousStepInput(BaseModel):
 
 
 class SkillResumeRequest(BaseModel):
-    """Body of ``POST /skills/{skill_id}/resume``."""
+    """Body of ``POST /tenants/{tenant_id}/skills/{skill_id}/resume``."""
 
     approval_id: str = Field(min_length=1)
     tool_calls: List[Any] = Field(min_length=1)
