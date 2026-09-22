@@ -26,6 +26,7 @@ RUN mkdir -p src/arc \
 COPY src ./src
 COPY tests ./tests
 COPY scripts ./scripts
+COPY .env.example ./
 
 RUN python -m pip install --no-deps . \
     && chown -R 1000:1000 /app
