@@ -26,7 +26,9 @@ from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
 from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
 from arc.repositories.tenancy import PostgreSQLTenantRepository
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc_test"
+)
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "arc" / "db" / "schema.sql"
 
 
@@ -419,6 +421,98 @@ class TestKnowledgeDocumentIdentity:
         assert [row["id"] for row in remaining] == [chunk.id for chunk in old_chunks]
 
 
+class TestConditionalDocumentUpdate:
+    """Optimistic locking for concurrent re-ingestion (Issue #234)."""
+
+    async def test_stale_expected_version_is_rejected_without_mutation(
+        self, knowledge_repo, seeded_tenant
+    ):
+        from arc.db.connection import ConcurrentUpdateError
+
+        document = _document(seeded_tenant.id, external_id="cond-1", content="old content")
+        old_chunks = _chunks(document, count=2)
+        await knowledge_repo.create_document_with_chunks(
+            document, old_chunks, _embeddings(len(old_chunks))
+        )
+
+        bumped = KnowledgeDocument(
+            id=document.id,
+            tenant_id=document.tenant_id,
+            source=document.source,
+            provenance=document.provenance,
+            version=document.version + 1,
+            status=document.status,
+            content="stale writer content",
+            external_id=document.external_id,
+            created_at=document.created_at,
+            updated_at=datetime.now(timezone.utc),
+        )
+        with pytest.raises(ConcurrentUpdateError):
+            await knowledge_repo.update_document_with_chunks(
+                bumped, _chunks(document, count=1), _embeddings(1), expected_version=0
+            )
+
+        stored = await knowledge_repo.get_by_id(document.id, seeded_tenant.id)
+        assert stored.version == 1
+        assert stored.content == "old content"
+        async with knowledge_repo.db._connection_pool.acquire() as conn:
+            remaining = await conn.fetch(
+                "SELECT id FROM knowledge_chunks WHERE document_id = $1 ORDER BY sequence",
+                document.id,
+            )
+        assert [row["id"] for row in remaining] == [chunk.id for chunk in old_chunks]
+
+    async def test_matching_expected_version_succeeds(self, knowledge_repo, seeded_tenant):
+        document = _document(seeded_tenant.id, external_id="cond-2", content="old content")
+        await knowledge_repo.create_document_with_chunks(
+            document, _chunks(document, count=1), _embeddings(1)
+        )
+
+        bumped = KnowledgeDocument(
+            id=document.id,
+            tenant_id=document.tenant_id,
+            source=document.source,
+            provenance=document.provenance,
+            version=document.version + 1,
+            status=document.status,
+            content="new content",
+            external_id=document.external_id,
+            created_at=document.created_at,
+            updated_at=datetime.now(timezone.utc),
+        )
+        result = await knowledge_repo.update_document_with_chunks(
+            bumped, _chunks(document, count=1), _embeddings(1), expected_version=1
+        )
+        assert result.version == 2
+        assert (await knowledge_repo.get_by_id(document.id, seeded_tenant.id)).version == 2
+
+    async def test_missing_row_with_expected_version_reports_conflict(
+        self, knowledge_repo, seeded_tenant
+    ):
+        """With a version predicate, absence and mismatch are indistinguishable.
+
+        The service disambiguates by re-resolving the logical identity, so
+        the repository reports the conflict rather than a misleading 404.
+        """
+        from arc.db.connection import ConcurrentUpdateError
+
+        document = _document(seeded_tenant.id, external_id="cond-3", content="old content")
+        with pytest.raises(ConcurrentUpdateError):
+            await knowledge_repo.update_document_with_chunks(
+                document, _chunks(document, count=1), _embeddings(1), expected_version=1
+            )
+
+    async def test_missing_row_without_expected_version_still_reports_not_found(
+        self, knowledge_repo, seeded_tenant
+    ):
+        """The unconditional path keeps its legacy NotFoundError contract."""
+        document = _document(seeded_tenant.id, external_id="cond-4", content="old content")
+        with pytest.raises(NotFoundError):
+            await knowledge_repo.update_document_with_chunks(
+                document, _chunks(document, count=1), _embeddings(1)
+            )
+
+
 class TestConcurrentIdentityIngestion:
     """ADR-003 concurrency: races are resolved by the database invariant."""
 
@@ -482,6 +576,133 @@ class TestConcurrentIdentityIngestion:
                 "github:race",
             )
         assert len(rows) == 1
+
+    def _racing_service(self, db):
+        from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
+        from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+        from arc.services.embeddings import DeterministicEmbeddingProvider
+        from arc.services.knowledge import KnowledgeService
+        from arc.services.retrieval import RetrievalService
+
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+        indexer = RetrievalService(
+            PostgreSQLKnowledgeChunkRepository(db),
+            embedding_provider=DeterministicEmbeddingProvider(),
+        )
+        service = KnowledgeService(
+            knowledge_repo, pii_guard=self._PassthroughGuard(), indexer=indexer
+        )
+        return knowledge_repo, service
+
+    def _racing_context(self, tenant_id):
+        return TenantContext(
+            tenant_id=tenant_id,
+            tenant_name="Concurrent",
+            user_id="user-1",
+            role=UserRole.MEMBER,
+        )
+
+    async def test_concurrent_different_content_upserts_lose_no_increments(self, db, seeded_tenant):
+        """Issue #234: 8 concurrent writers each contribute one version increment.
+
+        Real PostgreSQL concurrency through the production service path
+        (separate pooled connections per racing transaction). Starting
+        from version 1, eight successful changed-content re-ingestions
+        must land exactly version 9 on one row with one consistent chunk
+        set and no orphans.
+        """
+        import asyncio
+
+        knowledge_repo, service = self._racing_service(db)
+        context = self._racing_context(seeded_tenant.id)
+
+        first = await service.ingest_document(
+            context,
+            source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+            provenance="connector:github:race8",
+            content="initial content",
+            external_id="github:race8",
+        )
+        assert first.version == 1
+
+        contents = [f"concurrent content number {index}" for index in range(8)]
+        results = await asyncio.gather(
+            *[
+                service.ingest_document(
+                    context,
+                    source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+                    provenance="connector:github:race8",
+                    content=content,
+                    external_id="github:race8",
+                )
+                for content in contents
+            ]
+        )
+
+        # Every racing write succeeded against the same logical document.
+        assert len({result.id for result in results}) == 1
+        assert results[0].id == first.id
+
+        final = await knowledge_repo.get_by_external_id(
+            "github:race8", KnowledgeSource.INTERNAL_KNOWLEDGE, seeded_tenant.id
+        )
+        assert final.version == 9
+        assert final.content in contents
+        assert final.external_id == "github:race8"
+
+        # Exactly one current chunk set, matching the winning content, and
+        # no orphan chunks anywhere in the tenant.
+        async with db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT document_id, content, sequence FROM knowledge_chunks
+                WHERE tenant_id = $1 ORDER BY sequence
+                """,
+                seeded_tenant.id,
+            )
+        assert len(rows) == 1
+        assert rows[0]["document_id"] == first.id
+        assert rows[0]["sequence"] == 0
+        assert rows[0]["content"] == final.content
+
+    async def test_concurrent_identical_content_upserts_stay_idempotent(self, db, seeded_tenant):
+        """Concurrent redeliveries of the same content cause no version explosion."""
+        import asyncio
+
+        knowledge_repo, service = self._racing_service(db)
+        context = self._racing_context(seeded_tenant.id)
+
+        results = await asyncio.gather(
+            *[
+                service.ingest_document(
+                    context,
+                    source=KnowledgeSource.INTERNAL_KNOWLEDGE,
+                    provenance="connector:github:race-same",
+                    content="identical concurrent content",
+                    external_id="github:race-same",
+                )
+                for _ in range(8)
+            ]
+        )
+
+        assert len({result.id for result in results}) == 1
+        final = await knowledge_repo.get_by_external_id(
+            "github:race-same", KnowledgeSource.INTERNAL_KNOWLEDGE, seeded_tenant.id
+        )
+        assert final.version == 1
+        assert final.content == "identical concurrent content"
+
+        async with db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT document_id, content FROM knowledge_chunks
+                WHERE tenant_id = $1
+                """,
+                seeded_tenant.id,
+            )
+        assert len(rows) == 1
+        assert rows[0]["document_id"] == final.id
+        assert rows[0]["content"] == "identical concurrent content"
 
 
 class TestLegacyDuplicateArchival:

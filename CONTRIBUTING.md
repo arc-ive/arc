@@ -30,6 +30,31 @@ Documentation / State Update
 
 The exact workflow may be refined as the Foundation Phase progresses, but changes must not bypass the agreed engineering controls.
 
+### Test database
+
+The backend test suite is destructive by design: before any test runs, the session fixture drops and recreates the entire `public` schema. Tests must therefore run against a disposable PostgreSQL test database, never the development database.
+
+Rules:
+
+- The test database name must end with `_test`. The canonical name is `arc_test`.
+- Never point `DATABASE_URL` at the development database (`arc`), a production database, or any shared database when running tests.
+- `pytest` refuses to collect when `DATABASE_URL` does not name a `*_test` database, and explains how to run correctly. This guard executes before any fixture, so no destructive operation can run against an unsafe database.
+
+Setup (one time, copy-pasteable):
+
+```text
+docker compose up -d postgres
+docker compose exec postgres psql -U arc -d postgres -c "CREATE DATABASE arc_test"
+```
+
+Run the suite against the test database:
+
+```text
+DATABASE_URL=postgresql://arc:arc-dev-password@localhost:5432/arc_test python -m pytest
+```
+
+(When `DATABASE_URL` is unset, the suite defaults to that same `arc_test` URL. CI provisions a fresh `arc_test` database per job.)
+
 ## 3. GitHub Issues
 
 Every meaningful engineering task should have a corresponding work item.

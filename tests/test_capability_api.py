@@ -18,7 +18,7 @@ TEST_JWT_SECRET = "test-jwt-secret-0123456789-abcdef"
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://arc:arc-dev-password@localhost:5432/arc",
+    "postgresql://arc:arc-dev-password@localhost:5432/arc_test",
 )
 
 

@@ -362,6 +362,59 @@ class TestProcessRetryableForTenant:
         stored = await repo.get_by_event_id("evt-fail", "tenant-1")
         assert stored.status is WebhookEventStatus.RETRYING
 
+    async def test_handled_terminal_outcome_logs_info_without_traceback(self, caplog):
+        """Issue #238: a handled terminal verdict is not an ERROR."""
+        import logging
+
+        from arc.services.webhook_pipeline import WebhookProcessingError
+
+        svc, repo = _build_pipeline_service()
+        event = _make_event(
+            "tenant-1",
+            event_id="evt-terminal",
+            status=WebhookEventStatus.RETRYING,
+            next_retry_at=datetime.now(timezone.utc) - timedelta(seconds=10),
+        )
+        await repo.create(event)
+
+        svc.process = AsyncMock(
+            side_effect=WebhookProcessingError("precondition_failed", "handled")
+        )
+
+        with caplog.at_level(logging.INFO, logger="arc.webhook_retry_sweep"):
+            await _process_retryable_for_tenant(svc, "tenant-1")
+
+        assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+        infos = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.INFO and "terminal outcome" in r.message
+        ]
+        assert len(infos) == 1
+        assert infos[0].exc_info is None
+
+    async def test_unexpected_failure_still_logs_error_with_traceback(self, caplog):
+        """Genuine sweep failures keep ERROR level with a traceback."""
+        import logging
+
+        svc, repo = _build_pipeline_service()
+        event = _make_event(
+            "tenant-1",
+            event_id="evt-unexpected",
+            status=WebhookEventStatus.RETRYING,
+            next_retry_at=datetime.now(timezone.utc) - timedelta(seconds=10),
+        )
+        await repo.create(event)
+
+        svc.process = AsyncMock(side_effect=RuntimeError("db exploded"))
+
+        with caplog.at_level(logging.INFO, logger="arc.webhook_retry_sweep"):
+            await _process_retryable_for_tenant(svc, "tenant-1")
+
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert len(errors) == 1
+        assert errors[0].exc_info is not None
+
 
 # --- _sweep_stuck_for_tenant ---
 

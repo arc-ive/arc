@@ -24,7 +24,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from arc.db.connection import DuplicateKeyError, NotFoundError
+from arc.db.connection import ConcurrentUpdateError, DatabaseError, DuplicateKeyError, NotFoundError
 from arc.domain.models import (
     KnowledgeDocument,
     KnowledgeSource,
@@ -34,6 +34,14 @@ from arc.domain.models import (
 from arc.repositories import KnowledgeRepository
 from arc.services.pii import PiiGuardService
 from arc.services.retrieval import RetrievalService
+
+# Bounded optimistic-locking retries for concurrent re-ingestion
+# (Issue #234). Each failed attempt implies another writer committed
+# first; N concurrent writers can cost a given writer at most N-1 losses
+# before every competitor has committed and stopped. The cap is sized
+# above that worst case for any realistic burst and fails loud (instead
+# of spinning forever) if convergence is ever not reached.
+_REINGEST_MAX_ATTEMPTS = 10
 
 
 class KnowledgeService:
@@ -84,7 +92,11 @@ class KnowledgeService:
           replaced atomically;
         - a concurrent first delivery of the same identity loses the insert
           race at the database identity index and is re-resolved through the
-          identical/changed-content logic above.
+          identical/changed-content logic above;
+        - concurrent re-ingestions of an existing document serialize through
+          optimistic locking (Issue #234): each changed-content write
+          contributes exactly one version increment, and a loser re-decides
+          against freshly resolved state instead of overwriting the winner.
 
         When ``external_id`` is omitted, behavior is unchanged from the
         original foundation: every ingestion creates a new document.
@@ -148,34 +160,92 @@ class KnowledgeService:
         existing: KnowledgeDocument,
         sanitized_text: str,
     ) -> KnowledgeDocument:
-        """Apply ADR-003 re-ingestion semantics to one resolved document."""
+        """Apply ADR-003 re-ingestion semantics to one resolved document.
+
+        Concurrency (Issue #234): the version bump is applied with
+        optimistic locking. The update is predicated on the version this
+        writer observed (``expected_version``), so a concurrent writer
+        that committed first makes this update match zero rows instead of
+        silently overwriting its increment. The loser re-resolves fresh
+        state and re-decides (changed content retries with the new
+        version; now-identical content returns idempotently), so every
+        successful changed-content write contributes exactly one version
+        increment. No database lock is held while preparing chunks and
+        embeddings: each attempt prepares entirely in memory first, then
+        performs ONE short conditional transaction, preserving the
+        fail-closed ordering (embedding failure aborts before any write)
+        and the document+chunks atomicity of every committed attempt.
+        """
         if existing.source != source or existing.tenant_id != context.tenant_id:
             # Defensive re-check; resolution is already tenant/source-scoped.
             raise ValueError("Resolved knowledge document does not match the trusted identity")
 
-        if existing.content == sanitized_text:
-            # Idempotent redelivery: same logical document, unchanged content.
-            return existing
+        for _ in range(_REINGEST_MAX_ATTEMPTS):
+            if existing.content == sanitized_text:
+                # Idempotent redelivery: same logical document, unchanged content.
+                # Backfill for Issue #214: reference documents seeded via raw
+                # SQL have no chunks. If the existing document has no chunks,
+                # treat it as needing chunk creation rather than returning it
+                # as-is.
+                if await self._has_chunks(existing.id, existing.tenant_id):
+                    return existing
 
-        updated = KnowledgeDocument(
-            id=existing.id,
-            tenant_id=existing.tenant_id,
-            source=existing.source,
-            provenance=existing.provenance,
-            version=existing.version + 1,
-            status=existing.status,
-            content=sanitized_text,
-            external_id=existing.external_id,
-            created_at=existing.created_at,
-            updated_at=datetime.now(timezone.utc),
+            updated = KnowledgeDocument(
+                id=existing.id,
+                tenant_id=existing.tenant_id,
+                source=existing.source,
+                provenance=existing.provenance,
+                version=existing.version + 1,
+                status=existing.status,
+                content=sanitized_text,
+                external_id=existing.external_id,
+                created_at=existing.created_at,
+                updated_at=datetime.now(timezone.utc),
+            )
+
+            prepared = await self._prepare_or_none(context, updated)
+            if prepared is not None:
+                chunks, embeddings = prepared.chunks, prepared.embeddings
+            else:
+                chunks, embeddings = [], []
+            try:
+                return await self.knowledge_repo.update_document_with_chunks(
+                    updated, chunks, embeddings, expected_version=existing.version
+                )
+            except ConcurrentUpdateError:
+                # Another writer committed first: re-resolve and re-decide
+                # against fresh state. A deleted row surfaces NotFoundError
+                # here (fail closed: the document vanished mid-flight).
+                existing = await self.knowledge_repo.get_by_id(existing.id, context.tenant_id)
+                continue
+        raise DatabaseError(
+            f"Concurrent re-ingestion of knowledge document {existing.id} "
+            f"in tenant {context.tenant_id} did not converge"
         )
 
-        prepared = await self._prepare_or_none(context, updated)
-        if prepared is not None:
-            return await self.knowledge_repo.update_document_with_chunks(
-                updated, prepared.chunks, prepared.embeddings
-            )
-        return await self.knowledge_repo.update_document_with_chunks(updated, [], [])
+    async def _has_chunks(self, document_id: str, tenant_id: str) -> bool:
+        """Return True if the document already has at least one chunk.
+
+        Used for Issue #214 backfill: reference documents created via raw
+        SQL have no chunks. When no chunks are found the re-ingestion path
+        falls through to chunk creation. For non-PostgreSQL fakes (tests)
+        that lack a ``db`` attribute we assume chunks exist to preserve the
+        original idempotent-return behaviour.
+        """
+        db = getattr(self.knowledge_repo, "db", None)
+        pool = getattr(db, "_connection_pool", None) if db is not None else None
+        if pool is None:
+            return True
+        try:
+            async with pool.acquire() as conn:
+                count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM knowledge_chunks WHERE document_id = $1 AND tenant_id = $2",  # noqa: E501
+                    document_id,
+                    tenant_id,
+                )
+                return int(count or 0) > 0
+        except Exception:
+            return True
 
     async def _prepare_or_none(self, context: TenantContext, document: KnowledgeDocument):
         """Prepare the retrieval index in memory, or None without an indexer.
@@ -228,6 +298,93 @@ class KnowledgeService:
         document does not exist in the given tenant.
         """
         await self.knowledge_repo.delete_by_id(document_id, context.tenant_id)
+
+    async def update_document(
+        self,
+        context: TenantContext,
+        document_id: str,
+        source: Optional[KnowledgeSource] = None,
+        provenance: Optional[str] = None,
+        content: Optional[str] = None,
+        status: Optional[KnowledgeStatus] = None,
+    ) -> KnowledgeDocument:
+        """Update a knowledge document by ID within a tenant.
+
+        The ``context`` must be an already-validated TenantContext
+        established by X-10's TenantContextService.  The tenant boundary is
+        derived exclusively from it.  The document is identified by its
+        stable ``document_id``; ``external_id`` is not modified.
+
+        Only provided fields are updated. If ``content`` is provided and the
+        sanitized text differs from the stored content, the version is
+        incremented and the document is re-indexed atomically (reusing the
+        ADR-003 re-ingestion path). If the sanitized content is identical,
+        the update is idempotent: version does not increment and the
+        existing chunk set is left untouched. Metadata-only changes
+        (source/provenance/status) never increment the version and never
+        touch the chunk set.
+        """
+        if not any(
+            [source is not None, provenance is not None, content is not None, status is not None]
+        ):
+            raise ValueError("At least one field must be provided for update")
+
+        existing = await self.knowledge_repo.get_by_id(document_id, context.tenant_id)
+
+        if content is not None:
+            if not content:
+                raise ValueError("Knowledge document content cannot be empty")
+            sanitized_text = self.pii_guard.sanitize(content).sanitized_text
+        else:
+            sanitized_text = existing.content
+
+        new_source = source if source is not None else existing.source
+        new_provenance = provenance if provenance is not None else existing.provenance
+        new_status = status if status is not None else existing.status
+
+        content_changed = sanitized_text != existing.content
+        metadata_changed = (
+            new_source != existing.source
+            or new_provenance != existing.provenance
+            or new_status != existing.status
+        )
+        if not content_changed and not metadata_changed:
+            return existing
+
+        if not content_changed:
+            updated = KnowledgeDocument(
+                id=existing.id,
+                tenant_id=existing.tenant_id,
+                source=new_source,
+                provenance=new_provenance,
+                version=existing.version,
+                status=new_status,
+                content=existing.content,
+                external_id=existing.external_id,
+                created_at=existing.created_at,
+                updated_at=datetime.now(timezone.utc),
+            )
+            return await self.knowledge_repo.update_document_metadata(updated)
+
+        updated = KnowledgeDocument(
+            id=existing.id,
+            tenant_id=existing.tenant_id,
+            source=new_source,
+            provenance=new_provenance,
+            version=existing.version + 1,
+            status=new_status,
+            content=sanitized_text,
+            external_id=existing.external_id,
+            created_at=existing.created_at,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+        prepared = await self._prepare_or_none(context, updated)
+        if prepared is not None:
+            return await self.knowledge_repo.update_document_with_chunks(
+                updated, prepared.chunks, prepared.embeddings
+            )
+        return await self.knowledge_repo.update_document_with_chunks(updated, [], [])
 
     async def list_documents(self, context: TenantContext) -> list:
         """List ACTIVE knowledge documents for a tenant."""

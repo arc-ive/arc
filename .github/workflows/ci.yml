@@ -80,7 +80,7 @@ jobs:
 
     env:
       APP_ENV: development
-      POSTGRES_DB: arc
+      POSTGRES_DB: arc_test
       POSTGRES_USER: arc
       POSTGRES_PASSWORD: arc-ci-password
       JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars
@@ -121,7 +121,7 @@ jobs:
     # no /internal/dev routes, and Secure cookies.
     env:
       APP_ENV: production
-      POSTGRES_DB: arc
+      POSTGRES_DB: arc_test
       POSTGRES_USER: arc
       POSTGRES_PASSWORD: arc-ci-password
       JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars
@@ -156,7 +156,7 @@ jobs:
 
     env:
       APP_ENV: development
-      POSTGRES_DB: arc
+      POSTGRES_DB: arc_test
       POSTGRES_USER: arc
       POSTGRES_PASSWORD: arc-ci-password
       JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars

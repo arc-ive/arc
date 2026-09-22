@@ -14,11 +14,20 @@ domain models reject empty strings in ``__post_init__``.
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from arc.domain.models import (
     ConnectorProvider,
     KnowledgeSource,
+    KnowledgeStatus,
     SkillRiskLevel,
     SkillStatus,
     ToolExecutionStatus,
@@ -176,6 +185,7 @@ class SkillExecuteRequest(BaseModel):
 
     tool_calls: Optional[Any] = None
     satisfied_preconditions: Any = Field(default_factory=list)
+    skill_inputs: Any = None
 
 
 class PreviousStepInput(BaseModel):
@@ -222,6 +232,7 @@ class SkillResumeRequest(BaseModel):
     resume_from_step: StrictInt = Field(ge=0)
     previous_steps: List[PreviousStepInput] = Field(default_factory=list)
     satisfied_preconditions: Any = Field(default_factory=list)
+    skill_inputs: Any = None
 
 
 class AgentRunRequest(BaseModel):
@@ -255,6 +266,7 @@ class AgentResumeRequest(BaseModel):
     resume_from_step: StrictInt = Field(ge=0)
     previous_steps: List[PreviousStepInput] = Field(default_factory=list)
     satisfied_preconditions: Any = Field(default_factory=list)
+    skill_inputs: Any = None
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +282,20 @@ class KnowledgeCreateRequest(BaseModel):
     content: str = Field(min_length=1)
     version: StrictInt = 1
     external_id: Optional[str] = None
+
+
+class KnowledgeUpdateRequest(BaseModel):
+    """Body of ``PUT /tenants/{tenant_id}/knowledge/{document_id}``.
+
+    Every field is optional; an omitted key keeps the stored value.
+    ``version`` and ``external_id`` are not editable: version is managed
+    by the service layer and external_id is the connector identity key.
+    """
+
+    source: Optional[KnowledgeSource] = None
+    provenance: Optional[str] = Field(default=None, min_length=1)
+    content: Optional[str] = Field(default=None, min_length=1)
+    status: Optional[KnowledgeStatus] = None
 
 
 class IntelligenceQueryRequest(BaseModel):
@@ -318,7 +344,11 @@ class ToolExecuteRequest(BaseModel):
     ``input`` stays untyped on purpose: the route dispatches by tool name and
     each tool validates its own payload against its ``input_model`` inside
     ``ToolExecutionService``. Only the envelope is a fixed contract.
+    Unknown envelope fields are rejected so a wrong key (e.g.
+    ``parameters``) fails instead of silently executing with empty input.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     input: Dict[str, Any] = Field(default_factory=dict)
     approval_id: Optional[str] = None
@@ -338,6 +368,7 @@ __all__ = [
     "AgentRunRequest",
     "AgentResumeRequest",
     "KnowledgeCreateRequest",
+    "KnowledgeUpdateRequest",
     "IntelligenceQueryRequest",
     "ConnectorCreateRequest",
     "ApprovalDecisionRequest",

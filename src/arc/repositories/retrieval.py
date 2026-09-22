@@ -106,6 +106,7 @@ class PostgreSQLKnowledgeChunkRepository:
                        d.source,
                        d.provenance,
                        d.version,
+                       d.external_id,
                        1 - (c.embedding <=> $2::vector) AS similarity
                 FROM knowledge_chunks c
                 JOIN knowledge_documents d
@@ -132,6 +133,7 @@ class PostgreSQLKnowledgeChunkRepository:
                        d.source,
                        d.provenance,
                        d.version,
+                       d.external_id,
                        1 - (c.embedding <=> $2::vector) AS similarity
                 FROM knowledge_chunks c
                 JOIN knowledge_documents d
@@ -162,6 +164,8 @@ class PostgreSQLKnowledgeChunkRepository:
                     document_version=row["version"],
                     sequence=row["sequence"],
                     similarity=float(row["similarity"]),
+                    dense_score=float(row["similarity"]),
+                    external_id=row["external_id"],
                 )
                 for row in rows
             ]
@@ -202,6 +206,7 @@ class PostgreSQLKnowledgeChunkRepository:
                        d.source,
                        d.provenance,
                        d.version,
+                       d.external_id,
                        ts_rank(c.search_vector,
                                plainto_tsquery('english', $2)) AS rank
                 FROM knowledge_chunks c
@@ -225,6 +230,7 @@ class PostgreSQLKnowledgeChunkRepository:
                        d.source,
                        d.provenance,
                        d.version,
+                       d.external_id,
                        ts_rank(c.search_vector,
                                plainto_tsquery('english', $2)) AS rank
                 FROM knowledge_chunks c
@@ -251,6 +257,8 @@ class PostgreSQLKnowledgeChunkRepository:
                     document_version=row["version"],
                     sequence=row["sequence"],
                     similarity=float(row["rank"]),
+                    lexical_score=float(row["rank"]),
+                    external_id=row["external_id"],
                 )
                 for row in rows
             ]

@@ -176,6 +176,8 @@ class TestSearchAuthorization:
             "document_version",
             "sequence",
             "similarity",
+            "dense_score",
+            "lexical_score",
         }
 
 

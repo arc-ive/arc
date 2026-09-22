@@ -31,9 +31,12 @@ per tenant.
 """
 
 import json
+import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("arc.services.webhook_config")
 
 MIN_SECRET_LENGTH = 16
 MAX_ENDPOINT_ID_LENGTH = 255
@@ -51,9 +54,12 @@ class WebhookActionConfig:
     The ``type`` field determines the routing strategy; only ``"skill"``
     is supported in V1. The ``skill_id`` is resolved within the
     endpoint's tenant via ``SkillService.get_skill()``. The
-    ``tool_calls`` and ``satisfied_conditions`` are passed directly to
-    ``SkillExecutionService.execute()`` which enforces all gates
-    (active status, preconditions, allowed tools, RBAC).
+    ``tool_calls``, ``satisfied_conditions``, and ``skill_inputs`` are
+    passed directly to ``SkillExecutionService.execute()`` which
+    enforces all gates (active status, preconditions, declared skill
+    inputs, allowed tools, RBAC). Static ``skill_inputs`` let an
+    operator satisfy an input-declaring skill; they are never derived
+    from webhook payload fields.
 
     This configuration is platform-operator-controlled (environment
     variable), not tenant-controlled. Tool calls are deterministic and
@@ -64,6 +70,7 @@ class WebhookActionConfig:
     skill_id: str
     tool_calls: List[Dict[str, Any]]
     satisfied_conditions: List[str]
+    skill_inputs: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -192,11 +199,20 @@ def _parse_action(raw: Any, endpoint_id: str) -> Optional[WebhookActionConfig]:
         raise WebhookConfigurationError(
             f"Webhook endpoint '{endpoint_id}' action 'satisfied_conditions' must be a list"
         )
+    skill_inputs = raw.get("skill_inputs", {})
+    if not isinstance(skill_inputs, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in skill_inputs.items()
+    ):
+        raise WebhookConfigurationError(
+            f"Webhook endpoint '{endpoint_id}' action 'skill_inputs' must be an "
+            f"object mapping input names to strings"
+        )
     return WebhookActionConfig(
         type=action_type,
         skill_id=skill_id,
         tool_calls=tool_calls,
         satisfied_conditions=satisfied_conditions,
+        skill_inputs=skill_inputs,
     )
 
 
@@ -216,3 +232,47 @@ class WebhookEndpointStore:
         raw = self._raw if self._raw is not None else os.getenv("WEBHOOK_INGESTION_ENDPOINTS", "")
         endpoints = parse_webhook_endpoints(raw)
         return endpoints.get(endpoint_id)
+
+
+def validate_webhook_endpoints(raw: Optional[str] = None) -> Dict[str, WebhookEndpointConfig]:
+    """Validate webhook endpoint configuration at startup.
+
+    Parses the configuration and logs warnings for endpoints that have no
+    downstream action configured (ingestion-only endpoints). This allows
+    operators to verify that processing endpoints are correctly configured
+    before any webhook deliveries arrive.
+
+    Args:
+        raw: Optional raw JSON string. If None, reads from
+            WEBHOOK_INGESTION_ENDPOINTS environment variable.
+
+    Returns:
+        Dict of parsed endpoint configs for further validation if needed.
+
+    Raises:
+        WebhookConfigurationError: If the configuration is malformed or
+            violates structural requirements (fails closed).
+    """
+    raw = raw if raw is not None else os.getenv("WEBHOOK_INGESTION_ENDPOINTS", "")
+    endpoints = parse_webhook_endpoints(raw)
+
+    for endpoint_id, config in endpoints.items():
+        if config.action is None:
+            logger.warning(
+                "Webhook endpoint '%s' (tenant_id=%s) has no action configured; "
+                "events will be ingested but NOT processed downstream. "
+                "Add an 'action' block to enable Skill execution.",
+                endpoint_id,
+                config.tenant_id,
+            )
+        else:
+            logger.info(
+                "Webhook endpoint '%s' (tenant_id=%s) configured with "
+                "action type '%s', skill_id '%s'",
+                endpoint_id,
+                config.tenant_id,
+                config.action.type,
+                config.action.skill_id,
+            )
+
+    return endpoints

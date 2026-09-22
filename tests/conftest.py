@@ -3,6 +3,7 @@
 import os
 import uuid
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,11 +23,62 @@ from arc.security.settings import SecuritySettings, get_security_settings
 
 TEST_JWT_SECRET = "test-jwt-secret-0123456789-abcdef"
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://arc:arc-dev-password@localhost:5432/arc",
-)
+# Disposable test database convention: the suite drops and recreates the
+# schema, so it must never target the development database. Only database
+# names ending in "_test" (e.g. "arc_test") are accepted.
+TEST_DATABASE_URL = "postgresql://arc:arc-dev-password@localhost:5432/arc_test"
+TEST_DATABASE_NAME_SUFFIX = "_test"
+
+DATABASE_URL = os.getenv("DATABASE_URL", TEST_DATABASE_URL)
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "arc" / "db" / "schema.sql"
+
+
+class UnsafeTestDatabaseError(Exception):
+    """Refusal to run destructive test fixtures against a non-test database."""
+
+
+def require_test_database(database_url: str) -> str:
+    """Validate that a DATABASE_URL names a disposable test database.
+
+    Returns the database name when it ends with ``_test``. Otherwise raises
+    :class:`UnsafeTestDatabaseError` with an actionable message that never
+    includes credentials. Anything unparseable or ambiguous fails closed.
+
+    This is pure validation: it never connects anywhere.
+    """
+    try:
+        parts = urlsplit(database_url or "")
+        # Hostname parsing can raise on malformed IPv6; keep it inside the
+        # fail-closed boundary so any unparseable URL is refused cleanly.
+        host = parts.hostname or "<missing>"
+    except ValueError as exc:
+        raise UnsafeTestDatabaseError(
+            "Refusing to run destructive test fixtures: DATABASE_URL is not a valid URL. "
+            "Set DATABASE_URL to the disposable test database, "
+            "e.g. postgresql://arc:<password>@localhost:5432/arc_test"
+        ) from exc
+    dbname = unquote(parts.path).lstrip("/")
+    if (
+        parts.scheme != "postgresql"
+        or not dbname
+        or "/" in dbname
+        or not dbname.endswith(TEST_DATABASE_NAME_SUFFIX)
+    ):
+        # Report only the name/host needed for diagnosis, never credentials.
+        seen = dbname or "<missing>"
+        raise UnsafeTestDatabaseError(
+            f"Refusing to run destructive test fixtures against database "
+            f"'{seen}' on host '{host}'. Tests require a disposable test "
+            f"database whose name ends with '{TEST_DATABASE_NAME_SUFFIX}' "
+            f"(e.g. 'arc_test'). Set DATABASE_URL to the disposable test "
+            f"database, e.g. postgresql://arc:<password>@localhost:5432/arc_test"
+        )
+    return dbname
+
+
+# Fail fast at collection time: no fixture (destructive or otherwise) runs
+# until the target database is proven to be a disposable test database.
+require_test_database(DATABASE_URL)
 
 
 @pytest.fixture(scope="session", autouse=True)

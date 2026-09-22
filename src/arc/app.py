@@ -14,6 +14,7 @@ from arc.repositories.connectors import PostgreSQLConnectorRepository
 from arc.repositories.knowledge import PostgreSQLKnowledgeRepository
 from arc.repositories.observability import PostgreSQLObservabilityRepository
 from arc.repositories.retrieval import PostgreSQLKnowledgeChunkRepository
+from arc.repositories.skill_execution import PostgreSQLSkillExecutionRecordRepository
 from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tenancy import (
     PostgreSQLMembershipRepository,
@@ -46,11 +47,33 @@ from arc.services.retrieval import RetrievalService
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 from arc.services.tools import ToolExecutionService, build_platform_tool_registry
-from arc.services.webhook_config import WebhookEndpointStore
+from arc.services.webhook_config import WebhookEndpointStore, validate_webhook_endpoints
 from arc.services.webhook_ingestion import WebhookIngestionService
 from arc.services.webhook_pipeline import WebhookPipelineService
 
 logger = logging.getLogger(__name__)
+
+
+def build_credential_service(repositories) -> ConnectorCredentialService | None:
+    """Build the connector credential service or degrade loudly without a key.
+
+    Returns ``None`` when CONNECTOR_ENCRYPTION_KEY is missing or invalid:
+    DB credential management is then disabled (endpoints answer 503) and
+    only the ENV credential fallback remains. The degradation is logged
+    at WARNING so operators notice the missing capability.
+    """
+    try:
+        encryption_service = EncryptionService()
+    except EncryptionError:
+        logger.warning(
+            "Connector encryption key not configured; "
+            "DB credential management disabled, ENV fallback active"
+        )
+        return None
+    return ConnectorCredentialService(
+        credential_repo=repositories["connector_credentials"],
+        encryption_service=encryption_service,
+    )
 
 
 class Application:
@@ -94,6 +117,7 @@ class Application:
             "knowledge": PostgreSQLKnowledgeRepository(self.db),
             "knowledge_chunk": PostgreSQLKnowledgeChunkRepository(self.db),
             "skill": PostgreSQLSkillRepository(self.db),
+            "skill_execution_record": PostgreSQLSkillExecutionRecordRepository(self.db),
             "tool_execution": PostgreSQLToolExecutionRepository(self.db),
             "webhook_events": PostgreSQLWebhookEventRepository(self.db),
             "observability": PostgreSQLObservabilityRepository(self.db),
@@ -168,10 +192,13 @@ class Application:
         )
 
         # Initialize the skill execution engine (delegates ALL actions to
-        # the tool service above).
+        # the tool service above). The skill execution record repository
+        # is wired here (Issue #208) so every terminal outcome persists
+        # a skill_execution_records row for audit/observability.
         self.services["skill_execution_service"] = SkillExecutionService(
             skill_service=self.services["skill_service"],
             tool_service=self.services["tool_service"],
+            record_repo=self.repositories["skill_execution_record"],
             capability_service=self.services["capability_service"],
         )
 
@@ -235,19 +262,9 @@ class Application:
         # encryption key is loaded from CONNECTOR_ENCRYPTION_KEY; if
         # unconfigured, credential management is skipped and ENV fallback
         # remains the only credential source.
-        try:
-            encryption_service = EncryptionService()
-            credential_service = ConnectorCredentialService(
-                credential_repo=self.repositories["connector_credentials"],
-                encryption_service=encryption_service,
-            )
+        credential_service = build_credential_service(self.repositories)
+        if credential_service is not None:
             self.services["connector_credential_service"] = credential_service
-        except EncryptionError:
-            logger.info(
-                "Connector encryption key not configured; "
-                "DB credential management disabled, ENV fallback active"
-            )
-            credential_service = None
 
         self.services["connector_sync_service"] = ConnectorSyncService(
             connector_repo=self.repositories["connector"],
@@ -268,6 +285,11 @@ class Application:
         # WEBHOOK_INGESTION_ENDPOINTS environment configuration; secrets
         # are never logged, returned, or persisted.
         webhook_endpoint_store = WebhookEndpointStore()
+
+        # Validate webhook endpoint configuration at startup.
+        # Logs warnings for ingestion-only endpoints (no action configured).
+        validate_webhook_endpoints()
+
         self.services["webhook_ingestion_service"] = WebhookIngestionService(
             endpoint_store=webhook_endpoint_store,
             repository=self.repositories["webhook_events"],
@@ -308,11 +330,22 @@ class Application:
         documents, and skills. Uses ``WHERE NOT EXISTS`` guards so the
         operation is safe on fresh databases, databases with existing
         data, or repeated startups.
+
+        Knowledge documents are routed through the canonical
+        ``KnowledgeService`` ingestion path (Issue #214) so they are
+        chunked, embedded and retrievable. Existing unchunked rows are
+        backfilled on the next run via the service's re-ingestion check.
         """
         from arc.setup.reference_data import seed_reference_data
 
+        # KnowledgeService is the canonical ingestion boundary (chunking +
+        # embedding + PII guard). Passing it here makes reference knowledge
+        # visible to RAG and ensures the same pipeline used by the API and
+        # connector sync is exercised.
+        knowledge_service = self.services.get("knowledge_service")
+
         async with self.db._connection_pool.acquire() as conn:
-            await seed_reference_data(conn)
+            await seed_reference_data(conn, knowledge_service=knowledge_service)
 
     async def shutdown(self) -> None:
         """Shutdown the application."""

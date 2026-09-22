@@ -99,8 +99,11 @@ class TestToolCatalog:
 
         assert response.status_code == 200
         tools = response.json()["items"]
-        assert [tool["name"] for tool in tools] == ["check_service_health"]
-        tool = tools[0]
+        assert {tool["name"] for tool in tools} == {
+            "check_service_health",
+            "grant_temporary_access",
+        }
+        tool = next(t for t in tools if t["name"] == "check_service_health")
         assert tool["version"] == "1"
         assert tool["description"]
         assert tool["risk_level"] == "low"
@@ -243,6 +246,25 @@ class TestToolExecution:
         assert body["version"] == "1"
         assert body["output"]["tenant_id"] == tenant.id
         assert {entry["status"] for entry in body["output"]["services"]} == {"healthy"}
+
+    async def test_unknown_envelope_field_is_rejected(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Issue #236: a wrong key must fail, not silently execute empty."""
+        tenant, user = await _seed_member(repositories)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/tools/check_service_health/execute",
+            headers=_auth_headers(token),
+            json={"parameters": "notanobject"},
+        )
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert isinstance(detail, list) and detail
+        assert "loc" in detail[0]
 
     async def test_check_service_health_is_deterministic(
         self, client, repositories, make_token, authorization_override

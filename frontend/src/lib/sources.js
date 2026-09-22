@@ -1,5 +1,7 @@
 import { KNOWLEDGE_SOURCES } from '../api/endpoints/knowledge.js'
 
+export { KNOWLEDGE_SOURCES }
+
 export const sourceLabels = {
   policy: 'Policy',
   procedure: 'Procedure',

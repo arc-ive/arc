@@ -138,7 +138,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     await user.type(textarea, 'not valid json')
 
@@ -155,7 +155,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     fireEvent.change(textarea, { target: { value: '{"not": "an array"}' } })
 
@@ -417,6 +417,67 @@ describe('SkillsPage — execution controls', () => {
     expect(callBody).not.toHaveProperty('satisfied_preconditions')
   })
 
+  it('renders a field per declared skill input', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    expect(screen.getByText('Skill inputs')).toBeInTheDocument()
+    expect(screen.getByText('service_name')).toBeInTheDocument()
+  })
+
+  it('sends skill_inputs when declared input fields are filled', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-9',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.type(screen.getByLabelText('service_name'), 'web-api')
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+    expect(mockExecuteSkill).toHaveBeenCalledWith(
+      't-123',
+      'skill-1',
+      expect.objectContaining({
+        tool_calls: expect.any(Array),
+        skill_inputs: { service_name: 'web-api' },
+      }),
+    )
+  })
+
+  it('does not send skill_inputs when declared input fields are empty', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-10',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+    const callBody = mockExecuteSkill.mock.calls[0][2]
+    expect(callBody).not.toHaveProperty('skill_inputs')
+  })
+
   it('resets precondition selections when dialog closes and reopens', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
@@ -465,7 +526,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     fireEvent.change(textarea, { target: { value: '[{"tool_name": "check_service_health", "input": {"svc": "web"}}]' } })
 
@@ -477,6 +538,36 @@ describe('SkillsPage — execution controls', () => {
       'skill-1',
       {
         tool_calls: [{ tool_name: 'check_service_health', input: { svc: 'web' } }],
+      },
+    )
+  })
+
+  it('accepts the documented placeholder payload as-is', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-11',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
+    await user.clear(textarea)
+    fireEvent.change(textarea, { target: { value: '[{"tool_name": "check_service_health", "input": {}}]' } })
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+    expect(mockExecuteSkill).toHaveBeenCalledWith(
+      't-123',
+      'skill-1',
+      {
+        tool_calls: [{ tool_name: 'check_service_health', input: {} }],
       },
     )
   })
@@ -553,7 +644,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     fireEvent.change(textarea, { target: { value: '[]' } })
 

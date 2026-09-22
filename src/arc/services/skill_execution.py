@@ -68,10 +68,14 @@ Security invariants:
   invention: a failed or denied step terminates the execution and is
   reported in the structured result.
 
-Persistence note: durable Skill-execution records are NOT introduced in
-this slice (PRD 23 places "Agent Execution" with the future Agent;
-TRD 37 leaves the observability implementation open). Tool-level audit
-rows ARE persisted for every executed call by ``ToolExecutionService``.
+Persistence note (V2-ADR-014, Issue #208): every ``execute()`` call
+produces exactly one ``skill_execution_records`` row — created after
+skill resolution and updated with the terminal state via ``_finalize``.
+All terminal outcomes persist (succeeded/denied/failed/
+approval_required/precondition_failed, including capability-disabled).
+Record persistence is best-effort and never alters the business result.
+Tool-level audit rows ARE additionally persisted for every executed call
+by ``ToolExecutionService``.
 """
 
 import logging
@@ -92,6 +96,7 @@ from arc.domain.models import (
     TenantContext,
     ToolExecutionStatus,
 )
+from arc.repositories import SkillExecutionRecordRepository
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
 from arc.services.approvals import (
@@ -131,6 +136,7 @@ _ERROR_INVALID_INPUT = "invalid_input"
 _ERROR_EXECUTION_FAILED = "execution_error"
 _ERROR_CAPABILITY_DISABLED = "capability_disabled"
 _ERROR_INVALID_APPROVAL = "invalid_approval"
+_ERROR_INVALID_SKILL_INPUTS = "invalid_skill_inputs"
 
 logger = logging.getLogger("arc.skill_execution")
 
@@ -148,7 +154,7 @@ class SkillExecutionService:
         self,
         skill_service: SkillService,
         tool_service: ToolExecutionService,
-        record_repo=None,
+        record_repo: Optional[SkillExecutionRecordRepository] = None,
         capability_service=None,
         approval_service=None,
     ):
@@ -167,6 +173,7 @@ class SkillExecutionService:
         satisfied_conditions: Iterable[str],
         authorization: AuthorizationService,
         *,
+        skill_inputs: Optional[Dict[str, str]] = None,
         approval_id: Optional[str] = None,
         resume_from_step: Optional[int] = None,
         previous_steps: Optional[List[SkillExecutionStepOutcome]] = None,
@@ -191,6 +198,9 @@ class SkillExecutionService:
                 ``ToolExecutionService``.
             satisfied_conditions: asserted condition labels used for the
                 deterministic precondition check.
+            skill_inputs: values for the skill's declared inputs. Must
+                supply every declared input and nothing undeclared;
+                otherwise execution is refused before any tool call.
             authorization: the application ``AuthorizationService``,
                 passed through to ``ToolExecutionService`` unchanged so
                 per-tool authorization uses the single centralized matrix.
@@ -233,25 +243,6 @@ class SkillExecutionService:
         if context is None or not context.is_valid:
             raise ValueError("Invalid tenant context")
 
-        # Platform capability gate: skill_execution must be enabled for
-        # this tenant. Checked early to fail fast before any DB access or
-        # structural validation.
-        if self.capability_service is not None:
-            if not await self.capability_service.is_enabled(context.tenant_id, "skill_execution"):
-                return self._build_result(
-                    context,
-                    Skill(
-                        id=skill_id,
-                        tenant_id=context.tenant_id,
-                        name="unknown",
-                        purpose="unknown",
-                        status=SkillStatus.ACTIVE,
-                    ),
-                    SkillExecutionStatus.FAILED,
-                    error_kind=_ERROR_CAPABILITY_DISABLED,
-                    steps=[],
-                )
-
         self._validate_proposed_calls(tool_calls)
         conditions = self._validated_conditions(satisfied_conditions)
 
@@ -262,10 +253,12 @@ class SkillExecutionService:
             if resume_from_step < 0 or resume_from_step >= len(tool_calls):
                 raise ValueError("resume_from_step out of range")
 
+        # Skill resolution comes first: the record carries a FK to the
+        # skills table, so an unknown skill (404) cannot produce a row.
         skill = await self.skill_service.get_skill(context, skill_id)
 
         # Create the persistence record early so that every terminal
-        # outcome (including skill-not-found) is auditable.
+        # outcome after resolution is auditable.
         record_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
         record = SkillExecutionRecord(
@@ -280,202 +273,248 @@ class SkillExecutionService:
         )
         await self._persist_record(record)
 
-        if skill.status is not SkillStatus.ACTIVE:
-            return await self._finalize(
-                record,
-                self._build_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.FAILED,
-                    error_kind=_ERROR_INACTIVE_SKILL,
-                    steps=[],
-                ),
-            )
+        try:
+            # Platform capability gate (Issue #208): evaluated AFTER the
+            # record exists so a disabled capability still persists a
+            # terminal FAILED row for auditability.
+            if self.capability_service is not None:
+                if not await self.capability_service.is_enabled(
+                    context.tenant_id, "skill_execution"
+                ):
+                    return await self._finalize(
+                        record,
+                        self._build_result(
+                            context,
+                            skill,
+                            SkillExecutionStatus.FAILED,
+                            error_kind=_ERROR_CAPABILITY_DISABLED,
+                            steps=[],
+                        ),
+                    )
 
-        if not self.skill_service.preconditions_met(skill, conditions):
-            return await self._finalize(
-                record,
-                self._build_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.PRECONDITION_FAILED,
-                    error_kind=_ERROR_PRECONDITION_FAILED,
-                    steps=[],
-                ),
-            )
-
-        # Skill-level approval_required check: on first execution (no
-        # approval_id), stop before any tool call.  On resume, the
-        # supplied approval is verified against the approval subsystem
-        # (never trusted blindly) before any tool call runs.
-        if skill.approval_required and approval_id is None:
-            return await self._finalize(
-                record,
-                self._build_result(
-                    context,
-                    skill,
-                    SkillExecutionStatus.APPROVAL_REQUIRED,
-                    error_kind=_ERROR_APPROVAL_REQUIRED,
-                    steps=[],
-                ),
-            )
-        if skill.approval_required and approval_id is not None:
-            try:
-                await self._verify_resume_approval(
-                    context, skill, approval_id, tool_calls, resume_from_step
-                )
-            except ApprovalError as exc:
-                logger.warning(
-                    "skill_resume_approval_rejected skill=%s tenant=%s reason=%s",
-                    skill.id,
-                    context.tenant_id,
-                    type(exc).__name__,
-                )
+            if skill.status is not SkillStatus.ACTIVE:
                 return await self._finalize(
                     record,
                     self._build_result(
                         context,
                         skill,
                         SkillExecutionStatus.FAILED,
-                        error_kind=_ERROR_INVALID_APPROVAL,
+                        error_kind=_ERROR_INACTIVE_SKILL,
                         steps=[],
                     ),
                 )
 
-        # Collect completed steps: either from a fresh run or from the
-        # prior attempt when resuming.
-        completed: List[SkillExecutionStepOutcome] = list(previous_steps or [])
-
-        # Determine which tool calls to execute. When resuming, skip
-        # calls before resume_from_step (they already succeeded).
-        start = resume_from_step if resume_from_step is not None else 0
-        for sequence in range(start, len(tool_calls)):
-            call = tool_calls[sequence]
-            tool_name = call["tool_name"]
-            tool_input = call.get("input", {})
-
-            # Gate 1 — the Skill's own declared tool set.
-            if not self.skill_service.is_tool_allowed(skill, tool_name):
+            if not self.skill_service.preconditions_met(skill, conditions):
                 return await self._finalize(
                     record,
-                    self._stopped_result(
+                    self._build_result(
                         context,
                         skill,
-                        SkillExecutionStatus.DENIED,
-                        _ERROR_DISALLOWED_TOOL,
-                        completed,
-                        sequence,
-                        tool_name,
+                        SkillExecutionStatus.PRECONDITION_FAILED,
+                        error_kind=_ERROR_PRECONDITION_FAILED,
+                        steps=[],
                     ),
                 )
 
-            # Gates 2..N — delegated to ToolExecutionService.
-            # When resuming the approval-gated step, pass the approval_id
-            # so the tool service atomically consumes it before executing.
-            call_approval_id = approval_id if sequence == start and approval_id else None
-            # Per-step idempotency key: when a webhook-level key is
-            # provided, append the step index to distinguish individual
-            # tool invocations within the same event.
-            step_idempotency_key = None
-            if idempotency_key is not None:
-                step_idempotency_key = f"{idempotency_key}:{sequence}"
-            try:
-                executed = await self.tool_service.execute_tool(
-                    context,
-                    principal,
-                    tool_name,
-                    tool_input,
-                    authorization,
-                    approval_id=call_approval_id,
-                    idempotency_key=step_idempotency_key,
+            # Declared skill inputs must be supplied exactly: every declared
+            # input present, nothing undeclared. Runs before any tool call.
+            provided_inputs = self._validated_skill_inputs(skill_inputs)
+            if not self.skill_service.skill_inputs_met(skill, provided_inputs):
+                return await self._finalize(
+                    record,
+                    self._build_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.FAILED,
+                        error_kind=_ERROR_INVALID_SKILL_INPUTS,
+                        steps=[],
+                    ),
                 )
-            except ToolDeniedError as exc:
-                # If the tool service created a new approval (REQUIRE_HUMAN_APPROVAL
-                # policy on a later tool call), propagate the approval_id upward.
-                if exc.approval_id is not None:
+
+            # Skill-level approval_required check: on first execution (no
+            # approval_id), stop before any tool call.  On resume, the
+            # supplied approval is verified against the approval subsystem
+            # (never trusted blindly) before any tool call runs.
+            if skill.approval_required and approval_id is None:
+                return await self._finalize(
+                    record,
+                    self._build_result(
+                        context,
+                        skill,
+                        SkillExecutionStatus.APPROVAL_REQUIRED,
+                        error_kind=_ERROR_APPROVAL_REQUIRED,
+                        steps=[],
+                    ),
+                )
+            if skill.approval_required and approval_id is not None:
+                try:
+                    await self._verify_resume_approval(
+                        context, skill, approval_id, tool_calls, resume_from_step
+                    )
+                except ApprovalError as exc:
+                    logger.warning(
+                        "skill_resume_approval_rejected skill=%s tenant=%s reason=%s",
+                        skill.id,
+                        context.tenant_id,
+                        type(exc).__name__,
+                    )
                     return await self._finalize(
                         record,
-                        self._approval_required_result(
+                        self._build_result(
                             context,
                             skill,
+                            SkillExecutionStatus.FAILED,
+                            error_kind=_ERROR_INVALID_APPROVAL,
+                            steps=[],
+                        ),
+                    )
+
+            # Collect completed steps: either from a fresh run or from the
+            # prior attempt when resuming.
+            completed: List[SkillExecutionStepOutcome] = list(previous_steps or [])
+
+            # Determine which tool calls to execute. When resuming, skip
+            # calls before resume_from_step (they already succeeded).
+            start = resume_from_step if resume_from_step is not None else 0
+            for sequence in range(start, len(tool_calls)):
+                call = tool_calls[sequence]
+                tool_name = call["tool_name"]
+                tool_input = call.get("input", {})
+
+                # Gate 1 — the Skill's own declared tool set.
+                if not self.skill_service.is_tool_allowed(skill, tool_name):
+                    return await self._finalize(
+                        record,
+                        self._stopped_result(
+                            context,
+                            skill,
+                            SkillExecutionStatus.DENIED,
+                            _ERROR_DISALLOWED_TOOL,
                             completed,
                             sequence,
                             tool_name,
-                            exc.approval_id,
                         ),
                     )
-                return await self._finalize(
-                    record,
-                    self._stopped_result(
+
+                # Gates 2..N — delegated to ToolExecutionService.
+                # When resuming the approval-gated step, pass the approval_id
+                # so the tool service atomically consumes it before executing.
+                call_approval_id = approval_id if sequence == start and approval_id else None
+                # Per-step idempotency key: when a webhook-level key is
+                # provided, append the step index to distinguish individual
+                # tool invocations within the same event.
+                step_idempotency_key = None
+                if idempotency_key is not None:
+                    step_idempotency_key = f"{idempotency_key}:{sequence}"
+                try:
+                    executed = await self.tool_service.execute_tool(
                         context,
-                        skill,
-                        SkillExecutionStatus.FAILED,
-                        _ERROR_TOOL_DENIED,
-                        completed,
-                        sequence,
+                        principal,
                         tool_name,
-                    ),
-                )
-            except ToolNotFoundError:
-                return await self._finalize(
-                    record,
-                    self._stopped_result(
-                        context,
-                        skill,
-                        SkillExecutionStatus.FAILED,
-                        _ERROR_UNKNOWN_TOOL,
-                        completed,
-                        sequence,
-                        tool_name,
-                    ),
-                )
-            except ToolValidationError:
-                return await self._finalize(
-                    record,
-                    self._stopped_result(
-                        context,
-                        skill,
-                        SkillExecutionStatus.FAILED,
-                        _ERROR_INVALID_INPUT,
-                        completed,
-                        sequence,
-                        tool_name,
-                    ),
-                )
-            except ToolExecutionError:
-                return await self._finalize(
-                    record,
-                    self._stopped_result(
-                        context,
-                        skill,
-                        SkillExecutionStatus.FAILED,
-                        _ERROR_EXECUTION_FAILED,
-                        completed,
-                        sequence,
-                        tool_name,
-                    ),
+                        tool_input,
+                        authorization,
+                        approval_id=call_approval_id,
+                        idempotency_key=step_idempotency_key,
+                    )
+                except ToolDeniedError as exc:
+                    # If the tool service created a new approval (REQUIRE_HUMAN_APPROVAL
+                    # policy on a later tool call), propagate the approval_id upward.
+                    if exc.approval_id is not None:
+                        return await self._finalize(
+                            record,
+                            self._approval_required_result(
+                                context,
+                                skill,
+                                completed,
+                                sequence,
+                                tool_name,
+                                exc.approval_id,
+                            ),
+                        )
+                    return await self._finalize(
+                        record,
+                        self._stopped_result(
+                            context,
+                            skill,
+                            SkillExecutionStatus.FAILED,
+                            _ERROR_TOOL_DENIED,
+                            completed,
+                            sequence,
+                            tool_name,
+                        ),
+                    )
+                except ToolNotFoundError:
+                    return await self._finalize(
+                        record,
+                        self._stopped_result(
+                            context,
+                            skill,
+                            SkillExecutionStatus.FAILED,
+                            _ERROR_UNKNOWN_TOOL,
+                            completed,
+                            sequence,
+                            tool_name,
+                        ),
+                    )
+                except ToolValidationError:
+                    return await self._finalize(
+                        record,
+                        self._stopped_result(
+                            context,
+                            skill,
+                            SkillExecutionStatus.FAILED,
+                            _ERROR_INVALID_INPUT,
+                            completed,
+                            sequence,
+                            tool_name,
+                        ),
+                    )
+                except ToolExecutionError:
+                    return await self._finalize(
+                        record,
+                        self._stopped_result(
+                            context,
+                            skill,
+                            SkillExecutionStatus.FAILED,
+                            _ERROR_EXECUTION_FAILED,
+                            completed,
+                            sequence,
+                            tool_name,
+                        ),
+                    )
+
+                completed.append(
+                    SkillExecutionStepOutcome(
+                        sequence=sequence,
+                        tool_name=tool_name,
+                        status=ToolExecutionStatus.SUCCESS,
+                        tool_version=executed.tool_version,
+                        output=executed.output,
+                    )
                 )
 
-            completed.append(
-                SkillExecutionStepOutcome(
-                    sequence=sequence,
-                    tool_name=tool_name,
-                    status=ToolExecutionStatus.SUCCESS,
-                    tool_version=executed.tool_version,
-                    output=executed.output,
-                )
+            return await self._finalize(
+                record,
+                self._build_result(
+                    context,
+                    skill,
+                    SkillExecutionStatus.SUCCEEDED,
+                    error_kind=None,
+                    steps=completed,
+                ),
             )
-
-        return await self._finalize(
-            record,
-            self._build_result(
-                context,
-                skill,
-                SkillExecutionStatus.SUCCEEDED,
-                error_kind=None,
-                steps=completed,
-            ),
-        )
+        except Exception:
+            # Unexpected failure AFTER the record exists (Issue #208):
+            # persist a terminal FAILED row best-effort, then re-raise so
+            # the API's generic 500 (never DB details) still applies. The
+            # business exception remains authoritative; audit never masks it.
+            record.status = SkillExecutionStatus.FAILED
+            record.completed_at = datetime.now(timezone.utc)
+            record.failure_code = _ERROR_EXECUTION_FAILED
+            record.failure_message = _ERROR_EXECUTION_FAILED
+            record.result_summary = f"status={SkillExecutionStatus.FAILED.value} steps=0"
+            await self._update_record(record)
+            raise
 
     # -- internals -----------------------------------------------------
 
@@ -551,9 +590,11 @@ class SkillExecutionService:
             await self.record_repo.create_record(record)
         except Exception:
             logger.warning(
-                "skill_execution_record_create_failed record_id=%s tenant=%s",
+                "skill_execution_record_create_failed record_id=%s tenant=%s skill_id=%s",
                 record.id,
                 record.tenant_id,
+                record.skill_id,
+                exc_info=True,
             )
 
     async def _finalize(
@@ -580,9 +621,11 @@ class SkillExecutionService:
             await self.record_repo.update_record(record)
         except Exception:
             logger.warning(
-                "skill_execution_record_update_failed record_id=%s tenant=%s",
+                "skill_execution_record_update_failed record_id=%s tenant=%s skill_id=%s",
                 record.id,
                 record.tenant_id,
+                record.skill_id,
+                exc_info=True,
             )
 
     @staticmethod
@@ -595,12 +638,29 @@ class SkillExecutionService:
         for index, call in enumerate(tool_calls):
             if not isinstance(call, dict):
                 raise ValueError(f"Tool call {index} must be an object")
+            unknown = set(call) - {"tool_name", "input"}
+            if unknown:
+                raise ValueError(
+                    f"Tool call {index} has unknown fields: {sorted(unknown)}. "
+                    "Each tool call accepts only 'tool_name' and 'input'."
+                )
             tool_name = call.get("tool_name")
             if not isinstance(tool_name, str) or not tool_name:
                 raise ValueError(f"Tool call {index} requires a non-empty tool_name")
             tool_input = call.get("input", {})
             if not isinstance(tool_input, dict):
                 raise ValueError(f"Tool call {index} input must be an object")
+
+    @staticmethod
+    def _validated_skill_inputs(skill_inputs) -> Dict[str, str]:
+        """Validate the shape of supplied skill inputs (not the declaration)."""
+        if skill_inputs is None:
+            return {}
+        if not isinstance(skill_inputs, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in skill_inputs.items()
+        ):
+            raise ValueError("skill_inputs must be an object mapping input names to strings")
+        return dict(skill_inputs)
 
     @staticmethod
     def _validated_conditions(satisfied_conditions: Iterable[str]) -> List[str]:
