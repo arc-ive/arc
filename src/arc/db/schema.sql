@@ -377,7 +377,8 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     CONSTRAINT ck_approval_requests_status
         CHECK (status IN ('pending', 'approved', 'rejected', 'expired', 'consumed')),
-    CONSTRAINT ck_approval_requests_digest CHECK (arguments_digest ~ '^[0-9a-f]{64}$')
+    CONSTRAINT ck_approval_requests_digest CHECK (arguments_digest ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_approval_requests_expiry CHECK (expires_at > created_at)
 );
 
 CREATE INDEX IF NOT EXISTS idx_approval_requests_tenant_status
@@ -391,6 +392,28 @@ CREATE INDEX IF NOT EXISTS idx_approval_requests_created_at
 CREATE UNIQUE INDEX IF NOT EXISTS uq_approval_requests_open_binding
     ON approval_requests(tenant_id, tool_name, tool_version, arguments_digest)
     WHERE status = 'pending';
+
+-- Expiry ordering invariant (Issue #239): expires_at is strictly after
+-- created_at, mirroring the domain model. Follows the DROP IF EXISTS /
+-- ADD pair used elsewhere here so existing databases gain the constraint
+-- without a migration system (PostgreSQL has no ADD CONSTRAINT IF NOT
+-- EXISTS, and a DO block cannot be used because this file is executed by
+-- splitting on semicolons).
+--
+-- The upgrade is deliberately NOT VALID: validating existing rows during
+-- startup bootstrap would abort ensure_schema (and therefore the whole
+-- application) on any deployment holding a legacy row with
+-- expires_at <= created_at. NOT VALID still rejects every new INSERT and
+-- every UPDATE that violates the invariant, while pre-existing rows are
+-- grandfathered until deliberately remediated (a later VALIDATE
+-- CONSTRAINT outside startup is the deferred follow-up). Do NOT add
+-- VALIDATE CONSTRAINT here. (No semicolons inside comments: this file is
+-- executed by splitting on semicolons.)
+ALTER TABLE approval_requests
+    DROP CONSTRAINT IF EXISTS ck_approval_requests_expiry;
+
+ALTER TABLE approval_requests
+    ADD CONSTRAINT ck_approval_requests_expiry CHECK (expires_at > created_at) NOT VALID;
 
 -- Agent execution trace (PRD 17 O-6): persisted run-level records.
 -- Observability is an aggregation/read layer (not a second source of

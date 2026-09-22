@@ -108,6 +108,7 @@ from arc.security.models import AuthenticatedPrincipal
 from arc.services.agent import AgentExecutionService
 from arc.services.approvals import (
     ApprovalConsumedError,
+    ApprovalCorruptError,
     ApprovalError,
     ApprovalExpiredError,
     ApprovalNotFoundError,
@@ -2442,9 +2443,19 @@ async def list_approval_requests(
     contain redacted summaries only -- never raw tool arguments.
     """
     params = PaginationParams.from_query(limit, offset)
-    approvals, total = await human_approval_service.list_requests_paginated(
-        context, params.limit, params.offset, status_filter
-    )
+    try:
+        approvals, total = await human_approval_service.list_requests_paginated(
+            context, params.limit, params.offset, status_filter
+        )
+    except ApprovalCorruptError:
+        logger.exception(
+            "Corrupt approval row encountered while listing approvals for tenant '%s'",
+            context.tenant_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Approval request data is invalid",
+        )
     return paginate([_approval_payload(a) for a in approvals], total, params)
 
 
@@ -2465,6 +2476,16 @@ async def get_approval_request(
     except ApprovalNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found"
+        )
+    except ApprovalCorruptError:
+        logger.exception(
+            "Corrupt approval row encountered while reading approval '%s' for tenant '%s'",
+            approval_id,
+            context.tenant_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Approval request data is invalid",
         )
     return _approval_payload(approval)
 

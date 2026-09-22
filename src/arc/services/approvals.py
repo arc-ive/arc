@@ -34,7 +34,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from arc.db.connection import DuplicateKeyError, NotFoundError
+from arc.db.connection import CorruptDataError, DuplicateKeyError, NotFoundError
 from arc.domain.models import ApprovalRequest, ApprovalStatus, TenantContext
 
 logger = logging.getLogger("arc.approvals")
@@ -70,8 +70,34 @@ class ApprovalSelfDecisionError(ApprovalError):
     """The requester attempted to approve or reject their own request."""
 
 
+class ApprovalCorruptError(ApprovalError):
+    """A persisted approval row violates an application invariant.
+
+    Defense-in-depth for legacy/corrupt data that predates the database
+    CHECK constraint (Issue #239). Fail-closed and observable: callers
+    must surface a controlled error, never treat the row as valid.
+    """
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _corrupt_error(approval_id: str, tenant_id: str, exc: Exception) -> ApprovalCorruptError:
+    """Log and build the controlled error for a corrupt persisted row.
+
+    The log carries identifiers only (never secrets); the error message
+    surfaced to callers carries no database internals.
+    """
+    logger.warning(
+        "approval_row_corrupt approval_id=%s tenant_id=%s",
+        approval_id,
+        tenant_id,
+        exc_info=True,
+    )
+    return ApprovalCorruptError(
+        f"Approval request {approval_id} is unreadable and requires operator attention"
+    )
 
 
 class HumanApprovalService:
@@ -155,7 +181,10 @@ class HumanApprovalService:
 
     async def list_requests(self, context: TenantContext, status: Optional[ApprovalStatus] = None):
         """List requests for the trusted tenant, newest first."""
-        requests = await self.repository.list_for_tenant(context.tenant_id)
+        try:
+            requests = await self.repository.list_for_tenant(context.tenant_id)
+        except CorruptDataError as exc:
+            raise _corrupt_error("list", context.tenant_id, exc) from exc
         derived = [self._with_effective_status(r) for r in requests]
         if status is None:
             return derived
@@ -169,9 +198,12 @@ class HumanApprovalService:
         status: Optional[ApprovalStatus] = None,
     ):
         """List requests with LIMIT/OFFSET and total count."""
-        all_items, total = await self.repository.list_for_tenant_paginated(
-            context.tenant_id, limit, offset
-        )
+        try:
+            all_items, total = await self.repository.list_for_tenant_paginated(
+                context.tenant_id, limit, offset
+            )
+        except CorruptDataError as exc:
+            raise _corrupt_error("list", context.tenant_id, exc) from exc
         derived = [self._with_effective_status(r) for r in all_items]
         if status is not None:
             derived = [r for r in derived if r.status == status]
@@ -183,6 +215,8 @@ class HumanApprovalService:
         except NotFoundError as exc:
             logger.debug("Approval %s not found for tenant %s", approval_id, context.tenant_id)
             raise ApprovalNotFoundError(str(exc)) from exc
+        except CorruptDataError as exc:
+            raise _corrupt_error(approval_id, context.tenant_id, exc) from exc
         return self._with_effective_status(request)
 
     # ------------------------------------------------------------------
@@ -211,6 +245,8 @@ class HumanApprovalService:
         except NotFoundError as exc:
             logger.debug("Approval %s not found for tenant %s", approval_id, context.tenant_id)
             raise ApprovalNotFoundError(str(exc)) from exc
+        except CorruptDataError as exc:
+            raise _corrupt_error(approval_id, context.tenant_id, exc) from exc
 
         if current.status == ApprovalStatus.PENDING and self._clock() >= current.expires_at:
             await self.repository.expire_if_due(approval_id, context.tenant_id)
@@ -225,14 +261,18 @@ class HumanApprovalService:
         performed = await self.repository.decide(
             approval_id, context.tenant_id, decision, principal_user_id
         )
-        if not performed:
-            refreshed = await self.repository.get_by_id(approval_id, context.tenant_id)
-            if refreshed.status == ApprovalStatus.CONSUMED:
-                raise ApprovalConsumedError(f"Approval {approval_id} was already consumed")
-            raise ApprovalStateError(
-                f"Approval {approval_id} is '{refreshed.status.value}' and can no longer be decided"
-            )
-        return await self.repository.get_by_id(approval_id, context.tenant_id)
+        try:
+            if not performed:
+                refreshed = await self.repository.get_by_id(approval_id, context.tenant_id)
+                if refreshed.status == ApprovalStatus.CONSUMED:
+                    raise ApprovalConsumedError(f"Approval {approval_id} was already consumed")
+                raise ApprovalStateError(
+                    f"Approval {approval_id} is '{refreshed.status.value}' "
+                    "and can no longer be decided"
+                )
+            return await self.repository.get_by_id(approval_id, context.tenant_id)
+        except CorruptDataError as exc:
+            raise _corrupt_error(approval_id, context.tenant_id, exc) from exc
 
     # ------------------------------------------------------------------
     # Consumption boundary (single-use; called before execute_tool)
@@ -258,6 +298,8 @@ class HumanApprovalService:
         except NotFoundError as exc:
             logger.debug("Approval %s not found for tenant %s", approval_id, context.tenant_id)
             raise ApprovalNotFoundError(str(exc)) from exc
+        except CorruptDataError as exc:
+            raise _corrupt_error(approval_id, context.tenant_id, exc) from exc
 
         performed = await self.repository.consume(
             approval_id,
@@ -266,11 +308,14 @@ class HumanApprovalService:
             tool_version,
             arguments_digest,
         )
-        if performed:
-            return await self.repository.get_by_id(approval_id, context.tenant_id)
+        try:
+            if performed:
+                return await self.repository.get_by_id(approval_id, context.tenant_id)
 
-        # Classify why consumption did not fire (fresh read).
-        refreshed = await self.repository.get_by_id(approval_id, context.tenant_id)
+            # Classify why consumption did not fire (fresh read).
+            refreshed = await self.repository.get_by_id(approval_id, context.tenant_id)
+        except CorruptDataError as exc:
+            raise _corrupt_error(approval_id, context.tenant_id, exc) from exc
         if self._clock() >= refreshed.expires_at and refreshed.status == ApprovalStatus.PENDING:
             await self.repository.expire_if_due(approval_id, context.tenant_id)
             raise ApprovalExpiredError(f"Approval {approval_id} expired")
