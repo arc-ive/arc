@@ -32,6 +32,17 @@ class NotFoundError(DatabaseError):
     pass
 
 
+class ConcurrentUpdateError(DatabaseError):
+    """Raised when an optimistic-locking update loses a write-write race.
+
+    The row still exists but its version no longer matches the expected
+    version, so another writer committed first. Callers retry against
+    freshly resolved state; this error must never be swallowed as success.
+    """
+
+    pass
+
+
 _TENANT_COLUMNS: tuple[str, ...] = (
     "id",
     "name",

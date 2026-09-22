@@ -103,7 +103,9 @@ class FakeKnowledgeRepository:
             raise NotFoundError(f"no logical document for identity {external_id}")
         return document
 
-    async def update_document_with_chunks(self, document, chunks, embeddings) -> KnowledgeDocument:
+    async def update_document_with_chunks(
+        self, document, chunks, embeddings, expected_version=None
+    ) -> KnowledgeDocument:
         stored = self.by_id.get(document.id)
         if stored is None or stored.tenant_id != document.tenant_id:
             raise NotFoundError(f"missing {document.id}")
