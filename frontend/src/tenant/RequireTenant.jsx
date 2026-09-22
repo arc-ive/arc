@@ -51,7 +51,7 @@ export function RequireTenant({ children }) {
   if (userTenants.isPending) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Spinner className="size-6 text-zinc-600" />
+        <Spinner className="size-6 text-fg-muted" />
       </div>
     )
   }

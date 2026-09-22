@@ -14,7 +14,7 @@ import { cn } from '../../lib/cn.js'
 
 function Kbd({ children }) {
   return (
-    <kbd className="ml-auto rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
+    <kbd className="ml-auto rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
       {children}
     </kbd>
   )
@@ -85,7 +85,7 @@ export function AppShell() {
 
           <div className="ml-auto flex items-center gap-2.5">
             {isDemo && (
-              <Badge variant="cyan" dot className="hidden sm:inline-flex">
+              <Badge variant="info" dot className="hidden sm:inline-flex">
                 Demo
               </Badge>
             )}
@@ -94,7 +94,7 @@ export function AppShell() {
               type="button"
               onClick={() => setPaletteOpen(true)}
               className={cn(
-                'hidden h-9 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-[13px] text-zinc-500 transition-colors duration-150 hover:border-zinc-700 hover:text-zinc-300 md:flex',
+                'hidden h-9 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-[13px] text-fg-muted transition-colors duration-150 hover:border-zinc-700 hover:text-zinc-300 md:flex',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
               )}
             >

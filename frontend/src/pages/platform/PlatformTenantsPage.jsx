@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Building2, Plus } from 'lucide-react'
@@ -90,9 +92,9 @@ function CreateTenantDialog({ open, onClose }) {
           <option value="suspended">suspended</option>
         </Select>
         {error && (
-          <p className="rounded-lg border border-red-900/50 bg-red-950/20 px-3 py-2.5 text-[13px] text-red-300">
+          <InlineError>
             {error}
-          </p>
+          </InlineError>
         )}
       </div>
     </Dialog>
@@ -116,13 +118,8 @@ export function PlatformTenantsPage() {
     <div className="flex flex-col gap-8">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            Tenants
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Platform-level tenant administration. Tenant boundaries are
-            enforced by the backend.
-          </p>
+          <PageHeader title="Tenants"
+          description="Platform-level tenant administration. Tenant boundaries are       enforced by the backend." />
         </div>
         <Button variant="secondary" onClick={() => setCreateOpen(true)} disabled={isDemo}>
           <Plus className="size-4" />
@@ -194,7 +191,7 @@ export function PlatformTenantsPage() {
               }}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500 transition-colors duration-150 group-hover:text-indigo-400">
+                <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
                   <Building2 className="size-4.5" />
                 </div>
                 <Badge variant={tenant.status === 'active' ? 'green' : 'neutral'} dot>
@@ -205,15 +202,15 @@ export function PlatformTenantsPage() {
                 <p className="truncate text-sm font-semibold text-zinc-100">
                   {tenant.name}
                 </p>
-                <p className="mt-0.5 truncate font-mono text-xs text-zinc-600">
+                <p className="mt-0.5 truncate font-mono text-xs text-fg-muted">
                   {tenant.id}
                 </p>
               </div>
               <div className="mt-auto flex items-center justify-between">
-                <span className="text-xs text-zinc-600">
+                <span className="text-xs text-fg-muted">
                   Created {formatDate(tenant.created_at)}
                 </span>
-                <ArrowUpRight className="size-4 text-zinc-600 transition-colors duration-150 group-hover:text-zinc-300" />
+                <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-zinc-300" />
               </div>
             </Card>
           ))}

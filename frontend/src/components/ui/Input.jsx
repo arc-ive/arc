@@ -25,7 +25,7 @@ export const Input = forwardRef(function Input(
           className="text-[13px] font-medium text-zinc-300"
         >
           {label}
-          {required && <span className="ml-0.5 text-zinc-500">*</span>}
+          {required && <span className="ml-0.5 text-fg-muted">*</span>}
         </label>
       )}
       <input
@@ -33,7 +33,7 @@ export const Input = forwardRef(function Input(
         id={inputId}
         className={cn(
           'h-9 w-full rounded-lg border bg-zinc-900/70 px-3 text-sm text-zinc-100',
-          'placeholder:text-zinc-500 transition-colors duration-150',
+          'placeholder:text-fg-muted transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
           error
             ? 'border-red-800 focus-visible:outline-red-500'
@@ -43,7 +43,7 @@ export const Input = forwardRef(function Input(
         {...props}
       />
       {error && <p className="text-xs text-red-400">{error}</p>}
-      {hint && !error && <p className="text-xs text-zinc-500">{hint}</p>}
+      {hint && !error && <p className="text-xs text-fg-muted">{hint}</p>}
     </div>
   )
 })

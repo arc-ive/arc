@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
@@ -18,7 +19,7 @@ const STATUS_STYLES = {
   pending: { color: 'text-amber-400', icon: Clock, label: 'Pending' },
   approved: { color: 'text-emerald-400', icon: CheckCircle, label: 'Approved' },
   rejected: { color: 'text-red-400', icon: XCircle, label: 'Rejected' },
-  expired: { color: 'text-zinc-500', icon: AlertTriangle, label: 'Expired' },
+  expired: { color: 'text-fg-muted', icon: AlertTriangle, label: 'Expired' },
   consumed: { color: 'text-blue-400', icon: CheckCircle, label: 'Consumed' },
 }
 
@@ -36,18 +37,18 @@ function ApprovalCard({ approval, onDecide }) {
               <h3 className="text-sm font-medium text-zinc-100">
                 {approval.tool_name}
               </h3>
-              <Badge variant="zinc">{approval.tool_version}</Badge>
+              <Badge variant="neutral">{approval.tool_version}</Badge>
               <span className={`flex items-center gap-1 text-xs ${style.color}`}>
                 <Icon className="size-3" />
                 {style.label}
               </span>
             </div>
             {approval.input_summary && (
-              <p className="mt-1 text-xs text-zinc-500 line-clamp-2">
+              <p className="mt-1 text-xs text-fg-muted line-clamp-2">
                 {approval.input_summary}
               </p>
             )}
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-600">
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-fg-muted">
               <span>Risk: {approval.risk_level}</span>
               <span>By: {approval.requester_user_id}</span>
               <span>Created: {new Date(approval.created_at).toLocaleString()}</span>
@@ -114,16 +115,12 @@ export function ApprovalsPage() {
     return (
       <div className="flex flex-col gap-8">
         <section>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            Approvals
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Human Intervention approval requests.
-          </p>
+          <PageHeader title="Approvals"
+          description="Human Intervention approval requests." />
         </section>
         <Card>
           <CardContent>
-            <p className="text-[13px] text-zinc-500">
+            <p className="text-[13px] text-fg-muted">
               Demo Mode — approval data requires a backend session.
               Sign in with a real JWT to view approvals.
             </p>
@@ -137,13 +134,11 @@ export function ApprovalsPage() {
     return (
       <div className="flex flex-col gap-8">
         <section>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            Approvals
-          </h1>
+          <PageHeader title="Approvals" />
         </section>
         <Card>
           <CardContent>
-            <p className="text-[13px] text-zinc-500">
+            <p className="text-[13px] text-fg-muted">
               You don't have access to approvals in this workspace.
             </p>
           </CardContent>
@@ -156,12 +151,8 @@ export function ApprovalsPage() {
     <div className="flex flex-col gap-8">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            Approvals
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Human Intervention approval requests for this tenant.
-          </p>
+          <PageHeader title="Approvals"
+          description="Human Intervention approval requests for this tenant." />
         </div>
         <div className="flex gap-2">
           {[null, 'pending', 'approved', 'rejected'].map((s) => (
@@ -171,7 +162,7 @@ export function ApprovalsPage() {
               className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                 statusFilter === s
                   ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-zinc-500 hover:text-zinc-300'
+                  : 'text-fg-muted hover:text-zinc-300'
               }`}
             >
               {s ?? 'All'}

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings } from 'lucide-react'
@@ -52,18 +53,15 @@ export function TenantSettingsPage() {
       <div className="flex flex-col gap-6">
         <section>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-              <Settings className="size-5" />
-            </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Settings</h1>
-              <p className="mt-1 text-sm text-zinc-500">Tenant configuration and preferences.</p>
+              <PageHeader title="Settings"
+          description="Tenant configuration and preferences." />
             </div>
           </div>
         </section>
         <Card>
           <CardContent>
-            <p className="py-8 text-center text-sm text-zinc-500">
+            <p className="py-8 text-center text-sm text-fg-muted">
               Settings require a backend session. Sign in with a real JWT to view tenant configuration.
             </p>
           </CardContent>
@@ -77,12 +75,9 @@ export function TenantSettingsPage() {
       <div className="flex flex-col gap-6">
         <section>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-              <Settings className="size-5" />
-            </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Settings</h1>
-              <p className="mt-1 text-sm text-zinc-500">Tenant configuration and preferences.</p>
+              <PageHeader title="Settings"
+          description="Tenant configuration and preferences." />
             </div>
           </div>
         </section>
@@ -96,12 +91,9 @@ export function TenantSettingsPage() {
       <div className="flex flex-col gap-6">
         <section>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-              <Settings className="size-5" />
-            </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Settings</h1>
-              <p className="mt-1 text-sm text-zinc-500">Tenant configuration and preferences.</p>
+              <PageHeader title="Settings"
+          description="Tenant configuration and preferences." />
             </div>
           </div>
         </section>
@@ -159,12 +151,9 @@ export function TenantSettingsPage() {
     <div className="flex flex-col gap-6">
       <section>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-            <Settings className="size-5" />
-          </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Settings</h1>
-            <p className="mt-1 text-sm text-zinc-500">Tenant configuration and preferences.</p>
+            <PageHeader title="Settings"
+          description="Tenant configuration and preferences." />
           </div>
         </div>
       </section>
@@ -237,7 +226,7 @@ export function TenantSettingsPage() {
                 </Button>
               )}
               {saved && (
-                <Badge variant="green" size="sm">Saved</Badge>
+                <Badge variant="success" size="sm">Saved</Badge>
               )}
               {updateMutation.isError && (
                 <span className="text-xs text-red-400">{errorMessage(updateMutation.error)}</span>
@@ -246,14 +235,14 @@ export function TenantSettingsPage() {
           )}
 
           {!canUpdate && (
-            <p className="mt-4 text-xs text-zinc-500">
+            <p className="mt-4 text-xs text-fg-muted">
               You do not have permission to modify tenant configuration. Contact a company administrator.
             </p>
           )}
         </CardContent>
       </Card>
 
-      <div className="flex items-center gap-1.5 text-xs text-zinc-600">
+      <div className="flex items-center gap-1.5 text-xs text-fg-muted">
         <Settings className="size-3.5" />
         Changes are authorized by the backend on every request.
       </div>

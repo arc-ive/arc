@@ -89,7 +89,7 @@ export function CommandPalette({ onClose }) {
         className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-zinc-800 bg-raised shadow-overlay animate-scale-in"
       >
         <div className="flex items-center gap-2.5 border-b border-zinc-800/70 px-4">
-          <Search className="size-4 shrink-0 text-zinc-500" />
+          <Search className="size-4 shrink-0 text-fg-muted" />
           <input
             ref={inputRef}
             autoFocus
@@ -97,23 +97,23 @@ export function CommandPalette({ onClose }) {
             onChange={handleQueryChange}
             onKeyDown={handleKeyDown}
             placeholder="Jump to a page…"
-            className="h-12 w-full bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none"
+            className="h-12 w-full bg-transparent text-sm text-zinc-100 placeholder:text-fg-muted focus-visible:outline-none"
             aria-label="Search pages"
           />
-          <kbd className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
+          <kbd className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
             ESC
           </kbd>
         </div>
 
         <div ref={listRef} className="max-h-72 overflow-y-auto p-2">
           {flat.length === 0 && (
-            <p className="px-3 py-8 text-center text-[13px] text-zinc-500">
+            <p className="px-3 py-8 text-center text-[13px] text-fg-muted">
               No matches for “{query}”
             </p>
           )}
           {results.map(({ group, items }) => (
             <div key={group} className="mb-1 last:mb-0">
-              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+              <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
                 {group}
               </p>
               {items.map((item) => {
@@ -136,12 +136,12 @@ export function CommandPalette({ onClose }) {
                     <item.icon
                       className={cn(
                         'size-4 shrink-0',
-                        isActive ? 'text-indigo-400' : 'text-zinc-600',
+                        isActive ? 'text-indigo-400' : 'text-fg-muted',
                       )}
                     />
                     <span className="flex-1 truncate">{item.label}</span>
                     {isActive && (
-                      <CornerDownLeft className="size-3.5 text-zinc-600" />
+                      <CornerDownLeft className="size-3.5 text-fg-muted" />
                     )}
                   </button>
                 )

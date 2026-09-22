@@ -1,4 +1,6 @@
 import { useState, useCallback } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { UserPlus, Users } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
@@ -121,9 +123,9 @@ function CreateUserDialog({ open, onClose }) {
           <option value="suspended">suspended</option>
         </Select>
         {error && (
-          <p className="rounded-lg border border-red-900/50 bg-red-950/20 px-3 py-2.5 text-[13px] text-red-300">
+          <InlineError>
             {error}
-          </p>
+          </InlineError>
         )}
       </div>
     </Dialog>
@@ -148,13 +150,8 @@ export function PlatformUsersPage() {
     <div className="flex flex-col gap-8">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            Users
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Platform-level user directory. All provisioned users are listed
-            here regardless of tenant membership.
-          </p>
+          <PageHeader title="Users"
+          description="Platform-level user directory. All provisioned users are listed       here regardless of tenant membership." />
         </div>
         <Button
           variant="secondary"
@@ -168,7 +165,7 @@ export function PlatformUsersPage() {
 
       {isDemo && (
         <Card className="p-5">
-          <p className="text-[13px] text-zinc-500">
+          <p className="text-[13px] text-fg-muted">
             Demo Mode — user listing requires a backend session.
             Sign in with a real JWT to view and create users.
           </p>
@@ -233,7 +230,7 @@ export function PlatformUsersPage() {
                         <p className="truncate font-medium text-zinc-100">
                           {user.email}
                         </p>
-                        <p className="truncate font-mono text-xs text-zinc-600">
+                        <p className="truncate font-mono text-xs text-fg-muted">
                           {user.id}
                         </p>
                       </div>
@@ -251,7 +248,7 @@ export function PlatformUsersPage() {
                       {user.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-zinc-500">
+                  <TableCell className="whitespace-nowrap text-fg-muted">
                     {formatDate(user.created_at)}
                   </TableCell>
                 </TableRow>

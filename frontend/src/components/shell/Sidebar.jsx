@@ -20,7 +20,7 @@ function NavItem({ to, label, icon: Icon, onNavigate }) {
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
           isActive
             ? 'bg-zinc-900 text-zinc-100'
-            : 'text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200',
+            : 'text-fg-muted hover:bg-zinc-900/60 hover:text-zinc-200',
         )
       }
     >
@@ -29,7 +29,7 @@ function NavItem({ to, label, icon: Icon, onNavigate }) {
           <Icon
             className={cn(
               'size-4 shrink-0 transition-colors duration-150',
-              isActive ? 'text-indigo-400' : 'text-zinc-600 group-hover:text-zinc-400',
+              isActive ? 'text-indigo-400' : 'text-fg-muted group-hover:text-zinc-400',
             )}
           />
           {label}
@@ -42,7 +42,7 @@ function NavItem({ to, label, icon: Icon, onNavigate }) {
 function NavGroup({ title, children }) {
   return (
     <div>
-      <p className="mb-1.5 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+      <p className="mb-1.5 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
         {title}
       </p>
       <div className="flex flex-col gap-0.5">{children}</div>

@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Bot, CheckCircle2, Clock, ShieldAlert, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, ShieldAlert, XCircle } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { getAgentRun, listAgentRuns, runAgent } from '../../api/endpoints/agent.js'
@@ -50,7 +51,7 @@ function StatusBadge({ status }) {
 function RunSteps({ steps }) {
   if (!steps || steps.length === 0) {
     return (
-      <p className="mt-2 text-[13px] text-zinc-500">
+      <p className="mt-2 text-[13px] text-fg-muted">
         No steps were executed for this run.
       </p>
     )
@@ -63,7 +64,7 @@ function RunSteps({ steps }) {
           className="rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-zinc-500">Step {index + 1}</span>
+            <span className="text-xs font-medium text-fg-muted">Step {index + 1}</span>
             {step.skill_id && (
               <span className="text-[13px] text-zinc-200">{step.skill_id}</span>
             )}
@@ -97,7 +98,7 @@ function RunCard({ run, tenantId, canReadHistory }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-zinc-100">{run.goal}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-600">
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-muted">
               <span>By: {run.principal_id}</span>
               <span>Started: {new Date(run.created_at).toLocaleString()}</span>
             </div>
@@ -176,21 +177,16 @@ export function AgentRunsPage() {
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-wrap items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-          <Bot className="size-5" />
-        </div>
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Agents</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Start a bounded agent run and review its trace.
-          </p>
+          <PageHeader title="Agents"
+          description="Start a bounded agent run and review its trace." />
         </div>
       </section>
 
       {isDemo && (
         <Card>
           <CardContent>
-            <p className="text-[13px] text-zinc-500">
+            <p className="text-[13px] text-fg-muted">
               Demo Mode — agent runs require a backend session.
             </p>
           </CardContent>
@@ -201,7 +197,7 @@ export function AgentRunsPage() {
         <Card>
           <CardContent>
             <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
-              <label className="text-xs font-medium uppercase tracking-wide text-zinc-500" htmlFor="agent-goal">
+              <label className="text-xs font-medium uppercase tracking-wide text-fg-muted" htmlFor="agent-goal">
                 Goal
               </label>
               <Textarea
@@ -251,7 +247,7 @@ export function AgentRunsPage() {
       {!isDemo && !canExecute && (
         <Card>
           <CardContent>
-            <p className="text-[13px] text-zinc-500">
+            <p className="text-[13px] text-fg-muted">
               You don't have access to start agent runs in this workspace.
             </p>
           </CardContent>
@@ -261,7 +257,7 @@ export function AgentRunsPage() {
       {!isDemo && !canReadHistory && (
         <Card>
           <CardContent>
-            <p className="text-[13px] text-zinc-500">
+            <p className="text-[13px] text-fg-muted">
               You don't have access to run history for this workspace.
             </p>
           </CardContent>

@@ -1,4 +1,5 @@
 import { useParams } from 'react-router-dom'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
 import { Building2, Info, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
@@ -48,13 +49,8 @@ export function TenantCompanyPage() {
   return (
     <div className="flex flex-col gap-8">
       <section>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-          Company
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Information about this tenant organization, as authorized by the
-          backend.
-        </p>
+        <PageHeader title="Company"
+          description="Information about this tenant organization, as authorized by the      backend." />
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
@@ -72,14 +68,14 @@ export function TenantCompanyPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+                  <div className="flex size-10 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
                     <Building2 className="size-5" />
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-zinc-100">
                       {tenant?.name ?? 'Tenant'}
                     </p>
-                    <p className="truncate font-mono text-xs text-zinc-600">
+                    <p className="truncate font-mono text-xs text-fg-muted">
                       {tenantId}
                     </p>
                   </div>
@@ -93,7 +89,7 @@ export function TenantCompanyPage() {
                 </div>
                 <dl className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-3.5 py-3">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
                       Members
                     </dt>
                     <dd className="mt-1 text-lg font-semibold text-zinc-100">
@@ -101,7 +97,7 @@ export function TenantCompanyPage() {
                     </dd>
                   </div>
                   <div className="rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-3.5 py-3">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
                       Knowledge documents
                     </dt>
                     <dd className="mt-1 text-lg font-semibold text-zinc-100">
@@ -109,7 +105,7 @@ export function TenantCompanyPage() {
                     </dd>
                   </div>
                   <div className="rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-3.5 py-3">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
                       Created
                     </dt>
                     <dd className="mt-1 text-[13px] font-medium text-zinc-200">
@@ -117,7 +113,7 @@ export function TenantCompanyPage() {
                     </dd>
                   </div>
                   <div className="rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-3.5 py-3">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
                       Updated
                     </dt>
                     <dd className="mt-1 text-[13px] font-medium text-zinc-200">
@@ -151,9 +147,9 @@ export function TenantCompanyPage() {
                   { label: 'Logo URL', value: tenant?.logo_url },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex items-baseline justify-between gap-3">
-                    <dt className="shrink-0 text-zinc-500">{label}</dt>
+                    <dt className="shrink-0 text-fg-muted">{label}</dt>
                     <dd className="min-w-0 truncate text-right text-zinc-300">
-                      {value || <span className="text-zinc-600">—</span>}
+                      {value || <span className="text-fg-muted">—</span>}
                     </dd>
                   </div>
                 ))}
@@ -201,8 +197,8 @@ export function TenantCompanyPage() {
       </section>
 
       <section className="flex items-start gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3">
-        <Info className="mt-0.5 size-4 shrink-0 text-zinc-600" />
-        <p className="text-xs leading-relaxed text-zinc-500">
+        <Info className="mt-0.5 size-4 shrink-0 text-fg-muted" />
+        <p className="text-xs leading-relaxed text-fg-muted">
           Company profile details are configured on the{' '}
           <span className="text-zinc-300">Settings</span> page. Every
           request is authorized by the backend — access to this tenant is
@@ -210,7 +206,7 @@ export function TenantCompanyPage() {
         </p>
       </section>
 
-      <div className="flex items-center gap-1.5 text-xs text-zinc-600">
+      <div className="flex items-center gap-1.5 text-xs text-fg-muted">
         <ShieldCheck className="size-3.5" />
         Tenant boundary enforced server-side for every request.
       </div>

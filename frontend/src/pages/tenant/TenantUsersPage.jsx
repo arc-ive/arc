@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2, UserPlus, Users } from 'lucide-react'
@@ -102,9 +104,9 @@ function AddMemberDialog({ open, onClose, tenantId }) {
           <option value="viewer">viewer</option>
         </Select>
         {error && (
-          <p className="rounded-lg border border-red-900/50 bg-red-950/20 px-3 py-2.5 text-[13px] text-red-300">
+          <InlineError>
             {error}
-          </p>
+          </InlineError>
         )}
       </div>
     </Dialog>
@@ -155,9 +157,9 @@ function ConfirmRemoveDialog({ open, onClose, tenantId, user }) {
       }
     >
       {error && (
-        <p className="rounded-lg border border-red-900/50 bg-red-950/20 px-3 py-2.5 text-[13px] text-red-300">
+        <InlineError>
           {error}
-        </p>
+        </InlineError>
       )}
     </Dialog>
   )
@@ -179,12 +181,8 @@ export function TenantUsersPage() {
     <div className="flex flex-col gap-6">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            Tenant users
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Users with membership in this tenant, as authorized by the backend.
-          </p>
+          <PageHeader title="Tenant users"
+          description="Users with membership in this tenant, as authorized by the backend." />
         </div>
         <Button
           variant="secondary"
@@ -198,7 +196,7 @@ export function TenantUsersPage() {
 
       {isDemo && (
         <Card className="p-5">
-          <p className="text-[13px] text-zinc-500">
+          <p className="text-[13px] text-fg-muted">
             Demo Mode — membership provisioning requires a backend session.
             Sign in with a real JWT to manage memberships.
           </p>
@@ -264,7 +262,7 @@ export function TenantUsersPage() {
                         <p className="truncate font-medium text-zinc-100">
                           {user.email}
                         </p>
-                        <p className="truncate font-mono text-xs text-zinc-600">
+                        <p className="truncate font-mono text-xs text-fg-muted">
                           {user.id}
                         </p>
                       </div>
@@ -282,7 +280,7 @@ export function TenantUsersPage() {
                       {user.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-zinc-500">
+                  <TableCell className="whitespace-nowrap text-fg-muted">
                     {formatDate(user.created_at)}
                   </TableCell>
                   <TableCell>
@@ -292,7 +290,7 @@ export function TenantUsersPage() {
                       onClick={() => setRemoveTarget(user)}
                       title="Remove member"
                     >
-                      <Trash2 className="size-4 text-zinc-500 hover:text-red-400" />
+                      <Trash2 className="size-4 text-fg-muted hover:text-red-400" />
                     </Button>
                   </TableCell>
                 </TableRow>

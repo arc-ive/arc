@@ -33,7 +33,7 @@ export function CardHeader({ className, title, description, action, ...props }) 
           <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
         )}
         {description && (
-          <p className="mt-0.5 text-[13px] text-zinc-500">{description}</p>
+          <p className="mt-0.5 text-[13px] text-fg-muted">{description}</p>
         )}
       </div>
       {action}

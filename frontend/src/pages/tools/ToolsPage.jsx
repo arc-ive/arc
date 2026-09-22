@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Wrench, Play, CheckCircle } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
@@ -57,7 +59,7 @@ function ToolExecuteDialog({ tool, open, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl max-h-[80vh] overflow-y-auto">
         <h3 className="text-lg font-semibold text-zinc-100 mb-1">Execute Tool</h3>
-        <p className="text-sm text-zinc-500 mb-4">{tool.name} — {tool.description}</p>
+        <p className="text-sm text-fg-muted mb-4">{tool.name} — {tool.description}</p>
 
         {tool.input_schema && (
           <div className="mb-4 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
@@ -78,9 +80,9 @@ function ToolExecuteDialog({ tool, open, onClose }) {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+          <InlineError className="mb-4">
             {errorMessage(error)}
-          </div>
+          </InlineError>
         )}
 
         {result && (
@@ -129,12 +131,9 @@ export function ToolsPage() {
     <div className="flex flex-col gap-6">
       <section>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-            <Wrench className="size-5" />
-          </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Tools</h1>
-            <p className="mt-1 text-sm text-zinc-500">Platform-owned AI tools available for this tenant.</p>
+            <PageHeader title="Tools"
+          description="Platform-owned AI tools available for this tenant." />
           </div>
         </div>
       </section>
@@ -171,14 +170,14 @@ export function ToolsPage() {
                 <Badge
                   variant={
                     tool.risk_level === 'high' ? 'red' :
-                    tool.risk_level === 'medium' ? 'amber' : 'green'
+                    tool.risk_level === 'medium' ? 'amber' : 'success'
                   }
                   size="sm"
                 >
                   {tool.risk_level}
                 </Badge>
               </div>
-              <p className="text-[13px] text-zinc-500">{tool.description || 'No description'}</p>
+              <p className="text-[13px] text-fg-muted">{tool.description || 'No description'}</p>
               {tool.required_permissions && tool.required_permissions.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {tool.required_permissions.map((perm) => (
@@ -186,7 +185,7 @@ export function ToolsPage() {
                   ))}
                 </div>
               )}
-              <div className="text-xs text-zinc-600">v{tool.version}</div>
+              <div className="text-xs text-fg-muted">v{tool.version}</div>
               <div className="mt-auto pt-2">
                 {canExecute && (
                   <Button

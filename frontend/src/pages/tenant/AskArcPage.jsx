@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useMutation } from '@tanstack/react-query'
 import {
   ArrowUpRight,
@@ -123,17 +125,9 @@ export function AskArcPage() {
     <div className="flex flex-col gap-6">
       <section>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-            <Sparkles className="size-5" />
-          </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-              Ask Arc
-            </h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Company-aware answers grounded in the Company Brain, with
-              sources, skills, and permitted actions.
-            </p>
+            <PageHeader title="Ask Arc"
+          description="Company-aware answers grounded in the Company Brain, with        sources, skills, and permitted actions." />
           </div>
         </div>
       </section>
@@ -158,10 +152,10 @@ export function AskArcPage() {
           <div className="flex flex-wrap items-center gap-2">
             {isDemo && (
               <>
-                <Badge variant="amber" dot size="sm">
+                <Badge variant="warning" dot size="sm">
                   Demo Mode
                 </Badge>
-                <span className="hidden text-xs text-zinc-600 sm:inline">
+                <span className="hidden text-xs text-fg-muted sm:inline">
                   No backend session in Demo Mode.
                 </span>
               </>
@@ -198,10 +192,10 @@ export function AskArcPage() {
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+        <InlineError>
           <p className="font-semibold">Error:</p>
           <p className="mt-1">{errorMessage(error)}</p>
-        </div>
+        </InlineError>
       )}
 
       {answer && (
@@ -216,7 +210,7 @@ export function AskArcPage() {
                 {answer.answer}
               </div>
             ) : (
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-fg-muted">
                 No answer could be generated from the available knowledge.
               </p>
             )}
@@ -234,7 +228,7 @@ export function AskArcPage() {
                     className="rounded-lg border border-zinc-800/70 bg-zinc-900/40 p-3 text-sm text-zinc-300"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-zinc-500">
+                      <span className="font-mono text-xs text-fg-muted">
                         [{idx + 1}]
                       </span>
                       <Button
@@ -253,7 +247,7 @@ export function AskArcPage() {
             </div>
           )}
 
-          <div className="border-t border-zinc-800/70 px-5 py-4 text-xs text-zinc-500">
+          <div className="border-t border-zinc-800/70 px-5 py-4 text-xs text-fg-muted">
             <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
               <div>
                 <dt>Retrieval method</dt>
@@ -310,14 +304,14 @@ export function AskArcPage() {
                   <div className="flex size-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-indigo-400">
                     <step.icon className="size-4" />
                   </div>
-                  <span className="font-mono text-[11px] text-zinc-600">
+                  <span className="font-mono text-[11px] text-fg-muted">
                     0{index + 1}
                   </span>
                 </div>
                 <p className="text-[13px] font-semibold text-zinc-100">
                   {step.title}
                 </p>
-                <p className="text-xs leading-relaxed text-zinc-500">
+                <p className="text-xs leading-relaxed text-fg-muted">
                   {step.description}
                 </p>
               </li>
@@ -334,12 +328,12 @@ export function AskArcPage() {
         <CardContent>
           <div className="flex flex-col gap-3">
             <div className="flex items-start gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-4 py-3">
-              <BookOpen className="mt-0.5 size-4 shrink-0 text-zinc-500" />
+              <BookOpen className="mt-0.5 size-4 shrink-0 text-fg-muted" />
               <div>
                 <p className="text-[13px] font-semibold text-zinc-200">
                   Sources & provenance
                 </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
+                <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
                   Every claim links to the Company Brain documents it came
                   from — policy, procedure, incident, or solution — with
                   version and provenance.
@@ -347,12 +341,12 @@ export function AskArcPage() {
               </div>
             </div>
             <div className="flex items-start gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-4 py-3">
-              <Workflow className="mt-0.5 size-4 shrink-0 text-zinc-500" />
+              <Workflow className="mt-0.5 size-4 shrink-0 text-fg-muted" />
               <div>
                 <p className="text-[13px] font-semibold text-zinc-200">
                   Skill & tool execution
                 </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
+                <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
                   Approved procedures appear as selectable skills; permitted
                   actions show live execution status (requested, running,
                   completed, failed).
@@ -360,12 +354,12 @@ export function AskArcPage() {
               </div>
             </div>
             <div className="flex items-start gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-4 py-3">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-zinc-500" />
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-fg-muted" />
               <div>
                 <p className="text-[13px] font-semibold text-zinc-200">
                   Human approval & escalation
                 </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
+                <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
                   High-risk actions present an explicit Approve / Reject
                   decision; escalation routes to the operations team when
                   required. Internal chain-of-thought is never exposed.

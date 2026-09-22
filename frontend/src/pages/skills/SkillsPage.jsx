@@ -1,4 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Edit, Play, Plus, Trash2, Workflow, AlertTriangle, CheckCircle2, XCircle, ShieldAlert, Ban, Clock } from 'lucide-react'
@@ -152,7 +154,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
             </div>
             <div>
               <h3 className="text-sm font-semibold text-zinc-100">Execute skill</h3>
-              <p className="text-xs text-zinc-500">{skill.name}</p>
+              <p className="text-xs text-fg-muted">{skill.name}</p>
             </div>
           </div>
 
@@ -179,11 +181,11 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
               )}
               {result.steps && result.steps.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs font-medium text-zinc-500">Steps</p>
+                  <p className="text-xs font-medium text-fg-muted">Steps</p>
                   {result.steps.map((step) => (
                     <div key={step.sequence} className="rounded border border-zinc-800 bg-zinc-950/50 p-2.5 text-xs">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-zinc-500">#{step.sequence + 1}</span>
+                        <span className="text-fg-muted">#{step.sequence + 1}</span>
                         <span className="text-zinc-300 font-mono">{step.tool_name}</span>
                         <Badge variant={step.status === 'success' ? 'green' : 'red'} size="sm">
                           {step.status}
@@ -209,7 +211,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
                   <label className="block text-sm font-medium text-zinc-300 mb-2">
                     Preconditions
                   </label>
-                  <p className="text-xs text-zinc-500 mb-2">
+                  <p className="text-xs text-fg-muted mb-2">
                     Confirm that each precondition is satisfied before executing.
                   </p>
                   <div className="space-y-2">
@@ -230,7 +232,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
               )}
               {!hasPreconditions && (
                 <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3.5 py-2.5">
-                  <p className="text-xs text-zinc-500">No preconditions required for this skill.</p>
+                  <p className="text-xs text-fg-muted">No preconditions required for this skill.</p>
                 </div>
               )}
               {declaredInputs.length > 0 && (
@@ -272,9 +274,9 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
                 )}
               </div>
               {apiError && (
-                <div className="rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+                <InlineError>
                   {apiError}
-                </div>
+                </InlineError>
               )}
             </div>
           )}
@@ -388,13 +390,13 @@ function EditSkillDialog({ open, skill, onClose }) {
             </div>
             <div>
               <h3 className="text-sm font-semibold text-zinc-100">Edit skill</h3>
-              <p className="text-xs text-zinc-500">{skill.name}</p>
+              <p className="text-xs text-fg-muted">{skill.name}</p>
             </div>
           </div>
           {error && (
-            <div className="mb-4 rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+            <InlineError className="mb-4">
               {errorMessage(error)}
-            </div>
+            </InlineError>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -552,7 +554,7 @@ function SkillList() {
         onClose={() => setExecuteTarget(null)}
       />
       <div className="flex items-center justify-between">
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-fg-muted">
           {skills.length} skill{skills.length !== 1 ? 's' : ''}
         </p>
         {canCreate && (
@@ -575,13 +577,13 @@ function SkillList() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-zinc-100 truncate">{skill.name}</p>
-                    <p className="text-xs text-zinc-500 truncate">{skill.purpose || 'No description'}</p>
+                    <p className="text-xs text-fg-muted truncate">{skill.purpose || 'No description'}</p>
                   </div>
                 </div>
               </Link>
               <div className="flex items-center gap-2 ml-4">
                 <Badge variant={skill.status === 'active' ? 'green' : 'neutral'}>{skill.status}</Badge>
-                <span className="text-xs text-zinc-600">v{skill.version}</span>
+                <span className="text-xs text-fg-muted">v{skill.version}</span>
                 {canExecute && (
                   <Button
                     variant="ghost"
@@ -589,7 +591,7 @@ function SkillList() {
                     onClick={() => setExecuteTarget(skill)}
                     title="Execute skill"
                   >
-                    <Play className="size-4 text-zinc-500" />
+                    <Play className="size-4 text-fg-muted" />
                   </Button>
                 )}
                 {canUpdate && (
@@ -599,7 +601,7 @@ function SkillList() {
                     onClick={() => setEditTarget(skill)}
                     title="Edit skill"
                   >
-                    <Edit className="size-4 text-zinc-500" />
+                    <Edit className="size-4 text-fg-muted" />
                   </Button>
                 )}
                 {canDelete && (
@@ -610,7 +612,7 @@ function SkillList() {
                     disabled={deleteMutation.isPending}
                     title="Delete skill"
                   >
-                    <Trash2 className="size-4 text-zinc-500" />
+                    <Trash2 className="size-4 text-fg-muted" />
                   </Button>
                 )}
               </div>
@@ -649,7 +651,7 @@ function SkillDetail({ skillId }) {
         <div className="flex items-center justify-between px-6 pt-6">
           <div>
             <h3 className="text-lg font-semibold text-zinc-100">{skill.name}</h3>
-            {skill.purpose && <p className="mt-1 text-sm text-zinc-500">{skill.purpose}</p>}
+            {skill.purpose && <p className="mt-1 text-sm text-fg-muted">{skill.purpose}</p>}
           </div>
           {canUpdate && (
             <Button variant="secondary" size="sm" onClick={() => setEditTarget(skill)}>
@@ -661,24 +663,24 @@ function SkillDetail({ skillId }) {
         <CardContent>
           <dl className="grid gap-4 sm:grid-cols-2">
             <div>
-              <dt className="text-xs font-medium text-zinc-500">Status</dt>
+              <dt className="text-xs font-medium text-fg-muted">Status</dt>
               <dd className="mt-1">
                 <Badge variant={skill.status === 'active' ? 'green' : 'neutral'}>{skill.status}</Badge>
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-medium text-zinc-500">Version</dt>
+              <dt className="text-xs font-medium text-fg-muted">Version</dt>
               <dd className="mt-1 text-sm text-zinc-300">{skill.version}</dd>
             </div>
             {skill.provenance && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Provenance</dt>
+                <dt className="text-xs font-medium text-fg-muted">Provenance</dt>
                 <dd className="mt-1 text-sm text-zinc-300">{skill.provenance}</dd>
               </div>
             )}
             {skill.inputs && skill.inputs.length > 0 && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Inputs</dt>
+                <dt className="text-xs font-medium text-fg-muted">Inputs</dt>
                 <dd className="mt-1 flex flex-wrap gap-2">
                   {skill.inputs.map((input, idx) => (
                     <Badge key={idx} variant="neutral">{input}</Badge>
@@ -688,7 +690,7 @@ function SkillDetail({ skillId }) {
             )}
             {skill.preconditions && skill.preconditions.length > 0 && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Preconditions</dt>
+                <dt className="text-xs font-medium text-fg-muted">Preconditions</dt>
                 <dd className="mt-1 space-y-1">
                   {skill.preconditions.map((pre, idx) => (
                     <p key={idx} className="text-sm text-zinc-300">{pre}</p>
@@ -698,7 +700,7 @@ function SkillDetail({ skillId }) {
             )}
             {skill.steps && skill.steps.length > 0 && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Steps</dt>
+                <dt className="text-xs font-medium text-fg-muted">Steps</dt>
                 <dd className="mt-1 space-y-1">
                   {skill.steps.map((step, idx) => (
                     <p key={idx} className="text-sm text-zinc-300">{idx + 1}. {step}</p>
@@ -708,7 +710,7 @@ function SkillDetail({ skillId }) {
             )}
             {skill.constraints && skill.constraints.length > 0 && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Constraints</dt>
+                <dt className="text-xs font-medium text-fg-muted">Constraints</dt>
                 <dd className="mt-1 space-y-1">
                   {skill.constraints.map((constraint, idx) => (
                     <p key={idx} className="text-sm text-zinc-300">{constraint}</p>
@@ -718,33 +720,33 @@ function SkillDetail({ skillId }) {
             )}
             {skill.allowed_tools && skill.allowed_tools.length > 0 && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Allowed Tools</dt>
+                <dt className="text-xs font-medium text-fg-muted">Allowed Tools</dt>
                 <dd className="mt-1 flex flex-wrap gap-2">
                   {skill.allowed_tools.map((tool) => (
-                    <Badge key={tool} variant="indigo">{tool}</Badge>
+                    <Badge key={tool} variant="accent">{tool}</Badge>
                   ))}
                 </dd>
               </div>
             )}
             <div>
-              <dt className="text-xs font-medium text-zinc-500">Approval Required</dt>
+              <dt className="text-xs font-medium text-fg-muted">Approval Required</dt>
               <dd className="mt-1 text-sm text-zinc-300">{skill.approval_required ? 'Yes' : 'No'}</dd>
             </div>
             {skill.risk && (
               <div>
-                <dt className="text-xs font-medium text-zinc-500">Risk</dt>
+                <dt className="text-xs font-medium text-fg-muted">Risk</dt>
                 <dd className="mt-1 text-sm text-zinc-300">{skill.risk}</dd>
               </div>
             )}
             {skill.expected_output && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Expected Output</dt>
+                <dt className="text-xs font-medium text-fg-muted">Expected Output</dt>
                 <dd className="mt-1 text-sm text-zinc-300">{skill.expected_output}</dd>
               </div>
             )}
             {skill.failure_behavior && (
               <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-zinc-500">Failure Behavior</dt>
+                <dt className="text-xs font-medium text-fg-muted">Failure Behavior</dt>
                 <dd className="mt-1 text-sm text-zinc-300">{skill.failure_behavior}</dd>
               </div>
             )}
@@ -809,9 +811,9 @@ function SkillForm() {
       <CardHeader title="Create Skill" description="Define a new skill for this tenant." />
       <CardContent>
         {error && (
-          <div className="mb-4 rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+          <InlineError className="mb-4">
             {errorMessage(error)}
-          </div>
+          </InlineError>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -906,19 +908,16 @@ export function SkillsPage({ view = 'list' }) {
         {view !== 'list' && (
           <Link
             to={`${tenantPrefix}/skills`}
-            className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-zinc-500 transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+            className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
           >
             <ArrowLeft className="size-3.5" />
             Back to Skills
           </Link>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-            <Workflow className="size-5" />
-          </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">{viewCopy.title}</h1>
-            <p className="mt-1 text-sm text-zinc-500">{viewCopy.description}</p>
+            <PageHeader title={viewCopy.title}
+          description={viewCopy.description} />
           </div>
         </div>
       </section>
