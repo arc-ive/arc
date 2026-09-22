@@ -62,7 +62,13 @@ from arc.domain.models import (
 )
 from arc.security.authorization import AuthorizationService
 from arc.security.models import AuthenticatedPrincipal
-from arc.services.llm import LlmProvider, SkillSelectingLlm, _current_llm_usage
+from arc.services.llm import (
+    LlmConfigurationError,
+    LlmError,
+    LlmProvider,
+    SkillSelectingLlm,
+    _current_llm_usage,
+)
 from arc.services.llm_pricing import build_llm_usage_record
 from arc.services.observability import ObservabilityService
 from arc.services.pii import PiiGuardService
@@ -80,6 +86,7 @@ MAX_AGENT_STEPS = 3
 # exceptions and internal details never cross this boundary.
 _ERROR_CAPABILITY_UNAVAILABLE = "agent_capability_unavailable"
 _ERROR_DECISION_UNAVAILABLE = "agent_decision_unavailable"
+_ERROR_PROVIDER_UNAVAILABLE = "agent_provider_unavailable"
 _ERROR_INVALID_DECISION = "invalid_decision"
 _ERROR_SKILL_NOT_AVAILABLE = "skill_not_available"
 _ERROR_NO_DECISION = "no_decision"
@@ -193,7 +200,25 @@ class AgentExecutionService:
 
         completed: List[AgentStepOutcome] = []
         for sequence in range(MAX_AGENT_STEPS):
-            raw_decision = self.llm_provider.propose_skill(goal, snapshot)
+            try:
+                raw_decision = self.llm_provider.propose_skill(goal, snapshot)
+            except (LlmError, LlmConfigurationError) as exc:
+                # Provider outage: controlled failure with a persisted
+                # trace, never a raw 500 with no record of the attempt.
+                logger.warning(
+                    "agent_provider_failed tenant=%s reason=%s",
+                    context.tenant_id,
+                    type(exc).__name__,
+                )
+                result = self._failed_at_decision_boundary(
+                    context,
+                    goal,
+                    completed,
+                    _ERROR_PROVIDER_UNAVAILABLE,
+                    run_id=run_id,
+                )
+                await self._persist_trace(result, started_at)
+                return result
             # run_id, not a second identifier: the usage record has to carry
             # the same id the run is persisted under, or it correlates to
             # nothing.
