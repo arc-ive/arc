@@ -313,11 +313,22 @@ class Application:
         documents, and skills. Uses ``WHERE NOT EXISTS`` guards so the
         operation is safe on fresh databases, databases with existing
         data, or repeated startups.
+
+        Knowledge documents are routed through the canonical
+        ``KnowledgeService`` ingestion path (Issue #214) so they are
+        chunked, embedded and retrievable. Existing unchunked rows are
+        backfilled on the next run via the service's re-ingestion check.
         """
         from arc.setup.reference_data import seed_reference_data
 
+        # KnowledgeService is the canonical ingestion boundary (chunking +
+        # embedding + PII guard). Passing it here makes reference knowledge
+        # visible to RAG and ensures the same pipeline used by the API and
+        # connector sync is exercised.
+        knowledge_service = self.services.get("knowledge_service")
+
         async with self.db._connection_pool.acquire() as conn:
-            await seed_reference_data(conn)
+            await seed_reference_data(conn, knowledge_service=knowledge_service)
 
     async def shutdown(self) -> None:
         """Shutdown the application."""
