@@ -263,7 +263,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
                   onChange={(e) => setArgsText(e.target.value)}
                   className={inputClass}
                   rows={6}
-                  placeholder='[{"tool_name": "check_health", "input": {}}]'
+                  placeholder='[{"tool_name": "check_service_health", "input": {}}]'
                   spellCheck={false}
                   disabled={mutation.isPending}
                 />

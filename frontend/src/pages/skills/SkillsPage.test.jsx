@@ -138,7 +138,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     await user.type(textarea, 'not valid json')
 
@@ -155,7 +155,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     fireEvent.change(textarea, { target: { value: '{"not": "an array"}' } })
 
@@ -526,7 +526,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     fireEvent.change(textarea, { target: { value: '[{"tool_name": "check_service_health", "input": {"svc": "web"}}]' } })
 
@@ -538,6 +538,36 @@ describe('SkillsPage — execution controls', () => {
       'skill-1',
       {
         tool_calls: [{ tool_name: 'check_service_health', input: { svc: 'web' } }],
+      },
+    )
+  })
+
+  it('accepts the documented placeholder payload as-is', async () => {
+    mockExecuteSkill.mockResolvedValue({
+      id: 'exec-11',
+      status: 'succeeded',
+      error_kind: null,
+      steps: [],
+    })
+
+    const user = userEvent.setup()
+    renderWithProviders(<SkillsPage view="list" />)
+
+    const executeButtons = await screen.findAllByTitle('Execute skill')
+    await user.click(executeButtons[0])
+
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
+    await user.clear(textarea)
+    fireEvent.change(textarea, { target: { value: '[{"tool_name": "check_service_health", "input": {}}]' } })
+
+    await user.click(screen.getByText('Execute'))
+
+    expect(await screen.findByText('Succeeded')).toBeInTheDocument()
+    expect(mockExecuteSkill).toHaveBeenCalledWith(
+      't-123',
+      'skill-1',
+      {
+        tool_calls: [{ tool_name: 'check_service_health', input: {} }],
       },
     )
   })
@@ -614,7 +644,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByTitle('Execute skill')
     await user.click(executeButtons[0])
 
-    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_health", "input": {}}]')
+    const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
     await user.clear(textarea)
     fireEvent.change(textarea, { target: { value: '[]' } })
 

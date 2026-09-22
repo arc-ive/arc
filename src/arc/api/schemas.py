@@ -14,7 +14,15 @@ domain models reject empty strings in ``__post_init__``.
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, StrictBool, StrictInt, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from arc.domain.models import (
     ConnectorProvider,
@@ -336,7 +344,11 @@ class ToolExecuteRequest(BaseModel):
     ``input`` stays untyped on purpose: the route dispatches by tool name and
     each tool validates its own payload against its ``input_model`` inside
     ``ToolExecutionService``. Only the envelope is a fixed contract.
+    Unknown envelope fields are rejected so a wrong key (e.g.
+    ``parameters``) fails instead of silently executing with empty input.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     input: Dict[str, Any] = Field(default_factory=dict)
     approval_id: Optional[str] = None
