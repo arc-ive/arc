@@ -60,7 +60,7 @@ def _run(client, tenant_id, token, body=None):
 
 async def _create_skill_via_api(client, tenant_id, token, **payload_overrides) -> str:
     response = client.post(
-        f"/skills?tenant_id={tenant_id}",
+        f"/tenants/{tenant_id}/skills",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "name": _unique("skill"),

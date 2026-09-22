@@ -318,7 +318,7 @@ class TestSkillListPagination:
     async def test_limit_returns_subset(
         self, client, repositories, make_token, authorization_override
     ):
-        """GET /skills?tenant_id=X&limit=1 returns at most 1 skill."""
+        """GET /tenants/{tenant_id}/skills?limit=1 returns at most 1 skill."""
         tenant, user, membership = await _seed_tenant_with_admin(repositories)
         authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
         token = make_token(user.id)
@@ -326,7 +326,7 @@ class TestSkillListPagination:
         # Create 3 skills
         for i in range(3):
             client.post(
-                f"/skills?tenant_id={tenant.id}",
+                f"/tenants/{tenant.id}/skills",
                 json={
                     "name": f"skill-{i}",
                     "version": "1.0",
@@ -336,7 +336,7 @@ class TestSkillListPagination:
             )
 
         resp = client.get(
-            f"/skills?tenant_id={tenant.id}&limit=1&offset=0",
+            f"/tenants/{tenant.id}/skills?limit=1&offset=0",
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 200

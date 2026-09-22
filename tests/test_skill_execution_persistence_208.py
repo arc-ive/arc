@@ -481,7 +481,7 @@ async def _seed_api_actor(repositories):
 
 def _execute_via_api(client, tenant_id, token, skill_id, body):
     return client.post(
-        f"/skills/{skill_id}/execute?tenant_id={tenant_id}",
+        f"/tenants/{tenant_id}/skills/{skill_id}/execute",
         headers={"Authorization": f"Bearer {token}"},
         json=body,
     )
@@ -495,7 +495,7 @@ async def test_api_execute_persists_record_visible_in_usage_summary(
     token = make_token(user.id)
 
     create = client.post(
-        f"/skills?tenant_id={tenant.id}",
+        f"/tenants/{tenant.id}/skills",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "name": _api_unique("skill"),
@@ -540,7 +540,7 @@ async def test_api_denied_execution_persisted_and_visible_in_usage_summary(
     token = make_token(user.id)
 
     create = client.post(
-        f"/skills?tenant_id={tenant.id}",
+        f"/tenants/{tenant.id}/skills",
         headers={"Authorization": f"Bearer {token}"},
         json={
             "name": _api_unique("skill"),

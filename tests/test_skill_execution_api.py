@@ -70,7 +70,7 @@ async def _seed_membership(repositories, user_id, tenant_id):
 def _execute(client, tenant_id, token, skill_id, body=None):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return client.post(
-        f"/skills/{skill_id}/execute?tenant_id={tenant_id}",
+        f"/tenants/{tenant_id}/skills/{skill_id}/execute",
         headers=headers,
         json=body if body is not None else _execute_body(),
     )
@@ -78,7 +78,7 @@ def _execute(client, tenant_id, token, skill_id, body=None):
 
 async def _create_skill_via_api(client, tenant_id, token, **payload_overrides) -> str:
     response = client.post(
-        f"/skills?tenant_id={tenant_id}",
+        f"/tenants/{tenant_id}/skills",
         headers={"Authorization": f"Bearer {token}"},
         json=_skill_payload(**payload_overrides),
     )
@@ -300,7 +300,7 @@ class TestSkillExecutionValidation:
         skill_id = await _create_skill_via_api(client, tenant.id, token)
 
         response = client.post(
-            f"/skills/{skill_id}/execute?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{skill_id}/execute",
             headers={"Authorization": f"Bearer {token}"},
             json=["not", "an", "object"],
         )
@@ -324,7 +324,7 @@ class TestSkillInputsApi:
         )
 
         response = client.post(
-            f"/skills/{skill_id}/execute?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{skill_id}/execute",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "tool_calls": [{"tool_name": "check_service_health", "input": {}}],
@@ -349,7 +349,7 @@ class TestSkillInputsApi:
         )
 
         response = client.post(
-            f"/skills/{skill_id}/execute?tenant_id={tenant.id}",
+            f"/tenants/{tenant.id}/skills/{skill_id}/execute",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "tool_calls": [{"tool_name": "check_service_health", "input": {}}],
@@ -410,7 +410,7 @@ class TestSkillResumeApprovalVerification:
 
     def _resume(self, client, tenant_id, token, skill_id, approval_id):
         return client.post(
-            f"/skills/{skill_id}/resume?tenant_id={tenant_id}",
+            f"/tenants/{tenant_id}/skills/{skill_id}/resume",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "approval_id": approval_id,
