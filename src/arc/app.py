@@ -27,7 +27,7 @@ from arc.security.encryption import EncryptionError, EncryptionService
 from arc.services.agent import AgentExecutionService
 from arc.services.approvals import HumanApprovalService
 from arc.services.capabilities import CapabilityService
-from arc.services.chunking import KnowledgeChunker
+from arc.services.chunking import build_knowledge_chunker, get_chunking_settings
 from arc.services.connector_credentials import ConnectorCredentialService
 from arc.services.connector_providers import (
     ConnectorCredentialStore,
@@ -154,9 +154,13 @@ class Application:
         # EMBEDDING_MODEL); supported providers are ``deterministic``
         # (development/tests) and ``openai`` (production, ADR-007). Unknown
         # providers fail closed at startup.
+        # Chunking is configured explicitly at the composition root
+        # (Issue #227): KNOWLEDGE_CHUNK_MAX_CHARS / _OVERLAP_CHARS, with a
+        # non-zero overlap so a fact straddling a chunk boundary stays
+        # retrievable. Malformed values fail closed at startup.
         retrieval_service = RetrievalService(
             chunk_repo=self.repositories["knowledge_chunk"],
-            chunker=KnowledgeChunker(),
+            chunker=build_knowledge_chunker(get_chunking_settings()),
             embedding_provider=build_embedding_provider(get_embedding_settings()),
         )
         self.services["retrieval_service"] = retrieval_service
