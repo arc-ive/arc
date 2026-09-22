@@ -1981,6 +1981,11 @@ def _webhook_event_payload(event: WebhookEvent, duplicate: bool) -> Dict[str, An
         "payload_size_bytes": event.payload_size_bytes,
         "created_at": event.created_at.isoformat(),
         "duplicate": duplicate,
+        "error_kind": event.error_kind,
+        "retry_count": event.retry_count,
+        "max_retries": event.max_retries,
+        "next_retry_at": event.next_retry_at.isoformat() if event.next_retry_at else None,
+        "processed_at": event.processed_at.isoformat() if event.processed_at else None,
     }
 
 
