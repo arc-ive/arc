@@ -213,6 +213,44 @@ class TestCapabilityGate:
         assert result.error_kind == "agent_capability_unavailable"
 
 
+class TestProviderFailure:
+    """Issue #216: provider outage is a controlled failure with a trace."""
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            "LlmError",
+            "LlmRetryableError",
+            "LlmConfigurationError",
+        ],
+    )
+    async def test_provider_error_returns_controlled_failure(self, repositories, db, error):
+        import arc.services.llm as llm_module
+
+        exc_class = getattr(llm_module, error)
+
+        class _ExplodingProvider:
+            skill_decision_capable = True
+
+            def propose_skill(self, goal, catalog):
+                raise exc_class("connection refused")
+
+        env = await _build_environment_with_observability(repositories, db)
+        env["agent"].llm_provider = _ExplodingProvider()
+
+        result = await env["agent"].run(
+            env["context"], env["principal"], "goal", env["authorization"]
+        )
+
+        assert result.status is AgentRunStatus.FAILED
+        assert result.error_kind == "agent_provider_unavailable"
+        assert result.steps == []
+
+        traces = await env["observability_service"].list_agent_run_traces(env["tenant"].id, hours=1)
+        assert len(traces) == 1
+        assert traces[0].error_kind == "agent_provider_unavailable"
+
+
 class TestBoundedOrchestration:
     async def test_success_then_provider_decline_is_succeeded(self, repositories, db):
         env = await _build_environment(repositories, db)
