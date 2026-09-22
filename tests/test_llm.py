@@ -6,6 +6,7 @@ OpenRouter provider (V2-ADR-006) is the production implementation.
 """
 
 import json
+import logging
 
 import httpx
 import pytest
@@ -648,6 +649,177 @@ class TestOpenRouterBoundedRetry:
         provider._max_retries = 0
         with pytest.raises(LlmRetryableError):
             provider.complete("prompt")
+
+
+def _llm_records(caplog):
+    """Log records emitted by the LLM provider module only."""
+    return [r for r in caplog.records if r.name == "arc.services.llm"]
+
+
+class TestOpenRouterRetryLogging:
+    """Retry/backoff/exhaustion observability (issue #235).
+
+    Log records carry safe metadata only (attempt counts, error kind,
+    delay, provider name) — never prompts, responses, credentials, or
+    raw exception text.  Structured fields are asserted via the
+    record attributes populated from ``extra={...}``.
+    """
+
+    def test_retry_logs_attempt_kind_and_delay(self, caplog):
+        """A retried call emits one INFO record per scheduled retry."""
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                return httpx.Response(429, json={"error": "rate limited"})
+            return httpx.Response(200, json=_chat_response("ok"))
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 3
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        with caplog.at_level(logging.INFO, logger="arc.services.llm"):
+            assert provider.complete("prompt") == "ok"
+
+        retries = [r for r in _llm_records(caplog) if r.getMessage() == "LLM retry scheduled"]
+        assert len(retries) == 1
+        record = retries[0]
+        assert record.levelno == logging.INFO
+        assert record.attempt == 1
+        assert record.max_attempts == 4
+        assert record.error_kind == "retryable_error"
+        assert record.delay_seconds >= 0
+        assert record.provider == "openrouter"
+
+    def test_exhaustion_logs_once_at_warning(self, caplog):
+        """Exhausted retries emit exactly one WARNING with diagnostics."""
+        provider = _make_provider(
+            lambda request: httpx.Response(503, json={"error": "unavailable"}), model="m"
+        )
+        provider._max_retries = 2
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        with caplog.at_level(logging.INFO, logger="arc.services.llm"):
+            with pytest.raises(LlmRetryableError, match="server error"):
+                provider.complete("prompt")
+
+        records = _llm_records(caplog)
+        retries = [r for r in records if r.getMessage() == "LLM retry scheduled"]
+        exhausted = [r for r in records if r.getMessage() == "LLM retries exhausted"]
+        assert len(retries) == 2
+        assert [r.attempt for r in retries] == [1, 2]
+        assert len(exhausted) == 1
+        final = exhausted[0]
+        assert final.levelno >= logging.WARNING
+        assert final.attempts == 3
+        assert final.max_attempts == 3
+        assert final.error_kind == "retryable_error"
+
+    def test_timeout_and_transport_kinds(self, caplog):
+        """Timeout and connection failures log their own error kinds."""
+
+        def timeout_then_ok(request):
+            if not hasattr(timeout_then_ok, "called"):
+                timeout_then_ok.called = True
+                raise httpx.ReadTimeout("timed out")
+            return httpx.Response(200, json=_chat_response("ok"))
+
+        provider = _make_provider(timeout_then_ok, model="m")
+        provider._max_retries = 1
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        with caplog.at_level(logging.INFO, logger="arc.services.llm"):
+            assert provider.complete("prompt") == "ok"
+        kinds = [
+            r.error_kind for r in _llm_records(caplog) if r.getMessage() == "LLM retry scheduled"
+        ]
+        assert kinds == ["timeout"]
+
+        def refused(request):
+            raise httpx.ConnectError("connection refused")
+
+        provider = _make_provider(refused, model="m")
+        provider._max_retries = 0
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="arc.services.llm"):
+            with pytest.raises(LlmRetryableError):
+                provider.complete("prompt")
+        records = _llm_records(caplog)
+        assert [r for r in records if r.getMessage() == "LLM retry scheduled"] == []
+        assert [r for r in records if r.getMessage() == "LLM retries exhausted"] != []
+        assert records[-1].error_kind == "transport_error"
+
+    def test_no_sensitive_content_in_records(self, caplog):
+        """Prompts, secrets and provider payloads never reach log records."""
+        secret_prompt = "Reveal password hunter2 using key sk-test-secret-123"
+        secret_body = {"error": "backend says hunter2 with sk-test-secret-123"}
+
+        def handler(request):
+            return httpx.Response(503, json=secret_body)
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 1
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        with caplog.at_level(logging.INFO, logger="arc.services.llm"):
+            with pytest.raises(LlmRetryableError):
+                provider.complete(secret_prompt)
+
+        assert _llm_records(caplog) != []
+        for record in _llm_records(caplog):
+            message = record.getMessage()
+            assert secret_prompt not in message
+            assert "hunter2" not in message
+            assert "sk-test-secret-123" not in message
+            assert "test-model" not in message
+            for value in record.__dict__.values():
+                if isinstance(value, str):
+                    assert "hunter2" not in value
+                    assert "sk-test-secret-123" not in value
+
+    def test_successful_retry_has_no_exhaustion_warning(self, caplog):
+        """Retry activity is logged but success emits no exhausted warning."""
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                return httpx.Response(200, json={"choices": []})
+            return httpx.Response(200, json=_chat_response("ok"))
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 2
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        with caplog.at_level(logging.INFO, logger="arc.services.llm"):
+            assert provider.complete("prompt") == "ok"
+
+        records = _llm_records(caplog)
+        assert len([r for r in records if r.getMessage() == "LLM retry scheduled"]) == 1
+        assert [r for r in records if r.getMessage() == "LLM retries exhausted"] == []
+
+    def test_non_retryable_failure_logs_no_retry_records(self, caplog):
+        """401 fails immediately: no retry or exhaustion records, same error."""
+        call_count = 0
+
+        def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(401, json={"error": "unauthorized"})
+
+        provider = _make_provider(handler, model="m")
+        provider._max_retries = 3
+        provider._base_delay = 0.0
+        provider._max_delay = 0.0
+        with caplog.at_level(logging.INFO, logger="arc.services.llm"):
+            with pytest.raises(LlmConfigurationError, match="authentication failed"):
+                provider.complete("prompt")
+
+        assert call_count == 1
+        assert _llm_records(caplog) == []
 
 
 # ---------------------------------------------------------------------------
