@@ -15,6 +15,8 @@ import { useTypewriter } from '../../lib/useTypewriter.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { queryIntelligence } from '../../api/endpoints/intelligence.js'
 import { getKnowledge } from '../../api/endpoints/knowledge.js'
+import { sourceLabels } from '../../lib/sources.js'
+import { Select } from '../../components/ui/Select.jsx'
 import { queryKeys } from '../../api/queryKeys.js'
 import { documentTitle } from '../../lib/knowledge.js'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
@@ -71,6 +73,7 @@ export function AskArcPage() {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState(null)
   const [error, setError] = useState(null)
+  const [source, setSource] = useState('')
   const sources = answer ? parseCitations(answer.citations, tenantId) : []
 
   // What Arc can actually search, for the empty state's rail.
@@ -116,7 +119,11 @@ export function AskArcPage() {
     const now = Date.now()
     if (now - lastSubmitRef.current < 1000) return
     lastSubmitRef.current = now
-    mutation.mutate({ query: question.trim(), limit: 5 })
+    // The branch is load-bearing: source_type: "" would 422 against
+    // Optional[KnowledgeSource], so the key is omitted when unscoped.
+    mutation.mutate(
+      source ? { query: question.trim(), limit: 5, source_type: source } : { query: question.trim(), limit: 5 },
+    )
   }
 
   const handleClear = () => {
@@ -124,6 +131,8 @@ export function AskArcPage() {
     setQuestion('')
     setAnswer(null)
     setError(null)
+    // source intentionally persists: it is a scope preference, not
+    // per-question state, like a selected tab rather than a draft.
   }
 
   const asked = mutation.isPending || answer || error
@@ -199,6 +208,26 @@ export function AskArcPage() {
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+            <Select
+              label="Sources"
+              id="arc-source"
+              value={source}
+              onChange={(event) => {
+                setSource(event.target.value)
+                // The scope describes the displayed answer: changing it
+                // clears a stale answer rather than misdescribing it.
+                setAnswer(null)
+                setError(null)
+              }}
+              disabled={mutation.isPending}
+            >
+              <option value="">All sources</option>
+              {Object.keys(sourceLabels).map((name) => (
+                <option key={name} value={name}>
+                  {sourceLabels[name] ?? name}
+                </option>
+              ))}
+            </Select>
             <Button type="submit" disabled={!question.trim() || mutation.isPending} isLoading={mutation.isPending} loadingText="Reading the record…">
               <Sparkles className="size-4" />
               Ask

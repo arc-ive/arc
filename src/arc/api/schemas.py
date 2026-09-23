@@ -310,6 +310,9 @@ class IntelligenceQueryRequest(BaseModel):
     # StrictInt, not int: Pydantic would otherwise accept True as 1 and any
     # numeric string, where the check this replaces admitted genuine ints only.
     limit: StrictInt = Field(default=5, ge=1, le=50)
+    # Optional corpus scoping: restricts retrieval to one KnowledgeSource.
+    # Unknown values are rejected by pydantic before any retrieval runs.
+    source_type: Optional[KnowledgeSource] = None
 
     @field_validator("query")
     @classmethod

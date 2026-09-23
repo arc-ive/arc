@@ -83,7 +83,7 @@ class FakeRetrieval:
         self.error = error
         self.calls = []
 
-    async def approved_search(self, context, query, limit=5):
+    async def approved_search(self, context, query, limit=5, source_type=None):
         self.calls.append((context.tenant_id, context.user_id, query, limit))
         if self.error is not None:
             raise self.error

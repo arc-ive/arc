@@ -217,6 +217,7 @@ class UnifiedIntelligenceService:
         limit: int = 5,
         principal=None,
         authorization=None,
+        source_type=None,
     ) -> IntelligenceAnswer:
         """Retrieve approved context and reason over it.
 
@@ -250,7 +251,9 @@ class UnifiedIntelligenceService:
         if limit < 1:
             raise ValueError("Search limit must be a positive integer")
 
-        approved = await self.retrieval.approved_search(context, query, limit=limit)
+        approved = await self.retrieval.approved_search(
+            context, query, limit=limit, source_type=source_type
+        )
 
         if not approved.items:
             return IntelligenceAnswer(

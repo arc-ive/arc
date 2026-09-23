@@ -42,7 +42,7 @@ class FakeRetrieval:
     def __init__(self, approved):
         self._approved = approved
 
-    async def approved_search(self, context, query, limit=5):
+    async def approved_search(self, context, query, limit=5, source_type=None):
         return self._approved
 
 
