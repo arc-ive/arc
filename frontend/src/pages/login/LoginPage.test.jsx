@@ -30,7 +30,12 @@ describe('LoginPage', () => {
     )
 
     expect(screen.getByText('Arc')).toBeInTheDocument()
-    expect(screen.getByText('Enterprise Intelligence Platform')).toBeInTheDocument()
+    // The tagline says what Arc does rather than what category it is in.
+    // "Enterprise Intelligence Platform" describes a market segment; a
+    // person arriving at a sign-in screen wants to know what the thing is.
+    expect(
+      screen.getByText(/answers from your company's own knowledge/i),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument()
   })
 
@@ -41,7 +46,12 @@ describe('LoginPage', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByText(/access denied/i)).toBeInTheDocument()
+    // Reworded to say what to do: the previous copy led with "Access
+    // denied." and left the reader to work out that an administrator has
+    // to link the account.
+    expect(
+      screen.getByText(/not linked to an Arc user/i),
+    ).toBeInTheDocument()
   })
 
   it('redirects to /app when already authenticated with no state.from', () => {

@@ -1,30 +1,19 @@
 import { useEffect, useState } from 'react'
 import { InlineError } from '../../components/ui/InlineError.jsx'
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
-import { ShieldCheck, Users } from 'lucide-react'
+import { Users } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
 import { Button } from '../../components/ui/Button.jsx'
-import { Card } from '../../components/ui/Card.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { FullPageLoader } from '../../components/ui/FullPageLoader.jsx'
 
 function Brand() {
   return (
-    <div className="mb-8 flex flex-col items-center gap-3">
-      <div className="flex size-12 items-center justify-center rounded-xl border border-line bg-surface-overlay">
-        <svg viewBox="0 0 32 32" className="size-6" aria-hidden>
-          <path d="M8 10.5h9a4.5 4.5 0 0 1 0 9h-3v6h-6v-15Z" fill="#e4e4e7" />
-          <path d="M8 13.5h6v6H8v-6Z" fill="#6366f1" />
-        </svg>
-      </div>
-      <div className="text-center">
-        <p className="text-xl font-semibold tracking-tight text-fg">
-          Arc
-        </p>
-        <p className="mt-0.5 text-[13px] text-fg-muted">
-          Enterprise Intelligence Platform
-        </p>
-      </div>
+    <div className="mb-10">
+      <p className="type-display-lg leading-none text-fg">Arc</p>
+      <p className="mt-3 text-[15px] text-fg-muted">
+        Answers from your company&apos;s own knowledge.
+      </p>
     </div>
   )
 }
@@ -132,37 +121,44 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-base px-4 py-10">
-      <div className="w-full max-w-md">
-        <Brand />
+    /* Asymmetric rather than a card centred in a void: the name takes the
+       left, the way in takes the right. Same type, ground and components
+       as the rest of Arc — the first screen should already look like the
+       product, not like a gate in front of it. */
+    <div className="min-h-dvh bg-canvas px-6 py-12 sm:px-10">
+      <div className="mx-auto grid min-h-[calc(100dvh-6rem)] w-full max-w-5xl items-center gap-x-20 gap-y-12 lg:grid-cols-2">
+        <div className="min-w-0">
+          <Brand />
+          <p className="measure-tight text-[13.5px] leading-relaxed text-fg-muted">
+            Arc reads only what your company has given it, and shows the
+            documents behind every answer.
+          </p>
+        </div>
 
-        <Card className="overflow-hidden">
-          <div className="flex flex-col gap-4 p-5">
+        <div className="min-w-0">
+          <div className="flex flex-col gap-5 border-t border-fg pt-6">
+            <h1 className="type-label text-fg-muted">Sign in</h1>
+
             {error && (
               <InlineError>
                 {error === 'access_denied'
-                  ? 'Access denied. Your Google account is not linked to an Arc user. Please contact your administrator.'
-                  : 'Authentication failed. Please try again.'}
+                  ? 'That Google account is not linked to an Arc user. Ask your administrator to add it.'
+                  : 'Sign-in did not complete. Try again.'}
               </InlineError>
             )}
 
-            <Button
-              onClick={signIn}
-              size="lg"
-              className="w-full"
-              disabled={isLoading}
-            >
+            <Button onClick={signIn} size="lg" className="w-full" disabled={isLoading}>
               <GoogleIcon />
               Sign in with Google
             </Button>
 
             {import.meta.env.DEV && <DevUserSelector />}
           </div>
-        </Card>
 
-        <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-fg-muted">
-          <ShieldCheck className="size-3.5" />
-          The backend remains the source of truth for identity and access.
+          <p className="mt-6 text-[12.5px] leading-relaxed text-fg-muted">
+            Arc checks who you are on every request. Signing in here does not
+            grant access on its own.
+          </p>
         </div>
       </div>
     </div>
