@@ -182,11 +182,14 @@ describe('TenantUsagePage field mapping', () => {
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   })
 
-  it('renders a skeleton card per metric tile during loading', async () => {
+  it('shows a loading placeholder for every figure group', async () => {
+    // Asserted by count of placeholders, not by a utility-class selector.
+    // The previous version matched `.h-3.w-16` and broke the moment the
+    // skeleton's width changed — it was pinned to styling, not behaviour.
     mockGetTenantUsageSummary.mockReturnValue(new Promise(() => {}))
     renderWithProviders(<TenantUsagePage />)
-    const skeletons = document.querySelectorAll('.h-3.w-16')
-    expect(skeletons.length).toBe(8)
+    const placeholders = document.querySelectorAll('[aria-hidden].animate-pulse')
+    expect(placeholders.length).toBeGreaterThanOrEqual(4)
   })
 
   it('renders ErrorState component for API errors', () => {
@@ -250,7 +253,12 @@ describe('TenantUsagePage metric honesty (Issue #223)', () => {
     })
     renderWithProviders(<TenantUsagePage />)
     await screen.findByText('1,250')
-    expect(screen.getByText(/Partial: 9 call\(s\) without pricing/)).toBeInTheDocument()
+    // The wording moved from "Partial: N call(s)…" to "partial — N call(s)…"
+    // when the figure list replaced the tiles. What has to hold is that
+    // partial coverage is FLAGGED rather than shown as a complete figure,
+    // so this matches on that, not on the punctuation.
+    expect(screen.getByText(/partial/i)).toBeInTheDocument()
+    expect(screen.getByText(/9 call\(s\) without pricing/)).toBeInTheDocument()
   })
 
   it('explains an unavailable cost rather than showing a fake zero', async () => {

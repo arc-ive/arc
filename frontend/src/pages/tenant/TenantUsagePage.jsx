@@ -42,169 +42,56 @@ function formatMs(value) {
 }
 
 /**
- * A named group of related metrics.
+ * A dense block of figures.
  *
- * The page previously ran three ungrouped rows of four tiles. The grouping
- * existed in the markup — three sibling `<section>`s — but nothing on
- * screen said so, and the reader met thirteen figures of identical weight.
- * A heading per group is the cheapest thing that makes the page scannable,
- * and it gives assistive technology a landmark to jump between.
+ * Thirteen bordered tiles in a grid was the wrong shape for this page.
+ * Observability is the one surface in Arc that should be information-dense
+ * — an operator scans it, comparing numbers against each other and against
+ * yesterday — and a box around each figure puts 16px of padding and a rule
+ * between every pair being compared.
+ *
+ * So: a table of figures. Label left, value right, grouped by a heading
+ * and separated by hairlines. Same information, roughly a third of the
+ * height, and a column of values that actually lines up.
  */
-function MetricGroup({ title, children, columns = 4 }) {
+function FigureGroup({ title, children }) {
   return (
-    <section aria-labelledby={`usage-${slug(title)}`}>
-      <h2
-        id={`usage-${slug(title)}`}
-        className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-fg-muted"
-      >
-        {title}
-      </h2>
-      <div
-        className={cn(
-          'grid gap-3 sm:grid-cols-2',
-          columns === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-2',
-        )}
-      >
-        {children}
-      </div>
+    <section className="min-w-0">
+      <h2 className="type-label border-b border-line pb-2 text-fg-muted">{title}</h2>
+      <dl className="mt-1">{children}</dl>
     </section>
   )
 }
 
-function slug(value) {
-  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-')
-}
-
-/** A tile whose value comes from the backend summary. */
-function MetricCard({
-  label,
-  value,
-  hint,
-  unavailableHint = 'Not reported for this window',
-  size = 'lg',
-}) {
+/**
+ * One figure on a rule.
+ *
+ * An unreported metric does not get a measurement's typographic weight —
+ * Issue #223's distinction, carried by type rather than only by wording.
+ */
+function Figure({ label, value, hint, unavailableHint = 'Not reported for this window' }) {
   const measured = value !== null && value !== undefined
   return (
-    <StatCard
-      label={label}
-      value={measured ? value : UNAVAILABLE}
-      hint={measured ? hint : unavailableHint}
-      measured={measured}
-      size={size}
-    />
-  )
-}
-
-function StatCard({ label, value, hint, measured = true, size = 'lg' }) {
-  return (
-    <div className="flex flex-col rounded-xl border border-line bg-panel p-4 shadow-card">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-fg-muted">
+    <div className="flex items-baseline justify-between gap-6 border-b border-line py-2.5">
+      <dt className="min-w-0 text-[13.5px] text-fg-subtle">
         {label}
-      </p>
-      <div
+        {hint && measured && (
+          <span className="ml-2 text-[12px] text-fg-muted">{hint}</span>
+        )}
+        {!measured && (
+          <span className="ml-2 text-[12px] text-fg-muted">{unavailableHint}</span>
+        )}
+      </dt>
+      <dd
         className={cn(
-          'mt-1.5 font-semibold tabular-nums',
-          // An unreported metric is not a measurement, so it does not get a
-          // measurement's typographic weight. "Unavailable" was rendering
-          // at the same 2xl as a real figure and shouting louder than the
-          // numbers around it.
+          'shrink-0 tabular-nums',
           measured
-            ? size === 'lg'
-              ? 'text-2xl text-fg'
-              : 'text-xl text-fg'
-            : 'text-sm font-normal text-fg-muted',
+            ? 'text-[17px] font-medium text-fg'
+            : 'text-[13px] font-normal text-fg-muted',
         )}
       >
-        {value ?? '—'}
-      </div>
-      {hint && <p className="mt-1 text-[12px] leading-snug text-fg-muted">{hint}</p>}
-    </div>
-  )
-}
-
-/**
- * Tool executions, shown as the breakdown they actually are.
- *
- * `successful` and `failed` are components of `total_executions` — with the
- * reference workspace they read 5, 2 and 7. All three were rendered as peer
- * tiles in a row that also held Webhook Events, so the one fact worth
- * knowing (that two in seven failed) had to be worked out by the reader
- * doing arithmetic across three cards.
- */
-function ToolExecutionCard({ tools }) {
-  const total = tools?.total_executions
-  const successful = tools?.successful
-  const failed = tools?.failed
-  const haveSplit = isMeasured(successful) && isMeasured(failed)
-  const denominator = isMeasured(total) && total > 0 ? total : null
-
-  return (
-    <div className="flex flex-col rounded-xl border border-line bg-panel p-4 shadow-card sm:col-span-2">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-fg-muted">
-        Tool Calls
-      </p>
-      <div className="mt-1.5 flex items-baseline gap-2">
-        <span
-          className={cn(
-            'font-semibold tabular-nums',
-            isMeasured(total) ? 'text-2xl text-fg' : 'text-sm font-normal text-fg-muted',
-          )}
-        >
-          {formatCount(total) ?? UNAVAILABLE}
-        </span>
-        {isMeasured(total) && (
-          <span className="text-[12px] text-fg-muted">external tool invocations</span>
-        )}
-      </div>
-
-      {haveSplit && denominator ? (
-        <>
-          <div
-            className="mt-3 flex h-1.5 overflow-hidden rounded-full bg-surface-raised"
-            aria-hidden
-          >
-            <span
-              className="bg-success"
-              style={{ width: `${(successful / denominator) * 100}%` }}
-            />
-            <span
-              className="bg-danger"
-              style={{ width: `${(failed / denominator) * 100}%` }}
-            />
-          </div>
-          <dl className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1">
-            <div className="flex items-center gap-1.5">
-              <span aria-hidden className="size-1.5 rounded-full bg-success" />
-              <dt className="text-[12px] text-fg-muted">Successful</dt>
-              <dd className="text-[13px] font-medium tabular-nums text-fg">
-                {formatCount(successful)}
-              </dd>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span aria-hidden className="size-1.5 rounded-full bg-danger" />
-              <dt className="text-[12px] text-fg-muted">Failed</dt>
-              <dd className="text-[13px] font-medium tabular-nums text-fg">
-                {formatCount(failed)}
-              </dd>
-            </div>
-          </dl>
-        </>
-      ) : (
-        <dl className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1">
-          <div className="flex items-center gap-1.5">
-            <dt className="text-[12px] text-fg-muted">Successful</dt>
-            <dd className="text-[13px] font-medium tabular-nums text-fg">
-              {formatCount(successful) ?? UNAVAILABLE}
-            </dd>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <dt className="text-[12px] text-fg-muted">Failed</dt>
-            <dd className="text-[13px] font-medium tabular-nums text-fg">
-              {formatCount(failed) ?? UNAVAILABLE}
-            </dd>
-          </div>
-        </dl>
-      )}
+        {measured ? value : UNAVAILABLE}
+      </dd>
     </div>
   )
 }
@@ -268,11 +155,15 @@ export function TenantUsagePage() {
       )}
 
       {usage.isPending && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-line bg-panel p-4 shadow-card">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="mt-2 h-7 w-12" />
+        <div className="grid gap-x-16 gap-y-10 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, g) => (
+            <div key={g}>
+              <Skeleton className="h-3 w-20" />
+              <div className="mt-4 flex flex-col gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-3 w-full" />
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -280,92 +171,113 @@ export function TenantUsagePage() {
 
       {data && (
         <>
-          <MetricGroup title="Activity">
-            <MetricCard
-              label="API Requests"
-              value={formatCount(data.http?.total_requests)}
-              hint="Total API calls"
-            />
-            <MetricCard
-              label="AI Requests"
-              value={formatCount(data.llm?.total_calls)}
-              hint="LLM calls in this window"
-            />
-            <MetricCard
-              label="Agent Runs"
-              value={formatCount(data.agent_runs?.total_runs)}
-              hint="Bounded agent executions"
-            />
-            <MetricCard
-              label="Webhook Events"
-              value={formatCount(data.webhooks?.total_events)}
-              hint="Inbound webhook deliveries"
-            />
-          </MetricGroup>
+          <div className="grid gap-x-16 gap-y-10 sm:grid-cols-2">
+            <FigureGroup title="Activity">
+              <Figure
+                label="API Requests"
+                value={formatCount(data.http?.total_requests)}
+              />
+              <Figure
+                label="AI Requests"
+                value={formatCount(data.llm?.total_calls)}
+              />
+              <Figure
+                label="Agent Runs"
+                value={formatCount(data.agent_runs?.total_runs)}
+              />
+              <Figure
+                label="Webhook Events"
+                value={formatCount(data.webhooks?.total_events)}
+              />
+            </FigureGroup>
 
-          <MetricGroup title="Tool executions" columns={2}>
-            <ToolExecutionCard tools={data.tools} />
-          </MetricGroup>
+            <FigureGroup title="Response times">
+              <Figure
+                label="Avg Latency"
+                value={formatMs(data.http?.avg_duration_ms)}
+              />
+              {/* Carried over from the Observability page, which was a
+                  second view of this same endpoint. P95 was the only
+                  figure it showed that this page did not. */}
+              <Figure
+                label="P95 Latency"
+                value={formatMs(data.http?.p95_duration_ms)}
+              />
+              <Figure
+                label="Error Rate"
+                value={
+                  isMeasured(data.http?.error_rate)
+                    ? `${(data.http.error_rate * 100).toFixed(1)}%`
+                    : null
+                }
+              />
+              <Figure
+                label="AI Latency"
+                value={formatMs(data.llm?.avg_latency_ms)}
+              />
+            </FigureGroup>
 
-          <MetricGroup title="Response times">
-            <MetricCard
-              size="sm"
-              label="Avg Latency"
-              value={formatMs(data.http?.avg_duration_ms)}
-              hint="Mean response time"
-            />
-            {/* Carried over from the Observability page, which was a second
-                view of this same endpoint. P95 was the only figure it showed
-                that this page did not, so folding the two together must not
-                lose it. */}
-            <MetricCard
-              size="sm"
-              label="P95 Latency"
-              value={formatMs(data.http?.p95_duration_ms)}
-              hint="Slowest 5% of requests"
-            />
-            <MetricCard
-              size="sm"
-              label="Error Rate"
-              value={
-                isMeasured(data.http?.error_rate)
-                  ? `${(data.http.error_rate * 100).toFixed(1)}%`
-                  : null
-              }
-              hint="Failed / total requests"
-            />
-            <MetricCard
-              size="sm"
-              label="AI Latency"
-              value={formatMs(data.llm?.avg_latency_ms)}
-              hint="Mean LLM call duration"
-            />
-          </MetricGroup>
+            <FigureGroup title="Tool executions">
+              <Figure
+                label="Tool Calls"
+                value={formatCount(data.tools?.total_executions)}
+              />
+              <Figure
+                label="Successful"
+                value={formatCount(data.tools?.successful)}
+              />
+              <Figure label="Failed" value={formatCount(data.tools?.failed)} />
+              {/* The split is the one thing here worth drawing rather
+                  than listing: successful and failed are components of
+                  the total, and the bar says so without arithmetic. */}
+              {isMeasured(data.tools?.successful) &&
+                isMeasured(data.tools?.failed) &&
+                data.tools.total_executions > 0 && (
+                  <div
+                    aria-hidden
+                    className="mt-3 flex h-1 overflow-hidden rounded-full bg-surface-sunk"
+                  >
+                    <span
+                      className="bg-success"
+                      style={{
+                        width: `${(data.tools.successful / data.tools.total_executions) * 100}%`,
+                      }}
+                    />
+                    <span
+                      className="bg-danger"
+                      style={{
+                        width: `${(data.tools.failed / data.tools.total_executions) * 100}%`,
+                      }}
+                    />
+                  </div>
+                )}
+            </FigureGroup>
 
-          <MetricGroup title="AI consumption" columns={2}>
-            <MetricCard
-              label="Tokens"
-              value={formatCount(data.llm?.total_tokens)}
-              hint="Input and output tokens"
-            />
-            <MetricCard
-              label="AI Cost"
-              value={formatUsd(data.llm?.total_cost_usd)}
-              hint={
-                data.llm?.cost_coverage === 'partial'
-                  ? `Partial: ${formatCount(data.llm?.unknown_cost_records)} call(s) without pricing`
-                  : 'Cost across all LLM calls'
-              }
-              unavailableHint={
-                data.llm?.cost_coverage === 'none' && data.llm?.total_calls === 0
-                  ? 'No LLM calls in this window'
-                  : 'Pricing unavailable for these calls'
-              }
-            />
-          </MetricGroup>
+            <FigureGroup title="AI consumption">
+              <Figure
+                label="Tokens"
+                value={formatCount(data.llm?.total_tokens)}
+                hint="input and output"
+              />
+              <Figure
+                label="AI Cost"
+                value={formatUsd(data.llm?.total_cost_usd)}
+                hint={
+                  data.llm?.cost_coverage === 'partial'
+                    ? `partial — ${formatCount(data.llm?.unknown_cost_records)} call(s) without pricing`
+                    : undefined
+                }
+                unavailableHint={
+                  data.llm?.cost_coverage === 'none' && data.llm?.total_calls === 0
+                    ? 'No LLM calls in this window'
+                    : 'Pricing unavailable for these calls'
+                }
+              />
+            </FigureGroup>
+          </div>
 
           {data.window_hours && (
-            <p className="text-xs text-fg-muted">
+            <p className="mt-10 text-xs text-fg-muted">
               Metrics cover the last {data.window_hours} hours.
             </p>
           )}

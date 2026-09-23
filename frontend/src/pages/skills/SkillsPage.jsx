@@ -17,6 +17,8 @@ import { Spinner } from '../../components/ui/Spinner.jsx'
 import { Dialog } from '../../components/ui/Dialog.jsx'
 import { Section, DataRow } from '../../components/layout/Section.jsx'
 import { IconButton } from '../../components/ui/IconButton.jsx'
+import { runFailureReason } from '../../lib/agentRuns.js'
+import { cn } from '../../lib/cn.js'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
@@ -149,137 +151,182 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
   }
 
   return (
+    /* A run bench, not a form in a box.
+     *
+     * The task has two halves and they are sequential: set the run up,
+     * then read what happened. So the panel is wide, the setup is a left
+     * column and the outcome replaces it — rather than a 512px dialog that
+     * made a JSON array editor six rows tall and pushed the result
+     * off-screen. */
     <Dialog open={open} onClose={handleClose}>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-        <div className="w-full max-w-lg rounded-xl border border-line bg-surface-overlay p-6 shadow-xl">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-accent/10 border border-accent/30">
-              <Play className="size-5 text-accent" />
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-fg/40 p-4 backdrop-blur-[2px] sm:items-center">
+        <div className="w-full max-w-3xl rounded-lg border border-line bg-surface shadow-overlay">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-line px-6 py-5">
+            <div className="min-w-0">
+              <h2 className="type-display text-[1.375rem] leading-snug text-fg">
+                {skill.name}
+              </h2>
+              <p className="type-label mt-1 text-fg-muted">Execute skill</p>
             </div>
-            <div>
-              <h2 className="text-sm font-semibold text-fg">Execute skill</h2>
-              <p className="text-xs text-fg-muted">{skill.name}</p>
-            </div>
+            {skill.risk && (
+              <Badge variant={riskTone(skill.risk)} size="sm">
+                {riskLabel(skill.risk)} risk
+              </Badge>
+            )}
           </div>
 
           {result ? (
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center gap-2">
-                {(() => {
-                  const cfg = STATUS_CONFIG[result.status]
-                  const Icon = cfg?.icon ?? CheckCircle2
-                  return (
-                    <>
-                      <Badge variant={cfg?.variant ?? 'neutral'}>
-                        <Icon className="size-3" />
-                        {cfg?.label ?? result.status}
-                      </Badge>
-                    </>
-                  )
-                })()}
-              </div>
+            <div className="px-6 py-6">
+              {/* The outcome leads at a size you can read across the room,
+                  because the whole point of opening this was to find out. */}
+              {(() => {
+                const cfg = STATUS_CONFIG[result.status]
+                const tone =
+                  cfg?.variant === 'success'
+                    ? 'text-success'
+                    : cfg?.variant === 'danger'
+                      ? 'text-danger'
+                      : cfg?.variant === 'warning'
+                        ? 'text-warning'
+                        : 'text-fg'
+                return (
+                  <p className={cn('type-display text-[1.75rem] leading-none', tone)}>
+                    {cfg?.label ?? result.status}
+                  </p>
+                )
+              })()}
               {result.error_kind && (
-                <p className="text-xs text-fg-muted">
-                  Error: <span className="text-fg-subtle">{result.error_kind}</span>
+                <p className="measure mt-2 text-[14px] leading-relaxed text-fg-subtle">
+                  {runFailureReason(result.error_kind)}
                 </p>
               )}
-              {result.steps && result.steps.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium text-fg-muted">Steps</p>
-                  {result.steps.map((step) => (
-                    <div key={step.sequence} className="rounded border border-line bg-canvas p-2.5 text-xs">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-fg-muted">#{step.sequence + 1}</span>
-                        <span className="text-fg-subtle font-mono">{step.tool_name}</span>
-                        <Badge variant={step.status === 'success' ? 'success' : 'danger'} size="sm">
-                          {step.status}
-                        </Badge>
-                      </div>
-                      {step.output && (
-                        <pre className="mt-1 whitespace-pre-wrap text-fg-muted overflow-x-auto">
-                          {JSON.stringify(step.output, null, 2)}
-                        </pre>
-                      )}
-                      {step.error_kind && (
-                        <p className="mt-1 text-danger">{step.error_kind}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+
+              {result.steps?.length > 0 && (
+                <section className="mt-8">
+                  <h3 className="type-label text-fg-muted">
+                    What ran · {result.steps.length}
+                  </h3>
+                  <ol className="mt-3 border-t border-line">
+                    {result.steps.map((step) => (
+                      <li key={step.sequence} className="border-b border-line py-3.5">
+                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                          <span className="type-data text-fg-muted tabular-nums">
+                            {String(step.sequence + 1).padStart(2, '0')}
+                          </span>
+                          <span className="type-data text-fg">{step.tool_name}</span>
+                          <span
+                            className={cn(
+                              'text-[12.5px] font-medium',
+                              step.status === 'success' ? 'text-success' : 'text-danger',
+                            )}
+                          >
+                            {step.status}
+                          </span>
+                        </div>
+                        {step.error_kind && (
+                          <p className="measure mt-1 text-[13px] leading-relaxed text-fg-subtle">
+                            {runFailureReason(step.error_kind)}
+                          </p>
+                        )}
+                        {step.output && (
+                          <pre className="type-data mt-2 max-h-40 overflow-auto rounded border border-line bg-surface-sunk p-2.5 text-fg-muted">
+                            {JSON.stringify(step.output, null, 2)}
+                          </pre>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </section>
               )}
             </div>
           ) : (
-            <div className="space-y-4 mb-6">
-              {hasPreconditions && (
-                <div>
-                  <label className="block text-sm font-medium text-fg-subtle mb-2">
-                    Preconditions
-                  </label>
-                  <p className="text-xs text-fg-muted mb-2">
-                    Confirm that each precondition is satisfied before executing.
+            <div className="grid gap-x-10 gap-y-8 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+              <div className="min-w-0 flex flex-col gap-6">
+                {declaredInputs.length > 0 && (
+                  <section>
+                    <h3 className="type-label text-fg-muted">Inputs</h3>
+                    <div className="mt-3 flex flex-col gap-4">
+                      {declaredInputs.map((name) => (
+                        <Input
+                          key={name}
+                          label={name}
+                          value={inputValues[name] ?? ''}
+                          onChange={(e) => setInputValue(name, e.target.value)}
+                          disabled={mutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                <section>
+                  <Textarea
+                    label="Tool calls (JSON array)"
+                    hint="Each entry names a tool and its input."
+                    value={argsText}
+                    onChange={(e) => setArgsText(e.target.value)}
+                    textareaClassName="font-mono text-[13px]"
+                    rows={8}
+                    placeholder={'[{"tool_name": "check_service_health", "input": {}}]'}
+                    spellCheck={false}
+                    disabled={mutation.isPending}
+                    error={jsonError || undefined}
+                  />
+                </section>
+
+                {apiError && <InlineError>{apiError}</InlineError>}
+              </div>
+
+              {/* Preconditions are a gate, not a field, so they sit apart
+                  from the inputs the operator is composing. */}
+              <aside className="min-w-0">
+                <h3 className="type-label text-fg-muted">Preconditions</h3>
+                {hasPreconditions ? (
+                  <>
+                    <p className="mt-2 text-[13px] leading-relaxed text-fg-muted">
+                      Confirm each of these holds.
+                    </p>
+                    <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+                      {skill.preconditions.map((pre, idx) => (
+                        <Checkbox
+                          key={idx}
+                          label={pre}
+                          checked={selectedPreconditions.includes(pre)}
+                          onChange={() => togglePrecondition(pre)}
+                          disabled={mutation.isPending}
+                        />
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-2 border-t border-line pt-3 text-[13px] leading-relaxed text-fg-muted">
+                    This skill has no preconditions.
                   </p>
-                  <div className="space-y-2">
-                    {skill.preconditions.map((pre, idx) => (
-                      <Checkbox
-                        key={idx}
-                        label={pre}
-                        checked={selectedPreconditions.includes(pre)}
-                        onChange={() => togglePrecondition(pre)}
-                        disabled={mutation.isPending}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {!hasPreconditions && (
-                <div className="rounded-lg border border-line bg-canvas px-3.5 py-2.5">
-                  <p className="text-xs text-fg-muted">No preconditions required for this skill.</p>
-                </div>
-              )}
-              {declaredInputs.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-fg-subtle mb-2">
-                    Skill inputs
-                  </label>
-                  <div className="space-y-2">
-                    {declaredInputs.map((name) => (
-                      <Input
-                        key={name}
-                        label={name}
-                        value={inputValues[name] ?? ''}
-                        onChange={(e) => setInputValue(name, e.target.value)}
-                        disabled={mutation.isPending}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              <Textarea
-                label="Tool calls (JSON array)"
-                value={argsText}
-                onChange={(e) => setArgsText(e.target.value)}
-                textareaClassName="font-mono"
-                rows={6}
-                placeholder='[{"tool_name": "check_service_health", "input": {}}]'
-                spellCheck={false}
-                disabled={mutation.isPending}
-                error={jsonError || undefined}
-              />
-              {apiError && (
-                <InlineError>
-                  {apiError}
-                </InlineError>
-              )}
+                )}
+
+                {skill.approval_required && (
+                  <p className="mt-5 border-l-2 border-warning pl-3 text-[13px] leading-relaxed text-fg-subtle">
+                    This skill needs an approval before it can run. Approving
+                    authorises it; it does not run it.
+                  </p>
+                )}
+              </aside>
             </div>
           )}
 
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-3 border-t border-line px-6 py-4">
             <Button variant="secondary" onClick={handleClose} disabled={mutation.isPending}>
               {result ? 'Close' : 'Cancel'}
             </Button>
             {!result && (
-              <Button onClick={handleSubmit} disabled={mutation.isPending}>
-                {mutation.isPending ? 'Executing...' : 'Execute'}
+              <Button
+                onClick={handleSubmit}
+                disabled={mutation.isPending}
+                isLoading={mutation.isPending}
+                loadingText="Executing…"
+              >
+                <Play className="size-3.5" />
+                Execute
               </Button>
             )}
           </div>

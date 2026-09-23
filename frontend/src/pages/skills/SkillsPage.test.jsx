@@ -204,7 +204,10 @@ describe('SkillsPage — execution controls', () => {
     await user.click(screen.getByText('Execute'))
 
     expect(await screen.findByText('Failed')).toBeInTheDocument()
-    expect(screen.getByText('inactive_skill')).toBeInTheDocument()
+    // Humanised, like agent run failures. The identifier itself is the
+    // backend's key; ARC_UX_SPEC.md §1 keeps it off the screen.
+    expect(screen.getByText(/Inactive skill/i)).toBeInTheDocument()
+    expect(screen.queryByText('inactive_skill')).not.toBeInTheDocument()
   })
 
   it('displays PRECONDITION_FAILED result', async () => {
@@ -264,7 +267,9 @@ describe('SkillsPage — execution controls', () => {
     await user.click(screen.getByText('Execute'))
 
     expect(await screen.findByText('Denied')).toBeInTheDocument()
-    expect(screen.getAllByText('disallowed_tool').length).toBeGreaterThanOrEqual(1)
+    // Humanised at both levels — the run's reason and each step's.
+    expect(screen.getAllByText(/Disallowed tool/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText('disallowed_tool')).not.toBeInTheDocument()
   })
 
   it('displays API error on execution failure', async () => {
@@ -326,10 +331,10 @@ describe('SkillsPage — execution controls', () => {
 
     await user.click(screen.getByText('Execute'))
 
-    const stepsSection = await screen.findByText('Steps')
+    const stepsSection = await screen.findByText(/What ran/)
     expect(stepsSection).toBeInTheDocument()
-    expect(screen.getByText('#1')).toBeInTheDocument()
-    expect(screen.getByText('#2')).toBeInTheDocument()
+    expect(screen.getByText('01')).toBeInTheDocument()
+    expect(screen.getByText('02')).toBeInTheDocument()
     expect(screen.getByText('check_health')).toBeInTheDocument()
     expect(screen.getByText('restart_service')).toBeInTheDocument()
   })
@@ -353,7 +358,7 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[1])
 
-    expect(screen.getByText('No preconditions required for this skill.')).toBeInTheDocument()
+    expect(screen.getByText('This skill has no preconditions.')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 
@@ -420,7 +425,9 @@ describe('SkillsPage — execution controls', () => {
     const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
-    expect(screen.getByText('Skill inputs')).toBeInTheDocument()
+    // The heading is "Inputs": the panel is the skill's own bench, so
+    // "Skill inputs" was qualifying a noun against nothing.
+    expect(screen.getByText('Inputs')).toBeInTheDocument()
     expect(screen.getByText('service_name')).toBeInTheDocument()
   })
 
@@ -579,7 +586,7 @@ describe('SkillsPage — execution controls', () => {
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
-    expect(screen.getByText('Executing...')).toBeInTheDocument()
+    expect(screen.getByText('Executing…')).toBeInTheDocument()
     expect(screen.queryByText('Execute')).not.toBeInTheDocument()
 
     resolveMutation({ id: 'exec-10', status: 'succeeded', error_kind: null, steps: [] })
@@ -603,7 +610,8 @@ describe('SkillsPage — execution controls', () => {
     await user.click(screen.getByText('Execute'))
 
     expect(await screen.findByText('Approval required')).toBeInTheDocument()
-    expect(screen.getByText(/approval_required/)).toBeInTheDocument()
+    // Stated, not echoed as its enum value.
+    expect(screen.queryByText('approval_required')).not.toBeInTheDocument()
   })
 
   it('displays succeeded status badge with green variant', async () => {

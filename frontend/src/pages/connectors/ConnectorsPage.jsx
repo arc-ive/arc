@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { InlineError } from '../../components/ui/InlineError.jsx'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plug, RefreshCw, Plus } from 'lucide-react'
+import { RefreshCw, Plus } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
 import {
   listConnectors,
@@ -11,14 +10,13 @@ import {
 } from '../../api/endpoints/connectors.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
-import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { Skeleton } from '../../components/ui/Skeleton.jsx'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
-import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
-import { Spinner } from '../../components/ui/Spinner.jsx'
 import { Dialog } from '../../components/ui/Dialog.jsx'
 import { errorMessage } from '../../api/errors.js'
 
@@ -109,6 +107,7 @@ function CreateConnectorDialog({ open, onClose }) {
 }
 
 export function ConnectorsPage() {
+  useDocumentTitle('Sources')
   const { tenantId } = useTenant()
   const queryClient = useQueryClient()
   const { can } = useCapabilities()
@@ -135,86 +134,140 @@ export function ConnectorsPage() {
     (syncErrorDetail.includes('credential') || syncErrorDetail.includes('not configured') || syncErrorDetail.includes('synchronization failed'))
 
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <PageHeader title="Connectors"
-          description="External systems Arc reads company knowledge from." />
-            </div>
-          </div>
+    <div className="flex flex-col">
+      {/* A person comes here to answer one question: is knowledge still
+          arriving from the systems we connected? So each connector is a
+          line that says what it is, where it points and whether it is
+          live — and sync is the action, sitting on that line. */}
+      <header className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="type-display-lg text-fg">Sources</h1>
+          {!isLoading && connectors?.length > 0 && (
+            <p className="mt-2 text-[14px] text-fg-muted">
+              {connectors.length}{' '}
+              {connectors.length === 1 ? 'system' : 'systems'} Arc reads company
+              knowledge from
+            </p>
+          )}
         </div>
         {canCreate && (
           <Button onClick={() => setShowCreate(true)}>
             <Plus className="size-4" />
-            New Connector
+            Connect a system
           </Button>
         )}
-      </section>
+      </header>
 
       <CreateConnectorDialog open={showCreate} onClose={() => setShowCreate(false)} />
 
-      {isLoading && <Spinner />}
-      {error && <ErrorState error={error} />}
+      {isLoading && (
+        <div className="mt-8 flex flex-col gap-4 border-t border-line pt-6">
+          <Skeleton className="h-6 w-56" />
+          <Skeleton className="h-6 w-64" />
+        </div>
+      )}
+      {error && <div className="mt-8"><ErrorState error={error} /></div>}
 
       {!isLoading && !error && (!connectors || connectors.length === 0) && (
-        <EmptyState
-          icon={Plug}
-          title="No connectors configured"
-          description="Connectors sync knowledge from external sources like GitHub, Slack, or Linear."
-          action={canCreate && <Button onClick={() => setShowCreate(true)}><Plus className="size-4" /> Create connector</Button>}
-        />
+        <div className="measure mt-8 border-t border-line pt-6">
+          <p className="type-prose text-fg-subtle">
+            Nothing is connected yet.
+          </p>
+          <p className="mt-2 text-[14px] leading-relaxed text-fg-muted">
+            Connect GitHub, Slack or Linear and Arc will read documents from
+            them into the Company Brain.
+          </p>
+          {canCreate && (
+            <Button className="mt-5" onClick={() => setShowCreate(true)}>
+              <Plus className="size-4" /> Connect a system
+            </Button>
+          )}
+        </div>
       )}
 
-      {!isLoading && !error && connectors && connectors.length > 0 && (
+      {!isLoading && !error && connectors?.length > 0 && (
         <>
           {syncMutation.isError && (
-            <div className="rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-3 text-[13px] text-warning/80">
-              <p className="font-semibold">Sync failed</p>
+            <InlineError className="mt-8">
+              <p className="font-medium text-fg">That sync did not run.</p>
               {isCredentialError ? (
                 <p className="mt-1">
-                  Connector credentials are not configured on this deployment.
-                  An administrator must set the <code className="font-mono text-warning/80">CONNECTOR_CREDENTIALS</code> environment
-                  variable before sync can run.
+                  Credentials for this connector are not configured on this
+                  deployment. An administrator has to set them before a sync
+                  can run.
                 </p>
               ) : (
                 <p className="mt-1">{errorMessage(syncError)}</p>
               )}
-            </div>
+            </InlineError>
           )}
-          <div className="grid gap-4 sm:grid-cols-2">
+
+          {syncMutation.isSuccess && syncMutation.data && (
+            <p className="mt-8 border-l-2 border-success pl-4 text-[14px] text-fg-subtle">
+              Synced{' '}
+              <span className="font-medium text-fg">
+                {syncMutation.data.items_fetched}
+              </span>{' '}
+              {syncMutation.data.items_fetched === 1 ? 'item' : 'items'} into the
+              Company Brain.
+            </p>
+          )}
+
+          <ul className="mt-8 border-t border-line">
             {connectors.map((connector) => (
-            <Card key={connector.id} className="flex flex-col gap-3 p-5">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-fg">{connector.name}</p>
-                <Badge variant={connector.status === 'active' ? 'success' : 'neutral'} size="sm">
-                  {connector.status}
-                </Badge>
-              </div>
-              <p className="text-[13px] text-fg-muted">Provider: {connector.provider}</p>
-              {connector.target && (
-                <p className="font-mono text-xs text-fg-muted">Target: {connector.target}</p>
-              )}
-              <p className="text-xs text-fg-muted">
-                Created: {new Date(connector.created_at).toLocaleDateString()}
-              </p>
-              <div className="mt-auto flex items-center gap-2 pt-2">
+              <li
+                key={connector.id}
+                className="flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-line py-5"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h2 className="type-display text-[1.25rem] leading-snug text-fg">
+                      {connector.name}
+                    </h2>
+                    <Badge
+                      variant={connector.status === 'active' ? 'success' : 'neutral'}
+                      size="sm"
+                      dot
+                    >
+                      {connector.status}
+                    </Badge>
+                  </div>
+                  {/* Provider and target on one line. They were three
+                      stacked rows reading "Provider: slack", "Target:
+                      general", "Created: 17/09/2026" — a label per value
+                      for values that fit on one. */}
+                  <p className="type-data mt-1 text-fg-muted">
+                    {connector.provider}
+                    {connector.target && ` · ${connector.target}`}
+                  </p>
+                </div>
+
                 {canSync && (
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => syncMutation.mutate(connector.id)}
                     disabled={syncMutation.isPending}
+                    isLoading={
+                      syncMutation.isPending &&
+                      syncMutation.variables === connector.id
+                    }
+                    loadingText="Syncing…"
                   >
                     <RefreshCw className="size-3.5" />
-                    Sync
+                    Sync now
                   </Button>
                 )}
-              </div>
-            </Card>
-          ))}
-          </div>
+              </li>
+            ))}
+          </ul>
+
+          {/* Stated rather than implied: the record carries no last-sync
+              time, so the page cannot claim one. */}
+          <p className="measure mt-5 text-[12.5px] leading-relaxed text-fg-muted">
+            Arc does not record when a source last synced, so this list shows
+            whether a connection is live, not when it last ran.
+          </p>
         </>
       )}
     </div>
