@@ -1,186 +1,216 @@
 import { Link, useParams } from 'react-router-dom'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowUpRight, Building2, ExternalLink } from 'lucide-react'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
-import { getUserTenants } from '../../api/endpoints/tenants.js'
+import { getPlatformTenants, getUserTenants } from '../../api/endpoints/tenants.js'
 import { getTenantUsers } from '../../api/endpoints/users.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
-import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
-import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Avatar } from '../../components/ui/Avatar.jsx'
+import { Section, DataRow } from '../../components/layout/Section.jsx'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 import { formatDate } from '../../lib/format.js'
 
 /**
- * Platform-level tenant detail.
+ * One tenant, seen from the platform.
  *
- * Tenant data is only readable through the tenant-scoped API, which
- * requires a trusted membership and the tenant:read permission. A platform
- * administrator without membership receives a 403 from the backend, which
- * is rendered truthfully here — platform administration does not
- * automatically grant tenant data access.
+ * Two corrections over the previous version, both about what is actually
+ * readable from here.
+ *
+ * The record now comes from `/platform/tenants`, which is the endpoint a
+ * platform administrator can actually read. It previously came from the
+ * signed-in user's OWN tenant list, so for the page's real audience — an
+ * administrator who, per V2-ADR-003, is deliberately not a member of any
+ * customer workspace — the lookup missed and the page rendered "Tenant",
+ * status "unknown", and two blank dates. The same class of mistake as the
+ * blank dashboard: a page that looks fine until you are the person it is
+ * for.
+ *
+ * The member list is now requested only when the signed-in user is a
+ * member of this workspace. Membership is what grants that read, so for
+ * everyone else the request was guaranteed to 403 and the page turned an
+ * architectural boundary into what looked like a failure. Stating the
+ * boundary is more useful than rendering its error.
  */
 export function PlatformTenantDetailPage() {
   const { tenantId } = useParams()
   const { principal } = useAuth()
 
-  const userTenants = useQuery({
-    queryKey: queryKeys.userTenants(principal?.sub),
-    queryFn: () => getUserTenants(principal.sub),
-    enabled: Boolean(principal),
+  const tenants = useQuery({
+    queryKey: queryKeys.platformTenants(),
+    queryFn: getPlatformTenants,
     staleTime: 30 * 1000,
   })
+
+  const myTenants = useQuery({
+    queryKey: queryKeys.userTenants(principal?.sub),
+    queryFn: () => getUserTenants(principal.sub),
+    enabled: Boolean(principal?.sub),
+    staleTime: 30 * 1000,
+  })
+
+  const tenant = tenants.data?.find((t) => t.id === tenantId)
+  const isMember = Boolean(myTenants.data?.some((t) => t.id === tenantId))
 
   const members = useQuery({
     queryKey: queryKeys.tenantUsers(tenantId),
     queryFn: () => getTenantUsers(tenantId),
-    enabled: Boolean(tenantId),
+    enabled: Boolean(tenantId) && isMember,
   })
 
-  const tenant = userTenants.data?.find((t) => t.id === tenantId)
+  useDocumentTitle(tenant?.name ?? 'Tenant')
 
   return (
-    <div className="flex flex-col gap-8">
-      <section>
-        <Link
-          to="/platform/tenants"
-          className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-        >
-          <ArrowUpRight className="size-3.5 rotate-180" />
-          Back to Tenants
-        </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex shrink-0 items-center text-fg-muted">
-            <Building2 className="size-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <PageHeader title={tenant?.name ?? 'Tenant'} />
+    <div className="flex flex-col">
+      <Link
+        to="/platform/tenants"
+        className="inline-flex w-fit items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+      >
+        <ArrowLeft className="size-3.5" />
+        All tenants
+      </Link>
+
+      <header className="mt-6">
+        {tenants.isPending ? (
+          <Skeleton className="h-11 w-80" />
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 className="type-display-lg text-fg">
+              {tenant?.name ?? 'Unknown tenant'}
+            </h1>
+            {tenant && (
               <Badge
-                variant={tenant?.status === 'active' ? 'success' : 'neutral'}
+                variant={tenant.status === 'active' ? 'success' : 'neutral'}
                 dot
               >
-                {tenant?.status ?? 'unknown'}
+                {tenant.status}
               </Badge>
-            </div>
-            <p className="mt-0.5 font-mono text-xs text-fg-muted">{tenantId}</p>
+            )}
           </div>
-          {tenant && (
-            <Link
-              to={`/app/t/${encodeURIComponent(tenant.id)}/overview`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-raised px-3 py-1.5 text-[13px] font-medium text-fg-subtle transition-colors duration-150 hover:border-line-strong hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-            >
-              <ExternalLink className="size-3.5" />
-              Open workspace
-            </Link>
-          )}
+        )}
+        <p className="mt-2 font-mono text-[12.5px] text-fg-muted">{tenantId}</p>
+      </header>
+
+      {tenants.isError && (
+        <div className="mt-8">
+          <ErrorState
+            title="Could not load the tenant register"
+            message={errorMessage(tenants.error)}
+            onRetry={() => tenants.refetch()}
+            error={tenants.error}
+          />
         </div>
-      </section>
+      )}
 
-      <section className="grid gap-4 lg:grid-cols-3">
-        <Card className="flex flex-col justify-between gap-6 p-5">
-          <div>
-            <p className="text-[13px] text-fg-muted">Created</p>
-            <p className="mt-1 text-lg font-semibold text-fg">
-              {formatDate(tenant?.created_at)}
-            </p>
-          </div>
-          <span className="text-[13px] text-fg-muted">
-            Provisioned on the platform
-          </span>
-        </Card>
-        <Card className="flex flex-col justify-between gap-6 p-5">
-          <div>
-            <p className="text-[13px] text-fg-muted">Updated</p>
-            <p className="mt-1 text-lg font-semibold text-fg">
-              {formatDate(tenant?.updated_at)}
-            </p>
-          </div>
-          <span className="text-[13px] text-fg-muted">Tenant record</span>
-        </Card>
-        <Card className="flex flex-col justify-between gap-6 p-5">
-          <div>
-            <p className="text-[13px] text-fg-muted">Members (visible to you)</p>
-            <p className="mt-1 text-lg font-semibold text-fg">
-              {members.isPending ? '—' : members.data?.length ?? 0}
-            </p>
-          </div>
-          <span className="text-[13px] text-fg-muted">
-            Requires workspace membership
-          </span>
-        </Card>
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-sm font-semibold text-fg">Members</h2>
-        <Card className="overflow-hidden">
-          {members.isPending && (
-            <div className="flex flex-col gap-4 p-5">
-              {Array.from({ length: 3 }, (_, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <Skeleton className="size-8 rounded-full" />
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Skeleton className="h-3.5 w-1/3" />
-                    <Skeleton className="h-3 w-1/4" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {members.isError && (
-            <ErrorState
-              title="Member listing denied"
-              message={errorMessage(members.error)}
-              onRetry={() => members.refetch()}
-              error={members.error}
-            />
-          )}
-          {!members.isPending &&
-            !members.isError &&
-            members.data?.length === 0 && (
-            <EmptyState
-              icon={Building2}
-              title="No members visible"
-              description="Either this tenant has no users, or your role does not grant access to them."
-              compact
-            />
-          )}
-          {members.data?.length > 0 && (
-            <div className="divide-y divide-line/60">
-              {members.data.map((user) => (
-                <div key={user.id} className="flex items-center gap-3 px-5 py-3">
-                  <Avatar name={user.email} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-fg">
-                      {user.email}
-                    </p>
-                    <p className="truncate font-mono text-[11px] text-fg-muted">
-                      {user.id}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={user.status === 'active' ? 'success' : 'neutral'}
-                    size="sm"
-                    dot
-                  >
-                    {user.status}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-        <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-fg-muted">
-          Platform administration and customer data access are distinct.
-          Reading a customer workspace requires membership of that workspace
-          and permission to read it. Administering the platform does not
-          grant either.
+      {!tenants.isPending && !tenants.isError && !tenant && (
+        <p className="measure mt-8 type-prose text-fg-subtle">
+          No tenant with this identifier is registered on the platform. It may
+          have been removed, or the link may be wrong.
         </p>
-      </section>
+      )}
+
+      {tenant && (
+        <>
+          <Section title="Record" className="mt-10">
+            <dl className="border-t border-line">
+              <DataRow label="Industry">
+                {tenant.industry || 'Not recorded'}
+              </DataRow>
+              <DataRow label="Provisioned">{formatDate(tenant.created_at)}</DataRow>
+              <DataRow label="Last changed">{formatDate(tenant.updated_at)}</DataRow>
+              <DataRow label="Identifier">
+                <span className="font-mono text-[13px]">{tenant.id}</span>
+              </DataRow>
+            </dl>
+          </Section>
+
+          <Section
+            title="People"
+            className="mt-12"
+            actions={
+              isMember ? (
+                <Link
+                  to={`/app/t/${encodeURIComponent(tenant.id)}/overview`}
+                  className="inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                >
+                  Open workspace
+                  <ExternalLink className="size-3.5" />
+                </Link>
+              ) : null
+            }
+          >
+            {!isMember && (
+              <p className="measure border-t border-line pt-5 type-prose text-fg-subtle">
+                Arc keeps administering the platform separate from reading a
+                customer&rsquo;s data. Listing this workspace&rsquo;s people
+                requires membership of it, which administering the platform
+                does not grant. Provisioning, status and billing are
+                administered from here; the people inside are not.
+              </p>
+            )}
+
+            {isMember && members.isPending && (
+              <div className="flex flex-col gap-4 border-t border-line pt-5">
+                {Array.from({ length: 3 }, (_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="size-8 rounded-full" />
+                    <span className="flex flex-1 flex-col gap-1.5">
+                      <Skeleton className="h-3.5 w-1/3" />
+                      <Skeleton className="h-3 w-1/4" />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {isMember && members.isError && (
+              <ErrorState
+                title="Could not load this workspace's people"
+                message={errorMessage(members.error)}
+                onRetry={() => members.refetch()}
+                error={members.error}
+              />
+            )}
+
+            {isMember && members.data?.length === 0 && (
+              <p className="border-t border-line pt-5 text-[14px] text-fg-muted">
+                This workspace has no people yet.
+              </p>
+            )}
+
+            {isMember && members.data?.length > 0 && (
+              <ul className="stagger border-t border-line">
+                {members.data.map((user) => (
+                  <li
+                    key={user.id}
+                    className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line py-3.5"
+                  >
+                    <Avatar name={user.username || user.email} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[14px] font-medium text-fg">
+                        {user.username || user.email}
+                      </p>
+                      {user.username && (
+                        <p className="truncate text-[12.5px] text-fg-muted">
+                          {user.email}
+                        </p>
+                      )}
+                    </div>
+                    {user.status !== 'active' && (
+                      <Badge variant="neutral" size="sm" dot>
+                        {user.status}
+                      </Badge>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        </>
+      )}
     </div>
   )
 }
