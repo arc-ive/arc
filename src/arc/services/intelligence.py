@@ -48,6 +48,7 @@ Security invariants:
 """
 
 import json
+import logging
 import os
 import re
 import uuid
@@ -82,6 +83,8 @@ from arc.services.tools import (
 _OBSERVATION_MAX_CHARS = 1024
 
 _TRUNCATION_SUFFIX = "...[truncated]"
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_PROMPT_CONTEXT_MAX_CHARS = 8192
 
@@ -439,10 +442,27 @@ class UnifiedIntelligenceService:
         """
         if context_budget is None:
             context_budget = get_intelligence_settings().prompt_context_max_chars
+        # The instruction has to cover the case where retrieval returns
+        # something and none of it answers the question. Hybrid retrieval
+        # always returns its top-k, so an off-corpus question ("what is
+        # our share price", "what is the capital of France") arrives here
+        # with a full context block of unrelated company documents. Told
+        # only to "answer using ONLY the approved context", a model
+        # stretches that context to fit rather than declining — which is
+        # exactly the hallucinated company fact Arc must never produce.
+        #
+        # So the refusal is named as a valid answer, and general knowledge
+        # is allowed only when it is labelled as not coming from the
+        # company's own records.
         system_line = (
             "You are Arc's Unified Intelligence. Answer using ONLY the "
             "approved context below. Cite the sources you used with the "
-            "[N] numbers shown in the approved context."
+            "[N] numbers shown in the approved context. "
+            "If the approved context does not contain the answer, say so "
+            "plainly and do not infer, estimate or invent a company fact. "
+            "You may add general knowledge only when it is useful and only "
+            "if you state clearly that it does not come from this "
+            "company's records."
         )
         header_line = "APPROVED CONTEXT:"
         query_line = f"QUERY: {query}"
@@ -450,6 +470,18 @@ class UnifiedIntelligenceService:
         # Fixed overhead: system instruction + header + query + newlines.
         fixed_overhead = len(system_line) + len(header_line) + len(query_line) + 4
         remaining_budget = max(0, context_budget - fixed_overhead)
+
+        # A budget smaller than the fixed overhead silently yields a prompt
+        # with NO retrieved content — the model is asked to answer from an
+        # approved context that is not there, and the only visible symptom
+        # is a bad answer. Say so instead.
+        if remaining_budget == 0 and approved.items:
+            logger.warning(
+                "prompt_context_budget_exhausted_by_overhead budget=%d overhead=%d items=%d",
+                context_budget,
+                fixed_overhead,
+                len(approved.items),
+            )
 
         lines: List[str] = [system_line, header_line]
         for index, item in enumerate(approved.items, start=1):

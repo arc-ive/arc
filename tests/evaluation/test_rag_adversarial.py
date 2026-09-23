@@ -112,3 +112,42 @@ def test_prompt_boundary_visible(fixture):
     assert any("You are Arc" in line for line in instruction_lines)
     content_section = "\n".join(content_lines)
     assert fixture["content"] in content_section
+
+
+class TestGroundingInstruction:
+    """The prompt must cover retrieval returning nothing relevant.
+
+    Hybrid retrieval always returns its top-k, so an off-corpus question
+    arrives with a full block of unrelated company documents. Measured
+    before this instruction existed: "What is the capital of France"
+    asked against the Acme demo corpus returned context_used=true with
+    four citations from HR policy documents. A model told only to answer
+    from the approved context stretches it to fit rather than declining.
+    """
+
+    @staticmethod
+    def _prompt():
+        item = _item("Annual leave is 26 days.")
+        approved = _ApprovedContext([item], "q")
+        return UnifiedIntelligenceService._build_prompt(approved, "q")
+
+    def test_refusal_is_named_as_a_valid_answer(self):
+        prompt = self._prompt()
+        assert "does not contain the answer" in prompt
+        assert "say so" in prompt
+
+    def test_inventing_a_company_fact_is_forbidden(self):
+        prompt = self._prompt()
+        assert "do not infer, estimate or invent a company fact" in prompt
+
+    def test_general_knowledge_must_be_labelled_as_not_company_knowledge(self):
+        """General knowledge is allowed, but never disguised as a company fact."""
+        prompt = self._prompt()
+        assert "general knowledge" in prompt
+        assert "does not come from this" in prompt
+
+    def test_the_original_grounding_constraints_survive(self):
+        """Hardening must not weaken what was already there."""
+        prompt = self._prompt()
+        assert "Answer using ONLY the approved context" in prompt
+        assert "[N] numbers shown in the approved context" in prompt
