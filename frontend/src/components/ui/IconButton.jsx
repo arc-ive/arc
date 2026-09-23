@@ -6,7 +6,7 @@ const variants = {
     'text-fg-muted hover:text-fg hover:bg-surface-overlay active:bg-surface-selected',
   solid:
     'text-fg border border-line bg-surface-raised hover:bg-surface-selected hover:text-fg',
-  danger: 'text-fg-muted hover:text-red-400 hover:bg-red-950/40',
+  danger: 'text-fg-muted hover:text-danger hover:bg-danger/10',
 }
 
 const sizes = {

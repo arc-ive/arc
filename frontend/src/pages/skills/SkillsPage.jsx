@@ -15,6 +15,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { Dialog } from '../../components/ui/Dialog.jsx'
+import { Section, DataRow } from '../../components/layout/Section.jsx'
 import { IconButton } from '../../components/ui/IconButton.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
@@ -49,8 +50,8 @@ function DeleteConfirmDialog({ open, onConfirm, onCancel, skillName, isPending, 
       }
     >
       <div className="flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-red-900/50 bg-red-950/50">
-          <AlertTriangle className="size-5 text-red-400" />
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-danger/30 bg-danger/10">
+          <AlertTriangle className="size-5 text-danger" />
         </div>
         <p className="text-sm text-fg-muted">
           Are you sure you want to delete{' '}
@@ -58,7 +59,7 @@ function DeleteConfirmDialog({ open, onConfirm, onCancel, skillName, isPending, 
         </p>
       </div>
       {error && (
-        <p className="mt-4 text-sm text-red-400" role="alert">
+        <p className="mt-4 text-sm text-danger" role="alert">
           {errorMessage(error)}
         </p>
       )}
@@ -152,8 +153,8 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
         <div className="w-full max-w-lg rounded-xl border border-line bg-surface-overlay p-6 shadow-xl">
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-indigo-950/50 border border-indigo-900/50">
-              <Play className="size-5 text-indigo-400" />
+            <div className="flex size-10 items-center justify-center rounded-lg bg-accent/10 border border-accent/30">
+              <Play className="size-5 text-accent" />
             </div>
             <div>
               <h2 className="text-sm font-semibold text-fg">Execute skill</h2>
@@ -200,7 +201,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
                         </pre>
                       )}
                       {step.error_kind && (
-                        <p className="mt-1 text-red-400">{step.error_kind}</p>
+                        <p className="mt-1 text-danger">{step.error_kind}</p>
                       )}
                     </div>
                   ))}
@@ -473,24 +474,28 @@ function SkillList() {
           </Link>
         )}
       </div>
-      <div className="grid gap-3">
+      <div className="border-t border-line">
         {skills.map((skill) => (
-          <Card key={skill.id} className="transition-colors hover:border-line-strong">
-            <div className="flex items-center justify-between p-4">
-              <Link to={`${skill.id}`} className="flex-1 min-w-0">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised">
-                    <Workflow className="size-4 text-fg-muted" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-fg truncate">{skill.name}</p>
-                    <p className="text-xs text-fg-muted truncate">{skill.purpose || 'No description'}</p>
-                  </div>
+          <div key={skill.id} className="transition-colors duration-150 hover:bg-surface-sunk/60">
+            <div className="flex items-center justify-between gap-6 border-b border-line py-4">
+              <Link
+                to={`${skill.id}`}
+                className="min-w-0 flex-1 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+              >
+                <div className="min-w-0">
+                  {/* The skill's name is what it is called — content, so
+                      it takes the serif. Its status and version are chrome. */}
+                  <p className="type-display truncate text-[1.25rem] leading-snug text-fg">
+                    {skill.name}
+                  </p>
+                  <p className="measure mt-0.5 truncate text-[13.5px] text-fg-muted">
+                    {skill.purpose || 'No description'}
+                  </p>
                 </div>
               </Link>
-              <div className="flex items-center gap-2 ml-4">
+              <div className="flex shrink-0 items-center gap-3">
                 <Badge variant={skill.status === 'active' ? 'success' : 'neutral'}>{skill.status}</Badge>
-                <span className="text-xs text-fg-muted">v{skill.version}</span>
+                <span className="type-data text-fg-muted">v{skill.version}</span>
                 {canExecute && (
                   <IconButton
                     size="sm"
@@ -522,7 +527,7 @@ function SkillList() {
                 )}
               </div>
             </div>
-          </Card>
+          </div>
         ))}
       </div>
     </div>
@@ -545,122 +550,165 @@ function SkillDetail({ skillId }) {
   if (!skill) return <EmptyState title="Skill not found" />
 
   return (
-    <div className="space-y-4">
+    /* A capability sheet: what the skill IS on the left, the policy that
+       gates it in the margin. The previous version ran seventeen
+       definition-list entries down one column inside a card, so a
+       constraint and a version number had identical weight. */
+    <div>
       <EditSkillDialog
         open={Boolean(editTarget)}
         skill={editTarget}
         onClose={() => setEditTarget(null)}
       />
-      <Card>
-        <div className="flex items-center justify-between px-6 pt-6">
-          <div>
-            <h2 className="text-lg font-semibold text-fg">{skill.name}</h2>
-            {skill.purpose && <p className="mt-1 text-sm text-fg-muted">{skill.purpose}</p>}
-          </div>
-          {canUpdate && (
+
+      <PageHeader
+        title={skill.name}
+        description={skill.purpose}
+        meta={
+          skill.risk ? (
+            <Badge variant={riskTone(skill.risk)} size="sm">
+              {riskLabel(skill.risk)} risk
+            </Badge>
+          ) : null
+        }
+        actions={
+          canUpdate && (
             <Button variant="secondary" size="sm" onClick={() => setEditTarget(skill)}>
               <Edit className="size-4" />
               Edit
             </Button>
+          )
+        }
+      />
+
+      <div className="mt-10 grid gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 flex flex-col gap-10">
+          {skill.steps?.length > 0 && (
+            <Section title="Procedure">
+              {/* Steps are an ordered procedure, so they are numbered and
+                  set as content — this is the substance of a skill. */}
+              <ol className="border-t border-line">
+                {skill.steps.map((step, idx) => (
+                  <li key={idx} className="flex gap-5 border-b border-line py-3.5">
+                    <span className="type-data shrink-0 pt-1 text-fg-muted">
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    <span className="measure type-prose text-[15px] text-fg-subtle">
+                      {step}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </Section>
+          )}
+
+          {skill.preconditions?.length > 0 && (
+            <Section
+              title="Preconditions"
+              description="Checked before the skill runs. A failed precondition stops it."
+            >
+              <ul className="border-t border-line">
+                {skill.preconditions.map((pre, idx) => (
+                  <li key={idx} className="measure border-b border-line py-3 text-[14px] text-fg-subtle">
+                    {pre}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {skill.constraints?.length > 0 && (
+            <Section title="Constraints">
+              <ul className="border-t border-line">
+                {skill.constraints.map((c, idx) => (
+                  <li key={idx} className="measure border-b border-line py-3 text-[14px] text-fg-subtle">
+                    {c}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {(skill.expected_output || skill.failure_behavior) && (
+            <Section title="Outcome">
+              <dl className="border-t border-line">
+                {skill.expected_output && (
+                  <DataRow label="Expected">{skill.expected_output}</DataRow>
+                )}
+                {skill.failure_behavior && (
+                  <DataRow label="On failure">{skill.failure_behavior}</DataRow>
+                )}
+              </dl>
+            </Section>
           )}
         </div>
-        <CardContent>
-          <dl className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-medium text-fg-muted">Status</dt>
-              <dd className="mt-1">
-                <Badge variant={skill.status === 'active' ? 'success' : 'neutral'}>{skill.status}</Badge>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-fg-muted">Version</dt>
-              <dd className="mt-1 text-sm text-fg-subtle">{skill.version}</dd>
-            </div>
-            {skill.provenance && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Provenance</dt>
-                <dd className="mt-1 text-sm text-fg-subtle">{skill.provenance}</dd>
-              </div>
+
+        {/* The margin carries what governs the skill rather than what it
+            does — the operator checks these, they do not read them. */}
+        <aside className="min-w-0 flex flex-col gap-10">
+          <Section title="Execution policy">
+            <dl className="border-t border-line">
+              <DataRow label="Approval">
+                {skill.approval_required
+                  ? 'Required before execution'
+                  : 'Not required'}
+              </DataRow>
+              <DataRow label="Risk">
+                {skill.risk ? riskLabel(skill.risk) : 'Not classified'}
+              </DataRow>
+            </dl>
+            {skill.approval_required && (
+              <p className="measure-tight mt-3 text-[12.5px] leading-relaxed text-fg-muted">
+                Approval and risk are separate controls. Approving authorises
+                this skill; it does not run it.
+              </p>
             )}
-            {skill.inputs && skill.inputs.length > 0 && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Inputs</dt>
-                <dd className="mt-1 flex flex-wrap gap-2">
-                  {skill.inputs.map((input, idx) => (
-                    <Badge key={idx} variant="neutral">{input}</Badge>
-                  ))}
-                </dd>
-              </div>
-            )}
-            {skill.preconditions && skill.preconditions.length > 0 && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Preconditions</dt>
-                <dd className="mt-1 space-y-1">
-                  {skill.preconditions.map((pre, idx) => (
-                    <p key={idx} className="text-sm text-fg-subtle">{pre}</p>
-                  ))}
-                </dd>
-              </div>
-            )}
-            {skill.steps && skill.steps.length > 0 && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Steps</dt>
-                <dd className="mt-1 space-y-1">
-                  {skill.steps.map((step, idx) => (
-                    <p key={idx} className="text-sm text-fg-subtle">{idx + 1}. {step}</p>
-                  ))}
-                </dd>
-              </div>
-            )}
-            {skill.constraints && skill.constraints.length > 0 && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Constraints</dt>
-                <dd className="mt-1 space-y-1">
-                  {skill.constraints.map((constraint, idx) => (
-                    <p key={idx} className="text-sm text-fg-subtle">{constraint}</p>
-                  ))}
-                </dd>
-              </div>
-            )}
-            {skill.allowed_tools && skill.allowed_tools.length > 0 && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Allowed Tools</dt>
-                <dd className="mt-1 flex flex-wrap gap-2">
-                  {skill.allowed_tools.map((tool) => (
-                    <Badge key={tool} variant="accent">{tool}</Badge>
-                  ))}
-                </dd>
-              </div>
-            )}
-            <div>
-              <dt className="text-xs font-medium text-fg-muted">Approval Required</dt>
-              <dd className="mt-1 text-sm text-fg-subtle">{skill.approval_required ? 'Yes' : 'No'}</dd>
-            </div>
-            {skill.risk && (
-              <div>
-                <dt className="text-xs font-medium text-fg-muted">Risk</dt>
-                <dd className="mt-1">
-                  <Badge variant={riskTone(skill.risk)} size="sm">
-                    {riskLabel(skill.risk)}
-                  </Badge>
-                </dd>
-              </div>
-            )}
-            {skill.expected_output && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Expected Output</dt>
-                <dd className="mt-1 text-sm text-fg-subtle">{skill.expected_output}</dd>
-              </div>
-            )}
-            {skill.failure_behavior && (
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-medium text-fg-muted">Failure Behavior</dt>
-                <dd className="mt-1 text-sm text-fg-subtle">{skill.failure_behavior}</dd>
-              </div>
-            )}
-          </dl>
-        </CardContent>
-      </Card>
+          </Section>
+
+          {skill.allowed_tools?.length > 0 && (
+            <Section
+              title="Allowed tools"
+              description="Tools outside this list are refused."
+            >
+              <ul className="border-t border-line">
+                {skill.allowed_tools.map((tool) => (
+                  <li key={tool} className="type-data border-b border-line py-2.5 text-fg-subtle">
+                    {tool}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {skill.inputs?.length > 0 && (
+            <Section title="Inputs">
+              <ul className="border-t border-line">
+                {skill.inputs.map((input, idx) => (
+                  <li key={idx} className="type-data border-b border-line py-2.5 text-fg-subtle">
+                    {input}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          <Section title="Definition">
+            <dl className="border-t border-line">
+              <DataRow label="Status">
+                <Badge variant={skill.status === 'active' ? 'success' : 'neutral'} size="sm">
+                  {skill.status}
+                </Badge>
+              </DataRow>
+              <DataRow label="Version">
+                <span className="type-data">{skill.version}</span>
+              </DataRow>
+              {skill.provenance && (
+                <DataRow label="Owner">{skill.provenance}</DataRow>
+              )}
+            </dl>
+          </Section>
+        </aside>
+      </div>
     </div>
   )
 }

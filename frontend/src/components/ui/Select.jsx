@@ -29,7 +29,7 @@ export const Select = forwardRef(function Select(
             'transition-colors duration-150',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
             error
-              ? 'border-red-800 focus-visible:outline-red-500'
+              ? 'border-danger/30 focus-visible:outline-red-500'
               : 'border-line hover:border-line-strong',
           )}
           {...props}
@@ -41,7 +41,7 @@ export const Select = forwardRef(function Select(
           aria-hidden
         />
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
       {hint && !error && <p className="text-xs text-fg-muted">{hint}</p>}
     </div>
   )

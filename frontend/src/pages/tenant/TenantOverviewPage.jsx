@@ -21,6 +21,7 @@ import { getKnowledge } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { cn } from '../../lib/cn.js'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { formatDate } from '../../lib/format.js'
@@ -32,47 +33,55 @@ const ROLE_LABELS = {
   employee: 'Employee',
 }
 
-function StatCard({ label, value, hint, to, icon: Icon }) {
-  return (
-    <Card className="flex flex-col justify-between gap-6 p-5">
-      <div>
-        <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
-          <Icon className="size-4.5" />
-        </div>
-        <div className="mt-4 text-2xl font-semibold tracking-tight text-fg">
-          {value}
-        </div>
-        <p className="mt-0.5 text-[13px] text-fg-muted">{label}</p>
-      </div>
-      {to ? (
-        <Link
-          to={to}
-          className="inline-flex items-center gap-1 rounded text-[13px] font-medium text-indigo-400 transition-colors duration-150 hover:text-indigo-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-        >
-          {hint}
-          <ArrowUpRight className="size-3.5" />
-        </Link>
-      ) : (
-        <span className="text-[13px] text-fg-muted">{hint}</span>
-      )}
-    </Card>
+function StatCard({ label, value, hint, to }) {
+  const body = (
+    <>
+      <p className="type-label text-fg-muted">{label}</p>
+      <p className="mt-2 text-[1.75rem] font-medium leading-none tabular-nums text-fg">
+        {value}
+      </p>
+      {hint && <p className="mt-2 text-[12.5px] text-fg-muted">{hint}</p>}
+    </>
   )
-}
 
-function ModuleLink({ to, label, description, icon: Icon }) {
+  if (!to) return <div className="min-w-0">{body}</div>
+
   return (
     <Link
       to={to}
-      className="group flex items-start gap-3.5 rounded-xl border border-line/70 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-line-strong hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+      className={cn(
+        'group min-w-0',
+        'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary',
+      )}
     >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
-        <Icon className="size-4.5" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-fg">{label}</p>
-        <p className="mt-0.5 text-[13px] text-fg-muted">{description}</p>
-      </div>
-      <ArrowUpRight className="ml-auto mt-1 size-4 shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-fg-subtle" />
+      {body}
+      <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] text-accent">
+        Open
+        <ArrowUpRight className="size-3 transition-transform duration-150 group-hover:-translate-y-0.5" />
+      </span>
+    </Link>
+  )
+}
+
+function ModuleLink({ to, label, description }) {
+  return (
+    <Link
+      to={to}
+      className={cn(
+        'group flex items-baseline justify-between gap-6 border-b border-line py-4',
+        'transition-colors duration-150 hover:bg-surface-sunk/60',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
+      )}
+    >
+      <span className="min-w-0">
+        <span className="type-display block text-[1.25rem] leading-snug text-fg">
+          {label}
+        </span>
+        <span className="measure mt-0.5 block text-[13.5px] leading-relaxed text-fg-muted">
+          {description}
+        </span>
+      </span>
+      <ArrowUpRight className="size-4 shrink-0 text-fg-muted transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:text-fg" />
     </Link>
   )
 }
@@ -107,30 +116,21 @@ export function TenantOverviewPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
-            <Building2 className="size-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <PageHeader title={tenant?.name ?? 'Tenant'} />
-              <Badge
-                variant={tenant?.status === 'active' ? 'success' : 'neutral'}
-                dot
-              >
-                {tenant?.status ?? 'unknown'}
-              </Badge>
-            </div>
-            <p className="mt-0.5 font-mono text-xs text-fg-muted">{tenantId}</p>
-          </div>
-          {role && (
-            <Badge variant="accent" className="self-start">
-              {ROLE_LABELS[role] ?? role} workspace
-            </Badge>
-          )}
-        </div>
-      </section>
+      <PageHeader
+        title={tenant?.name ?? 'Workspace'}
+        meta={
+          <Badge
+            variant={tenant?.status === 'active' ? 'success' : 'neutral'}
+            dot
+          >
+            {tenant?.status ?? 'unknown'}
+          </Badge>
+        }
+        description={
+          role ? `You are in this workspace as a ${(ROLE_LABELS[role] ?? role).toLowerCase()}.` : undefined
+        }
+        actions={<span className="type-data text-fg-muted">{tenantId}</span>}
+      />
 
       {(userTenants.isError || users.isError || knowledge.isError) && role !== 'employee' && (
         <Card>
@@ -147,7 +147,7 @@ export function TenantOverviewPage() {
       )}
 
       {role !== 'employee' && (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid gap-x-10 gap-y-8 border-b border-line pb-8 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Knowledge documents"
             value={
@@ -199,7 +199,7 @@ export function TenantOverviewPage() {
         <section>
           <Card>
             <div className="flex items-start gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
+              <div className="flex shrink-0 items-center text-fg-muted">
                 <Building2 className="size-4.5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -217,10 +217,8 @@ export function TenantOverviewPage() {
       )}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-fg">
-          Workspace
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <h2 className="type-label text-fg-muted">In this workspace</h2>
+        <div className="mt-3 grid border-t border-line sm:grid-cols-2 sm:gap-x-12">
           <ModuleLink
             to={`${tenantPrefix}/ask`}
             label="Ask Arc"

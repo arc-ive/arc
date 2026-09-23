@@ -78,7 +78,7 @@ export function NewKnowledgePage() {
           Back to Company Brain
         </Link>
         <PageHeader title="New knowledge document"
-          description="Content is PII-sanitized by the backend before it is stored." />
+          description="Personal information is removed before anything is stored." />
       </section>
 
       <Card>

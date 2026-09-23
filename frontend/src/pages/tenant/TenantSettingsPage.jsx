@@ -55,7 +55,7 @@ export function TenantSettingsPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
               <PageHeader title="Settings"
-          description="Tenant configuration and preferences." />
+          description="How this workspace is configured." />
             </div>
           </div>
         </section>
@@ -71,7 +71,7 @@ export function TenantSettingsPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
               <PageHeader title="Settings"
-          description="Tenant configuration and preferences." />
+          description="How this workspace is configured." />
             </div>
           </div>
         </section>
@@ -131,7 +131,7 @@ export function TenantSettingsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             <PageHeader title="Settings"
-          description="Tenant configuration and preferences." />
+          description="How this workspace is configured." />
           </div>
         </div>
       </section>
@@ -207,7 +207,7 @@ export function TenantSettingsPage() {
                 <Badge variant="success" size="sm">Saved</Badge>
               )}
               {updateMutation.isError && (
-                <span className="text-xs text-red-400">{errorMessage(updateMutation.error)}</span>
+                <span className="text-xs text-danger">{errorMessage(updateMutation.error)}</span>
               )}
             </div>
           )}

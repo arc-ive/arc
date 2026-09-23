@@ -245,7 +245,7 @@ export function AgentRunsPage() {
                   <StatusBadge status={startMutation.data.status} />
                 </div>
                 {startMutation.data.error_kind && (
-                  <p className="mt-1 text-[13px] text-red-400">
+                  <p className="mt-1 text-[13px] text-danger">
                     Reason: {startMutation.data.error_kind}
                   </p>
                 )}

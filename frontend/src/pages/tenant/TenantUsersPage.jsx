@@ -179,8 +179,10 @@ export function TenantUsersPage() {
     <div className="flex flex-col gap-6">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <PageHeader title="Tenant users"
-          description="Users with membership in this tenant, as authorized by the backend." />
+          <PageHeader
+            title="People"
+            description="Everyone with access to this workspace."
+          />
         </div>
         <Button
           variant="secondary"
@@ -278,7 +280,7 @@ export function TenantUsersPage() {
                       onClick={() => setRemoveTarget(user)}
                       title="Remove member"
                     >
-                      <Trash2 className="size-4 text-fg-muted hover:text-red-400" />
+                      <Trash2 className="size-4 text-fg-muted hover:text-danger" />
                     </Button>
                   </TableCell>
                 </TableRow>

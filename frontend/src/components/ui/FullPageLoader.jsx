@@ -5,7 +5,7 @@ import { Spinner } from './Spinner.jsx'
  *
  * Three routes — the auth gate, the platform-admin gate and login — each
  * hand-rolled the same block: a bordered div with `animate-spin`, using
- * `border-zinc-600`, a value the token system does not define.
+ * `border-line-strong`, a value the token system does not define.
  *
  * They also said nothing. `Spinner` is `aria-hidden` (correct: a spinning
  * ring is decoration), so these screens presented as empty to a screen

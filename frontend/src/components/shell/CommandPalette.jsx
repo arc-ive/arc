@@ -136,7 +136,7 @@ export function CommandPalette({ onClose }) {
                     <item.icon
                       className={cn(
                         'size-4 shrink-0',
-                        isActive ? 'text-indigo-400' : 'text-fg-muted',
+                        isActive ? 'text-accent' : 'text-fg-muted',
                       )}
                     />
                     <span className="flex-1 truncate">{item.label}</span>

@@ -55,10 +55,17 @@ describe('TenantUsersPage', () => {
     })
   })
 
-  it('renders the page title', async () => {
+  it('names the page for the people on it, not the data model', async () => {
+    // Was "Tenant users", with "as authorized by the backend" underneath.
+    // A person in their own workspace is not in "a tenant" — that is the
+    // platform's word for a customer, and ARC_UX_SPEC.md §1 keeps
+    // implementation vocabulary out of the product. The nav has always
+    // said "People"; the page now agrees with it.
     renderWithProviders(<TenantUsersPage />)
 
-    expect(screen.getByText('Tenant users')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'People' })).toBeInTheDocument()
+    expect(screen.queryByText(/tenant users/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/authorized by the backend/i)).not.toBeInTheDocument()
   })
 
   it('shows empty state when no users exist', async () => {

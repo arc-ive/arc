@@ -141,7 +141,7 @@ export function ConnectorsPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0 flex-1">
               <PageHeader title="Connectors"
-          description="External integrations for this tenant." />
+          description="External systems Arc reads company knowledge from." />
             </div>
           </div>
         </div>
@@ -170,12 +170,12 @@ export function ConnectorsPage() {
       {!isLoading && !error && connectors && connectors.length > 0 && (
         <>
           {syncMutation.isError && (
-            <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3.5 py-3 text-[13px] text-amber-200/80">
+            <div className="rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-3 text-[13px] text-warning/80">
               <p className="font-semibold">Sync failed</p>
               {isCredentialError ? (
                 <p className="mt-1">
                   Connector credentials are not configured on this deployment.
-                  An administrator must set the <code className="font-mono text-amber-300/80">CONNECTOR_CREDENTIALS</code> environment
+                  An administrator must set the <code className="font-mono text-warning/80">CONNECTOR_CREDENTIALS</code> environment
                   variable before sync can run.
                 </p>
               ) : (

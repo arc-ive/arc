@@ -86,10 +86,10 @@ function ToolExecuteDialog({ tool, open, onClose }) {
         )}
 
         {result && (
-          <div className="mb-4 rounded-lg border border-green-900/50 bg-green-950/20 p-3.5">
+          <div className="mb-4 rounded-lg border border-success/30 bg-success/10 p-3.5">
             <div className="flex items-center gap-2 mb-2">
-              <CheckCircle className="size-4 text-green-400" />
-              <span className="text-sm font-medium text-green-300">Execution successful</span>
+              <CheckCircle className="size-4 text-success" />
+              <span className="text-sm font-medium text-success">Execution successful</span>
             </div>
             <pre className="text-xs text-fg-subtle overflow-x-auto whitespace-pre-wrap">{JSON.stringify(result.output, null, 2)}</pre>
           </div>
@@ -132,7 +132,7 @@ export function ToolsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             <PageHeader title="Tools"
-          description="Platform-owned AI tools available for this tenant." />
+          description="Actions Arc can take. Provided by the platform, not editable here." />
           </div>
         </div>
       </section>

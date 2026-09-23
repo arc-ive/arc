@@ -219,7 +219,19 @@ describe('design foundation is actually adopted', () => {
     //
     // index.css is where primitives are allowed to be named, and it is
     // not scanned here.
-    const RAW = /(?:^|["'\s:])(?:hover:|focus:|active:|group-hover:|focus-visible:)?(?:text|bg|border|border-[trbl]|ring|divide|from|via|to)-zinc-\d/
+    //
+    // This checked only `zinc`, and 48 raw colours from other families
+    // walked straight past it — text-red-400, bg-red-950, text-indigo-400,
+    // border-amber-900. Several were dark-plane fills, so when the
+    // workspace moved to paper a near-black red block landed on a white
+    // page. Guarding one family is guarding nothing; the whole palette is
+    // matched now.
+    const FAMILIES =
+      'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|' +
+      'emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose'
+    const RAW = new RegExp(
+      `(?:text|bg|border|border-[trbl]|ring|divide|from|via|to)-(?:${FAMILIES})-\\d{2,3}`,
+    )
     const offenders = files.filter((f) => RAW.test(readFileSync(f, 'utf8')))
     expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
   })

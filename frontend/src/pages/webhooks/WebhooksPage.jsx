@@ -31,7 +31,7 @@ export function WebhooksPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             <PageHeader title="Webhooks"
-          description="Inbound webhook events for this tenant." />
+          description="Events other systems have sent to this workspace." />
           </div>
         </div>
       </section>
@@ -68,9 +68,9 @@ export function WebhooksPage() {
                 >
                   <div className="flex items-center gap-3">
                     {event.status === 'received' ? (
-                      <CheckCircle className="size-4 text-green-400" />
+                      <CheckCircle className="size-4 text-success" />
                     ) : (
-                      <AlertTriangle className="size-4 text-amber-400" />
+                      <AlertTriangle className="size-4 text-warning" />
                     )}
                     <div>
                       <p className="text-sm text-fg">{event.event_type}</p>

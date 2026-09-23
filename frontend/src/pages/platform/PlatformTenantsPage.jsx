@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react'
 import { InlineError } from '../../components/ui/InlineError.jsx'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
-import { useNavigate } from 'react-router-dom'
+import { cn } from '../../lib/cn.js'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, Building2, Plus } from 'lucide-react'
 import { createTenant, getPlatformTenants } from '../../api/endpoints/tenants.js'
@@ -101,7 +102,6 @@ function CreateTenantDialog({ open, onClose }) {
 }
 
 export function PlatformTenantsPage() {
-  const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
   const handleCloseCreate = useCallback(() => setCreateOpen(false), [])
 
@@ -116,7 +116,7 @@ export function PlatformTenantsPage() {
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <PageHeader title="Tenants"
-          description="Platform-level tenant administration. Tenant boundaries are       enforced by the backend." />
+          description="Every workspace on this Arc platform." />
         </div>
         <Button variant="secondary" onClick={() => setCreateOpen(true)}>
           <Plus className="size-4" />
@@ -159,47 +159,40 @@ export function PlatformTenantsPage() {
         </Card>
       )}
 
+      {/* A real link per row, not a div with role="link" and an Enter-only
+          key handler: that gave no href, so no middle-click, no
+          open-in-new-tab, no context menu. */}
       {userTenants.data?.length > 0 && (
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="border-t border-line">
           {userTenants.data.map((tenant) => (
-            <Card
+            <Link
               key={tenant.id}
-              hover
-              className="group flex cursor-pointer flex-col gap-3 p-5"
-              onClick={() =>
-                navigate(`/platform/tenants/${encodeURIComponent(tenant.id)}`)
-              }
-              role="link"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  navigate(`/platform/tenants/${encodeURIComponent(tenant.id)}`)
-                }
-              }}
+              to={`/platform/tenants/${encodeURIComponent(tenant.id)}`}
+              className={cn(
+                'group grid grid-cols-1 items-baseline gap-x-8 gap-y-1 border-b border-line py-4',
+                'transition-colors duration-150 hover:bg-surface-sunk/60',
+                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
+                'sm:grid-cols-[minmax(0,1fr)_10rem_9rem_1.5rem]',
+              )}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
-                  <Building2 className="size-4.5" />
-                </div>
-                <Badge variant={tenant.status === 'active' ? 'success' : 'neutral'} dot>
+              <span className="min-w-0">
+                <span className="type-display block truncate text-[1.25rem] leading-snug text-fg">
+                  {tenant.name}
+                </span>
+                <span className="type-data mt-0.5 block truncate text-fg-muted">
+                  {tenant.id}
+                </span>
+              </span>
+              <span>
+                <Badge variant={tenant.status === 'active' ? 'success' : 'neutral'} dot size="sm">
                   {tenant.status}
                 </Badge>
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-fg">
-                  {tenant.name}
-                </p>
-                <p className="mt-0.5 truncate font-mono text-xs text-fg-muted">
-                  {tenant.id}
-                </p>
-              </div>
-              <div className="mt-auto flex items-center justify-between">
-                <span className="text-xs text-fg-muted">
-                  Created {formatDate(tenant.created_at)}
-                </span>
-                <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-fg-subtle" />
-              </div>
-            </Card>
+              </span>
+              <span className="text-[12.5px] text-fg-muted">
+                Created {formatDate(tenant.created_at)}
+              </span>
+              <ArrowUpRight className="hidden size-4 shrink-0 text-fg-muted transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:text-fg sm:block" />
+            </Link>
           ))}
         </section>
       )}

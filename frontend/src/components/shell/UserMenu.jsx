@@ -72,7 +72,7 @@ export function UserMenu() {
               type="button"
               role="menuitem"
               onClick={handleSignOut}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-red-400 transition-colors duration-100 hover:bg-red-950/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-danger transition-colors duration-100 hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500"
             >
               <LogOut className="size-4" />
               Sign out
