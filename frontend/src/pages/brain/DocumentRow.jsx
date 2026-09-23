@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom'
-import { Badge } from '../../components/ui/Badge.jsx'
 import { sourceLabels } from '../../lib/sources.js'
 import {
   documentTitle,
@@ -49,52 +48,71 @@ export function DocumentRow({ document, to, query = '', passageCount = 0 }) {
     <Link
       to={to}
       className={cn(
-        'group flex flex-col gap-2 rounded-xl border border-line bg-surface p-4',
-        'transition-colors duration-150 hover:border-line-strong hover:bg-surface-raised',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+        'group relative grid grid-cols-1 gap-x-8 gap-y-2 border-b border-line py-6',
+        'transition-colors duration-150 hover:bg-surface-sunk/60',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
+        'md:grid-cols-[minmax(0,1fr)_14rem]',
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug text-fg">
+      <div className="min-w-0">
+        {/* The document title is content, so it is set in the display
+            serif. Everything around it is chrome and stays in the
+            grotesque — which is the whole hierarchy, for free. */}
+        <h2 className="type-display text-[1.375rem] leading-snug text-fg">
           {title}
         </h2>
-        <Badge variant="neutral" size="sm">
-          {sourceLabels[document.source] ?? document.source}
-        </Badge>
-      </div>
 
-      {origin && (
-        <p className="truncate text-xs text-fg-muted">
-          <span className="text-fg-muted/80">Source</span> · {origin}
-        </p>
-      )}
-
-      {passage && (
-        <p className="line-clamp-2 text-[13px] leading-relaxed text-fg-muted">
-          {splitOnQuery(passage, query).map((seg, i) =>
-            seg.match ? (
-              <mark
-                key={i}
-                className="rounded-sm bg-primary/20 px-0.5 text-fg [font-weight:500]"
-              >
-                {seg.text}
-              </mark>
-            ) : (
-              <span key={i}>{seg.text}</span>
-            ),
-          )}
-        </p>
-      )}
-
-      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
-        {passageCount > 1 && (
-          <span>
-            {passageCount} matching passages
-          </span>
+        {passage && (
+          <p className="measure mt-2 line-clamp-2 text-[14px] leading-relaxed text-fg-subtle">
+            {splitOnQuery(passage, query).map((seg, i) =>
+              seg.match ? (
+                <mark
+                  key={i}
+                  className="bg-accent/12 px-0.5 font-medium text-fg"
+                >
+                  {seg.text}
+                </mark>
+              ) : (
+                <span key={i}>{seg.text}</span>
+              ),
+            )}
+          </p>
         )}
-        {updatedAt && <span>Updated {relativeTime(updatedAt)}</span>}
-        {document.version != null && <span>Version {document.version}</span>}
+
+        {origin && (
+          <p className="mt-2 truncate type-data text-fg-muted">{origin}</p>
+        )}
       </div>
+
+      {/* Metadata is a margin column, not a row of chips under the title.
+          It aligns down the index so a reader can scan one attribute
+          without reading every entry. */}
+      <dl className="flex flex-row flex-wrap items-start gap-x-6 gap-y-1 md:flex-col md:gap-y-2 md:pt-2">
+        <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
+          <dt className="type-label text-fg-muted">Kind</dt>
+          <dd className="text-[13px] text-fg-subtle">
+            {sourceLabels[document.source] ?? document.source}
+          </dd>
+        </div>
+        {updatedAt && (
+          <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
+            <dt className="type-label text-fg-muted">Updated</dt>
+            <dd className="text-[13px] text-fg-subtle">{relativeTime(updatedAt)}</dd>
+          </div>
+        )}
+        {document.version != null && (
+          <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
+            <dt className="type-label text-fg-muted">Version</dt>
+            <dd className="type-data text-fg-subtle">{document.version}</dd>
+          </div>
+        )}
+        {passageCount > 1 && (
+          <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
+            <dt className="type-label text-fg-muted">Matches</dt>
+            <dd className="text-[13px] text-fg-subtle">{passageCount} passages</dd>
+          </div>
+        )}
+      </dl>
     </Link>
   )
 }

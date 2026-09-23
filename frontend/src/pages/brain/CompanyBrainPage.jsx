@@ -108,17 +108,16 @@ export function CompanyBrainPage() {
 
       <section className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
+          <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search provenance and content…"
             aria-label="Search knowledge"
             className={cn(
-              'h-9 w-full rounded-lg border border-line bg-surface-raised pl-9 pr-8 text-sm text-fg',
+              'h-12 w-full border-b border-line bg-transparent pl-8 pr-8 text-[15px] text-fg',
               'placeholder:text-fg-muted transition-colors duration-150',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
-              'hover:border-line-strong',
+              'focus:border-fg focus-visible:outline-none',
             )}
           />
           {query && (
@@ -126,7 +125,7 @@ export function CompanyBrainPage() {
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="absolute right-0 top-1/2 -translate-y-1/2 rounded p-1 text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               <X className="size-3.5" />
             </button>
@@ -227,7 +226,7 @@ export function CompanyBrainPage() {
         !search.isPending &&
         !search.isError &&
         search.data?.length > 0 && (
-          <section className="flex flex-col gap-2.5">
+          <section className="border-t border-line">
             {groupChunksByDocument(search.data).map((doc) => (
               <DocumentRow
                 key={doc.documentId}
@@ -280,7 +279,7 @@ export function CompanyBrainPage() {
       {!isSearching &&
         filtered.length > 0 &&
         tab !== 'sources' && (
-          <section className="flex flex-col gap-2.5">
+          <section className="border-t border-line">
             {filtered.map((doc) => (
               <DocumentRow
                 key={doc.id}

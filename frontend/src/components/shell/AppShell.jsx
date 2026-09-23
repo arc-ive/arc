@@ -1,33 +1,35 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
-import { Menu, Search, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Sidebar } from './Sidebar.jsx'
-import { Breadcrumbs } from './Breadcrumbs.jsx'
+import { Masthead } from './Masthead.jsx'
 import { CommandPalette } from './CommandPalette.jsx'
-import { TenantSwitcher } from './TenantSwitcher.jsx'
-import { UserMenu } from './UserMenu.jsx'
 import { IconButton } from '../ui/IconButton.jsx'
 import { useCapabilities } from '../../auth/capabilities.js'
-import { cn } from '../../lib/cn.js'
 import { SkipLink } from './SkipLink.jsx'
 import { RouteAnnouncer } from './RouteAnnouncer.jsx'
 
-function Kbd({ children }) {
-  return (
-    <kbd className="ml-auto rounded border border-line bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
-      {children}
-    </kbd>
-  )
-}
-
+/**
+ * The application frame.
+ *
+ * Navigation moved from a permanent 240px sidebar to a masthead. The sidebar
+ * survives as the mobile sheet, where a vertical list is the right shape and
+ * where it costs nothing because it is not on screen.
+ *
+ * The frame also decides the plane. V2-ADR-003 makes the platform and the
+ * tenant workspace distinct planes, and the Platform Console renders on
+ * near-black while a workspace renders on paper — so an administrator knows
+ * which one they are on before reading a word. `data-plane` is read by a
+ * scoped token override in index.css; no component below here knows about it.
+ */
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { isPlatformAdministrator } = useCapabilities()
   const location = useLocation()
 
-  const inPlatformContext = location.pathname.startsWith('/platform')
-  const showTenantSwitcher = !inPlatformContext || !isPlatformAdministrator
+  const inPlatform = location.pathname.startsWith('/platform')
+  const plane = inPlatform && isPlatformAdministrator ? 'console' : 'workspace'
 
   useEffect(() => {
     const handler = (event) => {
@@ -40,26 +42,32 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
+  // The plane owns the whole document, not just this subtree — otherwise
+  // overscroll and the area behind a sheet show the other plane's colour.
+  useEffect(() => {
+    document.documentElement.setAttribute('data-plane', plane)
+    return () => document.documentElement.removeAttribute('data-plane')
+  }, [plane])
+
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="flex min-h-dvh flex-col bg-canvas">
       <SkipLink />
       <RouteAnnouncer />
-      <aside className="hidden w-60 shrink-0 lg:block">
-        <Sidebar />
-      </aside>
+
+      <Masthead
+        onOpenSearch={() => setPaletteOpen(true)}
+        onOpenMenu={() => setDrawerOpen(true)}
+      />
 
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-[2px] animate-fade-in"
+            className="absolute inset-0 animate-fade-in bg-fg/40 backdrop-blur-[2px]"
             onClick={() => setDrawerOpen(false)}
             aria-hidden
           />
-          <div className="absolute inset-y-0 left-0 w-60 animate-fade-in">
-            <Sidebar
-              mobile
-              onNavigate={() => setDrawerOpen(false)}
-            />
+          <div className="absolute inset-y-0 left-0 w-[min(20rem,85vw)] animate-fade-in bg-canvas shadow-overlay">
+            <Sidebar mobile onNavigate={() => setDrawerOpen(false)} />
           </div>
           <IconButton
             label="Close menu"
@@ -72,54 +80,17 @@ export function AppShell() {
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/70 bg-base/80 px-4 backdrop-blur-sm sm:px-6">
-          <IconButton
-            label="Open menu"
-            onClick={() => setDrawerOpen(true)}
-            className="lg:hidden"
-          >
-            <Menu className="size-4" />
-          </IconButton>
-
-          <Breadcrumbs />
-
-          <div className="ml-auto flex items-center gap-2.5">
-            {showTenantSwitcher && <TenantSwitcher />}
-            <button
-              type="button"
-              onClick={() => setPaletteOpen(true)}
-              className={cn(
-                'hidden h-9 items-center gap-2 rounded-lg border border-line bg-surface-raised px-3 text-[13px] text-fg-muted transition-colors duration-150 hover:border-line-strong hover:text-fg-subtle md:flex',
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
-              )}
-            >
-              <Search className="size-3.5" />
-              Search
-              <Kbd>⌘K</Kbd>
-            </button>
-            <IconButton
-              label="Search"
-              onClick={() => setPaletteOpen(true)}
-              className="md:hidden"
-            >
-              <Search className="size-4" />
-            </IconButton>
-            <div className="mx-1 h-5 w-px bg-surface-selected" aria-hidden />
-            <UserMenu />
-          </div>
-        </header>
-
-        <main
-          id="main-content"
-          tabIndex={-1}
-          className="min-h-0 flex-1 overflow-y-auto focus:outline-none"
+      <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
+        {/* Keyed on the path so the content column re-enters on navigation.
+            200ms and 6px — enough to register that the page changed, not
+            enough to wait for. The masthead never moves. */}
+        <div
+          key={location.pathname}
+          className="mx-auto w-full max-w-[1600px] animate-rise px-4 py-10 sm:px-6 lg:px-10 lg:py-14"
         >
-          <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-            <Outlet />
-          </div>
-        </main>
-      </div>
+          <Outlet />
+        </div>
+      </main>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
     </div>

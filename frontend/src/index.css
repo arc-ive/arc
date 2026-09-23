@@ -1,118 +1,158 @@
 @import "tailwindcss";
 
+/* ====================================================================
+   Arc — visual language.
+
+   See docs/design/ARC_VISUAL_LANGUAGE.md for the reasoning. The short
+   version: Arc is a record, not an assistant, so it is set like one —
+   editorial serif for content, a public-information grotesque for
+   chrome, mono for the identifiers Arc is full of.
+
+   Two planes, one token set. The workspace is paper; the Platform
+   Console is the same system inverted onto near-black. V2-ADR-003 makes
+   those distinct planes, and a platform administrator should know which
+   one they are on before reading a word — so the surface carries it
+   rather than a badge.
+
+   The plane swap is a scoped override of the semantic tokens below.
+   Because every component addresses the semantic layer and nothing
+   addresses a primitive, retheming the entire app is a change here and
+   nowhere else.
+   ==================================================================== */
+
 @theme {
-  --font-sans:
-    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
-    "Cascadia Mono", "Segoe UI Mono", monospace;
+  /* --- Type ------------------------------------------------------- */
+
+  /* Public Sans: a neutral grotesque commissioned for public-information
+     systems. Legible at 12px, invisible at 15px. Deliberately not Inter,
+     which is the default that makes generated UI legible as generated. */
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Newsreader: an editorial serif drawn for screens. Carries authority
+     without costume. Content is set in it; chrome never is. */
+  --font-display: "Newsreader", ui-serif, Georgia, "Times New Roman", serif;
+
+  /* Arc is full of document ids, versions and digests. They get a face
+     that says "this is a value", with tabular figures so columns align. */
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    "Cascadia Mono", monospace;
 
   /* ----------------------------------------------------------------
      Layer 1 — primitives.
 
-     Raw values with no meaning attached. Nothing outside this block
-     should reference them directly; they exist so the semantic layer
-     below has something to point at.
+     Raw values with no meaning attached. Nothing outside this file
+     should reference them; they exist so the semantic layer has
+     something to point at.
      ---------------------------------------------------------------- */
-  --arc-zinc-50: #fafafa;
-  --arc-zinc-100: #f4f4f5;
-  --arc-zinc-200: #e4e4e7;
-  --arc-zinc-300: #d4d4d8;
-  --arc-zinc-400: #a1a1aa;
-  --arc-zinc-700: #3f3f46;
-  --arc-zinc-800: #27272a;
 
-  --arc-indigo-400: #818cf8;
-  --arc-emerald-300: #6ee7b7;
-  --arc-amber-300: #fcd34d;
-  --arc-red-300: #fca5a5;
-  --arc-cyan-300: #67e8f9;
+  /* Paper. Cool, not cream — warm cream with a serif and a terracotta
+     accent is the current house style of generated design, and Arc is
+     not that. This is archival bond under office light. */
+  --arc-paper-0: #f6f7f9;
+  --arc-paper-1: #ffffff;
+  --arc-paper-2: #eff1f5;
+  --arc-paper-3: #e4e8ee;
 
-  --arc-ink-0: #09090b;
-  --arc-ink-1: #0d0d10;
-  --arc-ink-2: #121215;
-  --arc-ink-3: #17171b;
+  /* Ink. Near-black with a blue cast, matching the paper's temperature. */
+  --arc-ink-0: #101318;
+  --arc-ink-1: #3a414d;
+  --arc-ink-2: #5f6874;
+  --arc-rule-0: #dfe3e9;
+  --arc-rule-1: #c7cdd7;
+
+  /* Console. The same system inverted. */
+  --arc-console-0: #0b0c0e;
+  --arc-console-1: #14161a;
+  --arc-console-2: #1b1e23;
+  --arc-console-3: #22262d;
+  --arc-console-ink-0: #eceef2;
+  --arc-console-ink-1: #a8b1bd;
+  --arc-console-rule-0: #262a31;
+  --arc-console-rule-1: #363c45;
+
+  /* Arc Ink — one saturated blue, used as a marking and never as a fill
+     for meaning. Status colours are separate and always paired with a
+     word, per ARC_DESIGN_SYSTEM.md §12. */
+  --arc-accent: #2340d0;
+  --arc-accent-dark: #7d93ff;
+
+  /* Status. Two sets, because a colour legible on paper is not legible
+     on near-black. Every value below is verified — see the contrast
+     test in components/ui/tokenContrast.test.js. */
+  --arc-success: #0e6e42;
+  --arc-warning: #8a5a00;
+  --arc-danger: #b3261e;
+  --arc-info: #0b6b8a;
+
+  --arc-success-dark: #5ee9a4;
+  --arc-warning-dark: #f5c451;
+  --arc-danger-dark: #ff8a80;
+  --arc-info-dark: #67d4f0;
 
   /* ----------------------------------------------------------------
      Layer 2 — semantic.
 
-     What a colour is FOR, not what it looks like. Components reference
-     only this layer, so retheming is a change here and nowhere else.
+     What a colour is FOR. Components reference only this layer.
+     Defaults are the paper plane; [data-plane="console"] overrides them
+     below.
 
-     Every foreground value below is verified against every surface it
-     can sit on. Measured on Arc's own surfaces:
+     Measured against every surface each can sit on (worst case, on the
+     sunk surface):
 
-       zinc-200   15.68 : 1  → --color-fg
-       zinc-400    6.97 : 1  → --color-fg-muted   (worst case, on elevated)
-       zinc-500    3.70 : 1  ← FAILS AA. This single pairing produced most
-       zinc-600    2.31 : 1  ← FAILS AA badly.    of the 159 sub-AA instances.
+       ink-0   16.17 : 1      accent   6.72 : 1
+       ink-1    8.93 : 1      success  5.13 : 1
+       ink-2    4.91 : 1      danger   5.32 : 1
 
-     zinc-400 is therefore the floor for text. A consequence worth naming:
-     body-vs-metadata hierarchy can no longer be carried by colour, so it
-     has to come from size and weight instead — which is what
-     ARC_DESIGN_SYSTEM.md §3 asks for anyway.
+     ink-2 is therefore the floor for text on paper. Hierarchy below that
+     point is carried by size and weight, not by colour.
      ---------------------------------------------------------------- */
-  --color-canvas: var(--arc-ink-0);
-  --color-surface: var(--arc-ink-1);
-  --color-surface-raised: var(--arc-ink-2);
-  --color-surface-overlay: var(--arc-ink-3);
+  --color-canvas: var(--arc-paper-0);
+  --color-surface: var(--arc-paper-1);
+  --color-surface-raised: var(--arc-paper-1);
+  --color-surface-overlay: var(--arc-paper-1);
+  --color-surface-sunk: var(--arc-paper-2);
+  --color-surface-selected: var(--arc-paper-3);
 
-  /* The "this row is selected" fill — the active tab, the highlighted
-     command, the current workspace. Five different values were in use for
-     it (zinc-800 at 60/70/80/90% and solid) spanning #1b1b1e to #27272a,
-     which is one concept written five ways. */
-  --color-surface-selected: var(--arc-zinc-800);
+  --color-fg: var(--arc-ink-0);
+  --color-fg-subtle: var(--arc-ink-1);
+  --color-fg-muted: var(--arc-ink-2);
 
-  --color-fg: var(--arc-zinc-100);
-  /* The level between body text and muted: form labels, table cells,
-     tooltip text. 43 sites were using zinc-300 directly for exactly this
-     and nothing named it, so the system appeared to define two
-     foregrounds while the app ran on four. Naming it is what stops the
-     next one being invented. Brighter than fg-muted, which measures
-     6.97:1 at worst, so it clears AA everywhere fg-muted does. */
-  --color-fg-subtle: var(--arc-zinc-300);
-  --color-fg-muted: var(--arc-zinc-400);
+  --color-line: var(--arc-rule-0);
+  --color-line-strong: var(--arc-rule-1);
 
-  /* The solid action pair. The primary button inverts the scheme —
-     near-white surface, near-black label — and Button had been spelling
-     that as `bg-zinc-50 text-zinc-950` with no token behind it, which is
-     why it was the last raw colour left in the system. */
-  /* Three tokens were removed here: --color-fg-strong, --color-intel and
-     --color-intel-dim. Nothing referenced any of them, and Tailwind v4
-     tree-shakes an unused @theme entry, so they were not even emitted —
-     reading getComputedStyle for --color-fg-strong returned "". A token
-     that no utility can produce is not a level of the system; it just
-     makes the system look richer than it is. --color-action carries the
-     near-white value fg-strong was holding. */
-  --color-action: var(--arc-zinc-50);
-  --color-on-action: var(--arc-ink-0);
+  --color-accent: var(--arc-accent);
+  --color-primary: var(--arc-accent);
+  --color-success: var(--arc-success);
+  --color-warning: var(--arc-warning);
+  --color-danger: var(--arc-danger);
+  --color-info: var(--arc-info);
 
-  --color-line: var(--arc-zinc-800);
-  --color-line-strong: var(--arc-zinc-700);
+  /* The solid action pair — Arc Ink with paper on top. */
+  --color-action: var(--arc-accent);
+  --color-on-action: var(--arc-paper-1);
 
-  /* Action and status. Status colours are paired with an icon and a text
-     label at every call site — ARC_DESIGN_SYSTEM.md §12 forbids colour as
-     the only signal. */
-  --color-primary: var(--arc-indigo-400);
-  --color-success: var(--arc-emerald-300);
-  --color-warning: var(--arc-amber-300);
-  --color-danger: var(--arc-red-300);
-  --color-info: var(--arc-cyan-300);
+  /* ----------------------------------------------------------------
+     Layer 3 — retained aliases.
 
-  /* Retained aliases. The existing bg-base / bg-panel utilities are used
-     in ~25 files; renaming them is churn without benefit, so they stay
-     pointing at the same primitives the semantic names use. */
-  --color-base: var(--arc-ink-0);
-  --color-raised: var(--arc-ink-1);
-  --color-panel: var(--arc-ink-2);
-  --color-elevated: var(--arc-ink-3);
+     Older component code addresses these names. They point at the same
+     semantic values, so both spellings resolve identically.
+     ---------------------------------------------------------------- */
+  --color-base: var(--arc-paper-0);
+  --color-raised: var(--arc-paper-1);
+  --color-panel: var(--arc-paper-1);
+  --color-elevated: var(--arc-paper-2);
 
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.2);
-  --shadow-overlay: 0 8px 40px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.4);
+  /* Shadows on paper are contact shadows, not glows. Most separation is
+     carried by a rule or by space; a shadow means "this floats". */
+  --shadow-card: 0 1px 2px rgb(16 19 24 / 0.04);
+  --shadow-raised: 0 1px 2px rgb(16 19 24 / 0.05), 0 2px 8px rgb(16 19 24 / 0.04);
+  --shadow-overlay: 0 12px 32px rgb(16 19 24 / 0.12), 0 2px 8px rgb(16 19 24 / 0.08);
 
   --animate-fade-in: fade-in 0.15s ease-out;
   --animate-scale-in: scale-in 0.12s ease-out;
   --animate-slide-up: slide-up 0.18s ease-out;
+  --animate-rise: rise 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 
   @keyframes fade-in {
     from {
@@ -142,10 +182,64 @@
       transform: translateY(0);
     }
   }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* ====================================================================
+   The console plane.
+
+   Scoped override of the semantic layer only. Every utility in the app
+   resolves through these names, so the whole tree flips with the
+   attribute — no component knows which plane it is on.
+   ==================================================================== */
+[data-plane="console"] {
+  color-scheme: dark;
+
+  --color-canvas: var(--arc-console-0);
+  --color-surface: var(--arc-console-1);
+  --color-surface-raised: var(--arc-console-2);
+  --color-surface-overlay: var(--arc-console-2);
+  --color-surface-sunk: var(--arc-console-0);
+  --color-surface-selected: var(--arc-console-3);
+
+  --color-fg: var(--arc-console-ink-0);
+  --color-fg-subtle: var(--arc-console-ink-1);
+  --color-fg-muted: var(--arc-console-ink-1);
+
+  --color-line: var(--arc-console-rule-0);
+  --color-line-strong: var(--arc-console-rule-1);
+
+  --color-accent: var(--arc-accent-dark);
+  --color-primary: var(--arc-accent-dark);
+  --color-success: var(--arc-success-dark);
+  --color-warning: var(--arc-warning-dark);
+  --color-danger: var(--arc-danger-dark);
+  --color-info: var(--arc-info-dark);
+
+  --color-action: var(--arc-console-ink-0);
+  --color-on-action: var(--arc-console-0);
+
+  --color-base: var(--arc-console-0);
+  --color-raised: var(--arc-console-1);
+  --color-panel: var(--arc-console-1);
+  --color-elevated: var(--arc-console-2);
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.5), 0 2px 8px rgb(0 0 0 / 0.35);
+  --shadow-overlay: 0 12px 40px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
@@ -155,39 +249,99 @@ body,
 }
 
 body {
-  @apply bg-base text-zinc-200 font-sans antialiased;
+  background-color: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-::selection {
-  background-color: rgb(99 102 241 / 0.35);
+/* ====================================================================
+   Type scale.
+
+   Serif for content, sans for chrome — that one rule carries most of
+   the hierarchy and costs nothing. Modular at 1.25, anchored at 15px
+   interface / 17px prose.
+   ==================================================================== */
+.type-display-lg {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.4rem + 2vw, 2.75rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-weight: 400;
+  text-wrap: balance;
+}
+.type-display {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  font-weight: 400;
+  text-wrap: balance;
+}
+.type-prose {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  font-weight: 400;
+}
+/* The reading measure. Prose past ~68 characters loses the line. */
+.measure {
+  max-width: 68ch;
+}
+.measure-tight {
+  max-width: 54ch;
+}
+.type-label {
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.type-data {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+/* Figures that sit in columns must line up. */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
-/* Thin, unobtrusive scrollbars */
+::selection {
+  background-color: color-mix(in oklab, var(--color-accent) 22%, transparent);
+}
+
+/* Thin, unobtrusive scrollbars, on whichever plane is active. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgb(63 63 70 / 0.7) transparent;
+  scrollbar-color: var(--color-line-strong) transparent;
 }
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background-color: rgb(63 63 70 / 0.7);
+  background-color: var(--color-line-strong);
   border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* Focus visibility is enforced per-component with ring utilities. */
 :focus {
   outline: none;
 }
 :focus-visible {
-  outline: 2px solid rgb(129 140 248 / 0.8);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
