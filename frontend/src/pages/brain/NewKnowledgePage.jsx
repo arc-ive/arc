@@ -1,20 +1,33 @@
 import { useState } from 'react'
 import { InlineError } from '../../components/ui/InlineError.jsx'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, FilePlus2, Info } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { createKnowledge, KNOWLEDGE_SOURCES } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { sourceLabels } from '../../lib/sources.js'
 import { Button } from '../../components/ui/Button.jsx'
-import { Card, CardHeader, CardContent } from '../../components/ui/Card.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { Select } from '../../components/ui/Select.jsx'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 
+/**
+ * Writing something into the Company Brain.
+ *
+ * Recomposed around the one field that matters. The content IS the
+ * document; type, version and provenance are how it gets filed. The
+ * previous version gave all four the same weight inside a card whose
+ * header repeated the page's own title, and closed with a bordered note
+ * restating validation rules the fields already enforce — three pieces of
+ * chrome between the writer and the writing.
+ *
+ * So: the metadata sits in one quiet band, the content gets the page, and
+ * the rules appear as field hints where a rule can actually be acted on.
+ */
 export function NewKnowledgePage() {
+  useDocumentTitle('New document')
   const { tenantId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -66,115 +79,110 @@ export function NewKnowledgePage() {
   }
 
   const backTo = `/app/t/${encodeURIComponent(tenantId)}/knowledge`
+  const words = form.content.trim() ? form.content.trim().split(/\s+/).length : 0
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <section>
-        <Link
-          to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-        >
-          <ArrowLeft className="size-3.5" />
-          Back to Company Brain
-        </Link>
-        <PageHeader title="New knowledge document"
-          description="Personal information is removed before anything is stored." />
-      </section>
+    <div className="mx-auto flex w-full max-w-3xl flex-col">
+      <Link
+        to={backTo}
+        className="inline-flex w-fit items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+      >
+        <ArrowLeft className="size-3.5" />
+        Back to Company Brain
+      </Link>
 
-      <Card>
-        <CardHeader
-          title="Document details"
-          description="Provide a source, provenance, and the knowledge content."
-        />
-        <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-            <div className="grid gap-5 sm:grid-cols-2">
-              <Select
-                label="Document type"
-                required
-                value={form.source}
-                onChange={(e) => setForm({ ...form, source: e.target.value })}
-                disabled={mutation.isPending}
-              >
-                {KNOWLEDGE_SOURCES.map((s) => (
-                  <option key={s} value={s}>
-                    {sourceLabels[s]}
-                  </option>
-                ))}
-              </Select>
-              <Input
-                label="Version"
-                type="number"
-                min="1"
-                step="1"
-                value={form.version}
-                onChange={(e) => setForm({ ...form, version: e.target.value })}
-                error={errors.version}
-                disabled={mutation.isPending}
-                hint="Defaults to 1."
-              />
-            </div>
+      <header className="mt-6">
+        <h1 className="type-display-lg text-fg">New knowledge document</h1>
+        <p className="measure mt-2 text-[14px] leading-relaxed text-fg-muted">
+          Anything stored here can be retrieved to answer a question in this
+          workspace. Personal information is removed before it is stored.
+        </p>
+      </header>
 
-            <Input
-              label="Source"
-              required
-              placeholder="e.g. SOC-2 policy revision, incident INC-1234 postmortem…"
-              value={form.provenance}
-              onChange={(e) => setForm({ ...form, provenance: e.target.value })}
-              error={errors.provenance}
-              disabled={mutation.isPending}
-              hint="Where this knowledge comes from. Shown as the document's identity."
-            />
+      <form onSubmit={handleSubmit} className="mt-10 flex flex-col">
+        {/* How it gets filed. Kept together and kept quiet — these are
+            three small decisions, not three-quarters of the task. */}
+        <div className="grid gap-5 border-y border-line py-6 sm:grid-cols-[1fr_7rem]">
+          <Select
+            label="Document type"
+            required
+            value={form.source}
+            onChange={(e) => setForm({ ...form, source: e.target.value })}
+            disabled={mutation.isPending}
+          >
+            {KNOWLEDGE_SOURCES.map((s) => (
+              <option key={s} value={s}>
+                {sourceLabels[s]}
+              </option>
+            ))}
+          </Select>
+          <Input
+            label="Version"
+            type="number"
+            min="1"
+            step="1"
+            value={form.version}
+            onChange={(e) => setForm({ ...form, version: e.target.value })}
+            error={errors.version}
+            disabled={mutation.isPending}
+            hint="1 or higher."
+          />
+          <Input
+            className="sm:col-span-2"
+            label="Source"
+            required
+            placeholder="e.g. SOC-2 policy revision, incident INC-1234 postmortem…"
+            value={form.provenance}
+            onChange={(e) => setForm({ ...form, provenance: e.target.value })}
+            error={errors.provenance}
+            disabled={mutation.isPending}
+            hint="Where this knowledge comes from. It becomes the document's identity, and it is what a reader sees cited in an answer."
+          />
+        </div>
 
-            <Textarea
-              label="Content"
-              required
-              rows={12}
-              placeholder="The knowledge itself — the body of the policy, procedure, or note…"
-              value={form.content}
-              onChange={(e) => setForm({ ...form, content: e.target.value })}
-              error={errors.content}
-              disabled={mutation.isPending}
-              textareaClassName="font-mono text-[13px]"
-            />
+        {/* The document itself. */}
+        <div className="mt-8">
+          <Textarea
+            label="Content"
+            required
+            rows={18}
+            placeholder="The knowledge itself — the body of the policy, procedure, or note…"
+            value={form.content}
+            onChange={(e) => setForm({ ...form, content: e.target.value })}
+            error={errors.content}
+            disabled={mutation.isPending}
+            textareaClassName="font-mono text-[13.5px] leading-relaxed"
+          />
+          <p className="mt-2 text-right text-[12px] tabular-nums text-fg-muted">
+            {words === 0
+              ? 'Empty'
+              : `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'}`}
+          </p>
+        </div>
 
-            <div className="flex items-start gap-2.5 rounded-lg border border-line bg-surface-raised px-3.5 py-3">
-              <Info className="mt-0.5 size-4 shrink-0 text-fg-muted" />
-              <p className="text-xs leading-relaxed text-fg-muted">
-                Submitted documents are validated by the backend:{' '}
-                <span className="font-mono">source</span> must be one of the
-                six supported sources, <span className="font-mono">provenance</span>{' '}
-                and <span className="font-mono">content</span> must be non-empty,
-                and <span className="font-mono">version</span> must be ≥ 1.
-              </p>
-            </div>
+        {errors.api && (
+          <div className="mt-6">
+            <InlineError>{errors.api}</InlineError>
+          </div>
+        )}
 
-            {errors.api && (
-              <InlineError>
-                {errors.api}
-              </InlineError>
-            )}
-
-            <div className="flex items-center justify-end gap-2 border-t border-line/70 pt-4">
-              <Button
-                variant="secondary"
-                onClick={() => navigate(backTo)}
-                disabled={mutation.isPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                isLoading={mutation.isPending}
-                loadingText="Creating…"
-              >
-                <FilePlus2 className="size-4" />
-                Create document
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        <div className="mt-8 flex items-center justify-end gap-2 border-t border-line pt-5">
+          <Button
+            variant="secondary"
+            onClick={() => navigate(backTo)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            isLoading={mutation.isPending}
+            loadingText="Creating…"
+          >
+            Create document
+          </Button>
+        </div>
+      </form>
     </div>
   )
 }

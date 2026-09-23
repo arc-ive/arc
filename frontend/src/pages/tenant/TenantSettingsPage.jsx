@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../auth/useAuth.js'
@@ -11,7 +10,7 @@ import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 import { Input } from '../../components/ui/Input.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { Button } from '../../components/ui/Button.jsx'
-import { Spinner } from '../../components/ui/Spinner.jsx'
+import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 
 export function TenantSettingsPage() {
@@ -47,34 +46,43 @@ export function TenantSettingsPage() {
     },
   })
 
+  // The heading is identical in all three states. It previously rendered
+  // as a PageHeader while loading and as a display heading once the tenant
+  // arrived, so the title visibly changed size underneath the reader.
   if (tenantQuery.isLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        <section>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <PageHeader title="Settings"
-          description="How this workspace is configured." />
+      <div className="flex flex-col">
+        <h1 className="type-display-lg text-fg">Settings</h1>
+        <div className="mt-12 flex flex-col gap-10">
+          {Array.from({ length: 2 }, (_, group) => (
+            <div key={group} className="border-t border-line pt-8">
+              <Skeleton className="h-3 w-24" />
+              <div className="mt-6 flex max-w-xl flex-col gap-5">
+                {Array.from({ length: 3 }, (_, field) => (
+                  <div key={field} className="flex flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="h-9 w-full" />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        </section>
-        <Spinner />
+          ))}
+        </div>
       </div>
     )
   }
 
   if (tenantQuery.error) {
     return (
-      <div className="flex flex-col gap-6">
-        <section>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <PageHeader title="Settings"
-          description="How this workspace is configured." />
-            </div>
-          </div>
-        </section>
-        <ErrorState error={tenantQuery.error} onRetry={() => tenantQuery.refetch()} />
+      <div className="flex flex-col">
+        <h1 className="type-display-lg text-fg">Settings</h1>
+        <div className="mt-10">
+          <ErrorState
+            title="Could not load this workspace's settings"
+            error={tenantQuery.error}
+            onRetry={() => tenantQuery.refetch()}
+          />
+        </div>
       </div>
     )
   }
@@ -135,6 +143,10 @@ export function TenantSettingsPage() {
     <div className="flex flex-col">
       <header className="min-w-0">
         <h1 className="type-display-lg text-fg">Settings</h1>
+        <p className="measure mt-2 text-[14px] text-fg-muted">
+          How this workspace is named and reached. These details appear
+          wherever Arc refers to the company.
+        </p>
       </header>
 
       <form

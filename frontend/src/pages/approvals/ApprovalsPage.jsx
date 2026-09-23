@@ -1,28 +1,45 @@
 import { useState } from 'react'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { CheckCircle, XCircle } from 'lucide-react'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useAuth } from '../../auth/useAuth.js'
 import { listApprovals, decideApproval } from '../../api/endpoints/approvals.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage, toApiError } from '../../api/errors.js'
-import { Spinner } from '../../components/ui/Spinner.jsx'
+import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
-import { EmptyState } from '../../components/ui/EmptyState.jsx'
-import { Card, CardContent } from '../../components/ui/Card.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { ApprovalTimeline } from './ApprovalTimeline.jsx'
 import { toolLabel, formatSummary } from '../../lib/approvals.js'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 
 /**
- * Risk is the reason a decision is being asked for, so it leads.
+ * The decision queue.
+ *
+ * Recomposed as a queue rather than a stack of cards. Every request was
+ * previously the same bordered box at the same weight, so a high-risk
+ * action waiting on you looked exactly like one that was settled last
+ * week — on a page whose entire purpose is "what needs me".
+ *
+ * Now the page opens by saying how many are waiting for you specifically
+ * (four-eyes excluded), what is waiting sits at full weight with its
+ * decision in reach, and what is settled recedes to a rule and a date.
+ *
+ * Risk leads within a row, because risk is the reason a decision is being
+ * asked for at all.
  */
+
 const RISK_TONE = { high: 'danger', medium: 'warning', low: 'neutral' }
 
-function ApprovalCard({ approval, onDecide, viewerUserId, canDecide, pending }) {
+const FILTERS = [
+  { value: null, label: 'All' },
+  { value: 'pending', label: 'pending' },
+  { value: 'approved', label: 'approved' },
+  { value: 'rejected', label: 'rejected' },
+]
+
+function ApprovalRow({ approval, onDecide, viewerUserId, canDecide, pending }) {
   const isPending = approval.status === 'pending'
 
   // approvals.py:255 — the requester may NOT decide their own request.
@@ -32,89 +49,111 @@ function ApprovalCard({ approval, onDecide, viewerUserId, canDecide, pending }) 
   const decidable = isPending && canDecide && !viewerIsRequester
 
   return (
-    <Card>
-      <CardContent className="py-5">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[15px] font-semibold text-fg">
-                {toolLabel(approval.tool_name)}
-              </h2>
-              <Badge variant={RISK_TONE[approval.risk_level] ?? 'neutral'} size="sm">
-                {approval.risk_level} risk
+    <li className="border-b border-line py-6">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between lg:gap-10">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h2
+              className={
+                isPending
+                  ? 'text-[16px] font-medium text-fg'
+                  : 'text-[15px] text-fg-subtle'
+              }
+            >
+              {toolLabel(approval.tool_name)}
+            </h2>
+            <Badge
+              variant={RISK_TONE[approval.risk_level] ?? 'neutral'}
+              size="sm"
+            >
+              {approval.risk_level} risk
+            </Badge>
+            {!isPending && (
+              <Badge
+                variant={approval.status === 'approved' ? 'success' : 'neutral'}
+                size="sm"
+                dot
+              >
+                {approval.status}
               </Badge>
-            </div>
-
-            {approval.input_summary && (
-              <p className="mt-2 line-clamp-3 text-[13px] leading-relaxed text-fg-muted">
-                {formatSummary(approval.input_summary)}
-              </p>
             )}
-
-            <div className="mt-4">
-              <ApprovalTimeline
-                approval={approval}
-                viewerIsRequester={viewerIsRequester}
-              />
-            </div>
           </div>
 
-          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:w-52">
+          {approval.input_summary && (
+            <p className="measure mt-2.5 text-[13.5px] leading-relaxed text-fg-muted">
+              {formatSummary(approval.input_summary)}
+            </p>
+          )}
+
+          <div className="mt-4">
+            <ApprovalTimeline
+              approval={approval}
+              viewerIsRequester={viewerIsRequester}
+            />
+          </div>
+        </div>
+
+        {/* Only a request that is actually waiting gets a decision column.
+            A settled one is a record, and a record with two greyed-out
+            buttons beside it reads as something you failed to do. */}
+        {isPending && (
+          <div className="flex shrink-0 flex-col items-stretch gap-2 lg:w-56">
             {decidable && (
               <>
-                <Button
-                  size="sm"
-                  onClick={() => onDecide(approval.id, 'approve')}
-                  disabled={pending}
-                >
-                  <CheckCircle className="mr-1 size-3.5" />
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => onDecide(approval.id, 'reject')}
-                  disabled={pending}
-                >
-                  <XCircle className="mr-1 size-3.5" />
-                  Reject
-                </Button>
-                <p className="text-[11px] leading-relaxed text-fg-muted">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => onDecide(approval.id, 'approve')}
+                    disabled={pending}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    className="flex-1"
+                    onClick={() => onDecide(approval.id, 'reject')}
+                    disabled={pending}
+                  >
+                    Reject
+                  </Button>
+                </div>
+                <p className="text-[11.5px] leading-relaxed text-fg-muted">
                   Approving authorises this action. It does not run it.
                 </p>
               </>
             )}
 
             {blockedByFourEyes && (
-              <div className="rounded-lg border border-line bg-surface-raised px-3 py-2.5">
-                <p className="text-[12px] font-medium text-fg">
+              <div className="border-l-2 border-line-strong pl-3">
+                <p className="text-[12.5px] font-medium text-fg">
                   You requested this
                 </p>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-fg-muted">
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-fg-muted">
                   Someone else has to decide it. Arc does not let a person
                   approve their own request.
                 </p>
               </div>
             )}
 
-            {isPending && !canDecide && !viewerIsRequester && (
-              <p className="text-[11px] leading-relaxed text-fg-muted">
+            {!canDecide && !viewerIsRequester && (
+              <p className="text-[11.5px] leading-relaxed text-fg-muted">
                 You don&apos;t have access to decide approvals.
               </p>
             )}
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        )}
+      </div>
+    </li>
   )
 }
-
 
 /**
  * Decision failures a reader can act on.
  *
  * The most likely one is the four-eyes rule (approvals.py:255), which the
- * card already prevents — but a stale list can still produce it.
+ * row already prevents — but a stale list can still produce it.
  */
 function decisionErrorMessage(error) {
   const api = toApiError(error)
@@ -126,6 +165,7 @@ function decisionErrorMessage(error) {
 }
 
 export function ApprovalsPage() {
+  useDocumentTitle('Approvals')
   const { tenantId } = useParams()
   const { principal } = useAuth()
   const { can } = useCapabilities()
@@ -155,88 +195,108 @@ export function ApprovalsPage() {
 
   if (!canRead) {
     return (
-      <div className="flex flex-col gap-8">
-        <section>
-          <PageHeader title="Approvals" />
-        </section>
-        <Card>
-          <CardContent>
-            <p className="text-[13px] text-fg-muted">
-              You don't have access to approvals in this workspace.
-            </p>
-          </CardContent>
-        </Card>
+      <div className="flex flex-col">
+        <h1 className="type-display-lg text-fg">Approvals</h1>
+        <p className="measure mt-4 type-prose text-fg-subtle">
+          You don&apos;t have access to approvals in this workspace.
+        </p>
       </div>
     )
   }
 
+  const rows = approvals ?? []
+  const waiting = rows.filter((a) => a.status === 'pending')
+  // What is waiting on the reader is not the same as what is waiting:
+  // their own requests are someone else's to decide.
+  const waitingOnYou = waiting.filter(
+    (a) => canDecide && a.requester_user_id !== principal?.sub,
+  )
+
   return (
-    <div className="flex flex-col gap-8">
-      <section className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <PageHeader title="Approvals"
-          description="High-risk actions waiting on a human decision." />
-        </div>
-        <div className="flex gap-2">
-          {[null, 'pending', 'approved', 'rejected'].map((s) => (
-            <button
-              key={s ?? 'all'}
-              onClick={() => setStatusFilter(s)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                statusFilter === s
-                  ? 'bg-surface-selected text-fg'
-                  : 'text-fg-muted hover:text-fg-subtle'
-              }`}
-            >
-              {s ?? 'All'}
-            </button>
+    <div className="flex flex-col">
+      <header>
+        <h1 className="type-display-lg text-fg">Approvals</h1>
+        {!isPending && !isError && (
+          <p className="measure mt-2 text-[14px] text-fg-muted">
+            {waiting.length === 0
+              ? 'Nothing is waiting on a decision.'
+              : waitingOnYou.length === waiting.length
+                ? `${waiting.length} waiting on you.`
+                : `${waiting.length} waiting · ${waitingOnYou.length} you can decide.`}
+          </p>
+        )}
+      </header>
+
+      <div className="mt-8 flex flex-wrap gap-1 border-b border-line pb-3">
+        {FILTERS.map((f) => (
+          <button
+            key={f.value ?? 'all'}
+            onClick={() => setStatusFilter(f.value)}
+            aria-pressed={statusFilter === f.value}
+            className={`rounded px-2.5 py-1 text-[13px] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
+              statusFilter === f.value
+                ? 'text-fg underline decoration-fg-muted decoration-1 underline-offset-[6px]'
+                : 'text-fg-muted hover:text-fg-subtle'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {isPending && (
+        <div className="mt-8 flex flex-col gap-7">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="flex flex-col gap-2.5">
+              <Skeleton className="h-5 w-56" />
+              <Skeleton className="h-4 w-full max-w-lg" />
+              <Skeleton className="h-3 w-40" />
+            </div>
           ))}
         </div>
-      </section>
-
-      {isPending && <Spinner />}
-      {isError && <ErrorState message={errorMessage(error)} />}
-
-      {!isPending && !isError && approvals?.length === 0 && (
-        <EmptyState
-          title={
-            statusFilter
-              ? `No ${statusFilter} approvals`
-              : 'No approvals'
-          }
-          description={
-            statusFilter
-              ? `No approval requests for this tenant have the status "${statusFilter}".`
-              : 'There are no approval requests for this tenant yet.'
-          }
-        />
       )}
 
-      {!isPending && !isError && approvals?.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {[...approvals]
-            .sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending'))
-            .map((approval) => (
-            <ApprovalCard
-              key={approval.id}
-              approval={approval}
-              onDecide={handleDecide}
-              viewerUserId={principal?.sub}
-              canDecide={canDecide}
-              pending={decideMutation.isPending}
-            />
-            ))}
+      {isError && (
+        <div className="mt-8">
+          <ErrorState message={errorMessage(error)} />
         </div>
       )}
 
       {decideMutation.isError && (
-        <Card>
-          <CardContent>
-            <p className="text-[13px] text-danger">
-              {decisionErrorMessage(decideMutation.error)}
-            </p>
-          </CardContent>
-        </Card>
+        <p
+          role="alert"
+          className="measure mt-6 border-l-2 border-danger pl-3 text-[13.5px] leading-relaxed text-danger"
+        >
+          {decisionErrorMessage(decideMutation.error)}
+        </p>
+      )}
+
+      {!isPending && !isError && rows.length === 0 && (
+        <p className="measure mt-8 type-prose text-fg-subtle">
+          {statusFilter
+            ? `No ${statusFilter} approvals`
+            : 'No approval requests have been raised in this workspace yet. Arc asks for one when a skill reaches a tool classified high risk.'}
+        </p>
+      )}
+
+      {!isPending && !isError && rows.length > 0 && (
+        <ul className="stagger mt-2 border-t border-line">
+          {[...rows]
+            .sort(
+              (a, b) =>
+                Number(b.status === 'pending') - Number(a.status === 'pending'),
+            )
+            .map((approval) => (
+              <ApprovalRow
+                key={approval.id}
+                approval={approval}
+                onDecide={handleDecide}
+                viewerUserId={principal?.sub}
+                canDecide={canDecide}
+                pending={decideMutation.isPending}
+              />
+            ))}
+        </ul>
       )}
     </div>
   )
