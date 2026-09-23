@@ -1,4 +1,5 @@
 import { cn } from '../../lib/cn.js'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 
 /**
  * The page header every workspace and platform surface uses.
@@ -33,6 +34,11 @@ export function PageHeader({
   className,
   children,
 }) {
+  // Every page already tells PageHeader its name, so the document title
+  // comes free and cannot drift from the <h1>. Previously every route in
+  // the app was titled "Arc".
+  useDocumentTitle(typeof title === 'string' ? title : undefined)
+
   return (
     <header className={cn('flex flex-col gap-4', className)}>
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">

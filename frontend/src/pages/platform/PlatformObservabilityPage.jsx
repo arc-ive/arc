@@ -27,13 +27,13 @@ function ComponentHealth() {
       <CardHeader title="Component Health" description="Status of platform components." />
       <CardContent>
         <div className="flex items-center gap-3 mb-4">
-          <Badge variant={overall === 'healthy' ? 'green' : 'red'} dot>{overall}</Badge>
+          <Badge variant={overall === 'healthy' ? 'success' : 'danger'} dot>{overall}</Badge>
         </div>
         <div className="space-y-2">
           {Object.entries(components).map(([name, info]) => (
             <div key={name} className="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
               <span className="text-sm text-zinc-300">{name}</span>
-              <Badge variant={info.status === 'healthy' ? 'green' : 'red'} size="sm">
+              <Badge variant={info.status === 'healthy' ? 'success' : 'danger'} size="sm">
                 {info.status}
               </Badge>
             </div>

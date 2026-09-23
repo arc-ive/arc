@@ -261,7 +261,7 @@ export function TenantUsersPage() {
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={user.status === 'active' ? 'green' : 'neutral'}
+                      variant={user.status === 'active' ? 'success' : 'neutral'}
                       size="sm"
                       dot
                     >

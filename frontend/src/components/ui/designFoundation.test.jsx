@@ -144,9 +144,18 @@ describe('design foundation is actually adopted', () => {
   it('no component uses a colour-named Badge variant', () => {
     // Badge.jsx itself names the retired variants in its docstring, which is
     // the point — it records why they were removed.
+    //
+    // This originally matched only the literal attribute form, and 14
+    // sites across 11 files were written as expressions —
+    // `variant={status === 'active' ? 'green' : 'neutral'}`. Badge falls
+    // back to neutral for an unknown variant, so every one of those
+    // rendered grey: "active", "healthy" and "received" lost their green,
+    // and the error badges lost their red, with nothing failing. The
+    // pattern now covers both spellings.
+    const RETIRED = /(?:variant="(?:green|amber|red|cyan|indigo|zinc)")|(?:variant=\{[^}]*'(?:green|amber|red|cyan|indigo|zinc)')/
     const offenders = files
       .filter((f) => !f.endsWith('components/ui/Badge.jsx'))
-      .filter((f) => /variant="(green|amber|red|cyan|indigo|zinc)"/.test(readFileSync(f, 'utf8')))
+      .filter((f) => RETIRED.test(readFileSync(f, 'utf8')))
     expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
   })
 
@@ -158,8 +167,16 @@ describe('design foundation is actually adopted', () => {
     //
     // Input/Select/Textarea already do this correctly with
     // focus-visible:outline-2 — the forms were simply bypassing them.
+    //
+    // The one exemption is the skip link's target. `<main tabIndex={-1}>`
+    // is a programmatic focus destination, not a keyboard-operable
+    // control — WCAG 2.4.7 governs the latter — and a 2px ring drawn
+    // around the whole content area reads as a rendering fault. The
+    // exemption is keyed to that element, so it cannot quietly widen.
     const offenders = files.filter((f) =>
-      readFileSync(f, 'utf8').includes('focus:outline-none'),
+      readFileSync(f, 'utf8')
+        .replace(/<main[^>]*id="main-content"[\s\S]*?>/g, '')
+        .includes('focus:outline-none'),
     )
     expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
   })

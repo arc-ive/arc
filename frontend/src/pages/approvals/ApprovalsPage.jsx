@@ -37,9 +37,9 @@ function ApprovalCard({ approval, onDecide, viewerUserId, canDecide, pending }) 
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-[15px] font-semibold text-fg">
+              <h2 className="text-[15px] font-semibold text-fg">
                 {toolLabel(approval.tool_name)}
-              </h3>
+              </h2>
               <Badge variant={RISK_TONE[approval.risk_level] ?? 'neutral'} size="sm">
                 {approval.risk_level} risk
               </Badge>

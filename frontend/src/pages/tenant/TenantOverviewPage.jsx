@@ -116,7 +116,7 @@ export function TenantOverviewPage() {
             <div className="flex flex-wrap items-center gap-2">
               <PageHeader title={tenant?.name ?? 'Tenant'} />
               <Badge
-                variant={tenant?.status === 'active' ? 'green' : 'neutral'}
+                variant={tenant?.status === 'active' ? 'success' : 'neutral'}
                 dot
               >
                 {tenant?.status ?? 'unknown'}

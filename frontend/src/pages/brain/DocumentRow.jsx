@@ -55,9 +55,9 @@ export function DocumentRow({ document, to, query = '', passageCount = 0 }) {
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug text-fg">
+        <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug text-fg">
           {title}
-        </h3>
+        </h2>
         <Badge variant="neutral" size="sm">
           {sourceLabels[document.source] ?? document.source}
         </Badge>

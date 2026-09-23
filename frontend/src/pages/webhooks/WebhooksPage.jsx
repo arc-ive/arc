@@ -78,7 +78,7 @@ export function WebhooksPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Badge variant={event.status === 'received' ? 'green' : 'amber'} size="sm">
+                    <Badge variant={event.status === 'received' ? 'success' : 'warning'} size="sm">
                       {event.status}
                     </Badge>
                     {event.duplicate && (

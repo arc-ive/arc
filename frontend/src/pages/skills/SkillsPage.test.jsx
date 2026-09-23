@@ -105,7 +105,7 @@ describe('SkillsPage — execution controls', () => {
   it('renders Execute button for authorized users', async () => {
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     expect(executeButtons.length).toBe(MOCK_SKILLS.length)
   })
 
@@ -115,14 +115,14 @@ describe('SkillsPage — execution controls', () => {
     renderWithProviders(<SkillsPage view="list" />)
 
     await screen.findByText('2 skills')
-    expect(screen.queryByTitle('Execute skill')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Execute / })).not.toBeInTheDocument()
   })
 
   it('opens the execution dialog when Execute is clicked', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     expect(screen.getByText('Execute skill')).toBeInTheDocument()
@@ -134,7 +134,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
@@ -151,7 +151,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
@@ -177,7 +177,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -198,7 +198,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -218,7 +218,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -237,7 +237,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -258,7 +258,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -276,7 +276,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -290,14 +290,14 @@ describe('SkillsPage — execution controls', () => {
     mockListSkills.mockResolvedValueOnce([])
     renderWithProviders(<SkillsPage view="list" />)
     expect(await screen.findByText('No skills yet')).toBeInTheDocument()
-    expect(screen.queryByTitle('Execute skill')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Execute / })).not.toBeInTheDocument()
   })
 
   it('closes dialog and resets state on close', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     expect(screen.getByText('Tool calls (JSON array)')).toBeInTheDocument()
@@ -321,7 +321,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -338,7 +338,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     expect(screen.getByText('Preconditions')).toBeInTheDocument()
@@ -350,7 +350,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[1])
 
     expect(screen.getByText('No preconditions required for this skill.')).toBeInTheDocument()
@@ -368,7 +368,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByRole('checkbox'))
@@ -396,7 +396,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -417,7 +417,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     expect(screen.getByText('Skill inputs')).toBeInTheDocument()
@@ -435,7 +435,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.type(screen.getByLabelText('service_name'), 'web-api')
@@ -464,7 +464,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -478,7 +478,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByRole('checkbox'))
@@ -500,7 +500,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -519,7 +519,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
@@ -549,7 +549,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
@@ -575,7 +575,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -597,7 +597,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -617,7 +617,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     await user.click(screen.getByText('Execute'))
@@ -637,7 +637,7 @@ describe('SkillsPage — execution controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const executeButtons = await screen.findAllByTitle('Execute skill')
+    const executeButtons = await screen.findAllByRole('button', { name: /^Execute / })
     await user.click(executeButtons[0])
 
     const textarea = screen.getByPlaceholderText('[{"tool_name": "check_service_health", "input": {}}]')
@@ -667,7 +667,7 @@ describe('SkillsPage — edit flow', () => {
   it('renders Edit button for authorized users', async () => {
     renderWithProviders(<SkillsPage view="list" />)
 
-    const editButtons = await screen.findAllByTitle('Edit skill')
+    const editButtons = await screen.findAllByRole('button', { name: /^Edit / })
     expect(editButtons.length).toBe(MOCK_SKILLS.length)
   })
 
@@ -677,14 +677,14 @@ describe('SkillsPage — edit flow', () => {
     renderWithProviders(<SkillsPage view="list" />)
 
     await screen.findByText('2 skills')
-    expect(screen.queryByTitle('Edit skill')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Edit / })).not.toBeInTheDocument()
   })
 
   it('opens the edit dialog when Edit is clicked', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const editButtons = await screen.findAllByTitle('Edit skill')
+    const editButtons = await screen.findAllByRole('button', { name: /^Edit / })
     await user.click(editButtons[0])
 
     expect(screen.getByText('Edit skill')).toBeInTheDocument()
@@ -695,7 +695,7 @@ describe('SkillsPage — edit flow', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const editButtons = await screen.findAllByTitle('Edit skill')
+    const editButtons = await screen.findAllByRole('button', { name: /^Edit / })
     await user.click(editButtons[0])
 
     expect(screen.getByDisplayValue('Recover degraded service')).toBeInTheDocument()
@@ -709,7 +709,7 @@ describe('SkillsPage — edit flow', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const editButtons = await screen.findAllByTitle('Edit skill')
+    const editButtons = await screen.findAllByRole('button', { name: /^Edit / })
     await user.click(editButtons[0])
 
     const nameInput = screen.getByDisplayValue('Recover degraded service')
@@ -735,7 +735,7 @@ describe('SkillsPage — edit flow', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const editButtons = await screen.findAllByTitle('Edit skill')
+    const editButtons = await screen.findAllByRole('button', { name: /^Edit / })
     await user.click(editButtons[0])
 
     await user.click(screen.getByText('Save changes'))
@@ -747,7 +747,7 @@ describe('SkillsPage — edit flow', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const editButtons = await screen.findAllByTitle('Edit skill')
+    const editButtons = await screen.findAllByRole('button', { name: /^Edit / })
     await user.click(editButtons[0])
 
     expect(screen.getByText('Save changes')).toBeInTheDocument()
@@ -765,7 +765,7 @@ describe('SkillsPage — edit flow', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const editButtons = await screen.findAllByTitle('Edit skill')
+    const editButtons = await screen.findAllByRole('button', { name: /^Edit / })
     await user.click(editButtons[0])
 
     await user.click(screen.getByText('Save changes'))
@@ -791,7 +791,7 @@ describe('SkillsPage — delete controls', () => {
   it('renders a labelled Delete control for authorized users', async () => {
     renderWithProviders(<SkillsPage view="list" />)
 
-    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    const deleteButtons = await screen.findAllByRole('button', { name: /^Delete / })
     expect(deleteButtons).toHaveLength(MOCK_SKILLS.length)
   })
 
@@ -801,14 +801,14 @@ describe('SkillsPage — delete controls', () => {
     renderWithProviders(<SkillsPage view="list" />)
 
     expect(await screen.findByText('2 skills')).toBeInTheDocument()
-    expect(screen.queryByTitle('Delete skill')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Delete / })).not.toBeInTheDocument()
   })
 
   it('opens a confirmation naming the skill instead of deleting immediately', async () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    const deleteButtons = await screen.findAllByRole('button', { name: /^Delete / })
     await user.click(deleteButtons[0])
 
     // The confirmation is a real dialog, not the null render the missing
@@ -830,7 +830,7 @@ describe('SkillsPage — delete controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    const deleteButtons = await screen.findAllByRole('button', { name: /^Delete / })
     await user.click(deleteButtons[1])
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
@@ -842,7 +842,7 @@ describe('SkillsPage — delete controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    const deleteButtons = await screen.findAllByRole('button', { name: /^Delete / })
     await user.click(deleteButtons[0])
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
 
@@ -859,7 +859,7 @@ describe('SkillsPage — delete controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    const deleteButtons = await screen.findAllByRole('button', { name: /^Delete / })
     await user.click(deleteButtons[0])
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 
@@ -877,7 +877,7 @@ describe('SkillsPage — delete controls', () => {
     const user = userEvent.setup()
     renderWithProviders(<SkillsPage view="list" />)
 
-    const deleteButtons = await screen.findAllByTitle('Delete skill')
+    const deleteButtons = await screen.findAllByRole('button', { name: /^Delete / })
     await user.click(deleteButtons[0])
     await user.click(await screen.findByRole('button', { name: 'Delete' }))
 

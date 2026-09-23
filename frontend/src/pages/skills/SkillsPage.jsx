@@ -15,6 +15,7 @@ import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { Dialog } from '../../components/ui/Dialog.jsx'
+import { IconButton } from '../../components/ui/IconButton.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
@@ -155,7 +156,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
               <Play className="size-5 text-indigo-400" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Execute skill</h3>
+              <h2 className="text-sm font-semibold text-zinc-100">Execute skill</h2>
               <p className="text-xs text-fg-muted">{skill.name}</p>
             </div>
           </div>
@@ -189,7 +190,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-fg-muted">#{step.sequence + 1}</span>
                         <span className="text-zinc-300 font-mono">{step.tool_name}</span>
-                        <Badge variant={step.status === 'success' ? 'green' : 'red'} size="sm">
+                        <Badge variant={step.status === 'success' ? 'success' : 'danger'} size="sm">
                           {step.status}
                         </Badge>
                       </div>
@@ -361,7 +362,7 @@ function EditSkillDialog({ open, skill, onClose }) {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
         <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-xl">
           <div className="border-b border-line px-6 py-4">
-            <h3 className="text-sm font-semibold text-fg">Edit skill</h3>
+            <h2 className="text-sm font-semibold text-fg">Edit skill</h2>
             <p className="mt-0.5 text-xs text-fg-muted">{skill.name}</p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -491,38 +492,36 @@ function SkillList() {
                 </div>
               </Link>
               <div className="flex items-center gap-2 ml-4">
-                <Badge variant={skill.status === 'active' ? 'green' : 'neutral'}>{skill.status}</Badge>
+                <Badge variant={skill.status === 'active' ? 'success' : 'neutral'}>{skill.status}</Badge>
                 <span className="text-xs text-fg-muted">v{skill.version}</span>
                 {canExecute && (
-                  <Button
-                    variant="ghost"
+                  <IconButton
                     size="sm"
                     onClick={() => setExecuteTarget(skill)}
-                    title="Execute skill"
+                    label={`Execute ${skill.name}`}
                   >
-                    <Play className="size-4 text-fg-muted" />
-                  </Button>
+                    <Play className="size-4" />
+                  </IconButton>
                 )}
                 {canUpdate && (
-                  <Button
-                    variant="ghost"
+                  <IconButton
                     size="sm"
                     onClick={() => setEditTarget(skill)}
-                    title="Edit skill"
+                    label={`Edit ${skill.name}`}
                   >
-                    <Edit className="size-4 text-fg-muted" />
-                  </Button>
+                    <Edit className="size-4" />
+                  </IconButton>
                 )}
                 {canDelete && (
-                  <Button
-                    variant="ghost"
+                  <IconButton
+                    variant="danger"
                     size="sm"
                     onClick={() => setDeleteTarget(skill)}
                     disabled={deleteMutation.isPending}
-                    title="Delete skill"
+                    label={`Delete ${skill.name}`}
                   >
-                    <Trash2 className="size-4 text-fg-muted" />
-                  </Button>
+                    <Trash2 className="size-4" />
+                  </IconButton>
                 )}
               </div>
             </div>
@@ -558,7 +557,7 @@ function SkillDetail({ skillId }) {
       <Card>
         <div className="flex items-center justify-between px-6 pt-6">
           <div>
-            <h3 className="text-lg font-semibold text-zinc-100">{skill.name}</h3>
+            <h2 className="text-lg font-semibold text-zinc-100">{skill.name}</h2>
             {skill.purpose && <p className="mt-1 text-sm text-fg-muted">{skill.purpose}</p>}
           </div>
           {canUpdate && (
@@ -573,7 +572,7 @@ function SkillDetail({ skillId }) {
             <div>
               <dt className="text-xs font-medium text-fg-muted">Status</dt>
               <dd className="mt-1">
-                <Badge variant={skill.status === 'active' ? 'green' : 'neutral'}>{skill.status}</Badge>
+                <Badge variant={skill.status === 'active' ? 'success' : 'neutral'}>{skill.status}</Badge>
               </dd>
             </div>
             <div>

@@ -30,7 +30,7 @@ function HealthPill() {
   const operational = health.data?.status === 'ok'
 
   return (
-    <Badge variant={operational ? 'green' : 'red'} dot>
+    <Badge variant={operational ? 'success' : 'danger'} dot>
       {operational ? 'API operational' : 'API unreachable'}
     </Badge>
   )

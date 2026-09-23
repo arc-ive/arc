@@ -60,7 +60,7 @@ function CreateConnectorDialog({ open, onClose }) {
   return (
     <Dialog open={open} onClose={onClose}>
       <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-        <h3 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h3>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h2>
         {error && (
           <InlineError className="mb-4">
             {errorMessage(error)}
@@ -188,7 +188,7 @@ export function ConnectorsPage() {
             <Card key={connector.id} className="flex flex-col gap-3 p-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold text-zinc-100">{connector.name}</p>
-                <Badge variant={connector.status === 'active' ? 'green' : 'neutral'} size="sm">
+                <Badge variant={connector.status === 'active' ? 'success' : 'neutral'} size="sm">
                   {connector.status}
                 </Badge>
               </div>

@@ -61,7 +61,7 @@ export function PlatformTenantDetailPage() {
             <div className="flex flex-wrap items-center gap-2">
               <PageHeader title={tenant?.name ?? 'Tenant'} />
               <Badge
-                variant={tenant?.status === 'active' ? 'green' : 'neutral'}
+                variant={tenant?.status === 'active' ? 'success' : 'neutral'}
                 dot
               >
                 {tenant?.status ?? 'unknown'}
@@ -163,7 +163,7 @@ export function PlatformTenantDetailPage() {
                     </p>
                   </div>
                   <Badge
-                    variant={user.status === 'active' ? 'green' : 'neutral'}
+                    variant={user.status === 'active' ? 'success' : 'neutral'}
                     size="sm"
                     dot
                   >
