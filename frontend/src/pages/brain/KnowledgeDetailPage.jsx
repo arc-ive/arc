@@ -269,7 +269,7 @@ export function KnowledgeDetailPage() {
                     type="text"
                     value={formData.provenance}
                     onChange={(e) => setFormData({ ...formData, provenance: e.target.value })}
-                    className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     required
                     minLength={1}
                   />

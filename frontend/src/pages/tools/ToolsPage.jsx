@@ -10,6 +10,7 @@ import { useTenant } from '../../tenant/useTenant.js'
 import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { Textarea } from '../../components/ui/Textarea.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
@@ -67,16 +68,16 @@ function ToolExecuteDialog({ tool, open, onClose }) {
           </div>
         )}
 
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-zinc-300 mb-1">Input (JSON)</label>
-          <textarea
-            value={inputJson}
-            onChange={(e) => setInputJson(e.target.value)}
-            className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 font-mono focus:border-indigo-500 focus:outline-none"
-            rows={6}
-            disabled={executeMutation.isPending}
-          />
-        </div>
+        <Textarea
+          className="mb-4"
+          label="Input (JSON)"
+          value={inputJson}
+          onChange={(e) => setInputJson(e.target.value)}
+          textareaClassName="font-mono"
+          rows={6}
+          spellCheck={false}
+          disabled={executeMutation.isPending}
+        />
 
         {error && (
           <InlineError className="mb-4">

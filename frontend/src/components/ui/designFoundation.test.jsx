@@ -149,4 +149,28 @@ describe('design foundation is actually adopted', () => {
       .filter((f) => /variant="(green|amber|red|cyan|indigo|zinc)"/.test(readFileSync(f, 'utf8')))
     expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
   })
+
+  it('no component removes the focus outline', () => {
+    // `focus:outline-none` was on 9 controls across 5 pages, each replacing
+    // the outline with a 1px border-colour change. A keyboard user gets a
+    // hairline shift in hue as their only cue to where they are, which is
+    // not a visible focus indicator.
+    //
+    // Input/Select/Textarea already do this correctly with
+    // focus-visible:outline-2 — the forms were simply bypassing them.
+    const offenders = files.filter((f) =>
+      readFileSync(f, 'utf8').includes('focus:outline-none'),
+    )
+    expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
+  })
+
+  it('no page hand-rolls a form control class', () => {
+    // Three copies of the same `inputClass` string lived in SkillsPage
+    // alone. A hand-rolled control skips the label association and the
+    // focus ring that the primitives provide.
+    const offenders = files
+      .filter((f) => f.includes('/pages/'))
+      .filter((f) => /const inputClass\s*=/.test(readFileSync(f, 'utf8')))
+    expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
+  })
 })
