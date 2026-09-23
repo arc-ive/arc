@@ -73,4 +73,78 @@ describe('useArcIntro', () => {
     clearArcIntroSeen()
     expect(renderHook(() => useArcIntro(true)).result.current.showIntro).toBe(true)
   })
+
+  describe('the real sign-in lifecycle', () => {
+    // RequireAuth renders BEFORE the session check resolves, so every real
+    // sign-in reaches this hook as false-then-true. Reading the flag once
+    // in a useState initializer latched "skip" forever and the entrance
+    // never ran in the product — passing tests that only ever mounted with
+    // a fixed value. These start where the app starts.
+    function renderTransitioning(initial = false) {
+      return renderHook(({ authed }) => useArcIntro(authed), {
+        initialProps: { authed: initial },
+      })
+    }
+
+    it('plays when authentication resolves after the first render', () => {
+      const { result, rerender } = renderTransitioning()
+      expect(result.current.showIntro).toBe(false)
+
+      rerender({ authed: true })
+      expect(result.current.showIntro).toBe(true)
+    })
+
+    it('does not replay for a session that has already seen it', () => {
+      sessionStorage.setItem('arc.intro.seen', '1')
+      const { result, rerender } = renderTransitioning()
+      rerender({ authed: true })
+      expect(result.current.showIntro).toBe(false)
+    })
+
+    it('still honours prefers-reduced-motion across the transition', () => {
+      mockReducedMotion(true)
+      const { result, rerender } = renderTransitioning()
+      rerender({ authed: true })
+      expect(result.current.showIntro).toBe(false)
+    })
+
+    it('still fails closed across the transition when storage throws', () => {
+      const original = Object.getOwnPropertyDescriptor(window, 'sessionStorage')
+      Object.defineProperty(window, 'sessionStorage', {
+        configurable: true,
+        get() {
+          throw new Error('blocked')
+        },
+      })
+
+      const { result, rerender } = renderTransitioning()
+      rerender({ authed: true })
+      expect(result.current.showIntro).toBe(false)
+
+      Object.defineProperty(window, 'sessionStorage', original)
+    })
+
+    it('marks the session seen, so a later remount does not replay', () => {
+      const { result, rerender } = renderTransitioning()
+      rerender({ authed: true })
+      act(() => result.current.onIntroDone())
+      expect(result.current.showIntro).toBe(false)
+
+      // A route change remounts RequireAuth's subtree; the entrance must
+      // not come back with it.
+      expect(renderHook(() => useArcIntro(true)).result.current.showIntro).toBe(false)
+    })
+
+    it('does not open the curtain when a session is lost mid-visit', () => {
+      // Expiry drives isAuthenticated back to false. That is a falling
+      // edge, and the answer to it is the login page, not an animation.
+      const { result, rerender } = renderTransitioning(true)
+      act(() => result.current.onIntroDone())
+
+      rerender({ authed: false })
+      expect(result.current.showIntro).toBe(false)
+      rerender({ authed: true })
+      expect(result.current.showIntro).toBe(false)
+    })
+  })
 })

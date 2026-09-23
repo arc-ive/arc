@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import client from '../api/client.js'
 import { clearAuthState } from './token.js'
+import { clearArcIntroSeen } from '../components/intro/useArcIntro.js'
 import { SESSION_EXPIRED_EVENT } from '../api/client.js'
 import { AuthContext } from './context.js'
 
@@ -69,6 +70,10 @@ export function AuthProvider({ children }) {
       // Ignore errors — clear client state regardless
     }
     clearAuthState()
+    // sessionStorage is per-tab and survives the navigation below, so the
+    // "entrance already played" flag would otherwise outlive the session
+    // it describes and deny the next person to sign in on this tab.
+    clearArcIntroSeen()
     setSession(null)
     window.location.href = '/login'
   }, [])
