@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './useAuth.js'
+import { FullPageLoader } from '../components/ui/FullPageLoader.jsx'
 
 export function RequireAuth({ children }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -7,9 +8,7 @@ export function RequireAuth({ children }) {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-base">
-        <div className="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-      </div>
+      <FullPageLoader label="Checking your session" />
     )
   }
 

@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
+import { documentTitle } from '../../lib/knowledge.js'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { ArrowLeft, BookOpen, FileText, SearchX, Edit, Save, X, Loader2 } from 'lucide-react'
@@ -6,7 +7,7 @@ import { getKnowledgeDocument, updateKnowledge } from '../../api/endpoints/knowl
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryState.js'
-import { sourceLabels, sourceVariants, KNOWLEDGE_SOURCES } from '../../lib/sources.js'
+import { sourceLabels, KNOWLEDGE_SOURCES } from '../../lib/sources.js'
 import { formatDateTime } from '../../lib/format.js'
 import { Card, CardHeader, CardContent } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
@@ -84,7 +85,7 @@ export function KnowledgeDetailPage() {
       <div className="mx-auto max-w-3xl">
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
@@ -120,7 +121,7 @@ export function KnowledgeDetailPage() {
       <div className="mx-auto max-w-3xl">
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
@@ -173,24 +174,24 @@ export function KnowledgeDetailPage() {
       <section>
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
+          <div className="flex size-10 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
             <BookOpen className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-100 sm:text-2xl">
-              {doc.provenance || 'Untitled document'}
+            <h1 className="truncate text-xl font-semibold tracking-tight text-fg sm:text-2xl">
+              {documentTitle(doc)}
             </h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <Badge variant={sourceVariants[doc.source] ?? 'neutral'}>
+              <Badge variant="neutral">
                 {sourceLabels[doc.source] ?? doc.source}
               </Badge>
-              <Badge size="sm" dot variant={doc.status === 'active' ? 'green' : 'neutral'}>
+              <Badge size="sm" dot variant={doc.status === 'active' ? 'success' : 'neutral'}>
                 {doc.status}
               </Badge>
               <span className="font-mono text-xs text-fg-muted">
@@ -240,8 +241,8 @@ export function KnowledgeDetailPage() {
               <CardHeader title="Properties" />
               <CardContent className="py-4 space-y-4">
                 <div>
-                  <label htmlFor="edit-source" className="block text-sm font-medium text-zinc-300 mb-1">
-                    Source
+                  <label htmlFor="edit-source" className="block text-sm font-medium text-fg-subtle mb-1">
+                    Document type
                   </label>
                   <Select
                     id="edit-source"
@@ -257,21 +258,24 @@ export function KnowledgeDetailPage() {
                   </Select>
                 </div>
                 <div>
-                  <label htmlFor="edit-provenance" className="block text-sm font-medium text-zinc-300 mb-1">
-                    Provenance
+                  <label htmlFor="edit-provenance" className="block text-sm font-medium text-fg-subtle mb-1">
+                    Source
                   </label>
+                  <p className="mb-1.5 text-xs text-fg-muted">
+                    Where this document came from — a system, a team, or a person.
+                  </p>
                   <input
                     id="edit-provenance"
                     type="text"
                     value={formData.provenance}
                     onChange={(e) => setFormData({ ...formData, provenance: e.target.value })}
-                    className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    className="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     required
                     minLength={1}
                   />
                 </div>
                 <div>
-                  <label htmlFor="edit-status" className="block text-sm font-medium text-zinc-300 mb-1">
+                  <label htmlFor="edit-status" className="block text-sm font-medium text-fg-subtle mb-1">
                     Status
                   </label>
                   <Select
@@ -292,7 +296,7 @@ export function KnowledgeDetailPage() {
               <CardHeader title="Content" />
               <CardContent className="py-5">
                 {doc.content ? (
-                  <div className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-zinc-300">
+                  <div className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-fg-subtle">
                     {doc.content}
                   </div>
                 ) : (
@@ -307,27 +311,27 @@ export function KnowledgeDetailPage() {
                 <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
                   <div className="flex items-center justify-between gap-4">
                     <dt className="text-[13px] text-fg-muted">Source</dt>
-                    <dd className="font-mono text-xs text-zinc-300">{doc.source}</dd>
+                    <dd className="font-mono text-xs text-fg-subtle">{doc.source}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <dt className="text-[13px] text-fg-muted">Version</dt>
-                    <dd className="font-mono text-xs text-zinc-300">{doc.version}</dd>
+                    <dd className="font-mono text-xs text-fg-subtle">{doc.version}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4 sm:col-span-2">
                     <dt className="text-[13px] text-fg-muted">Document ID</dt>
-                    <dd className="truncate font-mono text-xs text-zinc-400">
+                    <dd className="truncate font-mono text-xs text-fg-muted">
                       {doc.id}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <dt className="text-[13px] text-fg-muted">Created</dt>
-                    <dd className="text-xs text-zinc-400">
+                    <dd className="text-xs text-fg-muted">
                       {formatDateTime(doc.created_at)}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <dt className="text-[13px] text-fg-muted">Updated</dt>
-                    <dd className="text-xs text-zinc-400">
+                    <dd className="text-xs text-fg-muted">
                       {formatDateTime(doc.updated_at)}
                     </dd>
                   </div>

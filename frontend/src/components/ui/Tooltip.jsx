@@ -17,7 +17,7 @@ export function Tooltip({ label, children, className, side = 'top' }) {
         role="tooltip"
         id={id}
         className={cn(
-          'pointer-events-none absolute z-40 whitespace-nowrap rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-300 shadow-overlay',
+          'pointer-events-none absolute z-40 whitespace-nowrap rounded-md border border-line bg-surface-overlay px-2 py-1 text-xs text-fg-subtle shadow-overlay',
           'opacity-0 transition-opacity duration-150 group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100',
           'motion-reduce:transition-none',
           positions[side],

@@ -71,22 +71,22 @@ export function Breadcrumbs() {
     <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1">
       <Link
         to="/app"
-        className="flex items-center rounded text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+        className="flex items-center rounded text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         aria-label="Home"
       >
         <Home className="size-4" />
       </Link>
       {items.map((item) => (
         <Fragment key={item.href}>
-          <ChevronRight className="size-3.5 shrink-0 text-zinc-700" aria-hidden />
+          <ChevronRight className="size-3.5 shrink-0 text-line-strong" aria-hidden />
           {item.isLast ? (
-            <span className="truncate text-[13px] font-medium text-zinc-200">
+            <span className="truncate text-[13px] font-medium text-fg">
               {item.label}
             </span>
           ) : (
             <Link
               to={item.href}
-              className="truncate rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="truncate rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
               {item.label}
             </Link>

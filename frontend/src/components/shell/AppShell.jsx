@@ -9,10 +9,12 @@ import { UserMenu } from './UserMenu.jsx'
 import { IconButton } from '../ui/IconButton.jsx'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { cn } from '../../lib/cn.js'
+import { SkipLink } from './SkipLink.jsx'
+import { RouteAnnouncer } from './RouteAnnouncer.jsx'
 
 function Kbd({ children }) {
   return (
-    <kbd className="ml-auto rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
+    <kbd className="ml-auto rounded border border-line bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
       {children}
     </kbd>
   )
@@ -40,6 +42,8 @@ export function AppShell() {
 
   return (
     <div className="flex h-dvh overflow-hidden">
+      <SkipLink />
+      <RouteAnnouncer />
       <aside className="hidden w-60 shrink-0 lg:block">
         <Sidebar />
       </aside>
@@ -69,7 +73,7 @@ export function AppShell() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-zinc-800/70 bg-base/80 px-4 backdrop-blur-sm sm:px-6">
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line/70 bg-base/80 px-4 backdrop-blur-sm sm:px-6">
           <IconButton
             label="Open menu"
             onClick={() => setDrawerOpen(true)}
@@ -86,7 +90,7 @@ export function AppShell() {
               type="button"
               onClick={() => setPaletteOpen(true)}
               className={cn(
-                'hidden h-9 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-[13px] text-fg-muted transition-colors duration-150 hover:border-zinc-700 hover:text-zinc-300 md:flex',
+                'hidden h-9 items-center gap-2 rounded-lg border border-line bg-surface-raised px-3 text-[13px] text-fg-muted transition-colors duration-150 hover:border-line-strong hover:text-fg-subtle md:flex',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
               )}
             >
@@ -101,12 +105,16 @@ export function AppShell() {
             >
               <Search className="size-4" />
             </IconButton>
-            <div className="mx-1 h-5 w-px bg-zinc-800" aria-hidden />
+            <div className="mx-1 h-5 w-px bg-surface-selected" aria-hidden />
             <UserMenu />
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto focus:outline-none"
+        >
           <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
             <Outlet />
           </div>

@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - main
+  # No branch filter. The previous `branches: [main]` meant a PR based on
+  # anything other than main got NO checks at all — which silently disabled
+  # CI across a stack of dependent PRs.
   pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -186,3 +187,40 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose down -v
+
+  frontend:
+    name: Frontend (lint, test, build)
+    runs-on: ubuntu-latest
+
+    # The backend jobs above run Ruff and pytest. Neither touches
+    # frontend/, so until now a frontend-only pull request could report
+    # seven green checks while nothing had exercised the code it changed.
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Vite 8 uses rolldown, whose platform-specific native binding npm
+          # silently skips when EBADENGINE fires on an older Node. >=22.19
+          # satisfies it.
+          node-version: "22.19"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

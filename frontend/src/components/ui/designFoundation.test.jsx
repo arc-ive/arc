@@ -74,10 +74,17 @@ describe('Badge', () => {
     // Regression: `variant="zinc"` shipped in ApprovalsPage and produced a
     // badge with no styling at all, because the old colour-named API gave
     // no reason to think the name was wrong.
-    const { container } = render(<Badge variant="chartreuse">Unknown</Badge>)
-    const el = container.firstElementChild
-    expect(el.className).toContain('bg-zinc-800/80')
-    expect(el.className).not.toBe('')
+    //
+    // Asserted against an actual neutral badge rather than a hardcoded
+    // class string: the behaviour under test is "an unknown variant
+    // renders as neutral", and pinning neutral's current utility broke
+    // this test the moment that utility was renamed to a token.
+    const unknown = render(<Badge variant="chartreuse">Unknown</Badge>)
+    const neutral = render(<Badge variant="neutral">Neutral</Badge>)
+    expect(unknown.container.firstElementChild.className).toBe(
+      neutral.container.firstElementChild.className,
+    )
+    expect(unknown.container.firstElementChild.className).not.toBe('')
   })
 
   it('accepts every semantic variant', () => {
@@ -144,9 +151,63 @@ describe('design foundation is actually adopted', () => {
   it('no component uses a colour-named Badge variant', () => {
     // Badge.jsx itself names the retired variants in its docstring, which is
     // the point — it records why they were removed.
+    //
+    // This originally matched only the literal attribute form, and 14
+    // sites across 11 files were written as expressions —
+    // `variant={status === 'active' ? 'green' : 'neutral'}`. Badge falls
+    // back to neutral for an unknown variant, so every one of those
+    // rendered grey: "active", "healthy" and "received" lost their green,
+    // and the error badges lost their red, with nothing failing. The
+    // pattern now covers both spellings.
+    const RETIRED = /(?:variant="(?:green|amber|red|cyan|indigo|zinc)")|(?:variant=\{[^}]*'(?:green|amber|red|cyan|indigo|zinc)')/
     const offenders = files
       .filter((f) => !f.endsWith('components/ui/Badge.jsx'))
-      .filter((f) => /variant="(green|amber|red|cyan|indigo|zinc)"/.test(readFileSync(f, 'utf8')))
+      .filter((f) => RETIRED.test(readFileSync(f, 'utf8')))
+    expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
+  })
+
+  it('no component removes the focus outline', () => {
+    // `focus:outline-none` was on 9 controls across 5 pages, each replacing
+    // the outline with a 1px border-colour change. A keyboard user gets a
+    // hairline shift in hue as their only cue to where they are, which is
+    // not a visible focus indicator.
+    //
+    // Input/Select/Textarea already do this correctly with
+    // focus-visible:outline-2 — the forms were simply bypassing them.
+    //
+    // The one exemption is the skip link's target. `<main tabIndex={-1}>`
+    // is a programmatic focus destination, not a keyboard-operable
+    // control — WCAG 2.4.7 governs the latter — and a 2px ring drawn
+    // around the whole content area reads as a rendering fault. The
+    // exemption is keyed to that element, so it cannot quietly widen.
+    const offenders = files.filter((f) =>
+      readFileSync(f, 'utf8')
+        .replace(/<main[^>]*id="main-content"[\s\S]*?>/g, '')
+        .includes('focus:outline-none'),
+    )
+    expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
+  })
+
+  it('no page hand-rolls a form control class', () => {
+    // Three copies of the same `inputClass` string lived in SkillsPage
+    // alone. A hand-rolled control skips the label association and the
+    // focus ring that the primitives provide.
+    const offenders = files
+      .filter((f) => f.includes('/pages/'))
+      .filter((f) => /const inputClass\s*=/.test(readFileSync(f, 'utf8')))
+    expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
+  })
+
+  it('no component reaches past the semantic layer to a raw colour', () => {
+    // ARC_DESIGN_SYSTEM.md's three-layer model — primitive, semantic,
+    // component — only holds if components use the semantic layer. About
+    // 340 utilities were addressing the primitive scale directly, so a
+    // token change would have missed most of the app.
+    //
+    // index.css is where primitives are allowed to be named, and it is
+    // not scanned here.
+    const RAW = /(?:^|["'\s:])(?:hover:|focus:|active:|group-hover:|focus-visible:)?(?:text|bg|border|border-[trbl]|ring|divide|from|via|to)-zinc-\d/
+    const offenders = files.filter((f) => RAW.test(readFileSync(f, 'utf8')))
     expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
   })
 })

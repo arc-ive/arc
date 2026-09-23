@@ -62,7 +62,7 @@ export function ContextHeader({ onNavigate }) {
           onClick={onNavigate}
           className={cn(
             'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium',
-            'text-fg-muted transition-colors duration-150 hover:bg-zinc-900/60 hover:text-fg',
+            'text-fg-muted transition-colors duration-150 hover:bg-surface-raised hover:text-fg',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
           )}
         >
@@ -101,7 +101,7 @@ export function ContextHeader({ onNavigate }) {
 function ContextMark({ inPlatform, name }) {
   if (inPlatform) {
     return (
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-line bg-zinc-900">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-overlay">
         <Layers className="size-3.5 text-fg-muted" aria-hidden />
       </div>
     )

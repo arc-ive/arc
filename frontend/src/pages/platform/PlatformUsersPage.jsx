@@ -214,7 +214,7 @@ export function PlatformUsersPage() {
                     <div className="flex items-center gap-3">
                       <Avatar name={user.email} size="sm" />
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-zinc-100">
+                        <p className="truncate font-medium text-fg">
                           {user.email}
                         </p>
                         <p className="truncate font-mono text-xs text-fg-muted">
@@ -223,12 +223,12 @@ export function PlatformUsersPage() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-zinc-400">
+                  <TableCell className="text-fg-muted">
                     {user.username ?? '—'}
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={user.status === 'active' ? 'green' : 'neutral'}
+                      variant={user.status === 'active' ? 'success' : 'neutral'}
                       size="sm"
                       dot
                     >

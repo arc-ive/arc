@@ -6,18 +6,19 @@ import { useAuth } from '../../auth/useAuth.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card } from '../../components/ui/Card.jsx'
 import { Select } from '../../components/ui/Select.jsx'
+import { FullPageLoader } from '../../components/ui/FullPageLoader.jsx'
 
 function Brand() {
   return (
     <div className="mb-8 flex flex-col items-center gap-3">
-      <div className="flex size-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900">
+      <div className="flex size-12 items-center justify-center rounded-xl border border-line bg-surface-overlay">
         <svg viewBox="0 0 32 32" className="size-6" aria-hidden>
           <path d="M8 10.5h9a4.5 4.5 0 0 1 0 9h-3v6h-6v-15Z" fill="#e4e4e7" />
           <path d="M8 13.5h6v6H8v-6Z" fill="#6366f1" />
         </svg>
       </div>
       <div className="text-center">
-        <p className="text-xl font-semibold tracking-tight text-zinc-100">
+        <p className="text-xl font-semibold tracking-tight text-fg">
           Arc
         </p>
         <p className="mt-0.5 text-[13px] text-fg-muted">
@@ -81,7 +82,7 @@ function DevUserSelector() {
   if (personas.length === 0) return null
 
   return (
-    <div className="mt-3 border-t border-zinc-800 pt-4">
+    <div className="mt-3 border-t border-line pt-4">
       <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-fg-muted">
         <Users className="size-3" />
         Development Login
@@ -126,9 +127,7 @@ export function LoginPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-base">
-        <div className="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-      </div>
+      <FullPageLoader label="Signing you in" />
     )
   }
 

@@ -22,7 +22,7 @@ export const Input = forwardRef(function Input(
       {label && (
         <label
           htmlFor={inputId}
-          className="text-[13px] font-medium text-zinc-300"
+          className="text-[13px] font-medium text-fg-subtle"
         >
           {label}
           {required && <span className="ml-0.5 text-fg-muted">*</span>}
@@ -32,12 +32,12 @@ export const Input = forwardRef(function Input(
         ref={ref}
         id={inputId}
         className={cn(
-          'h-9 w-full rounded-lg border bg-zinc-900/70 px-3 text-sm text-zinc-100',
+          'h-9 w-full rounded-lg border bg-surface-raised px-3 text-sm text-fg',
           'placeholder:text-fg-muted transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
           error
             ? 'border-red-800 focus-visible:outline-red-500'
-            : 'border-zinc-800 hover:border-zinc-700',
+            : 'border-line hover:border-line-strong',
           inputClassName,
         )}
         {...props}

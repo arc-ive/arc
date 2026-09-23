@@ -45,7 +45,7 @@ export function NewKnowledgePage() {
   const validate = () => {
     const next = {}
     if (!form.provenance.trim()) {
-      next.provenance = 'Provenance is required.'
+      next.provenance = 'Source is required.'
     }
     if (!form.content.trim()) {
       next.content = 'Content is required.'
@@ -72,7 +72,7 @@ export function NewKnowledgePage() {
       <section>
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
@@ -90,7 +90,7 @@ export function NewKnowledgePage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <Select
-                label="Source"
+                label="Document type"
                 required
                 value={form.source}
                 onChange={(e) => setForm({ ...form, source: e.target.value })}
@@ -116,7 +116,7 @@ export function NewKnowledgePage() {
             </div>
 
             <Input
-              label="Provenance"
+              label="Source"
               required
               placeholder="e.g. SOC-2 policy revision, incident INC-1234 postmortem…"
               value={form.provenance}
@@ -138,7 +138,7 @@ export function NewKnowledgePage() {
               textareaClassName="font-mono text-[13px]"
             />
 
-            <div className="flex items-start gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3.5 py-3">
+            <div className="flex items-start gap-2.5 rounded-lg border border-line bg-surface-raised px-3.5 py-3">
               <Info className="mt-0.5 size-4 shrink-0 text-fg-muted" />
               <p className="text-xs leading-relaxed text-fg-muted">
                 Submitted documents are validated by the backend:{' '}
@@ -155,7 +155,7 @@ export function NewKnowledgePage() {
               </InlineError>
             )}
 
-            <div className="flex items-center justify-end gap-2 border-t border-zinc-800/70 pt-4">
+            <div className="flex items-center justify-end gap-2 border-t border-line/70 pt-4">
               <Button
                 variant="secondary"
                 onClick={() => navigate(backTo)}

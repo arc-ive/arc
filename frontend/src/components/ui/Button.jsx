@@ -4,14 +4,17 @@ import { Spinner } from './Spinner.jsx'
 
 const variants = {
   primary:
-    'bg-zinc-50 text-zinc-950 hover:bg-white active:bg-zinc-200 border border-transparent',
+    'bg-action text-on-action hover:bg-white active:bg-action/90 border border-transparent',
   secondary:
-    'bg-transparent text-zinc-200 border border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700',
-  ghost: 'bg-transparent text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900',
+    'bg-transparent text-fg border border-line hover:bg-surface-overlay hover:border-line-strong',
+  ghost: 'bg-transparent text-fg-muted hover:text-fg hover:bg-surface-overlay',
+  // Matches how Badge renders danger. The variant had been using red-400
+  // while the system's danger token is red-300 — lighter, and chosen for
+  // contrast on Arc's surfaces, so this reads better as well as matching.
   danger:
-    'bg-transparent text-red-400 border border-zinc-800 hover:bg-red-950/40 hover:border-red-900',
+    'bg-transparent text-danger border border-line hover:bg-danger/10 hover:border-danger/40',
   accent:
-    'bg-indigo-500 text-white hover:bg-indigo-400 active:bg-indigo-600 border border-transparent',
+    'bg-primary text-on-action hover:bg-primary/90 active:bg-primary/80 border border-transparent',
 }
 
 const sizes = {

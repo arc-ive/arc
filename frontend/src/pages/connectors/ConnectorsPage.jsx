@@ -14,6 +14,8 @@ import { useTenant } from '../../tenant/useTenant.js'
 import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Button } from '../../components/ui/Button.jsx'
+import { Input } from '../../components/ui/Input.jsx'
+import { Select } from '../../components/ui/Select.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { Spinner } from '../../components/ui/Spinner.jsx'
@@ -57,54 +59,41 @@ function CreateConnectorDialog({ open, onClose }) {
 
   return (
     <Dialog open={open} onClose={onClose}>
-      <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-        <h3 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h3>
+      <div className="w-full max-w-md rounded-xl border border-line bg-surface-overlay p-6 shadow-xl">
+        <h2 className="text-lg font-semibold text-fg mb-4">Create Connector</h2>
         {error && (
           <InlineError className="mb-4">
             {errorMessage(error)}
           </InlineError>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-300">Provider</label>
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
-              disabled={createMutation.isPending}
-            >
-              {PROVIDERS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-zinc-300">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
-              placeholder="e.g. Main GitHub integration"
-              required
-              disabled={createMutation.isPending}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-zinc-300">Target</label>
-            <input
-              type="text"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              className="mt-1 block w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
-              placeholder={selectedProvider?.targetHint ?? 'Provider-specific target'}
-              required
-              disabled={createMutation.isPending}
-            />
-            {selectedProvider && (
-              <p className="mt-1 text-xs text-fg-muted">{selectedProvider.targetHint}</p>
-            )}
-          </div>
+          <Select
+            label="Provider"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+            disabled={createMutation.isPending}
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </Select>
+          <Input
+            label="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Main GitHub integration"
+            required
+            disabled={createMutation.isPending}
+          />
+          <Input
+            label="Target"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            placeholder={selectedProvider?.targetHint ?? 'Provider-specific target'}
+            required
+            disabled={createMutation.isPending}
+            hint={selectedProvider?.targetHint}
+          />
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={onClose} disabled={createMutation.isPending}>
               Cancel
@@ -198,14 +187,14 @@ export function ConnectorsPage() {
             {connectors.map((connector) => (
             <Card key={connector.id} className="flex flex-col gap-3 p-5">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-zinc-100">{connector.name}</p>
-                <Badge variant={connector.status === 'active' ? 'green' : 'neutral'} size="sm">
+                <p className="text-sm font-semibold text-fg">{connector.name}</p>
+                <Badge variant={connector.status === 'active' ? 'success' : 'neutral'} size="sm">
                   {connector.status}
                 </Badge>
               </div>
               <p className="text-[13px] text-fg-muted">Provider: {connector.provider}</p>
               {connector.target && (
-                <p className="font-mono text-xs text-zinc-400">Target: {connector.target}</p>
+                <p className="font-mono text-xs text-fg-muted">Target: {connector.target}</p>
               )}
               <p className="text-xs text-fg-muted">
                 Created: {new Date(connector.created_at).toLocaleDateString()}

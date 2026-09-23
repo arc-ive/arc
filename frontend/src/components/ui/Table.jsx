@@ -23,7 +23,7 @@ export function TableHeader({ className, children, ...props }) {
 
 export function TableBody({ className, children, ...props }) {
   return (
-    <tbody className={cn('divide-y divide-zinc-800/60', className)} {...props}>
+    <tbody className={cn('divide-y divide-line/60', className)} {...props}>
       {children}
     </tbody>
   )
@@ -34,7 +34,7 @@ export function TableRow({ className, clickable = false, ...props }) {
     <tr
       className={cn(
         clickable &&
-          'cursor-pointer transition-colors duration-150 hover:bg-zinc-900/50',
+          'cursor-pointer transition-colors duration-150 hover:bg-surface-raised',
         className,
       )}
       {...props}
@@ -46,7 +46,7 @@ export function TableHead({ className, children, ...props }) {
   return (
     <th
       className={cn(
-        'border-b border-zinc-800/80 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-fg-muted whitespace-nowrap',
+        'border-b border-line/80 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-fg-muted whitespace-nowrap',
         className,
       )}
       {...props}
@@ -59,7 +59,7 @@ export function TableHead({ className, children, ...props }) {
 export function TableCell({ className, children, ...props }) {
   return (
     <td
-      className={cn('px-4 py-3 align-middle text-zinc-300', className)}
+      className={cn('px-4 py-3 align-middle text-fg-subtle', className)}
       {...props}
     >
       {children}

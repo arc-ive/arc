@@ -86,9 +86,9 @@ export function CommandPalette({ onClose }) {
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-zinc-800 bg-raised shadow-overlay animate-scale-in"
+        className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-line bg-raised shadow-overlay animate-scale-in"
       >
-        <div className="flex items-center gap-2.5 border-b border-zinc-800/70 px-4">
+        <div className="flex items-center gap-2.5 border-b border-line/70 px-4">
           <Search className="size-4 shrink-0 text-fg-muted" />
           <input
             ref={inputRef}
@@ -97,10 +97,10 @@ export function CommandPalette({ onClose }) {
             onChange={handleQueryChange}
             onKeyDown={handleKeyDown}
             placeholder="Jump to a page…"
-            className="h-12 w-full bg-transparent text-sm text-zinc-100 placeholder:text-fg-muted focus-visible:outline-none"
+            className="h-12 w-full bg-transparent text-sm text-fg placeholder:text-fg-muted focus-visible:outline-none"
             aria-label="Search pages"
           />
-          <kbd className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
+          <kbd className="rounded border border-line bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
             ESC
           </kbd>
         </div>
@@ -129,8 +129,8 @@ export function CommandPalette({ onClose }) {
                       'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors duration-100',
                       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
                       isActive
-                        ? 'bg-zinc-800/80 text-zinc-100'
-                        : 'text-zinc-400',
+                        ? 'bg-surface-selected text-fg'
+                        : 'text-fg-muted',
                     )}
                   >
                     <item.icon
