@@ -639,6 +639,39 @@ class ArcDatabase:
                 updated_at=row["updated_at"],
             )
 
+    async def get_user_by_email(self, email: str) -> User | None:
+        """Look up a user by email address.
+
+        Used only to correlate a verified external identity with an
+        already-provisioned Arc user on first sign-in. ``users.email`` is
+        UNIQUE, so this resolves to at most one user. Does NOT
+        auto-provision.
+        """
+        async with self._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, email, username, status, auth_provider, provider_subject,
+                       display_name, avatar_url, created_at, updated_at
+                FROM users
+                WHERE LOWER(email) = LOWER($1)
+                """,
+                email,
+            )
+            if not row:
+                return None
+            return User(
+                id=row["id"],
+                email=row["email"],
+                username=row["username"],
+                status=row["status"],
+                auth_provider=row["auth_provider"],
+                provider_subject=row["provider_subject"],
+                display_name=row["display_name"],
+                avatar_url=row["avatar_url"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+
     async def link_user_provider(
         self,
         user_id: str,

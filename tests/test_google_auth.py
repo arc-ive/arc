@@ -297,6 +297,12 @@ class TestUserMapping:
     async def test_find_or_link_user_returns_none_for_unknown(self, service, db):
         """Unknown Google identity returns None (no auto-provisioning)."""
         db.get_user_by_provider = AsyncMock(return_value=None)
+        # Explicit: an unknown identity matches no provisioned user by
+        # email either. Without this the auto-specced mock returns a
+        # truthy object and the assertion below passes for the wrong
+        # reason.
+        db.get_user_by_email = AsyncMock(return_value=None)
+        db.link_user_provider = AsyncMock()
 
         from arc.security.google import GoogleIdentity
 
@@ -460,3 +466,130 @@ class TestPyJWIIssuerList:
                 audience="test-client.apps.googleusercontent.com",
                 issuer=["accounts.google.com", "https://accounts.google.com"],
             )
+
+
+class TestFirstSignInLinking:
+    """First Google sign-in binds the identity to a provisioned user.
+
+    Nothing else in Arc writes ``provider_subject``. Without this step
+    ``get_user_by_provider`` can never match and every Google sign-in is
+    refused — which is exactly what the product did.
+    """
+
+    @staticmethod
+    def _identity(**overrides):
+        from arc.security.google import GoogleIdentity
+
+        return GoogleIdentity(
+            **{
+                "sub": "google-new-1",
+                "email": "employee@acme.example",
+                "email_verified": True,
+                "name": "Ada Lovelace",
+                "picture": "https://example.com/a.png",
+                **overrides,
+            }
+        )
+
+    @staticmethod
+    def _provisioned(**overrides):
+        user = MagicMock(spec=User)
+        user.id = "u-acme-employee"
+        user.status = "active"
+        user.provider_subject = None
+        user.auth_provider = "local"
+        for key, value in overrides.items():
+            setattr(user, key, value)
+        return user
+
+    async def test_first_sign_in_links_a_provisioned_user(self, service, db):
+        candidate = self._provisioned()
+        linked = self._provisioned(provider_subject="google-new-1")
+        db.get_user_by_provider = AsyncMock(return_value=None)
+        db.get_user_by_email = AsyncMock(return_value=candidate)
+        db.link_user_provider = AsyncMock(return_value=linked)
+
+        user = await service.find_or_link_user(self._identity())
+
+        assert user is linked
+        db.link_user_provider.assert_awaited_once_with(
+            user_id="u-acme-employee",
+            auth_provider="google",
+            provider_subject="google-new-1",
+            display_name="Ada Lovelace",
+            avatar_url="https://example.com/a.png",
+        )
+
+    async def test_returning_sign_in_never_consults_email(self, service, db):
+        """Once bound, the durable subject is authoritative.
+
+        Email must not re-enter the decision, or a reassigned address
+        would become a path back to an account.
+        """
+        bound = self._provisioned(provider_subject="google-new-1")
+        db.get_user_by_provider = AsyncMock(return_value=bound)
+        db.get_user_by_email = AsyncMock()
+        db.link_user_provider = AsyncMock()
+
+        user = await service.find_or_link_user(self._identity())
+
+        assert user is bound
+        db.get_user_by_email.assert_not_awaited()
+        db.link_user_provider.assert_not_awaited()
+
+    async def test_unverified_email_is_never_linked(self, service, db):
+        """An unverified address is an unproven claim.
+
+        Binding on it would let anyone who can assert an address take
+        over the Arc user holding it.
+        """
+        db.get_user_by_provider = AsyncMock(return_value=None)
+        db.get_user_by_email = AsyncMock()
+        db.link_user_provider = AsyncMock()
+
+        user = await service.find_or_link_user(self._identity(email_verified=False))
+
+        assert user is None
+        db.get_user_by_email.assert_not_awaited()
+        db.link_user_provider.assert_not_awaited()
+
+    async def test_unknown_email_is_not_provisioned(self, service, db):
+        """Correlation finds a user an admin created; it never creates one."""
+        db.get_user_by_provider = AsyncMock(return_value=None)
+        db.get_user_by_email = AsyncMock(return_value=None)
+        db.link_user_provider = AsyncMock()
+
+        user = await service.find_or_link_user(self._identity())
+
+        assert user is None
+        db.link_user_provider.assert_not_awaited()
+
+    async def test_disabled_user_is_not_linked(self, service, db):
+        db.get_user_by_provider = AsyncMock(return_value=None)
+        db.get_user_by_email = AsyncMock(return_value=self._provisioned(status="disabled"))
+        db.link_user_provider = AsyncMock()
+
+        user = await service.find_or_link_user(self._identity())
+
+        assert user is None
+        db.link_user_provider.assert_not_awaited()
+
+    async def test_already_bound_user_is_never_rebound(self, service, db):
+        """Account-takeover guard.
+
+        A user already bound to one Google subject must not be re-bound
+        to a different one by a second identity asserting the same
+        address.
+        """
+        db.get_user_by_provider = AsyncMock(return_value=None)
+        db.get_user_by_email = AsyncMock(
+            return_value=self._provisioned(
+                provider_subject="google-ORIGINAL", auth_provider="google"
+            )
+        )
+        db.link_user_provider = AsyncMock()
+
+        user = await service.find_or_link_user(self._identity(sub="google-ATTACKER"))
+
+        assert user is None
+        db.link_user_provider.assert_not_awaited()
