@@ -65,17 +65,17 @@ export function Dialog({
         aria-describedby={description ? 'dialog-description' : undefined}
         tabIndex={-1}
         className={cn(
-          'relative z-10 my-auto w-full rounded-xl border border-zinc-800 bg-raised shadow-overlay animate-scale-in',
+          'relative z-10 my-auto w-full rounded-xl border border-line bg-raised shadow-overlay animate-scale-in',
           sizes[size],
           className,
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-zinc-800/70 px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-line/70 px-5 py-4">
           <div>
             {title && (
               <h2
                 id="dialog-title"
-                className="text-sm font-semibold text-zinc-100"
+                className="text-sm font-semibold text-fg"
               >
                 {title}
               </h2>
@@ -95,7 +95,7 @@ export function Dialog({
         </div>
         <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
-          <div className="flex items-center justify-end gap-2 border-t border-zinc-800/70 px-5 py-3.5">
+          <div className="flex items-center justify-end gap-2 border-t border-line/70 px-5 py-3.5">
             {footer}
           </div>
         )}

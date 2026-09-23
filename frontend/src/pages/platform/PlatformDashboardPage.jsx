@@ -69,10 +69,10 @@ export function PlatformDashboardPage() {
       <section className="grid gap-4 sm:grid-cols-3">
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+            <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
               <Building2 className="size-4.5" />
             </div>
-            <p className="mt-4 text-2xl font-semibold tracking-tight text-zinc-100">
+            <p className="mt-4 text-2xl font-semibold tracking-tight text-fg">
               {userTenants.isPending
                   ? '—'
                   : userTenants.data?.length ?? '0'}
@@ -92,10 +92,10 @@ export function PlatformDashboardPage() {
 
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+            <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
               <Users className="size-4.5" />
             </div>
-            <p className="mt-4 text-[15px] font-semibold text-zinc-100">
+            <p className="mt-4 text-[15px] font-semibold text-fg">
               User provisioning
             </p>
             <p className="mt-0.5 text-[13px] text-fg-muted">
@@ -113,10 +113,10 @@ export function PlatformDashboardPage() {
 
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+            <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
               <ShieldCheck className="size-4.5" />
             </div>
-            <p className="mt-4 text-[15px] font-semibold text-zinc-100">
+            <p className="mt-4 text-[15px] font-semibold text-fg">
               Authorization
             </p>
             <p className="mt-0.5 text-[13px] text-fg-muted">

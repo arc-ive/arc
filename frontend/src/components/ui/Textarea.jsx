@@ -13,7 +13,7 @@ export const Textarea = forwardRef(function Textarea(
       {label && (
         <label
           htmlFor={textareaId}
-          className="text-[13px] font-medium text-zinc-300"
+          className="text-[13px] font-medium text-fg-subtle"
         >
           {label}
           {required && <span className="ml-0.5 text-fg-muted">*</span>}
@@ -24,12 +24,12 @@ export const Textarea = forwardRef(function Textarea(
         id={textareaId}
         rows={rows}
         className={cn(
-          'w-full resize-y rounded-lg border bg-zinc-900/70 px-3 py-2 text-sm leading-relaxed text-zinc-100',
+          'w-full resize-y rounded-lg border bg-surface-raised px-3 py-2 text-sm leading-relaxed text-fg',
           'placeholder:text-fg-muted transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
           error
             ? 'border-red-800 focus-visible:outline-red-500'
-            : 'border-zinc-800 hover:border-zinc-700',
+            : 'border-line hover:border-line-strong',
           textareaClassName,
         )}
         {...props}

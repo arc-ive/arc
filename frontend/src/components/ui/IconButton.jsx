@@ -3,10 +3,10 @@ import { cn } from '../../lib/cn.js'
 
 const variants = {
   ghost:
-    'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 active:bg-zinc-800/80',
+    'text-fg-muted hover:text-fg hover:bg-surface-overlay active:bg-surface-selected',
   solid:
-    'text-zinc-200 border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 hover:text-zinc-100',
-  danger: 'text-zinc-400 hover:text-red-400 hover:bg-red-950/40',
+    'text-fg border border-line bg-surface-raised hover:bg-surface-selected hover:text-fg',
+  danger: 'text-fg-muted hover:text-red-400 hover:bg-red-950/40',
 }
 
 const sizes = {

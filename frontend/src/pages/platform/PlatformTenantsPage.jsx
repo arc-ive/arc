@@ -178,7 +178,7 @@ export function PlatformTenantsPage() {
               }}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
+                <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
                   <Building2 className="size-4.5" />
                 </div>
                 <Badge variant={tenant.status === 'active' ? 'success' : 'neutral'} dot>
@@ -186,7 +186,7 @@ export function PlatformTenantsPage() {
                 </Badge>
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-zinc-100">
+                <p className="truncate text-sm font-semibold text-fg">
                   {tenant.name}
                 </p>
                 <p className="mt-0.5 truncate font-mono text-xs text-fg-muted">
@@ -197,7 +197,7 @@ export function PlatformTenantsPage() {
                 <span className="text-xs text-fg-muted">
                   Created {formatDate(tenant.created_at)}
                 </span>
-                <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-zinc-300" />
+                <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-fg-subtle" />
               </div>
             </Card>
           ))}

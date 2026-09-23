@@ -5,7 +5,7 @@ export function Skeleton({ className, ...props }) {
     <div
       aria-hidden
       className={cn(
-        'animate-pulse rounded-md bg-zinc-800/60 motion-reduce:animate-none',
+        'animate-pulse rounded-md bg-surface-selected motion-reduce:animate-none',
         className,
       )}
       {...props}
@@ -30,7 +30,7 @@ export function SkeletonCard({ className }) {
   return (
     <div
       className={cn(
-        'rounded-xl border border-zinc-800/80 bg-panel p-5 shadow-card',
+        'rounded-xl border border-line/80 bg-panel p-5 shadow-card',
         className,
       )}
     >

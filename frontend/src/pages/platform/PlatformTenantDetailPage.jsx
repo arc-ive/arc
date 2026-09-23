@@ -48,13 +48,13 @@ export function PlatformTenantDetailPage() {
       <section>
         <Link
           to="/platform/tenants"
-          className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowUpRight className="size-3.5 rotate-180" />
           Back to Tenants
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
+          <div className="flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
             <Building2 className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -72,7 +72,7 @@ export function PlatformTenantDetailPage() {
           {tenant && (
             <Link
               to={`/app/t/${encodeURIComponent(tenant.id)}/overview`}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-[13px] font-medium text-zinc-300 transition-colors duration-150 hover:border-zinc-700 hover:text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-raised px-3 py-1.5 text-[13px] font-medium text-fg-subtle transition-colors duration-150 hover:border-line-strong hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
               <ExternalLink className="size-3.5" />
               Open workspace
@@ -85,7 +85,7 @@ export function PlatformTenantDetailPage() {
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
             <p className="text-[13px] text-fg-muted">Created</p>
-            <p className="mt-1 text-lg font-semibold text-zinc-100">
+            <p className="mt-1 text-lg font-semibold text-fg">
               {formatDate(tenant?.created_at)}
             </p>
           </div>
@@ -96,7 +96,7 @@ export function PlatformTenantDetailPage() {
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
             <p className="text-[13px] text-fg-muted">Updated</p>
-            <p className="mt-1 text-lg font-semibold text-zinc-100">
+            <p className="mt-1 text-lg font-semibold text-fg">
               {formatDate(tenant?.updated_at)}
             </p>
           </div>
@@ -105,7 +105,7 @@ export function PlatformTenantDetailPage() {
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
             <p className="text-[13px] text-fg-muted">Members (visible to you)</p>
-            <p className="mt-1 text-lg font-semibold text-zinc-100">
+            <p className="mt-1 text-lg font-semibold text-fg">
               {members.isPending ? '—' : members.data?.length ?? 0}
             </p>
           </div>
@@ -116,7 +116,7 @@ export function PlatformTenantDetailPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-zinc-200">Members</h2>
+        <h2 className="mb-3 text-sm font-semibold text-fg">Members</h2>
         <Card className="overflow-hidden">
           {members.isPending && (
             <div className="flex flex-col gap-4 p-5">
@@ -150,12 +150,12 @@ export function PlatformTenantDetailPage() {
             />
           )}
           {members.data?.length > 0 && (
-            <div className="divide-y divide-zinc-800/60">
+            <div className="divide-y divide-line/60">
               {members.data.map((user) => (
                 <div key={user.id} className="flex items-center gap-3 px-5 py-3">
                   <Avatar name={user.email} size="sm" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-zinc-200">
+                    <p className="truncate text-[13px] font-medium text-fg">
                       {user.email}
                     </p>
                     <p className="truncate font-mono text-[11px] text-fg-muted">

@@ -36,10 +36,10 @@ function StatCard({ label, value, hint, to, icon: Icon }) {
   return (
     <Card className="flex flex-col justify-between gap-6 p-5">
       <div>
-        <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+        <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
           <Icon className="size-4.5" />
         </div>
-        <div className="mt-4 text-2xl font-semibold tracking-tight text-zinc-100">
+        <div className="mt-4 text-2xl font-semibold tracking-tight text-fg">
           {value}
         </div>
         <p className="mt-0.5 text-[13px] text-fg-muted">{label}</p>
@@ -63,16 +63,16 @@ function ModuleLink({ to, label, description, icon: Icon }) {
   return (
     <Link
       to={to}
-      className="group flex items-start gap-3.5 rounded-xl border border-zinc-800/70 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-zinc-700 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+      className="group flex items-start gap-3.5 rounded-xl border border-line/70 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-line-strong hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
     >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
         <Icon className="size-4.5" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-zinc-100">{label}</p>
+        <p className="text-sm font-semibold text-fg">{label}</p>
         <p className="mt-0.5 text-[13px] text-fg-muted">{description}</p>
       </div>
-      <ArrowUpRight className="ml-auto mt-1 size-4 shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-zinc-300" />
+      <ArrowUpRight className="ml-auto mt-1 size-4 shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-fg-subtle" />
     </Link>
   )
 }
@@ -109,7 +109,7 @@ export function TenantOverviewPage() {
     <div className="flex flex-col gap-8">
       <section>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
+          <div className="flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
             <Building2 className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
@@ -199,11 +199,11 @@ export function TenantOverviewPage() {
         <section>
           <Card>
             <div className="flex items-start gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+              <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
                 <Building2 className="size-4.5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-zinc-100">
+                <p className="text-sm font-semibold text-fg">
                   {tenant?.name ?? 'Tenant'}
                 </p>
                 <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">
@@ -217,7 +217,7 @@ export function TenantOverviewPage() {
       )}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-zinc-200">
+        <h2 className="mb-3 text-sm font-semibold text-fg">
           Workspace
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">

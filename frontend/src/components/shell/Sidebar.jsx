@@ -19,8 +19,8 @@ function NavItem({ to, label, icon: Icon, onNavigate }) {
           'group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
           isActive
-            ? 'bg-zinc-900 text-zinc-100'
-            : 'text-fg-muted hover:bg-zinc-900/60 hover:text-zinc-200',
+            ? 'bg-surface-overlay text-fg'
+            : 'text-fg-muted hover:bg-surface-raised hover:text-fg',
         )
       }
     >
@@ -29,7 +29,7 @@ function NavItem({ to, label, icon: Icon, onNavigate }) {
           {Icon && <Icon
             className={cn(
               'size-4 shrink-0 transition-colors duration-150',
-              isActive ? 'text-indigo-400' : 'text-fg-muted group-hover:text-zinc-400',
+              isActive ? 'text-indigo-400' : 'text-fg-muted group-hover:text-fg-muted',
             )}
           />}
           {label}
@@ -122,7 +122,7 @@ export function Sidebar({ mobile = false, onNavigate }) {
     <nav
       aria-label="Primary"
       className={cn(
-        'flex h-full flex-col gap-6 overflow-y-auto border-zinc-800/70 bg-base px-3 py-4',
+        'flex h-full flex-col gap-6 overflow-y-auto border-line/70 bg-base px-3 py-4',
         mobile ? '' : 'border-r',
       )}
     >
