@@ -151,7 +151,19 @@ async def test_response_excludes_no_sensitive_fields(
     body = response.json()
 
     target_user = next(u for u in body["items"] if u["id"] == target.id)
-    expected_keys = {"id", "email", "username", "status", "created_at", "updated_at"}
+    # "memberships" added by issue #296. The key set is asserted exactly
+    # on purpose: this endpoint is the platform plane's view of a person,
+    # and a field appearing here without a decision is how tenant content
+    # leaks into it.
+    expected_keys = {
+        "id",
+        "email",
+        "username",
+        "status",
+        "memberships",
+        "created_at",
+        "updated_at",
+    }
     assert set(target_user.keys()) == expected_keys
 
     _, user_repo, _ = repositories
@@ -182,3 +194,90 @@ async def test_platform_users_in_production_openapi():
     assert result.returncode == 0, f"openapi subprocess failed: {result.stderr}"
     paths = set(json.loads(result.stdout))
     assert "/platform/users" in paths
+
+
+async def _seed_tenant_with_member(repositories, user, role):
+    from arc.domain.models import Membership, Tenant
+
+    tenant_repo, _, membership_repo = repositories
+    tenant = await tenant_repo.create(
+        Tenant(id=_unique("tenant"), name=f"Company {uuid.uuid4().hex[:6]}")
+    )
+    await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=user.id,
+            tenant_id=tenant.id,
+            role=role,
+        )
+    )
+    return tenant
+
+
+async def test_listing_reports_each_membership_with_its_tenant_name(
+    client, repositories, make_token, authorization_override
+):
+    """Issue #296: the directory must be organisable by company.
+
+    Without this the platform sees one flat list of every person across
+    every customer, which is unreadable once there is more than one
+    customer. Membership is platform administration metadata, not tenant
+    content: ADR-008 already allows a PLATFORM_ADMINISTRATOR to CREATE
+    memberships for any user in any tenant.
+    """
+    from arc.domain.models import UserRole
+
+    admin = await _seed_user(repositories)
+    target = await _seed_user(repositories)
+    tenant = await _seed_tenant_with_member(repositories, target, UserRole.OWNER)
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+    response = client.get(
+        "/platform/users",
+        headers={"Authorization": f"Bearer {make_token(admin.id)}"},
+    )
+
+    assert response.status_code == 200
+    listed = next(u for u in response.json()["items"] if u["id"] == target.id)
+    assert listed["memberships"] == [
+        {"tenant_id": tenant.id, "tenant_name": tenant.name, "role": "owner"}
+    ]
+
+
+async def test_a_person_in_two_companies_reports_both(
+    client, repositories, make_token, authorization_override
+):
+    """Hiding the second membership would misrepresent their access."""
+    from arc.domain.models import UserRole
+
+    admin = await _seed_user(repositories)
+    target = await _seed_user(repositories)
+    first = await _seed_tenant_with_member(repositories, target, UserRole.OWNER)
+    second = await _seed_tenant_with_member(repositories, target, UserRole.MEMBER)
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+    response = client.get(
+        "/platform/users",
+        headers={"Authorization": f"Bearer {make_token(admin.id)}"},
+    )
+
+    listed = next(u for u in response.json()["items"] if u["id"] == target.id)
+    assert {m["tenant_id"] for m in listed["memberships"]} == {first.id, second.id}
+    assert {m["role"] for m in listed["memberships"]} == {"owner", "member"}
+
+
+async def test_a_person_with_no_membership_reports_an_empty_list(
+    client, repositories, make_token, authorization_override
+):
+    """Platform administrators sit here: administering Arc is not membership."""
+    admin = await _seed_user(repositories)
+    target = await _seed_user(repositories)
+    authorization_override({admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+    response = client.get(
+        "/platform/users",
+        headers={"Authorization": f"Bearer {make_token(admin.id)}"},
+    )
+
+    listed = next(u for u in response.json()["items"] if u["id"] == target.id)
+    assert listed["memberships"] == []

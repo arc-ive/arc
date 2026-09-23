@@ -109,6 +109,10 @@ class MembershipRepository(Protocol):
         """Get membership by user and tenant IDs."""
         ...
 
+    async def get_memberships_with_tenant_for_users(self, user_ids: list) -> dict:
+        """Map user ids to their memberships, with tenant names."""
+        ...
+
     async def exists(self, user_id: str, tenant_id: str) -> bool:
         """Check if membership exists."""
         ...

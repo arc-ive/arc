@@ -205,6 +205,10 @@ class PostgreSQLMembershipRepository:
         """Get membership by user and tenant IDs."""
         return await self.db.get_membership(user_id, tenant_id)
 
+    async def get_memberships_with_tenant_for_users(self, user_ids: list) -> dict:
+        """Map user ids to their memberships, with tenant names."""
+        return await self.db.get_memberships_with_tenant_for_users(user_ids)
+
     async def exists(self, user_id: str, tenant_id: str) -> bool:
         """Check if membership exists."""
         try:

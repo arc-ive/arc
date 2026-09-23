@@ -170,6 +170,22 @@ class MembershipService:
 
         return await self.membership_repo.create(membership)
 
+    async def memberships_by_user(self, user_ids: list) -> dict:
+        """Map user ids to their memberships, with tenant names.
+
+        One query for a whole page rather than one per user: the platform
+        directory renders every provisioned user, so a per-user lookup is
+        an N+1 that grows with the customer base.
+
+        Membership is platform administration metadata, not tenant
+        content. ADR-008 already allows a PLATFORM_ADMINISTRATOR to
+        create memberships for any user in any tenant, so reading which
+        ones exist is strictly less privileged. Tenant content --
+        knowledge, approvals, skills -- stays unreachable from the
+        platform plane.
+        """
+        return await self.membership_repo.get_memberships_with_tenant_for_users(user_ids)
+
     async def get_membership(self, user_id: str, tenant_id: str) -> Membership:
         """Get membership by user and tenant IDs."""
         return await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)

@@ -16,6 +16,7 @@ import { Badge } from '../../components/ui/Badge.jsx'
 import { Avatar } from '../../components/ui/Avatar.jsx'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
+import { Section } from '../../components/layout/Section.jsx'
 import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 import { formatDate } from '../../lib/format.js'
 
@@ -152,10 +153,72 @@ function CreateUserDialog({ open, onClose }) {
  *
  * Role is likewise not available from any endpoint reachable here.
  */
+const ROLE_ORDER = ['owner', 'member', 'viewer']
+
+/** One person inside a company, or in the no-workspace group. */
+function PersonRow({ user }) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line py-3.5 transition-colors duration-150 hover:bg-surface-sunk/70">
+      <Avatar name={user.username || user.email} size="sm" />
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[14.5px] font-medium text-fg">
+          {user.username || user.email}
+        </p>
+        {/* Only when it adds something: a person with no display name
+            would otherwise have their email printed twice, stacked. */}
+        {user.username && (
+          <p className="truncate text-[12.5px] text-fg-muted">{user.email}</p>
+        )}
+      </div>
+
+      {user.role && (
+        <span className="type-label shrink-0 text-fg-muted">{user.role}</span>
+      )}
+
+      {user.status !== 'active' && (
+        <Badge variant="neutral" size="sm" dot>
+          {user.status}
+        </Badge>
+      )}
+
+      <span className="hidden shrink-0 text-[12.5px] text-fg-muted lg:block">
+        Joined {formatDate(user.created_at)}
+      </span>
+    </li>
+  )
+}
+
+const ROLE_FILTERS = [
+  { value: null, label: 'Everyone' },
+  { value: 'owner', label: 'Owners' },
+  { value: 'member', label: 'Members' },
+  { value: 'viewer', label: 'Viewers' },
+]
+
+/**
+ * Everyone on the platform, organised by the company they belong to.
+ *
+ * This was one flat list of every person across every customer, which is
+ * unreadable the moment there is more than one customer: four companies
+ * of four people read as sixteen strangers.
+ *
+ * `/platform/users` now returns each person's memberships with the
+ * tenant name and role, so the page groups by company and a platform
+ * administrator can see the shape of the customer base rather than a
+ * directory dump.
+ *
+ * Membership is platform administration metadata, not tenant content:
+ * ADR-008 already lets a platform administrator CREATE memberships for
+ * any user in any tenant, so reading them is strictly less privileged.
+ * Tenant content -- knowledge, approvals, skills -- is still unreachable
+ * from here, and opening a workspace is still the way to see inside one.
+ */
 export function PlatformUsersPage() {
   useDocumentTitle('People')
   const [createOpen, setCreateOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [role, setRole] = useState(null)
 
   const handleCloseCreate = useCallback(() => setCreateOpen(false), [])
 
@@ -167,14 +230,42 @@ export function PlatformUsersPage() {
   const people = users.data ?? []
   const needle = query.trim().toLowerCase()
 
-  const shown = needle
-    ? people.filter(
-        (u) =>
-          (u.username ?? '').toLowerCase().includes(needle) ||
-          (u.email ?? '').toLowerCase().includes(needle),
-      )
-    : people
+  const matchesSearch = (u) =>
+    !needle ||
+    (u.username ?? '').toLowerCase().includes(needle) ||
+    (u.email ?? '').toLowerCase().includes(needle)
 
+  // Group by company. A person with two memberships appears under both,
+  // because that is true and hiding one would misrepresent their access.
+  const companies = new Map()
+  const unaffiliated = []
+
+  for (const person of people) {
+    if (!matchesSearch(person)) continue
+    const memberships = (person.memberships ?? []).filter(
+      (m) => !role || m.role === role,
+    )
+    if (memberships.length === 0) {
+      // Only unaffiliated when they have no memberships at all — not
+      // when a role filter excluded the ones they have.
+      if ((person.memberships ?? []).length === 0 && !role) {
+        unaffiliated.push(person)
+      }
+      continue
+    }
+    for (const m of memberships) {
+      if (!companies.has(m.tenant_id)) {
+        companies.set(m.tenant_id, { name: m.tenant_name, people: [] })
+      }
+      companies.get(m.tenant_id).people.push({ ...person, role: m.role })
+    }
+  }
+
+  const grouped = [...companies.entries()].sort((a, b) =>
+    a[1].name.localeCompare(b[1].name),
+  )
+  const shownCount =
+    grouped.reduce((n, [, c]) => n + c.people.length, 0) + unaffiliated.length
   const inactive = people.filter((u) => u.status !== 'active').length
 
   return (
@@ -184,8 +275,9 @@ export function PlatformUsersPage() {
           <h1 className="type-display-lg text-fg">People</h1>
           {!users.isPending && (
             <p className="mt-2 text-[14px] text-fg-muted">
-              {people.length} provisioned
-              {inactive > 0 ? ` · ${inactive} not active` : ' · all active'}
+              {people.length} provisioned across {companies.size}{' '}
+              {companies.size === 1 ? 'workspace' : 'workspaces'}
+              {inactive > 0 ? ` · ${inactive} not active` : ''}
             </p>
           )}
         </div>
@@ -208,6 +300,23 @@ export function PlatformUsersPage() {
             aria-label="Find someone on the platform"
             className="h-10 w-full border-0 bg-transparent pl-7 text-[15px] text-fg placeholder:text-fg-muted focus-visible:outline-none"
           />
+        </div>
+
+        <div className="flex flex-wrap gap-1">
+          {ROLE_FILTERS.map((f) => (
+            <button
+              key={f.value ?? 'all'}
+              onClick={() => setRole(f.value)}
+              aria-pressed={role === f.value}
+              className={`rounded px-2.5 py-1 text-[13px] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 ${
+                role === f.value
+                  ? 'text-fg underline decoration-fg-muted decoration-1 underline-offset-[6px]'
+                  : 'text-fg-muted hover:text-fg-subtle'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -236,41 +345,47 @@ export function PlatformUsersPage() {
         </div>
       )}
 
-      {!users.isPending && shown.length > 0 && (
-        <ul className="stagger">
-          {shown.map((user) => {
-            return (
-              <li
-                key={user.id}
-                className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line py-4 transition-colors duration-150 hover:bg-surface-sunk/70"
-              >
-                <Avatar name={user.username || user.email} size="md" />
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-medium text-fg">
-                    {user.username || user.email}
-                  </p>
-                  {/* Only when it adds something: a person with no display
-                      name would otherwise have their email printed twice,
-                      stacked. */}
-                  {user.username && (
-                    <p className="truncate text-[13px] text-fg-muted">{user.email}</p>
-                  )}
-                </div>
-
-                {user.status !== 'active' && (
-                  <Badge variant="neutral" size="sm" dot>
-                    {user.status}
-                  </Badge>
-                )}
-
-                <span className="hidden shrink-0 text-[12.5px] text-fg-muted lg:block">
-                  Joined {formatDate(user.created_at)}
+      {/* Both groups share one gate. Nesting the no-workspace group
+          inside the company groups meant a platform whose users have no
+          memberships yet -- a fresh deployment, or before anyone is
+          assigned -- rendered an empty page while holding users. */}
+      {!users.isPending && (grouped.length > 0 || unaffiliated.length > 0) && (
+        <div className="mt-2 flex flex-col gap-12">
+          {grouped.map(([tenantId, company]) => (
+            <Section
+              key={tenantId}
+              title={company.name}
+              actions={
+                <span className="text-[12.5px] text-fg-muted">
+                  {company.people.length}{' '}
+                  {company.people.length === 1 ? 'person' : 'people'}
                 </span>
-              </li>
-            )
-          })}
-        </ul>
+              }
+            >
+              <ul className="stagger border-t border-line">
+                {company.people
+                  .slice()
+                  .sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role))
+                  .map((user) => (
+                    <PersonRow key={`${tenantId}-${user.id}`} user={user} />
+                  ))}
+              </ul>
+            </Section>
+          ))}
+
+          {unaffiliated.length > 0 && (
+            <Section
+              title="No workspace"
+              description="Provisioned on the platform but not a member of any workspace. Platform administrators sit here by design — administering Arc does not make you a member of a customer's workspace."
+            >
+              <ul className="stagger border-t border-line">
+                {unaffiliated.map((user) => (
+                  <PersonRow key={user.id} user={user} />
+                ))}
+              </ul>
+            </Section>
+          )}
+        </div>
       )}
 
       {!users.isPending && !users.isError && people.length === 0 && (
@@ -279,18 +394,11 @@ export function PlatformUsersPage() {
         </p>
       )}
 
-      {!users.isPending && people.length > 0 && shown.length === 0 && (
+      {!users.isPending && people.length > 0 && shownCount === 0 && (
         <p className="mt-8 text-[14px] text-fg-muted">
           Nobody matches that search.
         </p>
       )}
-
-      <p className="measure mt-6 text-[12.5px] leading-relaxed text-fg-muted">
-        Arc keeps platform administration separate from workspace
-        membership, so this directory cannot show which workspaces someone
-        belongs to or what role they hold there. Open a workspace to see
-        its people.
-      </p>
 
       <CreateUserDialog open={createOpen} onClose={handleCloseCreate} />
     </div>
