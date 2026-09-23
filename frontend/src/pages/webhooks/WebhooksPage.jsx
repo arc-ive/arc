@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Webhook, AlertTriangle, CheckCircle } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { listWebhookEvents } from '../../api/endpoints/webhooks.js'
@@ -13,12 +13,11 @@ import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryS
 
 export function WebhooksPage() {
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
 
   const eventsQuery = useQuery({
     queryKey: queryKeys.webhookEvents(tenantId),
     queryFn: () => listWebhookEvents(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
   const events = eventsQuery.data
   const isLoading = isQueryLoading(eventsQuery)
@@ -30,12 +29,9 @@ export function WebhooksPage() {
     <div className="flex flex-col gap-6">
       <section>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-            <Webhook className="size-5" />
-          </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Webhooks</h1>
-            <p className="mt-1 text-sm text-zinc-500">Inbound webhook events for this tenant.</p>
+            <PageHeader title="Webhooks"
+          description="Inbound webhook events for this tenant." />
           </div>
         </div>
       </section>
@@ -78,7 +74,7 @@ export function WebhooksPage() {
                     )}
                     <div>
                       <p className="text-sm text-zinc-100">{event.event_type}</p>
-                      <p className="text-xs text-zinc-500">Endpoint: {event.endpoint_id}</p>
+                      <p className="text-xs text-fg-muted">Endpoint: {event.endpoint_id}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -86,12 +82,12 @@ export function WebhooksPage() {
                       {event.status}
                     </Badge>
                     {event.duplicate && (
-                      <Badge variant="amber" size="sm">duplicate</Badge>
+                      <Badge variant="warning" size="sm">duplicate</Badge>
                     )}
-                    <span className="text-xs text-zinc-600">
+                    <span className="text-xs text-fg-muted">
                       {event.payload_size_bytes} bytes
                     </span>
-                    <span className="text-xs text-zinc-600">
+                    <span className="text-xs text-fg-muted">
                       {new Date(event.created_at).toLocaleString()}
                     </span>
                   </div>

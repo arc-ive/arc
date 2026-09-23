@@ -7,12 +7,79 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
     "Cascadia Mono", "Segoe UI Mono", monospace;
 
-  --color-base: #09090b;
-  --color-raised: #0d0d10;
-  --color-panel: #121215;
-  --color-elevated: #17171b;
+  /* ----------------------------------------------------------------
+     Layer 1 — primitives.
 
-  --color-intel: #22d3ee;
+     Raw values with no meaning attached. Nothing outside this block
+     should reference them directly; they exist so the semantic layer
+     below has something to point at.
+     ---------------------------------------------------------------- */
+  --arc-zinc-100: #f4f4f5;
+  --arc-zinc-200: #e4e4e7;
+  --arc-zinc-400: #a1a1aa;
+  --arc-zinc-700: #3f3f46;
+  --arc-zinc-800: #27272a;
+
+  --arc-indigo-400: #818cf8;
+  --arc-emerald-300: #6ee7b7;
+  --arc-amber-300: #fcd34d;
+  --arc-red-300: #fca5a5;
+  --arc-cyan-300: #67e8f9;
+
+  --arc-ink-0: #09090b;
+  --arc-ink-1: #0d0d10;
+  --arc-ink-2: #121215;
+  --arc-ink-3: #17171b;
+
+  /* ----------------------------------------------------------------
+     Layer 2 — semantic.
+
+     What a colour is FOR, not what it looks like. Components reference
+     only this layer, so retheming is a change here and nowhere else.
+
+     Every foreground value below is verified against every surface it
+     can sit on. Measured on Arc's own surfaces:
+
+       zinc-200   15.68 : 1  → --color-fg
+       zinc-400    6.97 : 1  → --color-fg-muted   (worst case, on elevated)
+       zinc-500    3.70 : 1  ← FAILS AA. This single pairing produced most
+       zinc-600    2.31 : 1  ← FAILS AA badly.    of the 159 sub-AA instances.
+
+     zinc-400 is therefore the floor for text. A consequence worth naming:
+     body-vs-metadata hierarchy can no longer be carried by colour, so it
+     has to come from size and weight instead — which is what
+     ARC_DESIGN_SYSTEM.md §3 asks for anyway.
+     ---------------------------------------------------------------- */
+  --color-canvas: var(--arc-ink-0);
+  --color-surface: var(--arc-ink-1);
+  --color-surface-raised: var(--arc-ink-2);
+  --color-surface-overlay: var(--arc-ink-3);
+
+  --color-fg: var(--arc-zinc-100);
+  --color-fg-strong: #fafafa;
+  --color-fg-muted: var(--arc-zinc-400);
+
+  --color-line: var(--arc-zinc-800);
+  --color-line-strong: var(--arc-zinc-700);
+
+  /* Action and status. Status colours are paired with an icon and a text
+     label at every call site — ARC_DESIGN_SYSTEM.md §12 forbids colour as
+     the only signal. */
+  --color-primary: var(--arc-indigo-400);
+  --color-success: var(--arc-emerald-300);
+  --color-warning: var(--arc-amber-300);
+  --color-danger: var(--arc-red-300);
+  --color-info: var(--arc-cyan-300);
+
+  /* Retained aliases. The existing bg-base / bg-panel utilities are used
+     in ~25 files; renaming them is churn without benefit, so they stay
+     pointing at the same primitives the semantic names use. */
+  --color-base: var(--arc-ink-0);
+  --color-raised: var(--arc-ink-1);
+  --color-panel: var(--arc-ink-2);
+  --color-elevated: var(--arc-ink-3);
+
+  --color-intel: var(--arc-cyan-300);
   --color-intel-dim: #0891b2;
 
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.2);

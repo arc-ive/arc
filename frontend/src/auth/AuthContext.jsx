@@ -1,21 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import client from '../api/client.js'
-import { clearAuthState, enterDemoMode, isDemoMode } from './token.js'
+import { clearAuthState } from './token.js'
 import { SESSION_EXPIRED_EVENT } from '../api/client.js'
 import { AuthContext } from './context.js'
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [demo, setDemo] = useState(() => isDemoMode())
 
   // Check session on mount
   useEffect(() => {
-    if (demo) {
-      setLoading(false)
-      return
-    }
-
     // Check if we have a session by calling /auth/me via the shared API client
     // which uses the configured VITE_API_BASE_URL and withCredentials.
     client.get('/auth/me')
@@ -27,7 +21,7 @@ export function AuthProvider({ children }) {
         setSession(null)
         setLoading(false)
       })
-  }, [demo])
+  }, [])
 
   // Listen for session expiry events
   useEffect(() => {
@@ -76,15 +70,7 @@ export function AuthProvider({ children }) {
     }
     clearAuthState()
     setSession(null)
-    setDemo(false)
     window.location.href = '/login'
-  }, [])
-
-  const enterDemo = useCallback(() => {
-    if (!import.meta.env.DEV) return
-    enterDemoMode()
-    setDemo(true)
-    setLoading(false)
   }, [])
 
   const principal = useMemo(() => {
@@ -94,25 +80,20 @@ export function AuthProvider({ children }) {
         exp: null, // Session expiry is managed server-side
       }
     }
-    if (demo) {
-      return { sub: 'demo-user', exp: null }
-    }
     return null
-  }, [session, demo])
+  }, [session])
 
   const value = useMemo(
     () => ({
       session,
       principal,
-      isAuthenticated: Boolean(session) || demo,
-      isDemo: demo,
+      isAuthenticated: Boolean(session),
       isLoading: loading,
       signIn,
       devSignIn,
       signOut,
-      enterDemo,
     }),
-    [session, principal, demo, loading, signIn, devSignIn, signOut, enterDemo],
+    [session, principal, loading, signIn, devSignIn, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

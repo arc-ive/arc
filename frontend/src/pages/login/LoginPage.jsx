@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
 import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { ShieldCheck, Users } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
@@ -19,7 +20,7 @@ function Brand() {
         <p className="text-xl font-semibold tracking-tight text-zinc-100">
           Arc
         </p>
-        <p className="mt-0.5 text-[13px] text-zinc-500">
+        <p className="mt-0.5 text-[13px] text-fg-muted">
           Enterprise Intelligence Platform
         </p>
       </div>
@@ -81,7 +82,7 @@ function DevUserSelector() {
 
   return (
     <div className="mt-3 border-t border-zinc-800 pt-4">
-      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-fg-muted">
         <Users className="size-3" />
         Development Login
       </div>
@@ -139,11 +140,11 @@ export function LoginPage() {
         <Card className="overflow-hidden">
           <div className="flex flex-col gap-4 p-5">
             {error && (
-              <div className="rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+              <InlineError>
                 {error === 'access_denied'
                   ? 'Access denied. Your Google account is not linked to an Arc user. Please contact your administrator.'
                   : 'Authentication failed. Please try again.'}
-              </div>
+              </InlineError>
             )}
 
             <Button
@@ -160,7 +161,7 @@ export function LoginPage() {
           </div>
         </Card>
 
-        <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-zinc-600">
+        <div className="mt-6 flex items-center justify-center gap-1.5 text-xs text-fg-muted">
           <ShieldCheck className="size-3.5" />
           The backend remains the source of truth for identity and access.
         </div>

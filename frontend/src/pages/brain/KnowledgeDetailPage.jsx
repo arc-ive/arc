@@ -2,7 +2,6 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { ArrowLeft, BookOpen, FileText, SearchX, Edit, Save, X, Loader2 } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { getKnowledgeDocument, updateKnowledge } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -20,7 +19,6 @@ import { Select } from '../../components/ui/Select.jsx'
 
 export function KnowledgeDetailPage() {
   const { tenantId, documentId } = useParams()
-  const { isDemo } = useAuth()
   const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
@@ -33,7 +31,7 @@ export function KnowledgeDetailPage() {
   const documentQuery = useQuery({
     queryKey: queryKeys.knowledgeDocument(tenantId, documentId),
     queryFn: () => getKnowledgeDocument(tenantId, documentId),
-    enabled: !isDemo && Boolean(tenantId && documentId),
+    enabled: Boolean(tenantId && documentId),
   })
 
   const updateMutation = useMutation({
@@ -86,7 +84,7 @@ export function KnowledgeDetailPage() {
       <div className="mx-auto max-w-3xl">
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-zinc-500 transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
@@ -122,7 +120,7 @@ export function KnowledgeDetailPage() {
       <div className="mx-auto max-w-3xl">
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-zinc-500 transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
@@ -175,7 +173,7 @@ export function KnowledgeDetailPage() {
       <section>
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-zinc-500 transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
@@ -195,7 +193,7 @@ export function KnowledgeDetailPage() {
               <Badge size="sm" dot variant={doc.status === 'active' ? 'green' : 'neutral'}>
                 {doc.status}
               </Badge>
-              <span className="font-mono text-xs text-zinc-600">
+              <span className="font-mono text-xs text-fg-muted">
                 v{doc.version}
               </span>
             </div>
@@ -298,7 +296,7 @@ export function KnowledgeDetailPage() {
                     {doc.content}
                   </div>
                 ) : (
-                  <p className="text-sm text-zinc-500">This document has no content.</p>
+                  <p className="text-sm text-fg-muted">This document has no content.</p>
                 )}
               </CardContent>
             </Card>
@@ -308,27 +306,27 @@ export function KnowledgeDetailPage() {
               <CardContent className="py-4">
                 <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
                   <div className="flex items-center justify-between gap-4">
-                    <dt className="text-[13px] text-zinc-500">Source</dt>
+                    <dt className="text-[13px] text-fg-muted">Source</dt>
                     <dd className="font-mono text-xs text-zinc-300">{doc.source}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <dt className="text-[13px] text-zinc-500">Version</dt>
+                    <dt className="text-[13px] text-fg-muted">Version</dt>
                     <dd className="font-mono text-xs text-zinc-300">{doc.version}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-4 sm:col-span-2">
-                    <dt className="text-[13px] text-zinc-500">Document ID</dt>
+                    <dt className="text-[13px] text-fg-muted">Document ID</dt>
                     <dd className="truncate font-mono text-xs text-zinc-400">
                       {doc.id}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <dt className="text-[13px] text-zinc-500">Created</dt>
+                    <dt className="text-[13px] text-fg-muted">Created</dt>
                     <dd className="text-xs text-zinc-400">
                       {formatDateTime(doc.created_at)}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-4">
-                    <dt className="text-[13px] text-zinc-500">Updated</dt>
+                    <dt className="text-[13px] text-fg-muted">Updated</dt>
                     <dd className="text-xs text-zinc-400">
                       {formatDateTime(doc.updated_at)}
                     </dd>
@@ -340,7 +338,7 @@ export function KnowledgeDetailPage() {
         )}
       </form>
 
-      <div className="flex items-center gap-2 text-xs text-zinc-600">
+      <div className="flex items-center gap-2 text-xs text-fg-muted">
         <FileText className="size-3.5" />
         Stored as plain text. Retrieval and grounding are handled by the
         backend.

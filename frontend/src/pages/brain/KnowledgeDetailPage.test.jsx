@@ -69,7 +69,7 @@ describe('KnowledgeDetailPage edit workflow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAuth.mockReturnValue({ isDemo: false })
+    mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
     serverDoc = { ...MOCK_DOCUMENT }
     mockGetKnowledgeDocument.mockImplementation(() => Promise.resolve({ ...serverDoc }))
     mockUpdateKnowledge.mockImplementation((_tenantId, _documentId, payload) => {

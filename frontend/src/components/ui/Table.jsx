@@ -46,7 +46,7 @@ export function TableHead({ className, children, ...props }) {
   return (
     <th
       className={cn(
-        'border-b border-zinc-800/80 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500 whitespace-nowrap',
+        'border-b border-zinc-800/80 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-fg-muted whitespace-nowrap',
         className,
       )}
       {...props}

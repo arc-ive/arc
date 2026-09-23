@@ -17,7 +17,7 @@ export const Select = forwardRef(function Select(
           className="text-[13px] font-medium text-zinc-300"
         >
           {label}
-          {required && <span className="ml-0.5 text-zinc-500">*</span>}
+          {required && <span className="ml-0.5 text-fg-muted">*</span>}
         </label>
       )}
       <div className="relative">
@@ -37,12 +37,12 @@ export const Select = forwardRef(function Select(
           {children}
         </select>
         <ChevronDown
-          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500"
+          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-fg-muted"
           aria-hidden
         />
       </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
-      {hint && !error && <p className="text-xs text-zinc-500">{hint}</p>}
+      {hint && !error && <p className="text-xs text-fg-muted">{hint}</p>}
     </div>
   )
 })

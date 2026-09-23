@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowUpRight,
@@ -23,14 +24,14 @@ function EmployeeCapability({ to, label, description, icon: Icon }) {
       className="group flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-zinc-700 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
     >
       <div className="flex items-center justify-between">
-        <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500 transition-colors duration-150 group-hover:text-indigo-400">
+        <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
           <Icon className="size-4.5" />
         </div>
-        <ArrowUpRight className="size-4 text-zinc-600 transition-colors duration-150 group-hover:text-zinc-300" />
+        <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-zinc-300" />
       </div>
       <div>
         <p className="text-sm font-semibold text-zinc-100">{label}</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-zinc-500">
+        <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">
           {description}
         </p>
       </div>
@@ -47,13 +48,13 @@ function EmployeeCapability({ to, label, description, icon: Icon }) {
  */
 export function EmployeeHomePage() {
   const { tenantId } = useParams()
-  const { principal, isDemo } = useAuth()
-  const { role, me } = useCapabilities()
+  const { principal } = useAuth()
+  const { role } = useCapabilities()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -64,14 +65,12 @@ export function EmployeeHomePage() {
     <div className="flex flex-col gap-8">
       <section>
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            {tenant?.name ?? 'Your company'}
-          </h1>
-          <Badge variant="indigo" size="sm">
+          <PageHeader title={tenant?.name ?? 'Your company'} />
+          <Badge variant="accent" size="sm">
             Employee workspace
           </Badge>
         </div>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="mt-1 text-sm text-fg-muted">
           Approved company information and assistance — nothing else.
         </p>
       </section>
@@ -105,23 +104,23 @@ export function EmployeeHomePage() {
               />
             ) : tenant ? (
               <div className="flex items-center gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-3.5 py-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/60 text-fg-muted">
                   <Building2 className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-zinc-200">
                     {tenant.name}
                   </p>
-                  <p className="truncate font-mono text-[11px] text-zinc-600">
+                  <p className="truncate font-mono text-[11px] text-fg-muted">
                     {tenant.id}
                   </p>
                 </div>
-                <Badge variant="green" size="sm" dot>
+                <Badge variant="success" size="sm" dot>
                   {tenant.status}
                 </Badge>
               </div>
             ) : (
-              <p className="text-[13px] text-zinc-500">
+              <p className="text-[13px] text-fg-muted">
                 Tenant membership not found.
               </p>
             )}
@@ -136,19 +135,19 @@ export function EmployeeHomePage() {
           <CardContent>
             <dl className="space-y-2.5">
               <div className="flex items-center justify-between gap-4">
-                <dt className="text-[13px] text-zinc-500">User ID</dt>
+                <dt className="text-[13px] text-fg-muted">User ID</dt>
                 <dd className="truncate font-mono text-xs text-zinc-300">
                   {principal?.sub}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <dt className="text-[13px] text-zinc-500">Application role</dt>
+                <dt className="text-[13px] text-fg-muted">Application role</dt>
                 <dd className="font-mono text-xs text-zinc-300">
-                  {role ?? (me.data?.is_demo ? 'demo' : '—')}
+                  {role ?? '—'}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4">
-                <dt className="text-[13px] text-zinc-500">Expires</dt>
+                <dt className="text-[13px] text-fg-muted">Expires</dt>
                 <dd className="font-mono text-xs text-zinc-300">
                   {principal?.exp
                     ? relativeTime(principal.exp)

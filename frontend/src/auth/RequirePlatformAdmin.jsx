@@ -5,13 +5,15 @@ import { useCapabilities } from './capabilities.js'
  * Route guard that restricts access to platform administrators.
  *
  * Non-platform-administrator users are redirected to their workspace.
- * Demo Mode users are allowed through (existing behavior).
+ *
+ * Holds while the profile is unresolved rather than admitting the request:
+ * an unknown principal is not a platform administrator.
  *
  * This is a UX guard. The backend independently enforces authorization
  * on every API request.
  */
 export function RequirePlatformAdmin({ children }) {
-  const { me, isPlatformAdministrator, isDemo } = useCapabilities()
+  const { me, isPlatformAdministrator } = useCapabilities()
   const location = useLocation()
 
   if (me.isPending) {
@@ -22,7 +24,7 @@ export function RequirePlatformAdmin({ children }) {
     )
   }
 
-  if (!isPlatformAdministrator && !isDemo) {
+  if (!isPlatformAdministrator) {
     return <Navigate to="/app" replace state={{ from: location }} />
   }
 

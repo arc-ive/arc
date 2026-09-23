@@ -2,14 +2,35 @@ import { useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth/useAuth.js'
+import { useCapabilities } from '../auth/capabilities.js'
 import { getUserTenants } from '../api/endpoints/tenants.js'
 import { queryKeys } from '../api/queryKeys.js'
 import { errorMessage } from '../api/errors.js'
 import { useTenant } from './useTenant.js'
 import { Spinner } from '../components/ui/Spinner.jsx'
 import { ErrorState } from '../components/ui/ErrorState.jsx'
-import { EmptyState } from '../components/ui/EmptyState.jsx'
 import { ShieldX, Building2 } from 'lucide-react'
+
+
+/**
+ * A blocked tenant route still has to be a page.
+ *
+ * Previously these states rendered a bare `EmptyState`, whose title is an
+ * `h3` — so the document had no `h1` at all and screen-reader users landed
+ * on a headless page. This gives the blocked state a real page heading
+ * while keeping the same visual composition.
+ */
+function BlockedPage({ icon: Icon, title, description }) {
+  return (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+        <Icon className="size-5" aria-hidden />
+      </div>
+      <h1 className="text-lg font-semibold tracking-tight text-zinc-100">{title}</h1>
+      <p className="max-w-md text-[13px] leading-relaxed text-fg-muted">{description}</p>
+    </div>
+  )
+}
 
 /**
  * Guards tenant-scoped routes.
@@ -20,13 +41,14 @@ import { ShieldX, Building2 } from 'lucide-react'
  */
 export function RequireTenant({ children }) {
   const { tenantId } = useParams()
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
   const { setTenantId } = useTenant()
+  const { isPlatformAdministrator } = useCapabilities()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
   })
 
   useEffect(() => {
@@ -38,20 +60,10 @@ export function RequireTenant({ children }) {
     return userTenants.data.find((t) => t.id === tenantId)
   }, [userTenants.data, tenantId])
 
-  if (isDemo) {
-    return (
-      <EmptyState
-        icon={ShieldX}
-        title="Tenant access denied"
-        description="Demo Mode provides no tenant membership data, so tenant workspaces cannot be opened. Sign in with a real session to load your tenants."
-      />
-    )
-  }
-
   if (userTenants.isPending) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Spinner className="size-6 text-zinc-600" />
+        <Spinner className="size-6 text-fg-muted" />
       </div>
     )
   }
@@ -59,7 +71,7 @@ export function RequireTenant({ children }) {
   if (userTenants.isError) {
     return (
       <ErrorState
-        title="Could not load your tenants"
+        title="Could not load your workspaces"
         message={errorMessage(userTenants.error)}
         onRetry={() => userTenants.refetch()}
       />
@@ -68,20 +80,24 @@ export function RequireTenant({ children }) {
 
   if (!userTenants.data?.length) {
     return (
-      <EmptyState
+      <BlockedPage
         icon={Building2}
-        title="No tenants yet"
-        description="You are not a member of any tenant. Ask a platform administrator to provision your membership."
+        title="No workspace access"
+        description={
+          isPlatformAdministrator
+            ? 'Platform administration and customer workspaces are separate. Administering the platform does not grant access to a customer workspace — that requires membership of it.'
+            : 'You are not a member of any workspace yet. Ask your administrator to add you to one.'
+        }
       />
     )
   }
 
   if (!tenant) {
     return (
-      <EmptyState
+      <BlockedPage
         icon={ShieldX}
-        title="Tenant access denied"
-        description="You are not a member of this tenant, or it does not exist. You cannot access its data."
+        title="You don't have access to this workspace"
+        description="You are not a member of this workspace, or it does not exist."
       />
     )
   }

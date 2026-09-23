@@ -37,7 +37,7 @@ export function ErrorState({
         <Icon className="size-5" />
       </div>
       <h3 className="text-sm font-semibold text-zinc-200">{displayTitle}</h3>
-      <p className="max-w-sm text-[13px] leading-relaxed text-zinc-500">
+      <p className="max-w-sm text-[13px] leading-relaxed text-fg-muted">
         {displayMessage}
       </p>
       {onRetry && (
@@ -59,13 +59,13 @@ export function ForbiddenState({ message, className }) {
         className,
       )}
     >
-      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-fg-muted">
         <ShieldX className="size-5" />
       </div>
       <h3 className="text-sm font-semibold text-zinc-200">
         Permission denied
       </h3>
-      <p className="max-w-sm text-[13px] leading-relaxed text-zinc-500">
+      <p className="max-w-sm text-[13px] leading-relaxed text-fg-muted">
         {message ??
           'Your role does not grant access to this resource. Contact a platform administrator if you believe this is a mistake.'}
       </p>

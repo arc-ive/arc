@@ -1,4 +1,5 @@
 import { useAuth } from '../../auth/useAuth.js'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useMe } from '../../auth/useMe.js'
 import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
@@ -15,20 +16,14 @@ const ROLE_LABELS = {
 }
 
 export function ProfilePage() {
-  const { principal, isDemo, signOut } = useAuth()
+  const { principal, signOut } = useAuth()
   const me = useMe()
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
       <section>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-          Profile
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Your identity, session, and authorized context. The authorized
-          context is reported by the backend — the frontend never assumes
-          what you can do.
-        </p>
+        <PageHeader title="Profile"
+          description="Your identity, session, and authorized context. The authorized      context is reported by the backend — the frontend never assumes      what you can do." />
       </section>
 
       <Card>
@@ -44,14 +39,9 @@ export function ProfilePage() {
                 {me.data?.display_name || principal?.sub}
               </p>
               {me.data?.email && (
-                <p className="mt-0.5 text-xs text-zinc-500">{me.data.email}</p>
+                <p className="mt-0.5 text-xs text-fg-muted">{me.data.email}</p>
               )}
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                {isDemo && (
-                  <Badge variant="cyan" dot>
-                    Demo session
-                  </Badge>
-                )}
                 <Badge variant="neutral" size="sm">
                   Server-managed session
                 </Badge>
@@ -83,22 +73,17 @@ export function ProfilePage() {
           ) : (
             <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[13px] text-zinc-500">Application role</span>
+                <span className="text-[13px] text-fg-muted">Application role</span>
                 {me.data?.role ? (
-                  <Badge variant="indigo">
+                  <Badge variant="accent">
                     {ROLE_LABELS[me.data.role] ?? me.data.role}
                   </Badge>
                 ) : (
                   <Badge variant="neutral">None assigned</Badge>
                 )}
-                {me.data?.is_demo && (
-                  <Badge variant="cyan" size="sm">
-                    Demo — no backend context
-                  </Badge>
-                )}
               </div>
               <div>
-                <p className="mb-1.5 text-[13px] text-zinc-500">
+                <p className="mb-1.5 text-[13px] text-fg-muted">
                   Granted permissions
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -109,14 +94,14 @@ export function ProfilePage() {
                       </Badge>
                     ))
                   ) : (
-                    <p className="text-xs text-zinc-600">
+                    <p className="text-xs text-fg-muted">
                       No matrix permissions — self-scoped operations only.
                     </p>
                   )}
                 </div>
               </div>
               <div>
-                <p className="mb-1.5 text-[13px] text-zinc-500">
+                <p className="mb-1.5 text-[13px] text-fg-muted">
                   Tenant memberships
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -124,18 +109,18 @@ export function ProfilePage() {
                     me.data.memberships.map((membership) => (
                       <Badge key={membership.tenant_id} variant="neutral" size="sm">
                         <span className="font-mono">{membership.tenant_id}</span>
-                        <span className="text-zinc-600">·</span>
+                        <span className="text-fg-muted">·</span>
                         {membership.role}
                       </Badge>
                     ))
                   ) : (
-                    <p className="text-xs text-zinc-600">
+                    <p className="text-xs text-fg-muted">
                       No tenant memberships.
                     </p>
                   )}
                 </div>
               </div>
-              <p className="text-xs leading-relaxed text-zinc-600">
+              <p className="text-xs leading-relaxed text-fg-muted">
                 These capabilities inform what this app shows you. Every
                 protected operation is independently authorized by the
                 backend.
@@ -153,19 +138,19 @@ export function ProfilePage() {
         <CardContent>
           <dl className="divide-y divide-zinc-800/60">
             <div className="flex items-start justify-between gap-4 py-1.5">
-              <dt className="shrink-0 text-[13px] text-zinc-500">Session type</dt>
+              <dt className="shrink-0 text-[13px] text-fg-muted">Session type</dt>
               <dd className="text-right text-xs text-zinc-300">
                 HttpOnly secure cookie
               </dd>
             </div>
             <div className="flex items-start justify-between gap-4 py-1.5">
-              <dt className="shrink-0 text-[13px] text-zinc-500">Session storage</dt>
+              <dt className="shrink-0 text-[13px] text-fg-muted">Session storage</dt>
               <dd className="text-right text-xs text-zinc-300">
                 Server-side (PostgreSQL)
               </dd>
             </div>
             <div className="flex items-start justify-between gap-4 py-1.5">
-              <dt className="shrink-0 text-[13px] text-zinc-500">Cookie attributes</dt>
+              <dt className="shrink-0 text-[13px] text-fg-muted">Cookie attributes</dt>
               <dd className="text-right text-xs text-zinc-300">
                 HttpOnly, Secure, SameSite=Lax
               </dd>
@@ -180,7 +165,7 @@ export function ProfilePage() {
           description="End your session and clear the server-side session."
         />
         <CardContent>
-          <p className="mb-4 text-[13px] leading-relaxed text-zinc-500">
+          <p className="mb-4 text-[13px] leading-relaxed text-fg-muted">
             Signing out invalidates your server-side session and clears the
             session cookie. You will need to authenticate again to access
             the platform.

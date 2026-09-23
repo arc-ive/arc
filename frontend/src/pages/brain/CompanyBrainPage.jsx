@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, FilePlus2, Search, X } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { getKnowledge, searchKnowledge, KNOWLEDGE_SOURCES } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -49,7 +49,6 @@ function useDebounced(value, delay = 200) {
 export function CompanyBrainPage() {
   const { tenantId } = useParams()
   const navigate = useNavigate()
-  const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const [tab, setTab] = useState('all')
   const [query, setQuery] = useState('')
@@ -58,13 +57,13 @@ export function CompanyBrainPage() {
   const knowledge = useQuery({
     queryKey: queryKeys.knowledge(tenantId),
     queryFn: () => getKnowledge(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const search = useQuery({
     queryKey: queryKeys.knowledgeSearch(tenantId, debouncedQuery, 20),
     queryFn: () => searchKnowledge(tenantId, debouncedQuery, 20),
-    enabled: !isDemo && Boolean(tenantId) && Boolean(debouncedQuery.trim()),
+    enabled: Boolean(tenantId) && Boolean(debouncedQuery.trim()),
   })
 
   const canCreate = can('knowledge:create')
@@ -93,13 +92,8 @@ export function CompanyBrainPage() {
     <div className="flex flex-col gap-6">
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-            Company Brain
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            The company&apos;s intelligence — knowledge, procedures, policies,
-            decisions, incidents, and solutions with provenance.
-          </p>
+          <PageHeader title="Company Brain"
+          description="The company&apos;s intelligence — knowledge, procedures, policies,       decisions, incidents, and solutions with provenance." />
         </div>
         {canCreate && (
           <Button onClick={() => navigate('new')}>
@@ -113,7 +107,7 @@ export function CompanyBrainPage() {
 
       <section className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -121,7 +115,7 @@ export function CompanyBrainPage() {
             aria-label="Search knowledge"
             className={cn(
               'h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900/70 pl-9 pr-8 text-sm text-zinc-100',
-              'placeholder:text-zinc-500 transition-colors duration-150',
+              'placeholder:text-fg-muted transition-colors duration-150',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
               'hover:border-zinc-700',
             )}
@@ -131,7 +125,7 @@ export function CompanyBrainPage() {
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-500 transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
               <X className="size-3.5" />
             </button>
@@ -249,21 +243,21 @@ export function CompanyBrainPage() {
                   <Badge variant={sourceVariants[chunk.source] ?? 'neutral'}>
                     {sourceLabels[chunk.source] ?? chunk.source}
                   </Badge>
-                  <span className="font-mono text-[11px] text-zinc-600">
+                  <span className="font-mono text-[11px] text-fg-muted">
                     v{chunk.document_version}
                   </span>
                 </div>
                 <p className="text-sm font-medium leading-snug text-zinc-100">
                   {chunk.provenance || 'Untitled document'}
                 </p>
-                <p className="line-clamp-3 text-[13px] leading-relaxed text-zinc-500">
+                <p className="line-clamp-3 text-[13px] leading-relaxed text-fg-muted">
                   {truncate(chunk.content, 240)}
                 </p>
                 <div className="mt-auto flex items-center justify-between pt-1">
-                  <span className="text-xs text-zinc-600">
+                  <span className="text-xs text-fg-muted">
                     Similarity: {(chunk.similarity * 100).toFixed(1)}%
                   </span>
-                  <Badge variant="indigo" size="sm" dot>
+                  <Badge variant="accent" size="sm" dot>
                     Search result
                   </Badge>
                 </div>
@@ -325,18 +319,18 @@ export function CompanyBrainPage() {
                   <Badge variant={sourceVariants[doc.source] ?? 'neutral'}>
                     {sourceLabels[doc.source] ?? doc.source}
                   </Badge>
-                  <span className="font-mono text-[11px] text-zinc-600">
+                  <span className="font-mono text-[11px] text-fg-muted">
                     v{doc.version}
                   </span>
                 </div>
                 <p className="text-sm font-medium leading-snug text-zinc-100">
                   {doc.provenance || 'Untitled document'}
                 </p>
-                <p className="line-clamp-3 text-[13px] leading-relaxed text-zinc-500">
+                <p className="line-clamp-3 text-[13px] leading-relaxed text-fg-muted">
                   {truncate(doc.content, 240)}
                 </p>
                 <div className="mt-auto flex items-center justify-between pt-1">
-                  <span className="text-xs text-zinc-600">
+                  <span className="text-xs text-fg-muted">
                     Updated {relativeTime(doc.updated_at)}
                   </span>
                   <Badge
@@ -351,7 +345,6 @@ export function CompanyBrainPage() {
             ))}
           </section>
         )}
-
 
     </div>
   )

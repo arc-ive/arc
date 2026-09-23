@@ -7,7 +7,7 @@ import { cn } from '../../lib/cn.js'
 import { Avatar } from '../ui/Avatar.jsx'
 
 export function UserMenu() {
-  const { principal, signOut, isDemo } = useAuth()
+  const { principal, signOut } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -50,8 +50,8 @@ export function UserMenu() {
               <p className="truncate text-[13px] font-medium text-zinc-200">
                 {principal?.sub}
               </p>
-              <p className="text-[11px] text-zinc-500">
-                {isDemo ? 'Development demo session' : 'Signed in via session'}
+              <p className="text-[11px] text-fg-muted">
+                {'Signed in via session'}
               </p>
             </div>
           </div>
@@ -65,7 +65,7 @@ export function UserMenu() {
               }}
               className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-zinc-400 transition-colors duration-100 hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
-              <UserCircle2 className="size-4 text-zinc-600" />
+              <UserCircle2 className="size-4 text-fg-muted" />
               Profile &amp; session
             </button>
             <button

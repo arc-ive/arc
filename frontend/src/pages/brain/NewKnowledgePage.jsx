@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, FilePlus2, Info } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { createKnowledge, KNOWLEDGE_SOURCES } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -17,7 +18,6 @@ export function NewKnowledgePage() {
   const { tenantId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { isDemo } = useAuth()
 
   const [form, setForm] = useState({
     source: 'policy',
@@ -72,17 +72,13 @@ export function NewKnowledgePage() {
       <section>
         <Link
           to={backTo}
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-zinc-500 transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowLeft className="size-3.5" />
           Back to Company Brain
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-          New knowledge document
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Content is PII-sanitized by the backend before it is stored.
-        </p>
+        <PageHeader title="New knowledge document"
+          description="Content is PII-sanitized by the backend before it is stored." />
       </section>
 
       <Card>
@@ -143,8 +139,8 @@ export function NewKnowledgePage() {
             />
 
             <div className="flex items-start gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3.5 py-3">
-              <Info className="mt-0.5 size-4 shrink-0 text-zinc-600" />
-              <p className="text-xs leading-relaxed text-zinc-500">
+              <Info className="mt-0.5 size-4 shrink-0 text-fg-muted" />
+              <p className="text-xs leading-relaxed text-fg-muted">
                 Submitted documents are validated by the backend:{' '}
                 <span className="font-mono">source</span> must be one of the
                 six supported sources, <span className="font-mono">provenance</span>{' '}
@@ -154,9 +150,9 @@ export function NewKnowledgePage() {
             </div>
 
             {errors.api && (
-              <p className="rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+              <InlineError>
                 {errors.api}
-              </p>
+              </InlineError>
             )}
 
             <div className="flex items-center justify-end gap-2 border-t border-zinc-800/70 pt-4">
@@ -171,7 +167,6 @@ export function NewKnowledgePage() {
                 type="submit"
                 isLoading={mutation.isPending}
                 loadingText="Creating…"
-                disabled={isDemo}
               >
                 <FilePlus2 className="size-4" />
                 Create document

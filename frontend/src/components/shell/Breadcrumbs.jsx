@@ -21,12 +21,12 @@ const staticLabels = {
 
 export function Breadcrumbs() {
   const location = useLocation()
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -71,7 +71,7 @@ export function Breadcrumbs() {
     <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1">
       <Link
         to="/app"
-        className="flex items-center rounded text-zinc-500 transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+        className="flex items-center rounded text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         aria-label="Home"
       >
         <Home className="size-4" />
@@ -86,7 +86,7 @@ export function Breadcrumbs() {
           ) : (
             <Link
               to={item.href}
-              className="truncate rounded text-[13px] text-zinc-500 transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="truncate rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
               {item.label}
             </Link>

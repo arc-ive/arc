@@ -28,164 +28,279 @@ vi.mock('../../tenant/useTenant.js', () => ({
   useTenant: () => ({ tenantId: 'test-tenant' }),
 }))
 
+// ContextHeader fetches the workspace name and has its own test file.
+// These tests are about which nav items render, not the identity block.
+vi.mock('./ContextHeader.jsx', () => ({
+  ContextHeader: () => <div data-testid="context-header" />,
+}))
+
 import { Sidebar } from '../shell/Sidebar.jsx'
 
-function renderSidebar(role) {
-  mockUseCapabilities.mockReturnValue({
+/**
+ * The real permission matrix, transcribed from `ROLE_PERMISSIONS` in
+ * `src/arc/security/authorization.py`.
+ *
+ * PR-2 made navigation permission-derived, so a harness that invented
+ * permission sets would assert nothing useful. These are the sets the
+ * backend actually returns from `GET /auth/me`.
+ */
+const ROLE_PERMISSIONS = {
+  employee: ['knowledge:read', 'agent:execute'],
+
+  operations_user: [
+    'knowledge:read', 'agent:execute', 'tenant:read',
+    'skill:read', 'skill:execute', 'tool:read', 'tool:execute',
+    'connector:read', 'connector:sync', 'observability:read',
+    'webhook:read', 'webhook:process',
+  ],
+
+  company_administrator: [
+    'knowledge:read', 'knowledge:create', 'knowledge:update', 'knowledge:delete',
+    'agent:execute', 'tenant:read', 'tenant:update',
+    'skill:read', 'skill:create', 'skill:update', 'skill:delete', 'skill:execute',
+    'tool:read', 'tool:execute', 'approval:read', 'approval:decide',
+    'connector:read', 'connector:create', 'connector:sync',
+    'connector:manage_credentials', 'observability:read',
+    'webhook:read', 'webhook:process',
+  ],
+
+  platform_administrator: [
+    'knowledge:read', 'knowledge:create', 'knowledge:update', 'knowledge:delete',
+    'agent:execute', 'tenant:read', 'tenant:update', 'tenant:create', 'tenant:list',
+    'skill:read', 'skill:create', 'skill:update', 'skill:delete', 'skill:execute',
+    'tool:read', 'tool:execute', 'approval:read', 'approval:decide',
+    'connector:read', 'connector:create', 'connector:sync',
+    'connector:manage_credentials', 'observability:read',
+    'observability:platform_read', 'webhook:read', 'webhook:process',
+    'user:read', 'user:create', 'membership:create', 'capability:manage',
+  ],
+}
+
+function capabilitiesFor(role, memberOf) {
+  const permissions = new Set(ROLE_PERMISSIONS[role] ?? [])
+  const memberships = memberOf.map((id) => ({ tenant_id: id, role: 'member' }))
+  return {
     role,
+    permissions,
+    memberships,
+    can: (p) => permissions.has(p),
+    hasRole: (r) => r === role,
+    isMemberOf: (id) => memberships.some((m) => m.tenant_id === id),
+    isLoaded: true,
+    isPending: false,
     isPlatformAdministrator: role === 'platform_administrator',
     isCompanyAdministrator: role === 'company_administrator',
     isOperationsUser: role === 'operations_user',
     isEmployee: role === 'employee',
-    isDemo: false,
-    can: () => false,
-  })
+  }
+}
 
-  mockUseAuth.mockReturnValue({
-    principal: { sub: 'user-1' },
-    isDemo: false,
-  })
-
+function renderSidebar(role, { memberOf = ['test-tenant'], path = '/app/t/test-tenant/overview' } = {}) {
+  const caps = capabilitiesFor(role, memberOf)
+  mockUseCapabilities.mockReturnValue(caps)
+  mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
   mockUseMe.mockReturnValue({
-    data: { role, permissions: [] },
+    data: { role, permissions: [...caps.permissions] },
     isPending: false,
   })
 
   return render(
-    <MemoryRouter initialEntries={['/app/t/test-tenant/overview']}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/app/t/:tenantId/*" element={<Sidebar />} />
+        <Route path="/platform/*" element={<Sidebar />} />
       </Routes>
     </MemoryRouter>,
   )
 }
 
-describe('Sidebar role-based rendering', () => {
+/** The workspace nav routes currently rendered, in order. */
+function workspaceRoutes() {
+  return screen
+    .getAllByRole('link')
+    .map((a) => a.getAttribute('href'))
+    .filter((h) => h && h.startsWith('/app/t/'))
+    .map((h) => h.split('/').pop())
+}
+
+describe('Sidebar permission-derived navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   describe('employee role', () => {
-    it('shows Home in tenant navigation', () => {
+    it('offers exactly the surfaces its two permissions cover', () => {
       renderSidebar('employee')
-      expect(screen.getByText('Home')).toBeInTheDocument()
+      // knowledge:read -> Ask Arc + Company Brain; agent:execute -> Agents.
+      // Home is the landing page for a member without tenant:read.
+      expect(workspaceRoutes()).toEqual(['home', 'ask', 'knowledge', 'agents'])
     })
 
-    it('shows Ask Arc in tenant navigation', () => {
+    it('now reaches Company Brain, which it holds knowledge:read for', () => {
+      // Regression: the previous binary role gate hid Company Brain from
+      // every employee even though the backend serves them GET /knowledge.
       renderSidebar('employee')
-      expect(screen.getByText('Ask Arc')).toBeInTheDocument()
+      expect(screen.getByText('Company Brain')).toBeInTheDocument()
     })
 
-    it('does not show Personal section', () => {
+    it('does not show surfaces it has no permission for', () => {
+      renderSidebar('employee')
+      const hidden = ['Overview', 'Skills', 'Tools', 'Connectors', 'Webhooks', 'Settings', 'Approvals', 'Usage']
+      for (const label of hidden) {
+        expect(screen.queryByText(label)).not.toBeInTheDocument()
+      }
+    })
+
+    it('does not show the Personal or Platform sections', () => {
       renderSidebar('employee')
       expect(screen.queryByText('Profile')).not.toBeInTheDocument()
+      expect(screen.queryByText('Platform')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('operations user role', () => {
+    it('shows the operational surfaces its permissions cover', () => {
+      renderSidebar('operations_user')
+      // Five areas now, with sub-navigation. Labels are the product's, not
+      // the backend service's: Sources rather than Connectors, Activity
+      // rather than Webhooks, Workspace rather than Overview.
+      const shown = ['Ask Arc', 'Company Brain', 'Knowledge', 'Sources',
+                     'AI Workflows', 'Skills', 'Agents',
+                     'Operations', 'Webhooks', 'Usage',
+                     'Administration', 'People', 'Workspace']
+      for (const label of shown) {
+        expect(screen.getByText(label)).toBeInTheDocument()
+      }
     })
 
-    it('does not show Overview in tenant navigation', () => {
-      renderSidebar('employee')
-      const navItems = screen.getAllByRole('link')
-      const overviewLink = navItems.find(
-        (item) => item.textContent.includes('Overview'),
-      )
-      expect(overviewLink).toBeUndefined()
+    it('groups its surfaces into areas rather than a flat list', () => {
+      renderSidebar('operations_user')
+      for (const area of ['Company Brain', 'AI Workflows', 'Operations', 'Administration']) {
+        expect(screen.getByText(area)).toBeInTheDocument()
+      }
     })
 
-    it('does not show Skills in tenant navigation', () => {
-      renderSidebar('employee')
-      expect(screen.queryByText('Skills')).not.toBeInTheDocument()
+    it('does not show Approvals — it lacks approval:read', () => {
+      renderSidebar('operations_user')
+      expect(screen.queryByText('Approvals')).not.toBeInTheDocument()
     })
 
-    it('does not show Tools in tenant navigation', () => {
-      renderSidebar('employee')
-      expect(screen.queryByText('Tools')).not.toBeInTheDocument()
-    })
-
-    it('does not show Connectors in tenant navigation', () => {
-      renderSidebar('employee')
-      expect(screen.queryByText('Connectors')).not.toBeInTheDocument()
-    })
-
-    it('does not show Webhooks in tenant navigation', () => {
-      renderSidebar('employee')
-      expect(screen.queryByText('Webhooks')).not.toBeInTheDocument()
-    })
-
-    it('does not show Settings in tenant navigation', () => {
-      renderSidebar('employee')
+    it('does not show Settings — it lacks tenant:update', () => {
+      renderSidebar('operations_user')
       expect(screen.queryByText('Settings')).not.toBeInTheDocument()
     })
 
-    it('does not show Platform section', () => {
-      renderSidebar('employee')
-      expect(screen.queryByText('Platform')).not.toBeInTheDocument()
+    it('does not show Home — it holds tenant:read and lands on Overview', () => {
+      renderSidebar('operations_user')
+      expect(workspaceRoutes()).not.toContain('home')
+    })
+
+    it('shows the Personal section', () => {
+      renderSidebar('operations_user')
+      expect(screen.getByText('Profile')).toBeInTheDocument()
     })
   })
 
   describe('company administrator role', () => {
-    it('shows Overview in tenant navigation', () => {
+    it('shows every workspace surface, grouped into five areas', () => {
       renderSidebar('company_administrator')
-      expect(screen.getByText('Overview')).toBeInTheDocument()
+      const shown = ['Ask Arc',
+                     'Company Brain', 'Knowledge', 'Sources',
+                     'AI Workflows', 'Skills', 'Agents',
+                     'Operations', 'Approvals', 'Webhooks', 'Usage',
+                     'Administration', 'People', 'Workspace', 'Settings']
+      for (const label of shown) {
+        expect(screen.getByText(label)).toBeInTheDocument()
+      }
     })
 
-    it('shows Skills in tenant navigation', () => {
+    it('no longer offers Company — it duplicated Overview and Settings', () => {
       renderSidebar('company_administrator')
-      expect(screen.getByText('Skills')).toBeInTheDocument()
+      expect(workspaceRoutes()).not.toContain('company')
     })
 
-    it('shows Tools in tenant navigation', () => {
+    it('labels the webhook route Webhooks, not Activity', () => {
+      // Review on #282: the route serves GET ~/webhooks/events — webhook
+      // deliveries. "Activity" promises all workspace activity (agent runs,
+      // skill executions, knowledge changes) and delivers one slice of it.
       renderSidebar('company_administrator')
-      expect(screen.getByText('Tools')).toBeInTheDocument()
+      expect(screen.getByText('Webhooks')).toBeInTheDocument()
+      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
     })
 
-    it('shows Personal section', () => {
+    it('does not offer a second view of the usage endpoint', () => {
+      // Review on #282: Observability was labelled "Health" but called the
+      // same getTenantUsageSummary endpoint as Usage and rendered a card
+      // titled "Usage Summary". Two nav items, one dataset.
       renderSidebar('company_administrator')
-      expect(screen.getByText('Profile')).toBeInTheDocument()
+      expect(screen.queryByText('Health')).not.toBeInTheDocument()
+      expect(workspaceRoutes()).not.toContain('observability')
     })
 
-    it('does not show Platform section', () => {
+    it('no longer offers Tools as a top-level area', () => {
+      // PRD §13: tools are platform-owned, and the tenant API has no
+      // create/update/delete. There is nothing to manage here.
+      renderSidebar('company_administrator')
+      expect(workspaceRoutes()).not.toContain('tools')
+    })
+
+    it('does not route to the removed non-functional surfaces', () => {
+      // PR-1 deleted the Operations, Incidents and Activity SHELL PAGES.
+      // "Operations" and "Activity" now exist as an area name and a nav
+      // label, so this asserts on routes rather than on words.
+      renderSidebar('company_administrator')
+      const routes = workspaceRoutes()
+      expect(routes).not.toContain('operations')
+      expect(routes).not.toContain('incidents')
+      expect(routes).not.toContain('activity')
+    })
+
+    it('does not show the Platform section', () => {
       renderSidebar('company_administrator')
       expect(screen.queryByText('Platform')).not.toBeInTheDocument()
     })
-    // PR-1: these three tenant surfaces were removed — they called no API
-    // and rendered internal build status to customers (UX_SPEC §1).
-    it('does not show removed non-functional surfaces', () => {
-      renderSidebar('company_administrator')
-      expect(screen.queryByText('Operations')).not.toBeInTheDocument()
-      expect(screen.queryByText('Incidents')).not.toBeInTheDocument()
-      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
-    })
   })
 
-  describe('platform administrator role', () => {
-    it('shows Platform section', () => {
-      renderSidebar('platform_administrator')
-      expect(screen.getByText('Platform')).toBeInTheDocument()
+  describe('platform administrator role (V2-ADR-003)', () => {
+    it('shows the console navigation when in the console', () => {
+      renderSidebar('platform_administrator', { memberOf: [], path: '/platform/dashboard' })
+      expect(screen.getByText('Console')).toBeInTheDocument()
     })
 
-    it('shows Overview in tenant navigation', () => {
-      renderSidebar('platform_administrator')
-      expect(screen.getByText('Overview')).toBeInTheDocument()
+    it('does NOT show console navigation from inside a workspace', () => {
+      // The two contexts are mutually exclusive: stacking them is what
+      // produced fifteen workspace items under the platform items.
+      // ContextHeader carries the link across instead.
+      renderSidebar('platform_administrator', { memberOf: ['test-tenant'] })
+      expect(screen.queryByText('Console')).not.toBeInTheDocument()
     })
 
-    it('shows Personal section', () => {
-      renderSidebar('platform_administrator')
-      expect(screen.getByText('Profile')).toBeInTheDocument()
+    it('shows NO workspace navigation without tenant membership', () => {
+      // The defining fix of this PR. Previously a platform administrator
+      // received all fifteen workspace items despite having no membership,
+      // and every one dead-ended on RequireTenant's "not a member" state.
+      // Holding every permission is not membership.
+      renderSidebar('platform_administrator', { memberOf: [] })
+      expect(workspaceRoutes()).toEqual([])
+      expect(screen.queryByText('Workspace')).not.toBeInTheDocument()
     })
-    // PR-1: Platform Connectors and Platform Agents were removed — neither
-    // called an API and both exposed implementation detail (ADR ids, the
-    // internal provider chain).
-    // Asserted by href, not label: a platform administrator currently also
-    // renders the tenant workspace nav, which has its own Connectors and
-    // Agents entries. Only the /platform/* links are in PR-1 scope.
+
+    it('shows workspace navigation when they ARE a member of the tenant', () => {
+      // Membership, not role, is the gate — so a platform administrator who
+      // genuinely belongs to a workspace still sees it.
+      renderSidebar('platform_administrator', { memberOf: ['test-tenant'] })
+      expect(screen.getByText('Company Brain')).toBeInTheDocument()
+    })
+
     it('does not show removed platform surfaces', () => {
-      renderSidebar('platform_administrator')
+      renderSidebar('platform_administrator', { memberOf: [], path: '/platform/dashboard' })
       const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
       expect(hrefs).not.toContain('/platform/connectors')
       expect(hrefs).not.toContain('/platform/agents')
     })
 
     it('still shows the platform surfaces that are wired', () => {
-      renderSidebar('platform_administrator')
+      renderSidebar('platform_administrator', { memberOf: [], path: '/platform/dashboard' })
       const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
       expect(hrefs).toContain('/platform/dashboard')
       expect(hrefs).toContain('/platform/tenants')
@@ -194,33 +309,37 @@ describe('Sidebar role-based rendering', () => {
     })
   })
 
-  describe('operations user role', () => {
-    // PR-1: Operations, Incidents and Activity were shells that called no
-    // API and rendered internal build status (UX_SPEC §1). Incidents also
-    // contradicted V2-ADR-021 and PRD §24. All three are gone from
-    // navigation; the operations user keeps the surfaces that are wired.
-    it('does not show removed non-functional surfaces in tenant navigation', () => {
-      renderSidebar('operations_user')
-      expect(screen.queryByText('Operations')).not.toBeInTheDocument()
-      expect(screen.queryByText('Incidents')).not.toBeInTheDocument()
-      expect(screen.queryByText('Activity')).not.toBeInTheDocument()
-    })
+  describe('unresolved profile fails closed (PRD P4)', () => {
+    it('offers nothing while permissions are unknown', () => {
+      // The old default case returned the FULL product surface for an
+      // unknown role. An unresolved profile must offer the minimum.
+      mockUseCapabilities.mockReturnValue({
+        role: null,
+        permissions: new Set(),
+        memberships: [],
+        can: () => false,
+        hasRole: () => false,
+        isMemberOf: () => false,
+        isLoaded: false,
+        isPending: true,
+        isPlatformAdministrator: false,
+        isCompanyAdministrator: false,
+        isOperationsUser: false,
+        isEmployee: false,
+      })
+      mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
+      mockUseMe.mockReturnValue({ data: undefined, isPending: true })
 
-    it('still shows the operational surfaces that are wired', () => {
-      renderSidebar('operations_user')
-      expect(screen.getByText('Company Brain')).toBeInTheDocument()
-      expect(screen.getByText('Skills')).toBeInTheDocument()
-      expect(screen.getByText('Agents')).toBeInTheDocument()
-    })
+      render(
+        <MemoryRouter initialEntries={['/app/t/test-tenant/overview']}>
+          <Routes>
+            <Route path="/app/t/:tenantId/*" element={<Sidebar />} />
+          </Routes>
+        </MemoryRouter>,
+      )
 
-    it('shows Personal section', () => {
-      renderSidebar('operations_user')
-      expect(screen.getByText('Profile')).toBeInTheDocument()
-    })
-
-    it('does not show Tools in tenant navigation', () => {
-      renderSidebar('operations_user')
-      expect(screen.queryByText('Tools')).not.toBeInTheDocument()
+      expect(workspaceRoutes()).toEqual([])
+      expect(screen.queryByText('Platform')).not.toBeInTheDocument()
     })
   })
 })

@@ -1,15 +1,46 @@
 import { cn } from '../../lib/cn.js'
 
-const variants = {
-  neutral: 'bg-zinc-800/80 text-zinc-300 border-zinc-700/60',
-  indigo: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
-  cyan: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
-  green: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
-  amber: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-  red: 'bg-red-500/10 text-red-300 border-red-500/30',
+/**
+ * Status and label badge.
+ *
+ * Variants are named for MEANING, not colour. The previous API was
+ * `neutral | indigo | cyan | green | amber | red`, which had three
+ * consequences worth spelling out:
+ *
+ *  - Nothing enforced that "failed" was always red or "running" always
+ *    amber. Each call site picked a colour independently, which is why
+ *    ARC_DESIGN_SYSTEM.md §12's status vocabulary had drifted.
+ *  - `green` actually rendered emerald, so the name lied about the value.
+ *  - An unrecognised variant produced an UNSTYLED badge. A `variant="zinc"`
+ *    had been shipping in ApprovalsPage; nothing caught it because the
+ *    colour-named API gave no reason to think that name was invalid.
+ *
+ * Unknown variants now fall back to `neutral` rather than rendering
+ * nothing, and every colour comes from the semantic token layer.
+ *
+ * §12 also requires that status never depends on colour alone. This
+ * component renders its children as text, so a badge always carries a
+ * label; `dot` is decorative and is hidden from assistive technology.
+ */
+const VARIANTS = {
+  neutral: 'bg-zinc-800/80 text-zinc-200 border-line-strong/60',
+  accent: 'bg-primary/10 text-primary border-primary/30',
+  info: 'bg-info/10 text-info border-info/30',
+  success: 'bg-success/10 text-success border-success/30',
+  warning: 'bg-warning/10 text-warning border-warning/30',
+  danger: 'bg-danger/10 text-danger border-danger/30',
 }
 
-const sizes = {
+const DOTS = {
+  neutral: 'bg-zinc-400',
+  accent: 'bg-primary',
+  info: 'bg-info',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger',
+}
+
+const SIZES = {
   sm: 'px-1.5 py-px text-[11px]',
   md: 'px-2 py-0.5 text-xs',
 }
@@ -22,29 +53,20 @@ export function Badge({
   children,
   ...props
 }) {
+  const tone = VARIANTS[variant] ? variant : 'neutral'
+
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full border font-medium tracking-wide',
-        variants[variant],
-        sizes[size],
+        VARIANTS[tone],
+        SIZES[size] ?? SIZES.md,
         className,
       )}
       {...props}
     >
       {dot && (
-        <span
-          aria-hidden
-          className={cn(
-            'size-1.5 rounded-full',
-            variant === 'green' && 'bg-emerald-400',
-            variant === 'cyan' && 'bg-cyan-400',
-            variant === 'indigo' && 'bg-indigo-400',
-            variant === 'amber' && 'bg-amber-400',
-            variant === 'red' && 'bg-red-400',
-            variant === 'neutral' && 'bg-zinc-400',
-          )}
-        />
+        <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', DOTS[tone])} />
       )}
       {children}
     </span>

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowUpRight,
@@ -36,12 +37,12 @@ function HealthPill() {
 }
 
 export function PlatformDashboardPage() {
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -51,15 +52,13 @@ export function PlatformDashboardPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-                ARC Platform Console
-              </h1>
-              <Badge variant="indigo">
+              <PageHeader title="ARC Platform Console" />
+              <Badge variant="accent">
                 <ShieldCheck className="mr-1 size-3" />
                 Platform Administrator
               </Badge>
             </div>
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-fg-muted">
               Platform-level administration of tenants and users.
             </p>
           </div>
@@ -70,20 +69,16 @@ export function PlatformDashboardPage() {
       <section className="grid gap-4 sm:grid-cols-3">
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
               <Building2 className="size-4.5" />
             </div>
             <p className="mt-4 text-2xl font-semibold tracking-tight text-zinc-100">
-              {isDemo
-                ? '—'
-                : userTenants.isPending
+              {userTenants.isPending
                   ? '—'
                   : userTenants.data?.length ?? '0'}
             </p>
-            <p className="mt-0.5 text-[13px] text-zinc-500">
-              {isDemo
-                ? 'Demo Mode — backend data unavailable'
-                : 'Your tenant memberships'}
+            <p className="mt-0.5 text-[13px] text-fg-muted">
+              {'Your tenant memberships'}
             </p>
           </div>
           <Link
@@ -97,13 +92,13 @@ export function PlatformDashboardPage() {
 
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
               <Users className="size-4.5" />
             </div>
             <p className="mt-4 text-[15px] font-semibold text-zinc-100">
               User provisioning
             </p>
-            <p className="mt-0.5 text-[13px] text-zinc-500">
+            <p className="mt-0.5 text-[13px] text-fg-muted">
               Create and manage platform users
             </p>
           </div>
@@ -118,17 +113,17 @@ export function PlatformDashboardPage() {
 
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+            <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
               <ShieldCheck className="size-4.5" />
             </div>
             <p className="mt-4 text-[15px] font-semibold text-zinc-100">
               Authorization
             </p>
-            <p className="mt-0.5 text-[13px] text-zinc-500">
+            <p className="mt-0.5 text-[13px] text-fg-muted">
               Tenant membership and roles are enforced by the backend
             </p>
           </div>
-          <span className="text-[13px] text-zinc-600">
+          <span className="text-[13px] text-fg-muted">
             Platform administration ≠ tenant administration
           </span>
         </Card>

@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { InlineError } from '../../components/ui/InlineError.jsx'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plug, RefreshCw, Plus } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
@@ -7,7 +9,6 @@ import {
   createConnector,
   syncConnector,
 } from '../../api/endpoints/connectors.js'
-import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { Card } from '../../components/ui/Card.jsx'
@@ -59,9 +60,9 @@ function CreateConnectorDialog({ open, onClose }) {
       <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
         <h3 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h3>
         {error && (
-          <div className="mb-4 rounded-lg border border-red-900/50 bg-red-950/20 px-3.5 py-3 text-[13px] text-red-300">
+          <InlineError className="mb-4">
             {errorMessage(error)}
-          </div>
+          </InlineError>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -101,7 +102,7 @@ function CreateConnectorDialog({ open, onClose }) {
               disabled={createMutation.isPending}
             />
             {selectedProvider && (
-              <p className="mt-1 text-xs text-zinc-500">{selectedProvider.targetHint}</p>
+              <p className="mt-1 text-xs text-fg-muted">{selectedProvider.targetHint}</p>
             )}
           </div>
           <div className="flex justify-end gap-3">
@@ -120,7 +121,6 @@ function CreateConnectorDialog({ open, onClose }) {
 
 export function ConnectorsPage() {
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
   const queryClient = useQueryClient()
   const { can } = useCapabilities()
   const canCreate = can('connector:create')
@@ -130,7 +130,7 @@ export function ConnectorsPage() {
   const { data: connectors, isLoading, error } = useQuery({
     queryKey: queryKeys.connectors(tenantId),
     queryFn: () => listConnectors(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const syncMutation = useMutation({
@@ -150,12 +150,9 @@ export function ConnectorsPage() {
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-400">
-              <Plug className="size-5" />
-            </div>
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Connectors</h1>
-              <p className="mt-1 text-sm text-zinc-500">External integrations for this tenant.</p>
+              <PageHeader title="Connectors"
+          description="External integrations for this tenant." />
             </div>
           </div>
         </div>
@@ -206,11 +203,11 @@ export function ConnectorsPage() {
                   {connector.status}
                 </Badge>
               </div>
-              <p className="text-[13px] text-zinc-500">Provider: {connector.provider}</p>
+              <p className="text-[13px] text-fg-muted">Provider: {connector.provider}</p>
               {connector.target && (
                 <p className="font-mono text-xs text-zinc-400">Target: {connector.target}</p>
               )}
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs text-fg-muted">
                 Created: {new Date(connector.created_at).toLocaleDateString()}
               </p>
               <div className="mt-auto flex items-center gap-2 pt-2">

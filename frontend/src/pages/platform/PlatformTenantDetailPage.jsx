@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowUpRight, Building2, ExternalLink } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
@@ -25,19 +26,19 @@ import { formatDate } from '../../lib/format.js'
  */
 export function PlatformTenantDetailPage() {
   const { tenantId } = useParams()
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 30 * 1000,
   })
 
   const members = useQuery({
     queryKey: queryKeys.tenantUsers(tenantId),
     queryFn: () => getTenantUsers(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const tenant = userTenants.data?.find((t) => t.id === tenantId)
@@ -47,7 +48,7 @@ export function PlatformTenantDetailPage() {
       <section>
         <Link
           to="/platform/tenants"
-          className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-zinc-500 transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
         >
           <ArrowUpRight className="size-3.5 rotate-180" />
           Back to Tenants
@@ -58,9 +59,7 @@ export function PlatformTenantDetailPage() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-                {tenant?.name ?? 'Tenant'}
-              </h1>
+              <PageHeader title={tenant?.name ?? 'Tenant'} />
               <Badge
                 variant={tenant?.status === 'active' ? 'green' : 'neutral'}
                 dot
@@ -68,7 +67,7 @@ export function PlatformTenantDetailPage() {
                 {tenant?.status ?? 'unknown'}
               </Badge>
             </div>
-            <p className="mt-0.5 font-mono text-xs text-zinc-600">{tenantId}</p>
+            <p className="mt-0.5 font-mono text-xs text-fg-muted">{tenantId}</p>
           </div>
           {tenant && (
             <Link
@@ -85,32 +84,32 @@ export function PlatformTenantDetailPage() {
       <section className="grid gap-4 lg:grid-cols-3">
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <p className="text-[13px] text-zinc-500">Created</p>
+            <p className="text-[13px] text-fg-muted">Created</p>
             <p className="mt-1 text-lg font-semibold text-zinc-100">
               {formatDate(tenant?.created_at)}
             </p>
           </div>
-          <span className="text-[13px] text-zinc-600">
+          <span className="text-[13px] text-fg-muted">
             Provisioned on the platform
           </span>
         </Card>
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <p className="text-[13px] text-zinc-500">Updated</p>
+            <p className="text-[13px] text-fg-muted">Updated</p>
             <p className="mt-1 text-lg font-semibold text-zinc-100">
               {formatDate(tenant?.updated_at)}
             </p>
           </div>
-          <span className="text-[13px] text-zinc-600">Tenant record</span>
+          <span className="text-[13px] text-fg-muted">Tenant record</span>
         </Card>
         <Card className="flex flex-col justify-between gap-6 p-5">
           <div>
-            <p className="text-[13px] text-zinc-500">Members (visible to you)</p>
+            <p className="text-[13px] text-fg-muted">Members (visible to you)</p>
             <p className="mt-1 text-lg font-semibold text-zinc-100">
-              {isDemo ? '—' : members.isPending ? '—' : members.data?.length ?? 0}
+              {members.isPending ? '—' : members.data?.length ?? 0}
             </p>
           </div>
-          <span className="text-[13px] text-zinc-600">
+          <span className="text-[13px] text-fg-muted">
             Requires workspace membership
           </span>
         </Card>
@@ -119,15 +118,7 @@ export function PlatformTenantDetailPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-zinc-200">Members</h2>
         <Card className="overflow-hidden">
-          {isDemo && (
-            <EmptyState
-              icon={Building2}
-              title="Demo Mode — backend data unavailable"
-              description="Member data is not fetched in Demo Mode. Sign in with a real session to load this tenant's members."
-              compact
-            />
-          )}
-          {!isDemo && members.isPending && (
+          {members.isPending && (
             <div className="flex flex-col gap-4 p-5">
               {Array.from({ length: 3 }, (_, i) => (
                 <div key={i} className="flex items-center gap-3">
@@ -140,7 +131,7 @@ export function PlatformTenantDetailPage() {
               ))}
             </div>
           )}
-          {!isDemo && members.isError && (
+          {members.isError && (
             <ErrorState
               title="Member listing denied"
               message={errorMessage(members.error)}
@@ -148,8 +139,7 @@ export function PlatformTenantDetailPage() {
               error={members.error}
             />
           )}
-          {!isDemo &&
-            !members.isPending &&
+          {!members.isPending &&
             !members.isError &&
             members.data?.length === 0 && (
             <EmptyState
@@ -159,7 +149,7 @@ export function PlatformTenantDetailPage() {
               compact
             />
           )}
-          {!isDemo && members.data?.length > 0 && (
+          {members.data?.length > 0 && (
             <div className="divide-y divide-zinc-800/60">
               {members.data.map((user) => (
                 <div key={user.id} className="flex items-center gap-3 px-5 py-3">
@@ -168,7 +158,7 @@ export function PlatformTenantDetailPage() {
                     <p className="truncate text-[13px] font-medium text-zinc-200">
                       {user.email}
                     </p>
-                    <p className="truncate font-mono text-[11px] text-zinc-600">
+                    <p className="truncate font-mono text-[11px] text-fg-muted">
                       {user.id}
                     </p>
                   </div>
@@ -184,7 +174,7 @@ export function PlatformTenantDetailPage() {
             </div>
           )}
         </Card>
-        <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
+        <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-fg-muted">
           Platform administration and customer data access are distinct.
           Reading a customer workspace requires membership of that workspace
           and permission to read it. Administering the platform does not

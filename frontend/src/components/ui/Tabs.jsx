@@ -23,7 +23,7 @@ export function Tabs({ tabs, active, onChange, className, size = 'md' }) {
               size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-[13px]',
               isActive
                 ? 'bg-zinc-800/90 text-zinc-100 shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-300',
+                : 'text-fg-muted hover:text-zinc-300',
             )}
           >
             {tab.label}

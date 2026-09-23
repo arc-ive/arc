@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
+import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowUpRight,
@@ -35,13 +36,13 @@ function StatCard({ label, value, hint, to, icon: Icon }) {
   return (
     <Card className="flex flex-col justify-between gap-6 p-5">
       <div>
-        <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+        <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
           <Icon className="size-4.5" />
         </div>
         <div className="mt-4 text-2xl font-semibold tracking-tight text-zinc-100">
           {value}
         </div>
-        <p className="mt-0.5 text-[13px] text-zinc-500">{label}</p>
+        <p className="mt-0.5 text-[13px] text-fg-muted">{label}</p>
       </div>
       {to ? (
         <Link
@@ -52,7 +53,7 @@ function StatCard({ label, value, hint, to, icon: Icon }) {
           <ArrowUpRight className="size-3.5" />
         </Link>
       ) : (
-        <span className="text-[13px] text-zinc-600">{hint}</span>
+        <span className="text-[13px] text-fg-muted">{hint}</span>
       )}
     </Card>
   )
@@ -64,40 +65,40 @@ function ModuleLink({ to, label, description, icon: Icon }) {
       to={to}
       className="group flex items-start gap-3.5 rounded-xl border border-zinc-800/70 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-zinc-700 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
     >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500 transition-colors duration-150 group-hover:text-indigo-400">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
         <Icon className="size-4.5" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-zinc-100">{label}</p>
-        <p className="mt-0.5 text-[13px] text-zinc-500">{description}</p>
+        <p className="mt-0.5 text-[13px] text-fg-muted">{description}</p>
       </div>
-      <ArrowUpRight className="ml-auto mt-1 size-4 shrink-0 text-zinc-600 transition-colors duration-150 group-hover:text-zinc-300" />
+      <ArrowUpRight className="ml-auto mt-1 size-4 shrink-0 text-fg-muted transition-colors duration-150 group-hover:text-zinc-300" />
     </Link>
   )
 }
 
 export function TenantOverviewPage() {
   const { tenantId } = useParams()
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
   const { role } = useCapabilities()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
   const users = useQuery({
     queryKey: queryKeys.tenantUsers(tenantId),
     queryFn: () => getTenantUsers(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const knowledge = useQuery({
     queryKey: queryKeys.knowledge(tenantId),
     queryFn: () => getKnowledge(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
     staleTime: 30 * 1000,
   })
 
@@ -113,9 +114,7 @@ export function TenantOverviewPage() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-                {tenant?.name ?? 'Tenant'}
-              </h1>
+              <PageHeader title={tenant?.name ?? 'Tenant'} />
               <Badge
                 variant={tenant?.status === 'active' ? 'green' : 'neutral'}
                 dot
@@ -123,10 +122,10 @@ export function TenantOverviewPage() {
                 {tenant?.status ?? 'unknown'}
               </Badge>
             </div>
-            <p className="mt-0.5 font-mono text-xs text-zinc-600">{tenantId}</p>
+            <p className="mt-0.5 font-mono text-xs text-fg-muted">{tenantId}</p>
           </div>
           {role && (
-            <Badge variant="indigo" className="self-start">
+            <Badge variant="accent" className="self-start">
               {ROLE_LABELS[role] ?? role} workspace
             </Badge>
           )}
@@ -200,14 +199,14 @@ export function TenantOverviewPage() {
         <section>
           <Card>
             <div className="flex items-start gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-zinc-500">
+              <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted">
                 <Building2 className="size-4.5" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-zinc-100">
                   {tenant?.name ?? 'Tenant'}
                 </p>
-                <p className="mt-1 text-[13px] leading-relaxed text-zinc-500">
+                <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">
                   You are signed in as an employee of this workspace.
                   Use Ask Arc to search approved company information.
                 </p>

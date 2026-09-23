@@ -9,12 +9,12 @@ import { getUserTenants } from '../../api/endpoints/tenants.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { useDismissable } from '../../lib/useDismissable.js'
 import { cn } from '../../lib/cn.js'
-import { tenantLandingForRole } from './navigation.js'
+import { tenantLandingForCapabilities } from './navigation.js'
 
 export function TenantSwitcher() {
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
   const { tenantId, setTenantId } = useTenant()
-  const { role } = useCapabilities()
+  const { can } = useCapabilities()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -24,7 +24,7 @@ export function TenantSwitcher() {
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -33,7 +33,7 @@ export function TenantSwitcher() {
   const select = (tenant) => {
     setTenantId(tenant.id)
     setOpen(false)
-    const landing = tenantLandingForRole(role)
+    const landing = tenantLandingForCapabilities(can)
     navigate(`/app/t/${encodeURIComponent(tenant.id)}/${landing}`)
   }
 
@@ -49,11 +49,11 @@ export function TenantSwitcher() {
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
         )}
       >
-        <Building2 className="size-4 shrink-0 text-zinc-500" />
+        <Building2 className="size-4 shrink-0 text-fg-muted" />
         <span className="truncate text-[13px] font-medium text-zinc-200">
-          {isDemo ? 'Demo Mode' : (current?.name ?? 'Select tenant')}
+          {current?.name ?? 'Select workspace'}
         </span>
-        <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-zinc-600" />
+        <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-fg-muted" />
       </button>
 
       {open && (
@@ -62,27 +62,22 @@ export function TenantSwitcher() {
           aria-label="Tenant switcher"
           className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-xl border border-zinc-800 bg-raised shadow-overlay animate-scale-in"
         >
-          <p className="border-b border-zinc-800/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+          <p className="border-b border-zinc-800/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
             Your tenants
           </p>
           <div className="max-h-64 overflow-y-auto p-1">
-            {isDemo && (
-              <p className="px-3 py-2.5 text-[13px] text-zinc-500">
-                Demo Mode — no tenant data
-              </p>
-            )}
-            {!isDemo && userTenants.isPending && (
-              <div className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-zinc-500">
+                        {userTenants.isPending && (
+              <div className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-fg-muted">
                 <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
                 Loading…
               </div>
             )}
-            {!isDemo && userTenants.isError && (
+            {userTenants.isError && (
               <p className="px-3 py-2.5 text-[13px] text-red-400">
                 Could not load tenants
               </p>
             )}
-            {!isDemo &&
+            {
               userTenants.data?.map((tenant) => (
                 <button
                   key={tenant.id}
@@ -98,18 +93,18 @@ export function TenantSwitcher() {
                       : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200',
                   )}
                 >
-                  <Building2 className="size-4 shrink-0 text-zinc-600" />
+                  <Building2 className="size-4 shrink-0 text-fg-muted" />
                   <span className="flex-1 truncate">{tenant.name}</span>
                   {tenant.id === tenantId && (
                     <Check className="size-3.5 text-indigo-400" />
                   )}
                 </button>
               ))}
-            {!isDemo &&
+            {
               !userTenants.isPending &&
               !userTenants.isError &&
               !userTenants.data?.length && (
-                <p className="px-3 py-2.5 text-[13px] text-zinc-500">
+                <p className="px-3 py-2.5 text-[13px] text-fg-muted">
                   No tenants assigned
                 </p>
               )}

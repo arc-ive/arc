@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom'
 import { Building2, ShieldCheck } from 'lucide-react'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { errorMessage } from '../../api/errors.js'
-import { tenantLandingForRole } from '../../components/shell/navigation.js'
+import { tenantLandingForCapabilities } from '../../components/shell/navigation.js'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
@@ -21,12 +21,12 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx'
  * permissions on every request.
  */
 export function WorkspaceDispatch() {
-  const { me, role, isPlatformAdministrator } = useCapabilities()
+  const { me, can, isPlatformAdministrator } = useCapabilities()
 
   if (me.isPending) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Spinner className="size-6 text-zinc-600" />
+        <Spinner className="size-6 text-fg-muted" />
       </div>
     )
   }
@@ -42,7 +42,7 @@ export function WorkspaceDispatch() {
     )
   }
 
-  if (isPlatformAdministrator || me.data?.is_demo) {
+  if (isPlatformAdministrator) {
     return <Navigate to="/platform/dashboard" replace />
   }
 
@@ -50,7 +50,7 @@ export function WorkspaceDispatch() {
   const first = memberships[0]
 
   if (first?.tenant_id) {
-    const landing = tenantLandingForRole(role)
+    const landing = tenantLandingForCapabilities(can)
     return (
       <Navigate
         to={`/app/t/${encodeURIComponent(first.tenant_id)}/${landing}`}
@@ -67,7 +67,7 @@ export function WorkspaceDispatch() {
           title="You are not a member of any tenant"
           description="Your identity is authenticated, but no tenant membership has been provisioned. Ask a platform administrator to assign you to an organization."
           action={
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-[11px] font-medium tracking-wide text-zinc-500">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-[11px] font-medium tracking-wide text-fg-muted">
               <ShieldCheck className="size-3" />
               Identity and membership are managed by the backend
             </span>
