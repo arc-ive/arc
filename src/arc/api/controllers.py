@@ -25,7 +25,17 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 
 from arc.api.pagination import PaginationParams, paginate
 from arc.api.schemas import (
@@ -122,6 +132,14 @@ from arc.services.connector_credentials import (
 )
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.connectors import ConnectorService
+from arc.services.document_extraction import (
+    EmptyExtractionError,
+    ExtractionError,
+    ExtractionUnavailableError,
+    FileTooLargeError,
+    UnsupportedFormatError,
+)
+from arc.services.document_extraction import extract as extract_document
 from arc.services.domain import (
     MembershipService,
     TenantContextService,
@@ -1357,6 +1375,84 @@ async def create_knowledge_document(
         )
 
     return _knowledge_document_payload(document)
+
+
+@api_router.post("/tenants/{tenant_id}/knowledge/upload", responses=AUTHENTICATED_ERROR_RESPONSES)
+async def upload_knowledge_document(
+    tenant_id: str,
+    file: UploadFile = File(...),
+    source: KnowledgeSource = Form(...),
+    provenance: Optional[str] = Form(default=None),
+    external_id: Optional[str] = Form(default=None),
+    context: TenantContext = Depends(require_tenant_permission(KNOWLEDGE_CREATE)),
+    knowledge_service: KnowledgeService = Depends(lambda: app_context.knowledge_service),
+) -> Dict[str, Any]:
+    """Ingest a document file into the Company Brain (issue #299).
+
+    Protected identically to ``POST /tenants/{tenant_id}/knowledge``:
+    the same ``knowledge:create`` permission, the same trusted tenant
+    context, the same PII sanitization and the same ingestion path. This
+    endpoint only turns a file into the text that path already accepts;
+    it introduces no new trust boundary.
+
+    Accepted: plain text, Markdown, PDF and Word. The format is decided
+    by the file's own bytes, never by its name or declared content type —
+    both are caller input, and dispatching a parser on either is how a
+    parser gets handed something it was never meant to read.
+
+    Nothing is accepted silently. An unsupported format is refused with a
+    reason naming what Arc can read (415), an oversized file is refused
+    before any parser sees it (413), and a file that yields no usable
+    text is refused (422) rather than stored as a document that would
+    retrieve as an empty citation.
+
+    ``provenance`` defaults to the uploaded filename, which is the
+    closest thing to a human name the upload carries.
+    """
+    _require_path_tenant_matches_context(tenant_id, context)
+
+    data = await file.read()
+
+    try:
+        extracted = extract_document(data, file.filename)
+    except FileTooLargeError as exc:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc))
+    except UnsupportedFormatError as exc:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc))
+    except EmptyExtractionError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except ExtractionUnavailableError as exc:
+        # The deployment cannot read this format right now, which is a
+        # different answer from "Arc will never read this".
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    except ExtractionError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    try:
+        document = await knowledge_service.ingest_document(
+            context=context,
+            source=source,
+            provenance=(provenance or file.filename or "Uploaded document").strip(),
+            content=extracted.text,
+            version=1,
+            external_id=external_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except (PiiGuardError, EmbeddingError):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Knowledge ingestion failed",
+        )
+
+    payload = _knowledge_document_payload(document)
+    # What was actually read, so a caller can tell a text-layer PDF from
+    # a scan that silently contributed nothing.
+    payload["extraction"] = {
+        "detected_format": extracted.detected_format.value,
+        "extracted_characters": extracted.char_count,
+    }
+    return payload
 
 
 @api_router.get(

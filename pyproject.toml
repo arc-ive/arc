@@ -19,6 +19,23 @@ dependencies = [
     "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
     "httpx>=0.28,<1.0",
     "openai>=1.0,<2.0",
+    # Document text extraction for Company Brain ingestion (issue #299).
+    # Both are pure Python with permissive licences suitable for
+    # commercial multi-tenant use: pypdf is BSD-3-Clause, python-docx is
+    # MIT. Neither requires a system binary, so a deployment gains PDF
+    # and Word ingestion without new infrastructure.
+    #
+    # Image OCR is deliberately NOT here. It needs either a Tesseract
+    # binary -- which is not pip-installable as a working install across
+    # platforms -- or a cloud provider, and choosing where tenant
+    # documents get sent for OCR is an infrastructure and data-residency
+    # decision rather than a dependency choice. Images are refused with a
+    # reason until that decision is made.
+    "pypdf>=5.0,<7.0",
+    "python-docx>=1.1,<2.0",
+    # Required by FastAPI to parse multipart bodies; the upload endpoint
+    # returns 500 at import time without it, not a helpful 400.
+    "python-multipart>=0.0.9,<1.0",
 ]
 
 [project.optional-dependencies]

@@ -1401,3 +1401,163 @@ class TestKnowledgeUpdate:
         await membership_repo.delete(membership_b.id)
         await user_repo.delete(user_b.id)
         await tenant_repo.delete(tenant_b.id)
+
+
+class TestKnowledgeUpload:
+    """POST /tenants/{tenant_id}/knowledge/upload (issue #299).
+
+    Company Brain stores text. This endpoint turns a file into that text
+    and hands it to the same ingestion path, so it must be protected
+    identically and must never accept something it cannot actually read.
+    """
+
+    @staticmethod
+    def _text_file(content: str = "Every permanent employee receives 26 days of leave."):
+        return {"file": ("leave.txt", content.encode(), "text/plain")}
+
+    def test_upload_requires_authentication(self, client):
+        response = client.post(
+            f"/tenants/{_unique('tenant')}/knowledge/upload",
+            files=self._text_file(),
+            data={"source": "policy"},
+        )
+        assert response.status_code == 401
+
+    async def test_upload_requires_knowledge_create_permission(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Identical protection to the JSON create endpoint."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files=self._text_file(),
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 403
+
+    async def test_text_upload_is_ingested_and_retrievable(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files=self._text_file(),
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["extraction"]["detected_format"] == "text"
+        assert body["extraction"]["extracted_characters"] > 0
+        # The filename becomes the document's identity when no
+        # provenance is supplied -- it is the only human name an upload
+        # carries.
+        assert body["provenance"] == "leave.txt"
+
+        fetched = client.get(
+            f"/tenants/{tenant.id}/knowledge/{body['id']}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert fetched.status_code == 200
+        assert "26 days" in fetched.json()["content"]
+
+    async def test_an_image_is_refused_with_a_reason(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Never silently accept a format Arc cannot read.
+
+        Storing an image would create a document with no readable
+        content that retrieves as an empty citation.
+        """
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files={"file": ("scan.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 64, "image/png")},
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 415
+        assert "optical character recognition" in response.json()["detail"].lower()
+
+    async def test_a_file_named_pdf_that_is_not_a_pdf_is_read_as_what_it_is(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """The bytes decide the parser, never the caller-supplied name."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files={
+                "file": (
+                    "report.pdf",
+                    b"This is plain text that claims to be a PDF document.",
+                    "application/pdf",
+                )
+            },
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["extraction"]["detected_format"] == "text"
+
+    async def test_an_unreadable_file_is_refused(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files={"file": ("junk.bin", bytes(range(256)) * 4, "application/octet-stream")},
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 415
+
+    async def test_an_invalid_source_is_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files=self._text_file(),
+            data={"source": "not-a-real-source"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_upload_cannot_cross_a_tenant_boundary(
+        self, client, seeded, make_token, authorization_override, repositories
+    ):
+        """The path tenant is request input; the trusted context decides."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        other = await repositories[0].create(
+            Tenant(id=_unique("other-tenant"), name="Other Company")
+        )
+        response = client.post(
+            f"/tenants/{other.id}/knowledge/upload",
+            files=self._text_file(),
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 403
