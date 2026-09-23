@@ -381,6 +381,24 @@ CREATE TABLE IF NOT EXISTS approval_requests (
     CONSTRAINT ck_approval_requests_expiry CHECK (expires_at > created_at)
 );
 
+-- Resume support (issue #300). The exact approved arguments, encrypted
+-- at rest with the same AES-256-GCM service and key versioning used for
+-- connector credentials. Approval is asynchronous by nature: the
+-- requester has usually closed the tab by the time a second person
+-- decides, so the arguments cannot live in the browser.
+--
+-- input_summary stays the redacted, truncated, human-readable record and
+-- remains the only form ever returned by the API. This column is never
+-- serialized into any response. It exists solely so an approved call can
+-- be replayed EXACTLY, and it is still validated against
+-- arguments_digest before execution, so the stored copy is never trusted
+-- on its own.
+--
+-- Nullable: rows created before this column cannot be resumed
+-- server-side, which degrades honestly rather than silently.
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS encrypted_input BYTEA;
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS input_key_version INTEGER;
+
 CREATE INDEX IF NOT EXISTS idx_approval_requests_tenant_status
     ON approval_requests(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_approval_requests_created_at

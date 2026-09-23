@@ -48,6 +48,7 @@ Audit ownership boundary:
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -81,6 +82,8 @@ from arc.services.pii import PiiGuardError, PiiGuardService
 # ---------------------------------------------------------------------------
 # Controlled failure types
 # ---------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 
 class ToolError(Exception):
@@ -546,9 +549,15 @@ class ToolExecutionService:
         approval_service=None,
         pii_guard: Optional[PiiGuardService] = None,
         capability_service=None,
+        encryption_service=None,
     ):
         self.registry = registry
         self.record_repo = record_repo
+        # Optional encryption-at-rest for the approved call's arguments
+        # (issue #300). Without it an approval is still created and still
+        # fully enforced -- it simply cannot be resumed from the server
+        # side later, which degrades honestly rather than silently.
+        self.encryption_service = encryption_service
         # Optional Human Intervention gate (V1 foundation). When wired, a
         # REQUIRE_HUMAN_APPROVAL policy stop records a pending approval bound
         # to the EXACT validated request; the fail-closed denial below is
@@ -765,6 +774,27 @@ class ToolExecutionService:
                 # --- CREATION PATH ---
                 new_approval_id = None
                 if self.approval_service is not None:
+                    # Store the exact arguments encrypted so the approved
+                    # call can be replayed after a second person decides.
+                    # input_summary is redacted and truncated and cannot
+                    # reconstruct them; approval is asynchronous, so the
+                    # requester's browser cannot be relied on to hold them.
+                    encrypted_input = None
+                    input_key_version = None
+                    if self.encryption_service is not None:
+                        try:
+                            encrypted_input, input_key_version = self.encryption_service.encrypt(
+                                json.dumps(raw_input, sort_keys=True, default=str)
+                            )
+                        except Exception:
+                            # Never block the approval on this: the gate
+                            # is the point, resume is the convenience.
+                            logger.warning(
+                                "approval_input_not_stored tool=%s digest_prefix=%s",
+                                tool.name,
+                                arguments_digest[:12],
+                            )
+
                     new_approval_id = await self.approval_service.record_required_approval(
                         tenant_id=context.tenant_id,
                         requester_user_id=principal.user_id,
@@ -773,6 +803,8 @@ class ToolExecutionService:
                         risk_level=tool.risk_level.value,
                         input_summary=_summarize(raw_input),
                         arguments_digest=arguments_digest,
+                        encrypted_input=encrypted_input,
+                        input_key_version=input_key_version,
                     )
 
                 await self._record_failure(

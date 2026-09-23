@@ -1180,8 +1180,19 @@ class ApprovalRequest:
       pydantic-VALIDATED arguments (same input model, same validation the
       execution path uses) -- computed only after validation succeeds, so
       an approval can never be consumed with materially different
-      arguments. Raw arguments are NEVER persisted.
-    - ``input_summary`` is the existing redacted/truncated summary.
+      arguments. Plaintext arguments are NEVER persisted.
+    - ``input_summary`` is the existing redacted/truncated summary, and
+      remains the only form of the arguments any API ever returns.
+    - ``encrypted_input`` (issue #300) holds the exact arguments
+      encrypted at rest with the same AES-256-GCM service and key
+      versioning used for connector credentials. It exists solely so an
+      approved call can be replayed EXACTLY after a second person
+      decides, which is otherwise impossible: approval is asynchronous,
+      the requester has usually closed the tab, and ``input_summary`` is
+      deliberately redacted and truncated and so cannot reconstruct them.
+      It is never serialized into a response, and it is still checked
+      against ``arguments_digest`` before execution — the stored copy is
+      never trusted on its own.
     - Tenant binding comes exclusively from the trusted execution context.
 
     Lifecycle is single-use and fail-closed: see ``ApprovalStatus``.
@@ -1201,6 +1212,9 @@ class ApprovalRequest:
     decided_at: Optional[datetime] = None
     decided_by_user_id: Optional[str] = None
     consumed_at: Optional[datetime] = None
+    # Never serialized into an API response. See the class docstring.
+    encrypted_input: Optional[bytes] = None
+    input_key_version: Optional[int] = None
 
     def __post_init__(self):
         import re

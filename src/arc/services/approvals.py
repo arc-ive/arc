@@ -120,6 +120,8 @@ class HumanApprovalService:
         risk_level: str,
         input_summary: str,
         arguments_digest: str,
+        encrypted_input: Optional[bytes] = None,
+        input_key_version: Optional[int] = None,
     ) -> Optional[str]:
         """Create (or reuse) one pending approval for the exact binding.
 
@@ -148,6 +150,8 @@ class HumanApprovalService:
                 status=ApprovalStatus.PENDING,
                 created_at=now,
                 expires_at=now + timedelta(hours=TTL_HOURS),
+                encrypted_input=encrypted_input,
+                input_key_version=input_key_version,
             )
             created = await self.repository.create(request)
             return created.id
@@ -333,6 +337,38 @@ class HumanApprovalService:
     # ------------------------------------------------------------------
     # Background sweep (PRD §15) — persistence-level expiry cleanup
     # ------------------------------------------------------------------
+    async def approved_input_for_resume(
+        self, context: TenantContext, approval_id: str
+    ) -> Optional[bytes]:
+        """Return the stored ciphertext for an APPROVED, unconsumed request.
+
+        Fail-closed at every step, and deliberately narrow: this is the
+        only way the exact arguments ever leave storage.
+
+        - The approval is resolved tenant-scoped, so an id belonging to
+          another tenant resolves to nothing.
+        - It must be APPROVED. Pending, rejected, expired and consumed
+          all refuse.
+        - Only the original requester may replay their own call. An
+          approver deciding an action does not thereby gain the right to
+          perform it (V2-ADR-012: approval is not authorization).
+
+        Returns None when no ciphertext is stored, which is the honest
+        state for approvals created before this column existed.
+        """
+        request = await self.get_request(context, approval_id)
+
+        if request.status is not ApprovalStatus.APPROVED:
+            raise ApprovalStateError(f"Approval {approval_id} is not approved")
+        if request.requester_user_id != context.user_id:
+            raise ApprovalBindingError(f"Approval {approval_id} belongs to a different requester")
+
+        stored = await self.repository.get_encrypted_input(approval_id, context.tenant_id)
+        if stored is None:
+            return None
+        ciphertext, _key_version = stored
+        return ciphertext
+
     async def sweep_expired_approvals(self) -> int:
         """Expire all stale pending requests in a single bulk UPDATE.
 

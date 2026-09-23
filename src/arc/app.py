@@ -217,6 +217,15 @@ class Application:
 
         # Wire approval service to tool execution service
         self.services["tool_service"].approval_service = self.services["human_approval_service"]
+        # Encryption at rest for an approved call's arguments (issue #300),
+        # reusing the same AES-256-GCM service and key that protects
+        # connector credentials. Absent a key the approval gate still works
+        # in full; only server-side resume is unavailable, and the missing
+        # capability is already logged by build_credential_service.
+        try:
+            self.services["tool_service"].encryption_service = EncryptionService()
+        except EncryptionError:
+            self.services["tool_service"].encryption_service = None
         # Wire approval service to skill execution service for
         # skill-level resume verification (V2-ADR-011)
         self.services["skill_execution_service"].approval_service = self.services[

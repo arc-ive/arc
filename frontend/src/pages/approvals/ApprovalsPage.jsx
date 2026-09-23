@@ -12,6 +12,7 @@ import { Button } from '../../components/ui/Button.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { ApprovalTimeline } from './ApprovalTimeline.jsx'
 import { toolLabel, formatSummary } from '../../lib/approvals.js'
+import { executeTool } from '../../api/endpoints/tools.js'
 import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 
 /**
@@ -39,7 +40,7 @@ const FILTERS = [
   { value: 'rejected', label: 'rejected' },
 ]
 
-function ApprovalRow({ approval, onDecide, viewerUserId, canDecide, pending }) {
+function ApprovalRow({ approval, onDecide, onRun, running, runError, viewerUserId, canDecide, pending }) {
   const isPending = approval.status === 'pending'
 
   // approvals.py:255 — the requester may NOT decide their own request.
@@ -92,6 +93,26 @@ function ApprovalRow({ approval, onDecide, viewerUserId, canDecide, pending }) {
             />
           </div>
         </div>
+
+        {/* An approved request is not finished — it is a licence the
+            requester still has to use. Without somewhere to spend it, the
+            approval is a dead end and the action never runs. */}
+        {approval.status === 'approved' && viewerIsRequester && (
+          <div className="flex shrink-0 flex-col items-stretch gap-2 lg:w-56">
+            <Button size="sm" onClick={() => onRun(approval)} disabled={running}>
+              {running ? 'Running…' : 'Run it now'}
+            </Button>
+            <p className="text-[11.5px] leading-relaxed text-fg-muted">
+              Runs the action exactly as it was approved. The arguments are
+              not re-entered.
+            </p>
+            {runError && (
+              <p role="alert" className="text-[11.5px] leading-relaxed text-danger">
+                {runError}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Only a request that is actually waiting gets a decision column.
             A settled one is a record, and a record with two greyed-out
@@ -193,6 +214,19 @@ export function ApprovalsPage() {
     decideMutation.mutate({ approvalId, decision })
   }
 
+  // Spending an approval. The client sends the approval alone: the exact
+  // approved arguments live server-side and are re-checked against the
+  // approval digest, so nothing here re-asserts what was approved.
+  const runMutation = useMutation({
+    mutationFn: ({ approval }) =>
+      executeTool(tenantId, approval.tool_name, {}, approval.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals(tenantId) })
+    },
+  })
+
+  const handleRun = (approval) => runMutation.mutate({ approval })
+
   if (!canRead) {
     return (
       <div className="flex flex-col">
@@ -291,6 +325,17 @@ export function ApprovalsPage() {
                 key={approval.id}
                 approval={approval}
                 onDecide={handleDecide}
+                onRun={handleRun}
+                running={
+                  runMutation.isPending &&
+                  runMutation.variables?.approval?.id === approval.id
+                }
+                runError={
+                  runMutation.isError &&
+                  runMutation.variables?.approval?.id === approval.id
+                    ? 'That action could not be run. It may have already been used, or the approval may have expired.'
+                    : null
+                }
                 viewerUserId={principal?.sub}
                 canDecide={canDecide}
                 pending={decideMutation.isPending}
