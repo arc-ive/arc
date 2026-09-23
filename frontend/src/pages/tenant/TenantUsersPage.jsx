@@ -245,7 +245,7 @@ export function TenantUsersPage() {
       )}
 
       {shown.length > 0 && (
-        <ul className="mt-8 border-t border-line">
+        <ul className="stagger mt-8 border-t border-line">
           {shown.map((user) => (
             <li
               key={user.id}

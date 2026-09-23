@@ -163,7 +163,7 @@ export function PlatformTenantsPage() {
           key handler: that gave no href, so no middle-click, no
           open-in-new-tab, no context menu. */}
       {userTenants.data?.length > 0 && (
-        <section className="border-t border-line">
+        <section className="stagger border-t border-line">
           {userTenants.data.map((tenant) => (
             <Link
               key={tenant.id}

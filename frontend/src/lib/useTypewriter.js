@@ -88,5 +88,10 @@ export function useTypewriter(phrases, active = true) {
   // Under reduced motion the whole first question is returned at once and
   // `done` hides the caret — not a slower animation, none.
   if (reduced) return { text: phrases[0] ?? '', done: true }
-  return { text, done: false }
+
+  // Deriving the empty string rather than setting state on deactivate:
+  // the effect's cleanup stops the timer, but the last partial phrase
+  // would otherwise stay in state and the caller would be handed a frozen
+  // half-question. Derived, so there is no setState in an effect either.
+  return { text: active ? text : '', done: false }
 }

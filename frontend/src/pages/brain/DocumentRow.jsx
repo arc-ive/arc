@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ArrowUpRight } from 'lucide-react'
 import { sourceLabels } from '../../lib/sources.js'
 import {
   documentTitle,
@@ -38,7 +39,7 @@ import { cn } from '../../lib/cn.js'
  * token is the contrast floor, so it cannot be darkened to signal "less
  * important" (see the token layer in PR-0).
  */
-export function DocumentRow({ document, to, query = '', passageCount = 0 }) {
+export function DocumentRow({ document, to, query = '', passageCount = 0, index }) {
   const title = documentTitle(document)
   const origin = originRepeatsTitle(document) ? null : documentOrigin(document)
   const passage = document.passage ?? ''
@@ -48,71 +49,83 @@ export function DocumentRow({ document, to, query = '', passageCount = 0 }) {
     <Link
       to={to}
       className={cn(
-        'group relative grid grid-cols-1 gap-x-8 gap-y-2 border-b border-line py-6',
-        'transition-colors duration-150 hover:bg-surface-sunk/60',
+        'group relative flex items-baseline gap-5 border-b border-line py-5 sm:gap-7',
+        'transition-colors duration-200 hover:bg-surface-sunk/70',
         'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
-        'md:grid-cols-[minmax(0,1fr)_14rem]',
       )}
     >
-      <div className="min-w-0">
-        {/* The document title is content, so it is set in the display
-            serif. Everything around it is chrome and stays in the
-            grotesque — which is the whole hierarchy, for free. */}
-        <h2 className="type-display text-[1.375rem] leading-snug text-fg">
+      {/* The index number is the editorial device that makes this a
+          catalogue rather than a list of links — and it is honest, because
+          the order is the ranking the backend returned. */}
+      {index != null && (
+        <span className="type-data shrink-0 pt-1 text-fg-muted tabular-nums">
+          {String(index + 1).padStart(2, '0')}
+        </span>
+      )}
+
+      <span className="min-w-0 flex-1">
+        <span className="type-display block text-[1.375rem] leading-snug text-fg">
           {title}
-        </h2>
+        </span>
+
+        {/* Kind and date sit on one quiet line under the title — the
+            metadata column they used to occupy competed with the titles
+            down the page. */}
+        <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-fg-muted">
+          <span>{sourceLabels[document.source] ?? document.source}</span>
+          {updatedAt && (
+            <>
+              <span aria-hidden>·</span>
+              <span>Updated {relativeTime(updatedAt)}</span>
+            </>
+          )}
+          {document.version != null && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="type-data">v{document.version}</span>
+            </>
+          )}
+          {passageCount > 1 && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{passageCount} matching passages</span>
+            </>
+          )}
+        </span>
 
         {passage && (
-          <p className="measure mt-2 line-clamp-2 text-[14px] leading-relaxed text-fg-subtle">
+          <span className="measure mt-2 block line-clamp-2 text-[14px] leading-relaxed text-fg-subtle">
             {splitOnQuery(passage, query).map((seg, i) =>
               seg.match ? (
-                <mark
-                  key={i}
-                  className="bg-accent/12 px-0.5 font-medium text-fg"
-                >
+                <mark key={i} className="bg-accent/12 px-0.5 font-medium text-fg">
                   {seg.text}
                 </mark>
               ) : (
                 <span key={i}>{seg.text}</span>
               ),
             )}
-          </p>
+          </span>
         )}
 
         {origin && (
-          <p className="mt-2 truncate type-data text-fg-muted">{origin}</p>
+          <span className="type-data mt-1.5 block truncate text-fg-muted">
+            {origin}
+          </span>
         )}
-      </div>
+      </span>
 
-      {/* Metadata is a margin column, not a row of chips under the title.
-          It aligns down the index so a reader can scan one attribute
-          without reading every entry. */}
-      <dl className="flex flex-row flex-wrap items-start gap-x-6 gap-y-1 md:flex-col md:gap-y-2 md:pt-2">
-        <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
-          <dt className="type-label text-fg-muted">Kind</dt>
-          <dd className="text-[13px] text-fg-subtle">
-            {sourceLabels[document.source] ?? document.source}
-          </dd>
-        </div>
-        {updatedAt && (
-          <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
-            <dt className="type-label text-fg-muted">Updated</dt>
-            <dd className="text-[13px] text-fg-subtle">{relativeTime(updatedAt)}</dd>
-          </div>
+      {/* Revealed on approach rather than drawn on every row. Twelve
+          static arrows down a page is twelve pieces of furniture; one that
+          appears where the pointer is, is a response. */}
+      <ArrowUpRight
+        aria-hidden
+        className={cn(
+          'mt-1 size-4 shrink-0 text-fg-muted',
+          'translate-x-[-4px] opacity-0 transition-all duration-200',
+          'group-hover:translate-x-0 group-hover:opacity-100 group-hover:text-fg',
+          'group-focus-visible:translate-x-0 group-focus-visible:opacity-100',
         )}
-        {document.version != null && (
-          <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
-            <dt className="type-label text-fg-muted">Version</dt>
-            <dd className="type-data text-fg-subtle">{document.version}</dd>
-          </div>
-        )}
-        {passageCount > 1 && (
-          <div className="flex items-baseline gap-2 md:flex-col md:gap-0.5">
-            <dt className="type-label text-fg-muted">Matches</dt>
-            <dd className="text-[13px] text-fg-subtle">{passageCount} passages</dd>
-          </div>
-        )}
-      </dl>
+      />
     </Link>
   )
 }

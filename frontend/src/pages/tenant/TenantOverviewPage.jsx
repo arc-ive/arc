@@ -217,7 +217,7 @@ export function TenantOverviewPage() {
                   )}
                 </p>
               ) : (
-                <ol className="mt-3 border-t border-line">
+                <ol className="stagger mt-3 border-t border-line">
                   {recentDocuments.map((doc, index) => (
                     <li key={doc.id}>
                       <Link

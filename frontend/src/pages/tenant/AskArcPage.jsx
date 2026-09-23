@@ -243,7 +243,7 @@ export function AskArcPage() {
                  17px, 1.65 line-height, capped at a reading measure. This
                  is the one place in Arc where the type is doing the work
                  of the product. */
-              <div className="type-prose measure whitespace-pre-wrap text-fg">
+              <div className="type-prose measure animate-rise whitespace-pre-wrap text-fg">
                 {answer.answer}
               </div>
             ) : (
@@ -286,7 +286,7 @@ export function AskArcPage() {
             <h2 className="type-label text-fg-muted">
               Sources · {sources.length}
             </h2>
-            <ol className="mt-3 border-t border-line">
+            <ol className="stagger mt-3 border-t border-line">
               {sources.map((source, index) => (
                 <li key={source.documentId}>
                   <Link
