@@ -59,8 +59,8 @@ function CreateConnectorDialog({ open, onClose }) {
 
   return (
     <Dialog open={open} onClose={onClose}>
-      <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">Create Connector</h2>
+      <div className="w-full max-w-md rounded-xl border border-line bg-surface-overlay p-6 shadow-xl">
+        <h2 className="text-lg font-semibold text-fg mb-4">Create Connector</h2>
         {error && (
           <InlineError className="mb-4">
             {errorMessage(error)}
@@ -187,14 +187,14 @@ export function ConnectorsPage() {
             {connectors.map((connector) => (
             <Card key={connector.id} className="flex flex-col gap-3 p-5">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-zinc-100">{connector.name}</p>
+                <p className="text-sm font-semibold text-fg">{connector.name}</p>
                 <Badge variant={connector.status === 'active' ? 'success' : 'neutral'} size="sm">
                   {connector.status}
                 </Badge>
               </div>
               <p className="text-[13px] text-fg-muted">Provider: {connector.provider}</p>
               {connector.target && (
-                <p className="font-mono text-xs text-zinc-400">Target: {connector.target}</p>
+                <p className="font-mono text-xs text-fg-muted">Target: {connector.target}</p>
               )}
               <p className="text-xs text-fg-muted">
                 Created: {new Date(connector.created_at).toLocaleDateString()}

@@ -5,7 +5,7 @@ export function Tabs({ tabs, active, onChange, className, size = 'md' }) {
     <div
       role="tablist"
       className={cn(
-        'inline-flex items-center gap-1 rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-1',
+        'inline-flex items-center gap-1 rounded-lg border border-line/80 bg-surface p-1',
         className,
       )}
     >
@@ -22,8 +22,8 @@ export function Tabs({ tabs, active, onChange, className, size = 'md' }) {
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
               size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-[13px]',
               isActive
-                ? 'bg-zinc-800/90 text-zinc-100 shadow-sm'
-                : 'text-fg-muted hover:text-zinc-300',
+                ? 'bg-surface-selected text-fg shadow-sm'
+                : 'text-fg-muted hover:text-fg-subtle',
             )}
           >
             {tab.label}

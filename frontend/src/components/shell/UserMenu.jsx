@@ -28,12 +28,12 @@ export function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         className={cn(
-          'flex h-9 items-center gap-2 rounded-lg border border-transparent px-1.5 transition-colors duration-150 hover:border-zinc-800 hover:bg-zinc-900',
+          'flex h-9 items-center gap-2 rounded-lg border border-transparent px-1.5 transition-colors duration-150 hover:border-line hover:bg-surface-overlay',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
         )}
       >
         <Avatar name={principal?.sub} size="sm" />
-        <span className="hidden max-w-28 truncate text-[13px] font-medium text-zinc-300 sm:block">
+        <span className="hidden max-w-28 truncate text-[13px] font-medium text-fg-subtle sm:block">
           {principal?.sub}
         </span>
       </button>
@@ -42,12 +42,12 @@ export function UserMenu() {
         <div
           role="menu"
           aria-label="User menu"
-          className="absolute right-0 top-11 z-40 w-60 overflow-hidden rounded-xl border border-zinc-800 bg-raised shadow-overlay animate-scale-in"
+          className="absolute right-0 top-11 z-40 w-60 overflow-hidden rounded-xl border border-line bg-raised shadow-overlay animate-scale-in"
         >
-          <div className="flex items-center gap-2.5 border-b border-zinc-800/70 px-3.5 py-3">
+          <div className="flex items-center gap-2.5 border-b border-line/70 px-3.5 py-3">
             <Avatar name={principal?.sub} />
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium text-zinc-200">
+              <p className="truncate text-[13px] font-medium text-fg">
                 {principal?.sub}
               </p>
               <p className="text-[11px] text-fg-muted">
@@ -63,7 +63,7 @@ export function UserMenu() {
                 setOpen(false)
                 navigate('/app/profile')
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-zinc-400 transition-colors duration-100 hover:bg-zinc-900 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-fg-muted transition-colors duration-100 hover:bg-surface-overlay hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
               <UserCircle2 className="size-4 text-fg-muted" />
               Profile &amp; session

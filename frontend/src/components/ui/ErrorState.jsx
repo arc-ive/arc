@@ -36,7 +36,7 @@ export function ErrorState({
       <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-red-900/60 bg-red-950/30 text-red-400">
         <Icon className="size-5" />
       </div>
-      <h3 className="text-sm font-semibold text-zinc-200">{displayTitle}</h3>
+      <h3 className="text-sm font-semibold text-fg">{displayTitle}</h3>
       <p className="max-w-sm text-[13px] leading-relaxed text-fg-muted">
         {displayMessage}
       </p>
@@ -59,10 +59,10 @@ export function ForbiddenState({ message, className }) {
         className,
       )}
     >
-      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
         <ShieldX className="size-5" />
       </div>
-      <h3 className="text-sm font-semibold text-zinc-200">
+      <h3 className="text-sm font-semibold text-fg">
         Permission denied
       </h3>
       <p className="max-w-sm text-[13px] leading-relaxed text-fg-muted">

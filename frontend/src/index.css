@@ -14,8 +14,10 @@
      should reference them directly; they exist so the semantic layer
      below has something to point at.
      ---------------------------------------------------------------- */
+  --arc-zinc-50: #fafafa;
   --arc-zinc-100: #f4f4f5;
   --arc-zinc-200: #e4e4e7;
+  --arc-zinc-300: #d4d4d8;
   --arc-zinc-400: #a1a1aa;
   --arc-zinc-700: #3f3f46;
   --arc-zinc-800: #27272a;
@@ -55,9 +57,35 @@
   --color-surface-raised: var(--arc-ink-2);
   --color-surface-overlay: var(--arc-ink-3);
 
+  /* The "this row is selected" fill — the active tab, the highlighted
+     command, the current workspace. Five different values were in use for
+     it (zinc-800 at 60/70/80/90% and solid) spanning #1b1b1e to #27272a,
+     which is one concept written five ways. */
+  --color-surface-selected: var(--arc-zinc-800);
+
   --color-fg: var(--arc-zinc-100);
-  --color-fg-strong: #fafafa;
+  /* The level between body text and muted: form labels, table cells,
+     tooltip text. 43 sites were using zinc-300 directly for exactly this
+     and nothing named it, so the system appeared to define two
+     foregrounds while the app ran on four. Naming it is what stops the
+     next one being invented. Brighter than fg-muted, which measures
+     6.97:1 at worst, so it clears AA everywhere fg-muted does. */
+  --color-fg-subtle: var(--arc-zinc-300);
   --color-fg-muted: var(--arc-zinc-400);
+
+  /* The solid action pair. The primary button inverts the scheme —
+     near-white surface, near-black label — and Button had been spelling
+     that as `bg-zinc-50 text-zinc-950` with no token behind it, which is
+     why it was the last raw colour left in the system. */
+  /* Three tokens were removed here: --color-fg-strong, --color-intel and
+     --color-intel-dim. Nothing referenced any of them, and Tailwind v4
+     tree-shakes an unused @theme entry, so they were not even emitted —
+     reading getComputedStyle for --color-fg-strong returned "". A token
+     that no utility can produce is not a level of the system; it just
+     makes the system look richer than it is. --color-action carries the
+     near-white value fg-strong was holding. */
+  --color-action: var(--arc-zinc-50);
+  --color-on-action: var(--arc-ink-0);
 
   --color-line: var(--arc-zinc-800);
   --color-line-strong: var(--arc-zinc-700);
@@ -78,9 +106,6 @@
   --color-raised: var(--arc-ink-1);
   --color-panel: var(--arc-ink-2);
   --color-elevated: var(--arc-ink-3);
-
-  --color-intel: var(--arc-cyan-300);
-  --color-intel-dim: #0891b2;
 
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.2);
   --shadow-overlay: 0 8px 40px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.4);

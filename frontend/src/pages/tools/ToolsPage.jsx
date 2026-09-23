@@ -57,14 +57,14 @@ function ToolExecuteDialog({ tool, open, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl max-h-[80vh] overflow-y-auto">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-1">Execute Tool</h2>
+      <div className="w-full max-w-lg rounded-xl border border-line bg-surface-overlay p-6 shadow-xl max-h-[80vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold text-fg mb-1">Execute Tool</h2>
         <p className="text-sm text-fg-muted mb-4">{tool.name} — {tool.description}</p>
 
         {tool.input_schema && (
-          <div className="mb-4 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-            <p className="text-xs font-medium text-zinc-400 mb-2">Input Schema</p>
-            <pre className="text-xs text-zinc-300 overflow-x-auto">{JSON.stringify(tool.input_schema, null, 2)}</pre>
+          <div className="mb-4 p-3 rounded-lg bg-surface-overlay border border-line-strong">
+            <p className="text-xs font-medium text-fg-muted mb-2">Input Schema</p>
+            <pre className="text-xs text-fg-subtle overflow-x-auto">{JSON.stringify(tool.input_schema, null, 2)}</pre>
           </div>
         )}
 
@@ -91,7 +91,7 @@ function ToolExecuteDialog({ tool, open, onClose }) {
               <CheckCircle className="size-4 text-green-400" />
               <span className="text-sm font-medium text-green-300">Execution successful</span>
             </div>
-            <pre className="text-xs text-zinc-300 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(result.output, null, 2)}</pre>
+            <pre className="text-xs text-fg-subtle overflow-x-auto whitespace-pre-wrap">{JSON.stringify(result.output, null, 2)}</pre>
           </div>
         )}
 
@@ -165,7 +165,7 @@ export function ToolsPage() {
           {tools.map((tool) => (
             <Card key={tool.name} className="flex flex-col gap-3 p-5">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-zinc-100">{tool.name}</p>
+                <p className="text-sm font-semibold text-fg">{tool.name}</p>
                 <Badge
                   variant={
                     tool.risk_level === 'high' ? 'danger' :

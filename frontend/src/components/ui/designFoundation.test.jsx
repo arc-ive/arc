@@ -74,10 +74,17 @@ describe('Badge', () => {
     // Regression: `variant="zinc"` shipped in ApprovalsPage and produced a
     // badge with no styling at all, because the old colour-named API gave
     // no reason to think the name was wrong.
-    const { container } = render(<Badge variant="chartreuse">Unknown</Badge>)
-    const el = container.firstElementChild
-    expect(el.className).toContain('bg-zinc-800/80')
-    expect(el.className).not.toBe('')
+    //
+    // Asserted against an actual neutral badge rather than a hardcoded
+    // class string: the behaviour under test is "an unknown variant
+    // renders as neutral", and pinning neutral's current utility broke
+    // this test the moment that utility was renamed to a token.
+    const unknown = render(<Badge variant="chartreuse">Unknown</Badge>)
+    const neutral = render(<Badge variant="neutral">Neutral</Badge>)
+    expect(unknown.container.firstElementChild.className).toBe(
+      neutral.container.firstElementChild.className,
+    )
+    expect(unknown.container.firstElementChild.className).not.toBe('')
   })
 
   it('accepts every semantic variant', () => {
@@ -188,6 +195,19 @@ describe('design foundation is actually adopted', () => {
     const offenders = files
       .filter((f) => f.includes('/pages/'))
       .filter((f) => /const inputClass\s*=/.test(readFileSync(f, 'utf8')))
+    expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
+  })
+
+  it('no component reaches past the semantic layer to a raw colour', () => {
+    // ARC_DESIGN_SYSTEM.md's three-layer model — primitive, semantic,
+    // component — only holds if components use the semantic layer. About
+    // 340 utilities were addressing the primitive scale directly, so a
+    // token change would have missed most of the app.
+    //
+    // index.css is where primitives are allowed to be named, and it is
+    // not scanned here.
+    const RAW = /(?:^|["'\s:])(?:hover:|focus:|active:|group-hover:|focus-visible:)?(?:text|bg|border|border-[trbl]|ring|divide|from|via|to)-zinc-\d/
+    const offenders = files.filter((f) => RAW.test(readFileSync(f, 'utf8')))
     expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
   })
 })

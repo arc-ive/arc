@@ -117,7 +117,7 @@ export function AskArcPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-panel p-5 shadow-card"
+        className="flex flex-col gap-3 rounded-xl border border-line/80 bg-panel p-5 shadow-card"
       >
         <Textarea
           label="Ask anything about your company"
@@ -248,7 +248,7 @@ export function AskArcPage() {
 
       {!mutation.isPending && !answer && !error && (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-zinc-200">
+          <h2 className="mb-2 text-sm font-semibold text-fg">
             Example questions
           </h2>
           <div className="flex flex-wrap gap-2">
@@ -258,7 +258,7 @@ export function AskArcPage() {
                 type="button"
                 onClick={() => handleExampleClick(example)}
                 disabled={mutation.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-[13px] text-zinc-400 transition-colors duration-150 hover:border-zinc-700 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-raised px-3 py-1.5 text-[13px] text-fg-muted transition-colors duration-150 hover:border-line-strong hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ArrowUpRight className="size-3.5" />
                 {example}

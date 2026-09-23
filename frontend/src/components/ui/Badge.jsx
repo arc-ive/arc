@@ -23,7 +23,7 @@ import { cn } from '../../lib/cn.js'
  * label; `dot` is decorative and is hidden from assistive technology.
  */
 const VARIANTS = {
-  neutral: 'bg-zinc-800/80 text-zinc-200 border-line-strong/60',
+  neutral: 'bg-surface-selected text-fg border-line-strong/60',
   accent: 'bg-primary/10 text-primary border-primary/30',
   info: 'bg-info/10 text-info border-info/30',
   success: 'bg-success/10 text-success border-success/30',
@@ -32,7 +32,7 @@ const VARIANTS = {
 }
 
 const DOTS = {
-  neutral: 'bg-zinc-400',
+  neutral: 'bg-fg-muted',
   accent: 'bg-primary',
   info: 'bg-info',
   success: 'bg-success',

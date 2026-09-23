@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useCapabilities } from './capabilities.js'
+import { FullPageLoader } from '../components/ui/FullPageLoader.jsx'
 
 /**
  * Route guard that restricts access to platform administrators.
@@ -18,9 +19,7 @@ export function RequirePlatformAdmin({ children }) {
 
   if (me.isPending) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-base">
-        <div className="size-6 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-      </div>
+      <FullPageLoader label="Checking your access" />
     )
   }
 

@@ -67,7 +67,7 @@ export function WorkspaceDispatch() {
           title="You are not a member of any tenant"
           description="Your identity is authenticated, but no tenant membership has been provisioned. Ask a platform administrator to assign you to an organization."
           action={
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 text-[11px] font-medium tracking-wide text-fg-muted">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-raised px-2.5 py-1 text-[11px] font-medium tracking-wide text-fg-muted">
               <ShieldCheck className="size-3" />
               Identity and membership are managed by the backend
             </span>

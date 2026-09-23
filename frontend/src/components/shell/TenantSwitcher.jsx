@@ -45,12 +45,12 @@ export function TenantSwitcher() {
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          'flex h-9 max-w-52 items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 text-left transition-colors duration-150 hover:border-zinc-700 hover:bg-zinc-900',
+          'flex h-9 max-w-52 items-center gap-2 rounded-lg border border-line bg-surface-raised px-2.5 text-left transition-colors duration-150 hover:border-line-strong hover:bg-surface-overlay',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
         )}
       >
         <Building2 className="size-4 shrink-0 text-fg-muted" />
-        <span className="truncate text-[13px] font-medium text-zinc-200">
+        <span className="truncate text-[13px] font-medium text-fg">
           {current?.name ?? 'Select workspace'}
         </span>
         <ChevronsUpDown className="ml-auto size-3.5 shrink-0 text-fg-muted" />
@@ -60,9 +60,9 @@ export function TenantSwitcher() {
         <div
           role="listbox"
           aria-label="Tenant switcher"
-          className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-xl border border-zinc-800 bg-raised shadow-overlay animate-scale-in"
+          className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-xl border border-line bg-raised shadow-overlay animate-scale-in"
         >
-          <p className="border-b border-zinc-800/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+          <p className="border-b border-line/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
             Your tenants
           </p>
           <div className="max-h-64 overflow-y-auto p-1">
@@ -89,8 +89,8 @@ export function TenantSwitcher() {
                     'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors duration-100',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
                     tenant.id === tenantId
-                      ? 'bg-zinc-800/70 text-zinc-100'
-                      : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200',
+                      ? 'bg-surface-selected text-fg'
+                      : 'text-fg-muted hover:bg-surface-overlay hover:text-fg',
                   )}
                 >
                   <Building2 className="size-4 shrink-0 text-fg-muted" />

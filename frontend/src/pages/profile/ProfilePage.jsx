@@ -35,7 +35,7 @@ export function ProfilePage() {
           <div className="flex items-center gap-3">
             <Avatar name={me.data?.display_name || principal?.sub} size="lg" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-zinc-100">
+              <p className="truncate text-sm font-semibold text-fg">
                 {me.data?.display_name || principal?.sub}
               </p>
               {me.data?.email && (
@@ -136,22 +136,22 @@ export function ProfilePage() {
           description="Server-managed session for your authenticated identity."
         />
         <CardContent>
-          <dl className="divide-y divide-zinc-800/60">
+          <dl className="divide-y divide-line/60">
             <div className="flex items-start justify-between gap-4 py-1.5">
               <dt className="shrink-0 text-[13px] text-fg-muted">Session type</dt>
-              <dd className="text-right text-xs text-zinc-300">
+              <dd className="text-right text-xs text-fg-subtle">
                 HttpOnly secure cookie
               </dd>
             </div>
             <div className="flex items-start justify-between gap-4 py-1.5">
               <dt className="shrink-0 text-[13px] text-fg-muted">Session storage</dt>
-              <dd className="text-right text-xs text-zinc-300">
+              <dd className="text-right text-xs text-fg-subtle">
                 Server-side (PostgreSQL)
               </dd>
             </div>
             <div className="flex items-start justify-between gap-4 py-1.5">
               <dt className="shrink-0 text-[13px] text-fg-muted">Cookie attributes</dt>
-              <dd className="text-right text-xs text-zinc-300">
+              <dd className="text-right text-xs text-fg-subtle">
                 HttpOnly, Secure, SameSite=Lax
               </dd>
             </div>

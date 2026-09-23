@@ -23,10 +23,10 @@ import { ShieldX, Building2 } from 'lucide-react'
 function BlockedPage({ icon: Icon, title, description }) {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
         <Icon className="size-5" aria-hidden />
       </div>
-      <h1 className="text-lg font-semibold tracking-tight text-zinc-100">{title}</h1>
+      <h1 className="text-lg font-semibold tracking-tight text-fg">{title}</h1>
       <p className="max-w-md text-[13px] leading-relaxed text-fg-muted">{description}</p>
     </div>
   )

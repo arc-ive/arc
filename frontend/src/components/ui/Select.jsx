@@ -14,7 +14,7 @@ export const Select = forwardRef(function Select(
       {label && (
         <label
           htmlFor={selectId}
-          className="text-[13px] font-medium text-zinc-300"
+          className="text-[13px] font-medium text-fg-subtle"
         >
           {label}
           {required && <span className="ml-0.5 text-fg-muted">*</span>}
@@ -25,12 +25,12 @@ export const Select = forwardRef(function Select(
           ref={ref}
           id={selectId}
           className={cn(
-            'h-9 w-full appearance-none rounded-lg border bg-zinc-900/70 pl-3 pr-9 text-sm text-zinc-100',
+            'h-9 w-full appearance-none rounded-lg border bg-surface-raised pl-3 pr-9 text-sm text-fg',
             'transition-colors duration-150',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
             error
               ? 'border-red-800 focus-visible:outline-red-500'
-              : 'border-zinc-800 hover:border-zinc-700',
+              : 'border-line hover:border-line-strong',
           )}
           {...props}
         >

@@ -17,11 +17,11 @@ export function EmptyState({
       )}
     >
       {Icon && (
-        <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+        <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
           <Icon className="size-5" />
         </div>
       )}
-      <h3 className="text-sm font-semibold text-zinc-200">{title}</h3>
+      <h3 className="text-sm font-semibold text-fg">{title}</h3>
       {description && (
         <p className="max-w-sm text-[13px] leading-relaxed text-fg-muted">
           {description}
