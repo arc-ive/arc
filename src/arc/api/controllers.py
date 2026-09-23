@@ -1585,6 +1585,17 @@ async def execute_tool(
     declared by the tool, otherwise execution is denied (403). Only
     platform-owned, code-defined tools are executable. Errors are generic
     and safe: no internal details are exposed.
+
+    Controlled outcomes are structured 200 responses carrying ``status``,
+    matching ``POST /agent/runs`` and the skill execution endpoint:
+
+    - ``executed`` — the handler ran; ``output`` carries its result.
+    - ``approval_required`` — the tool is gated by REQUIRE_HUMAN_APPROVAL.
+      Nothing ran; a pending approval was created and ``approval_id``
+      names it. Re-send the identical input with that ``approval_id``
+      once a second person has approved it.
+
+    A genuine denial (missing permission, DENY policy) remains a 403.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
@@ -1604,7 +1615,24 @@ async def execute_tool(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
     except ToolValidationError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tool input")
-    except ToolDeniedError:
+    except ToolDeniedError as exc:
+        # A REQUIRE_HUMAN_APPROVAL tool is not a denial: the service has
+        # already created a pending approval request and carries its id on
+        # the exception for exactly this purpose. Reporting it as 403
+        # "not permitted" told the caller the opposite of what happened —
+        # Arc had filed an approval in their name and they were shown an
+        # error, with no id and no way to find it.
+        #
+        # Controlled outcomes are structured 200 responses here, matching
+        # POST /agent/runs and the skill execution endpoint, which both
+        # already report approval_required that way.
+        if exc.approval_id is not None:
+            return {
+                "tool": name,
+                "status": "approval_required",
+                "approval_id": exc.approval_id,
+                "output": None,
+            }
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tool execution is not permitted",
@@ -1618,6 +1646,7 @@ async def execute_tool(
     return {
         "tool": result.tool_name,
         "version": result.tool_version,
+        "status": "executed",
         "output": result.output,
     }
 

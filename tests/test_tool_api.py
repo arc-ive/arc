@@ -247,6 +247,66 @@ class TestToolExecution:
         assert body["output"]["tenant_id"] == tenant.id
         assert {entry["status"] for entry in body["output"]["services"]} == {"healthy"}
 
+    async def test_approval_gated_tool_reports_approval_required_not_denial(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A REQUIRE_HUMAN_APPROVAL tool is a controlled outcome, not a denial.
+
+        The service creates a pending approval and carries its id on
+        ToolDeniedError. The endpoint previously discarded that and
+        answered 403 "Tool execution is not permitted" — telling the
+        caller the opposite of what happened, with no id and no way to
+        find the request Arc had just filed in their name.
+
+        Controlled outcomes are structured 200 responses here, matching
+        POST /agent/runs and the skill execution endpoint.
+        """
+        tenant, user = await _seed_member(repositories)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(token),
+            json={"input": {"justification": "Month-end close access"}},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "approval_required"
+        assert body["approval_id"]
+        assert body["output"] is None
+
+        # The id must actually resolve: an approval the caller cannot find
+        # is no better than the error this replaced.
+        approvals = client.get(
+            f"/tenants/{tenant.id}/approvals",
+            headers=_auth_headers(token),
+        )
+        assert approvals.status_code == 200
+        pending = {item["id"]: item for item in approvals.json()["items"]}
+        assert body["approval_id"] in pending
+        assert pending[body["approval_id"]]["status"] == "pending"
+        assert pending[body["approval_id"]]["tool_name"] == "grant_temporary_access"
+
+    async def test_successful_execution_reports_executed_status(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """The success path names its outcome too, so a client can branch on
+        one field instead of inferring from the absence of an error."""
+        tenant, user = await _seed_member(repositories)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/tools/check_service_health/execute",
+            headers=_auth_headers(token),
+            json={"input": {}},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "executed"
+
     async def test_unknown_envelope_field_is_rejected(
         self, client, repositories, make_token, authorization_override
     ):
