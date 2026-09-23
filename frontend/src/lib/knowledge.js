@@ -128,11 +128,21 @@ export function splitOnQuery(text = '', query = '') {
 
   if (terms.length === 0 || !text) return [{ text, match: false }]
 
+  // `split` on a capturing group returns the text and the captures
+  // alternately, so a part is a match exactly when it is one of the terms.
+  //
+  // This deliberately does NOT re-test the part against `pattern`. That
+  // test was redundant — `terms` is the authority — and it was wrong: a
+  // /g regex carries `lastIndex` between `.test()` calls, so when two
+  // matched terms landed next to each other in the split output the
+  // second was tested from a stale offset and came back false. "escalate
+  // incident" over "escalateincident now" highlighted "escalate" and left
+  // "incident" plain.
   const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi')
   return text
     .split(pattern)
     .filter((part) => part !== '')
-    .map((part) => ({ text: part, match: pattern.test(part) && terms.includes(part.toLowerCase()) }))
+    .map((part) => ({ text: part, match: terms.includes(part.toLowerCase()) }))
 }
 
 /**

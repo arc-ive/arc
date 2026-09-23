@@ -102,6 +102,33 @@ describe('groupChunksByDocument', () => {
 })
 
 describe('splitOnQuery', () => {
+  it('marks two matched terms that land next to each other', () => {
+    // Regression. The match flag used to be
+    //   pattern.test(part) && terms.includes(part.toLowerCase())
+    // with `pattern` compiled /gi. A global regex carries `lastIndex`
+    // between `.test()` calls, so when the split put two matched terms
+    // adjacent — no text segment between them to reset the walk — the
+    // second was tested from a stale offset and came back false.
+    // "escalate" highlighted, "incident" rendered plain.
+    const segments = splitOnQuery('escalateincident now', 'escalate incident')
+    expect(segments.filter((s) => s.match).map((s) => s.text)).toEqual([
+      'escalate',
+      'incident',
+    ])
+  })
+
+  it('marks every occurrence, not just the first pass', () => {
+    // The same fault, compounding: by the third and fourth term the
+    // offset was far past the end of each short part.
+    const segments = splitOnQuery('resetpassword resetpassword', 'reset password')
+    expect(segments.filter((s) => s.match).map((s) => s.text)).toEqual([
+      'reset',
+      'password',
+      'reset',
+      'password',
+    ])
+  })
+
   it('marks the query terms inside a passage', () => {
     const segments = splitOnQuery('review the handbook during onboarding', 'handbook')
     expect(segments.filter((s) => s.match).map((s) => s.text)).toEqual(['handbook'])
