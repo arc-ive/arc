@@ -263,9 +263,25 @@ class TestUpdateCompanyConfig:
     async def test_status_mutation_is_rejected(
         self, client, seeded, db, make_token, authorization_override
     ):
-        """Client-supplied status must not modify tenant.status."""
+        """Client-supplied status must not modify tenant.status.
+
+        The intent of this test is unchanged and the guarantee is
+        stronger. The expected status code moved from 200 to 422
+        deliberately (issue #295): the request was previously accepted
+        and the field silently dropped, so a caller attempting to suspend
+        a tenant was told it had worked. A refusal is the honest answer to
+        a change the endpoint cannot make, and it matches what issue #236
+        established for tool execution, where a wrong key had to fail
+        rather than silently execute.
+
+        Note this also rejects the request WHOLESALE: the valid ``name``
+        alongside the invalid ``status`` is not applied either. That is
+        the point -- a partially-applied update is the ambiguity this
+        removes.
+        """
         tenant, user = seeded
         original_status = tenant.status
+        original_name = tenant.name
         authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
         token = make_token(user.id)
         # Attempt to mutate status via company configuration endpoint
@@ -276,14 +292,13 @@ class TestUpdateCompanyConfig:
             token,
             {"name": "Should Not Change Status", "status": "deleted"},
         )
-        assert response.status_code == 200
-        body = response.json()
-        # Response must retain original status
-        assert body["status"] == original_status
-        # Persisted database row must also retain original status
+        assert response.status_code == 422
+        # Persisted database row retains BOTH original values: nothing in
+        # a rejected request is applied.
         tenants = PostgreSQLTenantRepository(db)
         persisted = await tenants.get_by_id(tenant.id)
         assert persisted.status == original_status
+        assert persisted.name == original_name
 
     async def test_updated_at_is_refreshed_on_update(
         self, client, seeded, db, make_token, authorization_override
