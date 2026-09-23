@@ -68,11 +68,16 @@ describe('TenantUsersPage', () => {
     expect(screen.queryByText(/authorized by the backend/i)).not.toBeInTheDocument()
   })
 
-  it('shows empty state when no users exist', async () => {
+  it('says plainly when nobody has access yet', async () => {
+    // Was "No users in this tenant" inside an icon tile and a card, with
+    // "Click 'Add member' to provision a membership" underneath — the word
+    // "provision" is the data model talking, and the Add member button is
+    // already on the page saying what it does.
     renderWithProviders(<TenantUsersPage />)
 
-    const emptyText = await screen.findByText('No users in this tenant')
-    expect(emptyText).toBeInTheDocument()
+    expect(
+      await screen.findByText(/nobody has been given access to this workspace/i),
+    ).toBeInTheDocument()
   })
 
   it('shows Add member button', async () => {

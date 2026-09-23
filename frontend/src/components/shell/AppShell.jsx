@@ -22,6 +22,15 @@ import { RouteAnnouncer } from './RouteAnnouncer.jsx'
  * which one they are on before reading a word. `data-plane` is read by a
  * scoped token override in index.css; no component below here knows about it.
  */
+/** Which paper an area stands on. Console has its own plane and opts out. */
+function surfaceForPath(pathname) {
+  if (pathname.startsWith('/platform')) return null
+  if (/\/(knowledge|connectors)(\/|$)/.test(pathname)) return 'brain'
+  if (/\/ask(\/|$)/.test(pathname)) return 'ask'
+  if (/\/(settings|users|overview|profile)(\/|$)/.test(pathname)) return 'quiet'
+  return null
+}
+
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -48,6 +57,14 @@ export function AppShell() {
     document.documentElement.setAttribute('data-plane', plane)
     return () => document.documentElement.removeAttribute('data-plane')
   }, [plane])
+
+  // Each area stands on its own paper. A few percent apart, so moving
+  // between areas registers as movement rather than as a theme change.
+  useEffect(() => {
+    const surface = surfaceForPath(location.pathname)
+    if (surface) document.documentElement.setAttribute('data-surface', surface)
+    else document.documentElement.removeAttribute('data-surface')
+  }, [location.pathname])
 
   return (
     <div className="flex min-h-dvh flex-col bg-canvas">

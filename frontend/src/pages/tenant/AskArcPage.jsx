@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { InlineError } from '../../components/ui/InlineError.jsx'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ArrowUpRight,
   Loader2,
@@ -11,15 +11,29 @@ import { Link } from 'react-router-dom'
 import { parseCitations, groundingSummary } from '../../lib/citations.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { cn } from '../../lib/cn.js'
+import { useTypewriter } from '../../lib/useTypewriter.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { queryIntelligence } from '../../api/endpoints/intelligence.js'
+import { getKnowledge } from '../../api/endpoints/knowledge.js'
+import { queryKeys } from '../../api/queryKeys.js'
+import { documentTitle } from '../../lib/knowledge.js'
+import { Skeleton } from '../../components/ui/Skeleton.jsx'
 import { toApiError } from '../../api/errors.js'
 
+/**
+ * The questions that type themselves into the empty field.
+ *
+ * Chosen to show the RANGE of what Arc answers rather than to be clicked:
+ * a policy lookup, a change, an incident, a procedure, a system state.
+ * Between them they say "this reads your company's records" more directly
+ * than a sentence claiming it would.
+ */
 const EXAMPLE_QUESTIONS = [
   'How do I request production access?',
-  'What is our leave policy?',
-  'What is the procedure for recovering a locked account?',
-  'Show me the approved process for X.',
+  'What changed in our security policy?',
+  'Show me our onboarding process.',
+  'Summarise the latest incident report.',
+  'Which connector is failing?',
 ]
 
 /**
@@ -58,7 +72,18 @@ export function AskArcPage() {
   const [answer, setAnswer] = useState(null)
   const [error, setError] = useState(null)
   const sources = answer ? parseCitations(answer.citations, tenantId) : []
+
+  // What Arc can actually search, for the empty state's rail.
+  const knowledge = useQuery({
+    queryKey: queryKeys.knowledge(tenantId),
+    queryFn: () => getKnowledge(tenantId),
+    enabled: Boolean(tenantId),
+  })
+  const corpus = Array.isArray(knowledge.data)
+    ? knowledge.data
+    : (knowledge.data?.items ?? [])
   const lastSubmitRef = useRef(0)
+  const [touched, setTouched] = useState(false)
 
   const mutation = useMutation({
     mutationFn: (payload) => queryIntelligence(tenantId, payload),
@@ -71,6 +96,10 @@ export function AskArcPage() {
       setAnswer(null)
     },
   })
+
+  // The ghost runs only while the field is genuinely untouched and idle.
+  const showGhost = !question && !touched && !answer && !error && !mutation.isPending
+  const ghost = useTypewriter(EXAMPLE_QUESTIONS, showGhost)
 
   const handleCopy = async (text) => {
     try {
@@ -90,13 +119,8 @@ export function AskArcPage() {
     mutation.mutate({ query: question.trim(), limit: 5 })
   }
 
-  const handleExampleClick = (example) => {
-    setQuestion(example)
-    setAnswer(null)
-    setError(null)
-  }
-
   const handleClear = () => {
+    setTouched(false)
     setQuestion('')
     setAnswer(null)
     setError(null)
@@ -110,21 +134,28 @@ export function AskArcPage() {
        right to check where it came from. Putting them below would make
        provenance a footnote you scroll to, which is the opposite of what
        ADR-008 makes the product about. */
-    <div className="grid gap-x-16 gap-y-10 lg:grid-cols-[minmax(0,1fr)_17rem]">
+    <div
+      className={cn(
+        'grid gap-x-16 gap-y-10 lg:grid-cols-[minmax(0,1fr)_17rem]',
+        !asked && 'lg:min-h-[58vh] lg:items-center',
+      )}
+    >
       <div className="min-w-0">
         {/* The question is the page subject. It is not a label above a
             field — when it has been asked, it IS the headline, set at
             display size, and the answer follows it like body copy under a
             title. Before it is asked, the prompt takes that position so
             the composition does not jump. */}
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="relative">
           <label htmlFor="arc-question" className="type-label text-fg-muted">
             Ask Arc
           </label>
-          <textarea
+          <div className="relative mt-3">
+            <textarea
             id="arc-question"
             value={question}
             onChange={(event) => {
+              setTouched(true)
               setQuestion(event.target.value)
               setAnswer(null)
               setError(null)
@@ -139,14 +170,33 @@ export function AskArcPage() {
               }
             }}
             rows={2}
-            placeholder="How do I request production access?"
             disabled={mutation.isPending}
+            onFocus={() => setTouched(true)}
+            aria-describedby={showGhost ? 'arc-question-ghost' : undefined}
             className={cn(
-              'type-display-lg mt-3 block w-full resize-none bg-transparent text-fg',
-              'placeholder:text-fg-muted/60 focus-visible:outline-none',
-              'disabled:opacity-60',
+              'type-display-lg relative z-10 block w-full resize-none bg-transparent text-fg',
+              'focus-visible:outline-none disabled:opacity-60',
             )}
           />
+
+          {/* The ghost sits under the real field rather than in its
+              placeholder attribute, because a placeholder cannot carry a
+              caret and cannot animate. It is aria-hidden: a screen reader
+              gets the label, not a string mutating letter by letter. The
+              textarea above is transparent, so the two share one box. */}
+          {showGhost && (
+            <p
+              id="arc-question-ghost"
+              aria-hidden
+              className="type-display-lg pointer-events-none absolute inset-x-0 top-0 select-none text-fg-muted/55"
+            >
+              {ghost.text}
+              {!ghost.done && (
+                <span className="ml-0.5 inline-block h-[0.9em] w-px animate-pulse bg-accent align-[-0.08em] motion-reduce:animate-none" />
+              )}
+            </p>
+          )}
+          </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
             <Button type="submit" disabled={!question.trim() || mutation.isPending} isLoading={mutation.isPending} loadingText="Reading the record…">
@@ -226,31 +276,6 @@ export function AskArcPage() {
           </section>
         )}
 
-        {!asked && (
-          <section className="mt-12">
-            <h2 className="type-label text-fg-muted">Try asking</h2>
-            <ul className="mt-3 border-t border-line">
-              {EXAMPLE_QUESTIONS.map((example) => (
-                <li key={example}>
-                  <button
-                    type="button"
-                    onClick={() => handleExampleClick(example)}
-                    className={cn(
-                      'group flex w-full items-center justify-between gap-4 border-b border-line py-3.5 text-left',
-                      'transition-colors duration-150 hover:bg-surface-sunk/60',
-                      'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
-                    )}
-                  >
-                    <span className="type-prose text-[15px] text-fg-subtle group-hover:text-fg">
-                      {example}
-                    </span>
-                    <ArrowUpRight className="size-4 shrink-0 text-fg-muted transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:text-fg" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
 
       {/* The margin. Empty until there is provenance to show — an empty
@@ -286,10 +311,48 @@ export function AskArcPage() {
           </>
         ) : (
           !asked && (
-            <p className="measure-tight text-[13.5px] leading-relaxed text-fg-muted lg:border-l lg:border-line lg:pl-5">
-              Arc answers from your company&apos;s own knowledge and shows the
-              documents it used. It never answers from outside them.
-            </p>
+            /* Before a question is asked, this rail says what Arc can
+               search — the actual documents, not a sentence claiming it
+               reads your knowledge. It answers the question a person
+               genuinely has on an empty Ask Arc ("what can I ask about?")
+               with real records, and it is the same column that holds the
+               sources afterwards. */
+            <>
+              <h2 className="type-label text-fg-muted">
+                Arc is reading
+                {corpus.length > 0 && ` · ${corpus.length}`}
+              </h2>
+              {knowledge.isPending ? (
+                <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
+              ) : corpus.length === 0 ? (
+                <p className="measure-tight mt-3 border-t border-line pt-3 text-[13.5px] leading-relaxed text-fg-muted">
+                  Nothing in the Company Brain yet. Arc answers only from your
+                  company&apos;s own knowledge, so it has nothing to draw on.
+                </p>
+              ) : (
+                <>
+                  <ul className="mt-3 border-t border-line">
+                    {corpus.slice(0, 5).map((doc) => (
+                      <li key={doc.id}>
+                        <Link
+                          to={`../knowledge/${encodeURIComponent(doc.id)}`}
+                          className="block truncate border-b border-line py-2.5 text-[13.5px] text-fg-subtle transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                        >
+                          {documentTitle(doc)}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="measure-tight mt-3 text-[12.5px] leading-relaxed text-fg-muted">
+                    {corpus.length > 5 && `and ${corpus.length - 5} more. `}
+                    Arc never answers from outside these.
+                  </p>
+                </>
+              )}
+            </>
           )
         )}
       </aside>

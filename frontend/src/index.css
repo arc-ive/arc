@@ -46,20 +46,32 @@
      something to point at.
      ---------------------------------------------------------------- */
 
-  /* Paper. Cool, not cream — warm cream with a serif and a terracotta
-     accent is the current house style of generated design, and Arc is
-     not that. This is archival bond under office light. */
-  --arc-paper-0: #f6f7f9;
-  --arc-paper-1: #ffffff;
-  --arc-paper-2: #eff1f5;
-  --arc-paper-3: #e4e8ee;
+  /* Paper, in four grounds.
+     
+     One flat white everywhere reads as unfinished — the eye gets no sense
+     of having moved. These are 2-5% apart: enough that Company Brain feels
+     cooler than the workspace and Ask Arc warmer, not enough to read as
+     four themes. The ink is identical on all of them, so nothing about
+     hierarchy changes when the ground does.
+     
+     Warm without being cream: cream + serif + terracotta is the current
+     house style of generated design, and Arc uses an ink blue, not a
+     terracotta. */
+  --arc-paper-0: #faf9f6;  /* workspace — warm ivory            */
+  --arc-paper-1: #ffffff;  /* the raised sheet                  */
+  --arc-paper-2: #f1efea;  /* sunk                              */
+  --arc-paper-3: #ebe9e3;  /* selected                          */
+
+  --arc-ground-brain: #f4f6f7;    /* cool stone — knowledge     */
+  --arc-ground-ask: #f7f6f2;      /* vellum — the asking surface */
+  --arc-ground-quiet: #f7f8f9;    /* settings, admin — neutral  */
 
   /* Ink. Near-black with a blue cast, matching the paper's temperature. */
-  --arc-ink-0: #101318;
-  --arc-ink-1: #3a414d;
-  --arc-ink-2: #5f6874;
-  --arc-rule-0: #dfe3e9;
-  --arc-rule-1: #c7cdd7;
+  --arc-ink-0: #14161a;
+  --arc-ink-1: #3d434c;
+  --arc-ink-2: #5e6670;
+  --arc-rule-0: #e2e0da;
+  --arc-rule-1: #cfccc4;
 
   /* Console. The same system inverted. */
   --arc-console-0: #0b0c0e;
@@ -74,15 +86,15 @@
   /* Arc Ink — one saturated blue, used as a marking and never as a fill
      for meaning. Status colours are separate and always paired with a
      word, per ARC_DESIGN_SYSTEM.md §12. */
-  --arc-accent: #2340d0;
+  --arc-accent: #1f3a8a;
   --arc-accent-dark: #7d93ff;
 
   /* Status. Two sets, because a colour legible on paper is not legible
      on near-black. Every value below is verified — see the contrast
      test in components/ui/tokenContrast.test.js. */
   --arc-success: #0e6e42;
-  --arc-warning: #8a5a00;
-  --arc-danger: #b3261e;
+  --arc-warning: #7a4e00;
+  --arc-danger: #a32118;
   --arc-info: #0b6b8a;
 
   --arc-success-dark: #5ee9a4;
@@ -192,6 +204,30 @@
       transform: translateY(0);
     }
   }
+}
+
+/* ====================================================================
+   Context grounds.
+
+   Each product area stands on a slightly different paper. The shift is
+   small enough to register as movement rather than as a theme change, and
+   the foreground tokens are untouched — so contrast, hierarchy and every
+   component are identical on all of them.
+   ==================================================================== */
+[data-surface="brain"] {
+  --color-canvas: var(--arc-ground-brain);
+  --color-line: #dde3e5;
+  --color-surface-sunk: #e9eef0;
+}
+[data-surface="ask"] {
+  --color-canvas: var(--arc-ground-ask);
+  --color-line: #e4e1d8;
+  --color-surface-sunk: #efece4;
+}
+[data-surface="quiet"] {
+  --color-canvas: var(--arc-ground-quiet);
+  --color-line: #e3e5e8;
+  --color-surface-sunk: #eceef1;
 }
 
 /* ====================================================================

@@ -1,95 +1,48 @@
 import { Link, useParams } from 'react-router-dom'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
-import {
-  ArrowUpRight,
-  BookOpen,
-  Building2,
-  Users,
-  Workflow,
-  Sparkles,
-  Wrench,
-  Plug,
-  Activity,
-  ShieldCheck,
-} from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { useAuth } from '../../auth/useAuth.js'
 import { useCapabilities } from '../../auth/capabilities.js'
+import { PERMISSIONS } from '../../auth/permissions.js'
 import { getUserTenants } from '../../api/endpoints/tenants.js'
 import { getTenantUsers } from '../../api/endpoints/users.js'
 import { getKnowledge } from '../../api/endpoints/knowledge.js'
+import { listApprovals } from '../../api/endpoints/approvals.js'
+import { listAgentRuns } from '../../api/endpoints/agent.js'
 import { queryKeys } from '../../api/queryKeys.js'
-import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
-import { cn } from '../../lib/cn.js'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
-import { ErrorState } from '../../components/ui/ErrorState.jsx'
-import { formatDate } from '../../lib/format.js'
+import { documentTitle } from '../../lib/knowledge.js'
+import { runFailureReason } from '../../lib/agentRuns.js'
+import { relativeTime } from '../../lib/format.js'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
+import { cn } from '../../lib/cn.js'
 
-const ROLE_LABELS = {
-  platform_administrator: 'Platform Administrator',
-  company_administrator: 'Company Administrator',
-  operations_user: 'Operations User',
-  employee: 'Employee',
-}
-
-function StatCard({ label, value, hint, to }) {
-  const body = (
-    <>
-      <p className="type-label text-fg-muted">{label}</p>
-      <p className="mt-2 text-[1.75rem] font-medium leading-none tabular-nums text-fg">
-        {value}
-      </p>
-      {hint && <p className="mt-2 text-[12.5px] text-fg-muted">{hint}</p>}
-    </>
-  )
-
-  if (!to) return <div className="min-w-0">{body}</div>
-
-  return (
-    <Link
-      to={to}
-      className={cn(
-        'group min-w-0',
-        'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary',
-      )}
-    >
-      {body}
-      <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] text-accent">
-        Open
-        <ArrowUpRight className="size-3 transition-transform duration-150 group-hover:-translate-y-0.5" />
-      </span>
-    </Link>
-  )
-}
-
-function ModuleLink({ to, label, description }) {
-  return (
-    <Link
-      to={to}
-      className={cn(
-        'group flex items-baseline justify-between gap-6 border-b border-line py-4',
-        'transition-colors duration-150 hover:bg-surface-sunk/60',
-        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
-      )}
-    >
-      <span className="min-w-0">
-        <span className="type-display block text-[1.25rem] leading-snug text-fg">
-          {label}
-        </span>
-        <span className="measure mt-0.5 block text-[13.5px] leading-relaxed text-fg-muted">
-          {description}
-        </span>
-      </span>
-      <ArrowUpRight className="size-4 shrink-0 text-fg-muted transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:text-fg" />
-    </Link>
-  )
-}
-
+/**
+ * The workspace home.
+ *
+ * This page used to be a sitemap. Below a row of database fields it listed
+ * eight destinations — Ask Arc, Company Brain, Skills, Tools, Connectors,
+ * Approvals, Observability, Users — each with a title, a description and an
+ * arrow. The masthead already offers every one of them. Navigation answers
+ * "where can I go"; a home page has to answer "what needs me", and it was
+ * answering the first question twice.
+ *
+ * What it shows now is what is actually true of the workspace right now:
+ * decisions waiting on a person, runs that stopped, and what has recently
+ * changed in the Company Brain. Nothing is invented — every line is a
+ * record the API returned, and a section that has no records does not
+ * render at all rather than showing a decorative empty state.
+ *
+ * `status` and `created` are gone. Status already sits beside the name as a
+ * badge; a provisioning date is a database field, not a signal.
+ */
 export function TenantOverviewPage() {
   const { tenantId } = useParams()
   const { principal } = useAuth()
-  const { role } = useCapabilities()
+  const { can, isEmployee } = useCapabilities()
+
+  const tenantPrefix = `/app/t/${encodeURIComponent(tenantId)}`
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
@@ -97,182 +50,288 @@ export function TenantOverviewPage() {
     enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
+  const tenant = userTenants.data?.find((t) => t.id === tenantId)
+
+  useDocumentTitle(tenant?.name)
 
   const users = useQuery({
     queryKey: queryKeys.tenantUsers(tenantId),
     queryFn: () => getTenantUsers(tenantId),
-    enabled: Boolean(tenantId),
+    enabled: Boolean(tenantId) && can(PERMISSIONS.TENANT_READ),
   })
-
   const knowledge = useQuery({
     queryKey: queryKeys.knowledge(tenantId),
     queryFn: () => getKnowledge(tenantId),
-    enabled: Boolean(tenantId),
-    staleTime: 30 * 1000,
+    enabled: Boolean(tenantId) && can(PERMISSIONS.KNOWLEDGE_READ),
+  })
+  const approvals = useQuery({
+    queryKey: queryKeys.approvals(tenantId),
+    queryFn: () => listApprovals(tenantId),
+    enabled: Boolean(tenantId) && can(PERMISSIONS.APPROVAL_READ),
+  })
+  const runs = useQuery({
+    queryKey: queryKeys.agentRuns(tenantId, 5),
+    queryFn: () => listAgentRuns(tenantId, { limit: 5 }),
+    enabled: Boolean(tenantId) && can(PERMISSIONS.AGENT_EXECUTE),
   })
 
-  const tenant = userTenants.data?.find((t) => t.id === tenantId)
-  const tenantPrefix = `/app/t/${encodeURIComponent(tenantId)}`
+  const documents = asList(knowledge.data)
+  const members = asList(users.data)
+  const pending = asList(approvals.data).filter((a) => a.status === 'pending')
+  const stopped = asList(runs.data).filter((r) => r.error_kind)
+
+  const recentDocuments = [...documents]
+    .sort((a, b) => new Date(b.updated_at ?? 0) - new Date(a.updated_at ?? 0))
+    .slice(0, 4)
+
+  const attention = [
+    pending.length > 0 && {
+      key: 'approvals',
+      count: pending.length,
+      label: pending.length === 1 ? 'decision waiting' : 'decisions waiting',
+      detail: pending[0].tool_name
+        ? `${humanise(pending[0].tool_name)}${pending.length > 1 ? ` and ${pending.length - 1} more` : ''}`
+        : null,
+      to: `${tenantPrefix}/approvals`,
+      tone: 'warning',
+    },
+    stopped.length > 0 && {
+      key: 'runs',
+      count: stopped.length,
+      label: stopped.length === 1 ? 'agent run stopped' : 'agent runs stopped',
+      detail: runFailureReason(stopped[0].error_kind),
+      to: `${tenantPrefix}/agents`,
+      tone: 'danger',
+    },
+  ].filter(Boolean)
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        title={tenant?.name ?? 'Workspace'}
-        meta={
-          <Badge
-            variant={tenant?.status === 'active' ? 'success' : 'neutral'}
-            dot
-          >
-            {tenant?.status ?? 'unknown'}
+    <div className="flex flex-col">
+      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <h1 className="type-display-lg min-w-0 text-fg">
+          {tenant?.name ?? <Skeleton className="h-10 w-72" />}
+        </h1>
+        {tenant?.status && (
+          <Badge variant={tenant.status === 'active' ? 'success' : 'neutral'} dot>
+            {tenant.status}
           </Badge>
-        }
-        description={
-          role ? `You are in this workspace as a ${(ROLE_LABELS[role] ?? role).toLowerCase()}.` : undefined
-        }
-        actions={<span className="type-data text-fg-muted">{tenantId}</span>}
-      />
+        )}
+      </header>
 
-      {(userTenants.isError || users.isError || knowledge.isError) && role !== 'employee' && (
-        <Card>
-          <ErrorState
-            title="Could not load the workspace"
-            message="One or more services did not respond. The backend enforces access on every request."
-            onRetry={() => {
-              userTenants.refetch()
-              users.refetch()
-              knowledge.refetch()
-            }}
+      {/* One bordered block of figures rather than four cards. The cell
+          divisions carry the grouping, so no card has to. */}
+      <dl className="mt-8 grid grid-cols-2 border-y border-line sm:grid-cols-4">
+        <Figure
+          label="People"
+          value={users.isPending ? null : members.length}
+          to={can(PERMISSIONS.TENANT_READ) ? `${tenantPrefix}/users` : null}
+        />
+        <Figure
+          label="Documents"
+          value={knowledge.isPending ? null : documents.length}
+          to={can(PERMISSIONS.KNOWLEDGE_READ) ? `${tenantPrefix}/knowledge` : null}
+        />
+        {can(PERMISSIONS.APPROVAL_READ) && (
+          <Figure
+            label="Awaiting decision"
+            value={approvals.isPending ? null : pending.length}
+            to={`${tenantPrefix}/approvals`}
+            emphasis={pending.length > 0}
           />
-        </Card>
-      )}
+        )}
+        {can(PERMISSIONS.AGENT_EXECUTE) && (
+          <Figure
+            label="Agent runs"
+            value={runs.isPending ? null : asList(runs.data).length}
+            to={`${tenantPrefix}/agents`}
+          />
+        )}
+      </dl>
 
-      {role !== 'employee' && (
-        <section className="grid gap-x-10 gap-y-8 border-b border-line pb-8 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            label="Knowledge documents"
-            value={
-              knowledge.isPending ? (
-                <Skeleton className="h-7 w-10" />
-              ) : (
-                knowledge.data?.length ?? 0
-              )
-            }
-            hint="Open Company Brain"
-            to={`${tenantPrefix}/knowledge`}
-            icon={BookOpen}
-          />
-          <StatCard
-            label="Members"
-            value={
-              users.isPending ? (
-                <Skeleton className="h-7 w-10" />
-              ) : (
-                users.data?.length ?? 0
-              )
-            }
-            hint="View members"
-            to={`${tenantPrefix}/users`}
-            icon={Users}
-          />
-          <StatCard
-            label="Status"
-            value={tenant?.status ?? '—'}
-            hint="Provisioned on the platform"
-            icon={Activity}
-          />
-          <StatCard
-            label="Created"
-            value={
-              tenant?.created_at ? (
-                <span className="text-lg">{formatDate(tenant.created_at)}</span>
-              ) : (
-                '—'
-              )
-            }
-            hint="Tenant workspace"
-            icon={Building2}
-          />
-        </section>
-      )}
+      <div className="mt-14 grid gap-x-16 gap-y-12 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0">
+          {attention.length > 0 ? (
+            <section>
+              <h2 className="type-label text-fg-muted">Needs a person</h2>
+              <ul className="mt-3 border-t border-line">
+                {attention.map((item) => (
+                  <li key={item.key}>
+                    <Link
+                      to={item.to}
+                      className={cn(
+                        'group flex items-baseline gap-5 border-b border-line py-5',
+                        'transition-colors duration-150 hover:bg-surface-sunk/70',
+                        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'type-display shrink-0 text-[2rem] leading-none tabular-nums',
+                          item.tone === 'danger' ? 'text-danger' : 'text-warning',
+                        )}
+                      >
+                        {item.count}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[15px] font-medium text-fg">
+                          {item.label}
+                        </span>
+                        {item.detail && (
+                          <span className="measure mt-0.5 block text-[13.5px] leading-relaxed text-fg-muted">
+                            {item.detail}
+                          </span>
+                        )}
+                      </span>
+                      <ArrowRight className="size-4 shrink-0 self-center text-fg-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-fg" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : (
+            !approvals.isPending && (
+              <p className="type-prose measure text-fg-subtle">
+                Nothing is waiting on a person right now.
+              </p>
+            )
+          )}
 
-      {role === 'employee' && (
-        <section>
-          <Card>
-            <div className="flex items-start gap-3">
-              <div className="flex shrink-0 items-center text-fg-muted">
-                <Building2 className="size-4.5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-fg">
-                  {tenant?.name ?? 'Tenant'}
+          {can(PERMISSIONS.KNOWLEDGE_READ) && (
+            <section className="mt-14">
+              <h2 className="type-label text-fg-muted">Recently in Company Brain</h2>
+              {knowledge.isPending ? (
+                <div className="mt-3 flex flex-col gap-3 border-t border-line pt-4">
+                  <Skeleton className="h-5 w-72" />
+                  <Skeleton className="h-5 w-56" />
+                </div>
+              ) : recentDocuments.length === 0 ? (
+                <p className="mt-3 border-t border-line pt-4 text-[14px] text-fg-muted">
+                  No documents yet.{' '}
+                  {can(PERMISSIONS.KNOWLEDGE_CREATE) && (
+                    <Link
+                      to={`${tenantPrefix}/knowledge/new`}
+                      className="text-accent underline underline-offset-2"
+                    >
+                      Add the first one
+                    </Link>
+                  )}
                 </p>
-                <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">
-                  You are signed in as an employee of this workspace.
-                  Use Ask Arc to search approved company information.
-                </p>
-              </div>
-            </div>
-          </Card>
-        </section>
-      )}
-
-      <section>
-        <h2 className="type-label text-fg-muted">In this workspace</h2>
-        <div className="mt-3 grid border-t border-line sm:grid-cols-2 sm:gap-x-12">
-          <ModuleLink
-            to={`${tenantPrefix}/ask`}
-            label="Ask Arc"
-            description="Ask questions grounded in the Company Brain."
-            icon={Sparkles}
-          />
-          {role !== 'employee' && (
-            <>
-              <ModuleLink
-                to={`${tenantPrefix}/knowledge`}
-                label="Company Brain"
-                description="Knowledge, policies, procedures, and solutions."
-                icon={BookOpen}
-              />
-              <ModuleLink
-                to={`${tenantPrefix}/skills`}
-                label="Skills"
-                description="Structured, reusable workflows for this tenant."
-                icon={Workflow}
-              />
-              <ModuleLink
-                to={`${tenantPrefix}/tools`}
-                label="Tools"
-                description="Platform-owned AI tools available for execution."
-                icon={Wrench}
-              />
-              <ModuleLink
-                to={`${tenantPrefix}/connectors`}
-                label="Connectors"
-                description="External integrations — GitHub, Slack, Linear."
-                icon={Plug}
-              />
-              <ModuleLink
-                to={`${tenantPrefix}/approvals`}
-                label="Approvals"
-                description="Human-in-the-loop approval requests."
-                icon={ShieldCheck}
-              />
-              <ModuleLink
-                to={`${tenantPrefix}/observability`}
-                label="Observability"
-                description="Usage metrics and operational telemetry."
-                icon={Activity}
-              />
-              <ModuleLink
-                to={`${tenantPrefix}/users`}
-                label="Users"
-                description="Tenant members and access."
-                icon={Users}
-              />
-            </>
+              ) : (
+                <ol className="mt-3 border-t border-line">
+                  {recentDocuments.map((doc, index) => (
+                    <li key={doc.id}>
+                      <Link
+                        to={`${tenantPrefix}/knowledge/${encodeURIComponent(doc.id)}`}
+                        className={cn(
+                          'group flex items-baseline gap-5 border-b border-line py-3.5',
+                          'transition-colors duration-150 hover:bg-surface-sunk/70',
+                          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
+                        )}
+                      >
+                        <span className="type-data shrink-0 text-fg-muted">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[15px] text-fg-subtle group-hover:text-fg">
+                          {documentTitle(doc)}
+                        </span>
+                        {doc.updated_at && (
+                          <span className="shrink-0 text-[12.5px] text-fg-muted">
+                            {relativeTime(doc.updated_at)}
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
           )}
         </div>
-      </section>
+
+        {/* One action, in the margin. Ask Arc is the thing a person most
+            often came here to do, and it is the only destination this page
+            repeats — because it is an action, not a route listing. */}
+        <aside className="min-w-0">
+          {can(PERMISSIONS.KNOWLEDGE_READ) && (
+            <Link
+              to={`${tenantPrefix}/ask`}
+              className={cn(
+                'group block border-t border-fg pt-5',
+                'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary',
+              )}
+            >
+              <span className="type-display block text-[1.5rem] leading-tight text-fg">
+                Ask Arc
+              </span>
+              <span className="measure-tight mt-1.5 block text-[13.5px] leading-relaxed text-fg-muted">
+                Answers drawn from this workspace&apos;s own knowledge, with the
+                documents they came from.
+              </span>
+              <span className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent">
+                Ask a question
+                <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-1" />
+              </span>
+            </Link>
+          )}
+
+          {isEmployee && (
+            <p className="measure-tight mt-8 text-[13.5px] leading-relaxed text-fg-muted">
+              You are a member of this workspace. Ask Arc searches the
+              knowledge you are allowed to see.
+            </p>
+          )}
+        </aside>
+      </div>
     </div>
   )
+}
+
+/** A cell in the figures block. */
+function Figure({ label, value, to, emphasis = false }) {
+  const body = (
+    <>
+      <dt className="type-label text-fg-muted">{label}</dt>
+      <dd
+        className={cn(
+          'mt-2 text-[1.75rem] font-medium leading-none tabular-nums',
+          emphasis ? 'text-warning' : 'text-fg',
+        )}
+      >
+        {value === null || value === undefined ? (
+          <Skeleton className="h-7 w-10" />
+        ) : (
+          value
+        )}
+      </dd>
+    </>
+  )
+
+  const shared = 'border-line px-5 py-5 [&:not(:nth-child(-n+2))]:border-t sm:[&:not(:first-child)]:border-l sm:[&]:border-t-0 [&:nth-child(odd)]:border-r sm:[&:nth-child(odd)]:border-r-0'
+
+  if (!to) return <div className={shared}>{body}</div>
+  return (
+    <Link
+      to={to}
+      className={cn(
+        shared,
+        'block transition-colors duration-150 hover:bg-surface-sunk/70',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
+      )}
+    >
+      {body}
+    </Link>
+  )
+}
+
+function asList(data) {
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.items)) return data.items
+  return []
+}
+
+/** `grant_temporary_access` reads as an action, not a registry key. */
+function humanise(value) {
+  const words = String(value ?? '').replace(/[_-]+/g, ' ').trim()
+  if (!words) return null
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
