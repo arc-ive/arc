@@ -182,11 +182,11 @@ describe('TenantUsagePage field mapping', () => {
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   })
 
-  it('renders 10 skeleton cards during loading', async () => {
+  it('renders a skeleton card per metric tile during loading', async () => {
     mockGetTenantUsageSummary.mockReturnValue(new Promise(() => {}))
     renderWithProviders(<TenantUsagePage />)
     const skeletons = document.querySelectorAll('.h-3.w-16')
-    expect(skeletons.length).toBe(10)
+    expect(skeletons.length).toBe(8)
   })
 
   it('renders ErrorState component for API errors', () => {
