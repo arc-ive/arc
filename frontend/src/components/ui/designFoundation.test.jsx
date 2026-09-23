@@ -159,7 +159,20 @@ describe('design foundation is actually adopted', () => {
     // rendered grey: "active", "healthy" and "received" lost their green,
     // and the error badges lost their red, with nothing failing. The
     // pattern now covers both spellings.
-    const RETIRED = /(?:variant="(?:green|amber|red|cyan|indigo|zinc)")|(?:variant=\{[^}]*'(?:green|amber|red|cyan|indigo|zinc)')/
+    //
+    // Third spelling, found during the redesign: a status map holding
+    // `{ variant: 'red', icon: XCircle, label: 'Failed' }`. Nine of those
+    // sat in Agents and Skills, so every execution status badge in the app
+    // — Succeeded, Failed, Denied, Approval required — rendered grey. Two
+    // guards had already passed over them.
+    //
+    // The lesson is that matching a syntax catches one spelling at a time.
+    // This matches `variant` followed by a retired NAME in any of the three
+    // forms, which is the thing that is actually wrong.
+    const NAMES = 'green|amber|red|cyan|indigo|zinc'
+    const RETIRED = new RegExp(
+      `variant\\s*[:=]\\s*(?:\\{[^}]*)?["'](?:${NAMES})["']`,
+    )
     const offenders = files
       .filter((f) => !f.endsWith('components/ui/Badge.jsx'))
       .filter((f) => RETIRED.test(readFileSync(f, 'utf8')))

@@ -67,11 +67,11 @@ function DeleteConfirmDialog({ open, onConfirm, onCancel, skillName, isPending, 
 }
 
 const STATUS_CONFIG = {
-  succeeded: { icon: CheckCircle2, label: 'Succeeded', variant: 'green' },
-  failed: { icon: XCircle, label: 'Failed', variant: 'red' },
-  precondition_failed: { icon: ShieldAlert, label: 'Precondition failed', variant: 'amber' },
-  approval_required: { icon: Clock, label: 'Approval required', variant: 'amber' },
-  denied: { icon: Ban, label: 'Denied', variant: 'red' },
+  succeeded: { icon: CheckCircle2, label: 'Succeeded', variant: 'success' },
+  failed: { icon: XCircle, label: 'Failed', variant: 'danger' },
+  precondition_failed: { icon: ShieldAlert, label: 'Precondition failed', variant: 'warning' },
+  approval_required: { icon: Clock, label: 'Approval required', variant: 'warning' },
+  denied: { icon: Ban, label: 'Denied', variant: 'danger' },
 }
 
 function ExecuteSkillDialog({ open, onClose, skill }) {
