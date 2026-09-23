@@ -95,9 +95,18 @@ class ToolProposingLlm(Protocol):
     """
 
     def propose_tool(
-        self, query: str, context_references: Sequence[str]
+        self,
+        query: str,
+        context_references: Sequence[str],
+        catalog: Sequence[Mapping[str, Any]] = (),
     ) -> Optional[Mapping[str, Any]]:
-        """Return raw untrusted proposal output, or ``None``."""
+        """Return raw untrusted proposal output, or ``None``.
+
+        ``catalog`` is the set of tools the model may propose, supplied by
+        the caller from the platform registry. It carries name, description
+        and input schema ONLY: risk level, required permissions and
+        execution policy are authorization state and never reach a prompt.
+        """
         ...
 
 
@@ -162,7 +171,10 @@ class DeterministicLlmProvider:
         return None
 
     def propose_tool(
-        self, query: str, context_references: Sequence[str] = ()
+        self,
+        query: str,
+        context_references: Sequence[str] = (),
+        catalog: Sequence[Mapping[str, Any]] = (),
     ) -> Optional[Mapping[str, Any]]:
         """Return the scripted raw proposal for ``query``, or ``None``."""
         if self._tool_proposal_script is None:
@@ -526,7 +538,10 @@ class OpenRouterProvider:
     # -- ToolProposingLlm ---------------------------------------------------
 
     def propose_tool(
-        self, query: str, context_references: Sequence[str] = ()
+        self,
+        query: str,
+        context_references: Sequence[str] = (),
+        catalog: Sequence[Mapping[str, Any]] = (),
     ) -> Optional[Mapping[str, Any]]:
         """Return raw untrusted proposal output, or ``None``.
 
@@ -537,7 +552,7 @@ class OpenRouterProvider:
         full strict validation including length limits and value-type
         checks.
         """
-        prompt = _build_tool_proposal_prompt(query)
+        prompt = _build_tool_proposal_prompt(query, catalog)
         raw = self._post([{"role": "user", "content": prompt}])
         parsed = _parse_json_response(raw)
         if parsed is not None and not _validate_tool_proposal(parsed):
@@ -656,14 +671,36 @@ def _validate_skill_proposal(raw: Mapping[str, Any]) -> bool:
     return True
 
 
-def _build_tool_proposal_prompt(query: str) -> str:
-    """Build a prompt that asks the LLM to propose a tool action."""
+def _build_tool_proposal_prompt(query: str, catalog: Sequence[Mapping[str, Any]] = ()) -> str:
+    """Build a prompt that asks the LLM to propose a tool action.
+
+    The catalogue is rendered from what the caller passes, not hardcoded.
+    It previously read "Available tools: check_service_health" as a
+    literal, so a second platform tool (``grant_temporary_access``) was
+    invisible to this path: the model could not propose it because it was
+    never told it existed, and every tool added to the registry stayed
+    dead here until someone remembered to edit this string.
+
+    Only name, description and input schema are rendered. Risk level,
+    required permissions and execution policy are authorization state and
+    must never reach a prompt (TRD 10.3) — the model proposes, Arc
+    decides.
+    """
+    if catalog:
+        catalog_text = json.dumps(list(catalog), indent=2, default=str)
+    else:
+        # No catalogue means nothing is proposable. Say so, rather than
+        # inviting the model to guess a tool name out of the air.
+        catalog_text = "[]"
     return (
         "You are an AI assistant that proposes tool actions when appropriate.\n"
         "Given the user query below, decide whether a tool action is needed.\n"
+        "You may propose ONLY a tool listed in the catalog below, and only "
+        "with arguments matching its input schema.\n"
         "If yes, return EXACTLY a JSON object with keys 'tool_name' and 'arguments'.\n"
-        "If no tool is appropriate, return exactly the string NONE.\n\n"
-        "Available tools: check_service_health (checks health of an external service)\n\n"
+        "If no tool is appropriate, or the catalog is empty, return exactly "
+        "the string NONE.\n\n"
+        f"Available tools:\n{catalog_text}\n\n"
         f"User query: {query}\n\n"
         "Response (JSON object or NONE):"
     )

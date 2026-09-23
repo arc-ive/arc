@@ -1216,3 +1216,68 @@ class TestOpenRouterProviderUsageCapture:
         provider.complete("prompt")
         assert provider.last_usage is not None
         assert provider.last_usage.total_tokens == 42
+
+
+class TestToolProposalCatalog:
+    """The proposable catalogue comes from the registry, not a literal.
+
+    It previously read "Available tools: check_service_health" as a
+    hardcoded English string, so the platform's second tool
+    (grant_temporary_access) was invisible to this path: the model could
+    not propose it because it was never told it existed. Every tool added
+    to the registry stayed dead here until someone edited that string.
+    """
+
+    @staticmethod
+    def _prompt(catalog=()):
+        from arc.services.llm import _build_tool_proposal_prompt
+
+        return _build_tool_proposal_prompt("do something", catalog)
+
+    def test_every_supplied_tool_appears(self):
+        catalog = [
+            {"name": "check_service_health", "description": "d1", "input_schema": {}},
+            {"name": "grant_temporary_access", "description": "d2", "input_schema": {}},
+        ]
+        prompt = self._prompt(catalog)
+
+        assert "check_service_health" in prompt
+        assert "grant_temporary_access" in prompt
+
+    def test_no_tool_name_is_hardcoded(self):
+        """An empty catalogue must name no tool at all.
+
+        This is the regression guard: with the old builder this prompt
+        still advertised check_service_health.
+        """
+        prompt = self._prompt(())
+
+        assert "check_service_health" not in prompt
+        assert "grant_temporary_access" not in prompt
+
+    def test_empty_catalogue_instructs_refusal(self):
+        prompt = self._prompt(())
+
+        assert "catalog is empty" in prompt
+        assert "NONE" in prompt
+
+    def test_proposal_is_restricted_to_the_catalogue(self):
+        prompt = self._prompt(
+            [{"name": "check_service_health", "description": "d", "input_schema": {}}]
+        )
+
+        assert "ONLY a tool listed in the catalog" in prompt
+
+    def test_authorization_state_never_reaches_the_prompt(self):
+        """Risk, permissions and policy are Arc's decision, not the model's.
+
+        Telling the model which tools are gated invites it to reason
+        about authorization. The caller builds the catalogue without
+        them; this asserts the builder does not reintroduce them.
+        """
+        catalog = [{"name": "t", "description": "d", "input_schema": {}}]
+        prompt = self._prompt(catalog)
+
+        assert "required_permissions" not in prompt
+        assert "execution_policy" not in prompt
+        assert "risk_level" not in prompt

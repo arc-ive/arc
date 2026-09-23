@@ -272,7 +272,9 @@ class UnifiedIntelligenceService:
         if self._tool_calling_enabled(principal, authorization):
             try:
                 raw_proposal = self.llm_provider.propose_tool(
-                    query, [item.content for item in approved.items]
+                    query,
+                    [item.content for item in approved.items],
+                    self._proposable_catalog(),
                 )
             except Exception:
                 await self._record_usage(
@@ -314,6 +316,29 @@ class UnifiedIntelligenceService:
             context_used=True,
             tool_executions=tool_executions,
         )
+
+    def _proposable_catalog(self) -> List[dict]:
+        """The tools the model may propose, from the platform registry.
+
+        Name, description and input schema only. Risk level, required
+        permissions and execution policy are authorization state and must
+        never reach a prompt (TRD 10.3): telling the model which tools are
+        gated invites it to reason about authorization, which is Arc's
+        job and not the model's. The model proposes; Arc decides.
+
+        Returns an empty catalogue when no tool service is wired, which
+        correctly makes nothing proposable.
+        """
+        if self.tool_service is None:
+            return []
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_model.model_json_schema(),
+            }
+            for tool in self.tool_service.registry.list()
+        ]
 
     async def _record_usage(
         self, context, agent_run_id, call_type, request_id=None, succeeded=True
