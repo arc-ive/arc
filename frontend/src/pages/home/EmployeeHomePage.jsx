@@ -21,16 +21,16 @@ function EmployeeCapability({ to, label, description, icon: Icon }) {
   return (
     <Link
       to={to}
-      className="group flex flex-col gap-3 rounded-xl border border-zinc-800/80 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-zinc-700 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+      className="group flex flex-col gap-3 rounded-xl border border-line/80 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-line-strong hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
     >
       <div className="flex items-center justify-between">
-        <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
+        <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
           <Icon className="size-4.5" />
         </div>
-        <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-zinc-300" />
+        <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-fg-subtle" />
       </div>
       <div>
-        <p className="text-sm font-semibold text-zinc-100">{label}</p>
+        <p className="text-sm font-semibold text-fg">{label}</p>
         <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">
           {description}
         </p>
@@ -103,12 +103,12 @@ export function EmployeeHomePage() {
                 compact
               />
             ) : tenant ? (
-              <div className="flex items-center gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-3.5 py-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900/60 text-fg-muted">
+              <div className="flex items-center gap-3 rounded-lg border border-line/70 bg-surface px-3.5 py-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line bg-surface-raised text-fg-muted">
                   <Building2 className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-zinc-200">
+                  <p className="truncate text-[13px] font-medium text-fg">
                     {tenant.name}
                   </p>
                   <p className="truncate font-mono text-[11px] text-fg-muted">
@@ -136,19 +136,19 @@ export function EmployeeHomePage() {
             <dl className="space-y-2.5">
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-[13px] text-fg-muted">User ID</dt>
-                <dd className="truncate font-mono text-xs text-zinc-300">
+                <dd className="truncate font-mono text-xs text-fg-subtle">
                   {principal?.sub}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-[13px] text-fg-muted">Application role</dt>
-                <dd className="font-mono text-xs text-zinc-300">
+                <dd className="font-mono text-xs text-fg-subtle">
                   {role ?? '—'}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-[13px] text-fg-muted">Expires</dt>
-                <dd className="font-mono text-xs text-zinc-300">
+                <dd className="font-mono text-xs text-fg-subtle">
                   {principal?.exp
                     ? relativeTime(principal.exp)
                     : 'No expiry claim'}

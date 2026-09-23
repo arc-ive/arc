@@ -184,8 +184,8 @@ export function ApprovalsPage() {
               onClick={() => setStatusFilter(s)}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                 statusFilter === s
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-fg-muted hover:text-zinc-300'
+                  ? 'bg-surface-selected text-fg'
+                  : 'text-fg-muted hover:text-fg-subtle'
               }`}
             >
               {s ?? 'All'}

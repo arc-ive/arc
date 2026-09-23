@@ -60,12 +60,12 @@ function RunSteps({ steps }) {
       {steps.map((step, index) => (
         <li
           key={step.id ?? `${step.skill_id ?? 'step'}-${index}`}
-          className="rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3"
+          className="rounded-lg border border-line/80 bg-surface p-3"
         >
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-fg-muted">Step {index + 1}</span>
             {step.skill_id && (
-              <span className="text-[13px] text-zinc-200">{step.skill_id}</span>
+              <span className="text-[13px] text-fg">{step.skill_id}</span>
             )}
             {step.status && <StatusBadge status={step.status} />}
           </div>
@@ -96,7 +96,7 @@ function RunCard({ run, tenantId, canReadHistory }) {
       <CardContent>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-zinc-100">{run.goal}</p>
+            <p className="truncate text-sm font-medium text-fg">{run.goal}</p>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-muted">
               <span>By: {run.principal_id}</span>
               <span>Started: {new Date(run.created_at).toLocaleString()}</span>
@@ -120,7 +120,7 @@ function RunCard({ run, tenantId, canReadHistory }) {
         )}
 
         {expanded && (
-          <div className="mt-2 border-t border-zinc-800/80 pt-3">
+          <div className="mt-2 border-t border-line/80 pt-3">
             {detail.isError ? (
               <ErrorState
                 title="Could not load this trace"
@@ -215,9 +215,9 @@ export function AgentRunsPage() {
             )}
 
             {startMutation.isSuccess && startMutation.data && (
-              <div className="mt-3 rounded-lg border border-zinc-800/80 bg-zinc-900/40 p-3">
+              <div className="mt-3 rounded-lg border border-line/80 bg-surface p-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[13px] text-zinc-300">Run started</span>
+                  <span className="text-[13px] text-fg-subtle">Run started</span>
                   <StatusBadge status={startMutation.data.status} />
                 </div>
                 {startMutation.data.error_kind && (
@@ -254,7 +254,7 @@ export function AgentRunsPage() {
 
       {canReadHistory && (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-zinc-200">Recent runs</h2>
+          <h2 className="text-sm font-semibold text-fg">Recent runs</h2>
 
           {runsQuery.isPending && runsQuery.fetchStatus === 'fetching' && <Spinner />}
 

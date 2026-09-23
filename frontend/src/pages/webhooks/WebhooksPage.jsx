@@ -64,7 +64,7 @@ export function WebhooksPage() {
               {events.map((event) => (
                 <div
                   key={event.id}
-                  className="flex items-center justify-between py-3 border-b border-zinc-800 last:border-0"
+                  className="flex items-center justify-between py-3 border-b border-line last:border-0"
                 >
                   <div className="flex items-center gap-3">
                     {event.status === 'received' ? (
@@ -73,7 +73,7 @@ export function WebhooksPage() {
                       <AlertTriangle className="size-4 text-amber-400" />
                     )}
                     <div>
-                      <p className="text-sm text-zinc-100">{event.event_type}</p>
+                      <p className="text-sm text-fg">{event.event_type}</p>
                       <p className="text-xs text-fg-muted">Endpoint: {event.endpoint_id}</p>
                     </div>
                   </div>

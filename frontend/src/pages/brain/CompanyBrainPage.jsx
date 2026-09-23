@@ -115,10 +115,10 @@ export function CompanyBrainPage() {
             placeholder="Search provenance and content…"
             aria-label="Search knowledge"
             className={cn(
-              'h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900/70 pl-9 pr-8 text-sm text-zinc-100',
+              'h-9 w-full rounded-lg border border-line bg-surface-raised pl-9 pr-8 text-sm text-fg',
               'placeholder:text-fg-muted transition-colors duration-150',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
-              'hover:border-zinc-700',
+              'hover:border-line-strong',
             )}
           />
           {query && (
@@ -126,7 +126,7 @@ export function CompanyBrainPage() {
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
             >
               <X className="size-3.5" />
             </button>
@@ -190,12 +190,12 @@ export function CompanyBrainPage() {
                     key={source}
                     type="button"
                     onClick={() => setTab(source)}
-                    className="flex items-center gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-4 py-3 text-left transition-colors duration-150 hover:border-zinc-700 hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                    className="flex items-center gap-3 rounded-lg border border-line/70 bg-surface px-4 py-3 text-left transition-colors duration-150 hover:border-line-strong hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
                   >
                     <Badge variant={sourceVariants[source] ?? 'neutral'}>
                       {sourceLabels[source] ?? source}
                     </Badge>
-                    <span className="ml-auto font-mono text-xs text-zinc-400">
+                    <span className="ml-auto font-mono text-xs text-fg-muted">
                       {count}
                     </span>
                   </button>

@@ -52,9 +52,9 @@ function DeleteConfirmDialog({ open, onConfirm, onCancel, skillName, isPending, 
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-red-900/50 bg-red-950/50">
           <AlertTriangle className="size-5 text-red-400" />
         </div>
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-fg-muted">
           Are you sure you want to delete{' '}
-          <span className="font-medium text-zinc-200">{skillName}</span>?
+          <span className="font-medium text-fg">{skillName}</span>?
         </p>
       </div>
       {error && (
@@ -150,13 +150,13 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
   return (
     <Dialog open={open} onClose={handleClose}>
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-        <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
+        <div className="w-full max-w-lg rounded-xl border border-line bg-surface-overlay p-6 shadow-xl">
           <div className="flex items-center gap-3 mb-4">
             <div className="flex size-10 items-center justify-center rounded-lg bg-indigo-950/50 border border-indigo-900/50">
               <Play className="size-5 text-indigo-400" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-zinc-100">Execute skill</h2>
+              <h2 className="text-sm font-semibold text-fg">Execute skill</h2>
               <p className="text-xs text-fg-muted">{skill.name}</p>
             </div>
           </div>
@@ -178,24 +178,24 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
                 })()}
               </div>
               {result.error_kind && (
-                <p className="text-xs text-zinc-400">
-                  Error: <span className="text-zinc-300">{result.error_kind}</span>
+                <p className="text-xs text-fg-muted">
+                  Error: <span className="text-fg-subtle">{result.error_kind}</span>
                 </p>
               )}
               {result.steps && result.steps.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-fg-muted">Steps</p>
                   {result.steps.map((step) => (
-                    <div key={step.sequence} className="rounded border border-zinc-800 bg-zinc-950/50 p-2.5 text-xs">
+                    <div key={step.sequence} className="rounded border border-line bg-canvas p-2.5 text-xs">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-fg-muted">#{step.sequence + 1}</span>
-                        <span className="text-zinc-300 font-mono">{step.tool_name}</span>
+                        <span className="text-fg-subtle font-mono">{step.tool_name}</span>
                         <Badge variant={step.status === 'success' ? 'success' : 'danger'} size="sm">
                           {step.status}
                         </Badge>
                       </div>
                       {step.output && (
-                        <pre className="mt-1 whitespace-pre-wrap text-zinc-400 overflow-x-auto">
+                        <pre className="mt-1 whitespace-pre-wrap text-fg-muted overflow-x-auto">
                           {JSON.stringify(step.output, null, 2)}
                         </pre>
                       )}
@@ -211,7 +211,7 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
             <div className="space-y-4 mb-6">
               {hasPreconditions && (
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  <label className="block text-sm font-medium text-fg-subtle mb-2">
                     Preconditions
                   </label>
                   <p className="text-xs text-fg-muted mb-2">
@@ -219,28 +219,25 @@ function ExecuteSkillDialog({ open, onClose, skill }) {
                   </p>
                   <div className="space-y-2">
                     {skill.preconditions.map((pre, idx) => (
-                      <label key={idx} className="flex items-start gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedPreconditions.includes(pre)}
-                          onChange={() => togglePrecondition(pre)}
-                          disabled={mutation.isPending}
-                          className="mt-0.5 size-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500/40"
-                        />
-                        <span className="text-sm text-zinc-300">{pre}</span>
-                      </label>
+                      <Checkbox
+                        key={idx}
+                        label={pre}
+                        checked={selectedPreconditions.includes(pre)}
+                        onChange={() => togglePrecondition(pre)}
+                        disabled={mutation.isPending}
+                      />
                     ))}
                   </div>
                 </div>
               )}
               {!hasPreconditions && (
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3.5 py-2.5">
+                <div className="rounded-lg border border-line bg-canvas px-3.5 py-2.5">
                   <p className="text-xs text-fg-muted">No preconditions required for this skill.</p>
                 </div>
               )}
               {declaredInputs.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  <label className="block text-sm font-medium text-fg-subtle mb-2">
                     Skill inputs
                   </label>
                   <div className="space-y-2">
@@ -478,15 +475,15 @@ function SkillList() {
       </div>
       <div className="grid gap-3">
         {skills.map((skill) => (
-          <Card key={skill.id} className="transition-colors hover:border-zinc-700">
+          <Card key={skill.id} className="transition-colors hover:border-line-strong">
             <div className="flex items-center justify-between p-4">
               <Link to={`${skill.id}`} className="flex-1 min-w-0">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60">
-                    <Workflow className="size-4 text-zinc-400" />
+                  <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised">
+                    <Workflow className="size-4 text-fg-muted" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-zinc-100 truncate">{skill.name}</p>
+                    <p className="text-sm font-medium text-fg truncate">{skill.name}</p>
                     <p className="text-xs text-fg-muted truncate">{skill.purpose || 'No description'}</p>
                   </div>
                 </div>
@@ -557,7 +554,7 @@ function SkillDetail({ skillId }) {
       <Card>
         <div className="flex items-center justify-between px-6 pt-6">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">{skill.name}</h2>
+            <h2 className="text-lg font-semibold text-fg">{skill.name}</h2>
             {skill.purpose && <p className="mt-1 text-sm text-fg-muted">{skill.purpose}</p>}
           </div>
           {canUpdate && (
@@ -577,12 +574,12 @@ function SkillDetail({ skillId }) {
             </div>
             <div>
               <dt className="text-xs font-medium text-fg-muted">Version</dt>
-              <dd className="mt-1 text-sm text-zinc-300">{skill.version}</dd>
+              <dd className="mt-1 text-sm text-fg-subtle">{skill.version}</dd>
             </div>
             {skill.provenance && (
               <div className="sm:col-span-2">
                 <dt className="text-xs font-medium text-fg-muted">Provenance</dt>
-                <dd className="mt-1 text-sm text-zinc-300">{skill.provenance}</dd>
+                <dd className="mt-1 text-sm text-fg-subtle">{skill.provenance}</dd>
               </div>
             )}
             {skill.inputs && skill.inputs.length > 0 && (
@@ -600,7 +597,7 @@ function SkillDetail({ skillId }) {
                 <dt className="text-xs font-medium text-fg-muted">Preconditions</dt>
                 <dd className="mt-1 space-y-1">
                   {skill.preconditions.map((pre, idx) => (
-                    <p key={idx} className="text-sm text-zinc-300">{pre}</p>
+                    <p key={idx} className="text-sm text-fg-subtle">{pre}</p>
                   ))}
                 </dd>
               </div>
@@ -610,7 +607,7 @@ function SkillDetail({ skillId }) {
                 <dt className="text-xs font-medium text-fg-muted">Steps</dt>
                 <dd className="mt-1 space-y-1">
                   {skill.steps.map((step, idx) => (
-                    <p key={idx} className="text-sm text-zinc-300">{idx + 1}. {step}</p>
+                    <p key={idx} className="text-sm text-fg-subtle">{idx + 1}. {step}</p>
                   ))}
                 </dd>
               </div>
@@ -620,7 +617,7 @@ function SkillDetail({ skillId }) {
                 <dt className="text-xs font-medium text-fg-muted">Constraints</dt>
                 <dd className="mt-1 space-y-1">
                   {skill.constraints.map((constraint, idx) => (
-                    <p key={idx} className="text-sm text-zinc-300">{constraint}</p>
+                    <p key={idx} className="text-sm text-fg-subtle">{constraint}</p>
                   ))}
                 </dd>
               </div>
@@ -637,7 +634,7 @@ function SkillDetail({ skillId }) {
             )}
             <div>
               <dt className="text-xs font-medium text-fg-muted">Approval Required</dt>
-              <dd className="mt-1 text-sm text-zinc-300">{skill.approval_required ? 'Yes' : 'No'}</dd>
+              <dd className="mt-1 text-sm text-fg-subtle">{skill.approval_required ? 'Yes' : 'No'}</dd>
             </div>
             {skill.risk && (
               <div>
@@ -652,13 +649,13 @@ function SkillDetail({ skillId }) {
             {skill.expected_output && (
               <div className="sm:col-span-2">
                 <dt className="text-xs font-medium text-fg-muted">Expected Output</dt>
-                <dd className="mt-1 text-sm text-zinc-300">{skill.expected_output}</dd>
+                <dd className="mt-1 text-sm text-fg-subtle">{skill.expected_output}</dd>
               </div>
             )}
             {skill.failure_behavior && (
               <div className="sm:col-span-2">
                 <dt className="text-xs font-medium text-fg-muted">Failure Behavior</dt>
-                <dd className="mt-1 text-sm text-zinc-300">{skill.failure_behavior}</dd>
+                <dd className="mt-1 text-sm text-fg-subtle">{skill.failure_behavior}</dd>
               </div>
             )}
           </dl>
@@ -913,7 +910,7 @@ export function SkillsPage({ view = 'list' }) {
         {view !== 'list' && (
           <Link
             to={`${tenantPrefix}/skills`}
-            className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+            className="mb-4 inline-flex items-center gap-1.5 rounded text-[13px] text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
           >
             <ArrowLeft className="size-3.5" />
             Back to Skills

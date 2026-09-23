@@ -247,7 +247,7 @@ export function TenantUsersPage() {
                     <div className="flex items-center gap-3">
                       <Avatar name={user.email} size="sm" />
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-zinc-100">
+                        <p className="truncate font-medium text-fg">
                           {user.email}
                         </p>
                         <p className="truncate font-mono text-xs text-fg-muted">
@@ -256,7 +256,7 @@ export function TenantUsersPage() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-zinc-400">
+                  <TableCell className="text-fg-muted">
                     {user.username ?? '—'}
                   </TableCell>
                   <TableCell>
