@@ -154,6 +154,68 @@ class TestIntelligenceNoContext:
         assert body["citations"] == []
 
 
+class TestIntelligenceSourceScoping:
+    """source_type restricts retrieval to one KnowledgeSource."""
+
+    async def _setup(self, client, seeded, make_token, authorization_override):
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        _create_document(client, tenant.id, token)
+        return tenant, token
+
+    def _query(self, client, tenant_id, token, **overrides):
+        return client.post(
+            f"/tenants/{tenant_id}/intelligence/query",
+            headers={"Authorization": f"Bearer {token}"},
+            json=_query_payload(**overrides),
+        )
+
+    async def test_matching_source_returns_answer(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, token = await self._setup(client, seeded, make_token, authorization_override)
+
+        response = self._query(client, tenant.id, token, source_type="policy")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["context_used"] is True
+        assert len(body["citations"]) >= 1
+
+    async def test_non_matching_source_returns_none_answer(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, token = await self._setup(client, seeded, make_token, authorization_override)
+
+        response = self._query(client, tenant.id, token, source_type="procedure")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["context_used"] is False
+        assert body["answer"] is None
+        assert body["citations"] == []
+
+    async def test_invalid_source_type_is_rejected(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, token = await self._setup(client, seeded, make_token, authorization_override)
+
+        response = self._query(client, tenant.id, token, source_type="not-a-source")
+
+        assert response.status_code == 422
+
+    async def test_omitted_source_keeps_full_corpus_behavior(
+        self, client, seeded, make_token, authorization_override
+    ):
+        tenant, token = await self._setup(client, seeded, make_token, authorization_override)
+
+        response = self._query(client, tenant.id, token)
+
+        assert response.status_code == 200
+        assert response.json()["context_used"] is True
+
+
 class TestIntelligenceTenantIsolation:
     async def test_cross_tenant_query_never_leaks_context(
         self, client, repositories, seeded, make_token, authorization_override
