@@ -259,7 +259,11 @@ export function TenantUsersPage() {
                 <p className="truncate text-[15px] font-medium text-fg">
                   {user.username || user.email}
                 </p>
-                <p className="truncate text-[13px] text-fg-muted">{user.email}</p>
+                {/* Only when it adds something: a person with no display
+                    name would otherwise have their email printed twice. */}
+                {user.username && (
+                  <p className="truncate text-[13px] text-fg-muted">{user.email}</p>
+                )}
               </div>
 
               {user.status !== 'active' && (

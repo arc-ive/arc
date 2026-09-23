@@ -23,19 +23,28 @@
 @theme {
   /* --- Type ------------------------------------------------------- */
 
-  /* Public Sans: a neutral grotesque commissioned for public-information
-     systems. Legible at 12px, invisible at 15px. Deliberately not Inter,
-     which is the default that makes generated UI legible as generated. */
-  --font-sans: "Public Sans", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* ONE typeface, for everything.
+  
+     The previous system paired an editorial serif with a grotesque, which
+     made "content vs chrome" legible but also made each surface feel like
+     a different document. Hierarchy comes from size, weight and tracking
+     instead — display sizes take tight negative tracking, small labels
+     take positive. That is the discipline behind the references: a single
+     grotesque carrying a 799px headline and a 12px label without ever
+     changing family.
+  
+     Geist is a contemporary grotesque drawn for product interfaces, with
+     a real display presence at large sizes. Deliberately not Inter, which
+     is the default that makes generated UI legible as generated. */
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Geist", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
 
-  /* Newsreader: an editorial serif drawn for screens. Carries authority
-     without costume. Content is set in it; chrome never is. */
-  --font-display: "Newsreader", ui-serif, Georgia, "Times New Roman", serif;
-
-  /* Arc is full of document ids, versions and digests. They get a face
-     that says "this is a value", with tabular figures so columns align. */
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+  /* Arc is full of document ids, versions and digests. Geist Mono is
+     drawn against Geist, so the pairing is by design rather than by
+     coincidence. */
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
     "Cascadia Mono", monospace;
 
   /* ----------------------------------------------------------------
@@ -62,9 +71,6 @@
   --arc-paper-2: #f1efea;  /* sunk                              */
   --arc-paper-3: #ebe9e3;  /* selected                          */
 
-  --arc-ground-brain: #f4f6f7;    /* cool stone — knowledge     */
-  --arc-ground-ask: #f7f6f2;      /* vellum — the asking surface */
-  --arc-ground-quiet: #f7f8f9;    /* settings, admin — neutral  */
 
   /* Ink. Near-black with a blue cast, matching the paper's temperature. */
   --arc-ink-0: #14161a;
@@ -73,21 +79,11 @@
   --arc-rule-0: #e2e0da;
   --arc-rule-1: #cfccc4;
 
-  /* Console. The same system inverted. */
-  --arc-console-0: #0b0c0e;
-  --arc-console-1: #14161a;
-  --arc-console-2: #1b1e23;
-  --arc-console-3: #22262d;
-  --arc-console-ink-0: #eceef2;
-  --arc-console-ink-1: #a8b1bd;
-  --arc-console-rule-0: #262a31;
-  --arc-console-rule-1: #363c45;
 
   /* Arc Ink — one saturated blue, used as a marking and never as a fill
      for meaning. Status colours are separate and always paired with a
      word, per ARC_DESIGN_SYSTEM.md §12. */
   --arc-accent: #1f3a8a;
-  --arc-accent-dark: #7d93ff;
 
   /* Status. Two sets, because a colour legible on paper is not legible
      on near-black. Every value below is verified — see the contrast
@@ -97,17 +93,14 @@
   --arc-danger: #a32118;
   --arc-info: #0b6b8a;
 
-  --arc-success-dark: #5ee9a4;
-  --arc-warning-dark: #f5c451;
-  --arc-danger-dark: #ff8a80;
-  --arc-info-dark: #67d4f0;
 
   /* ----------------------------------------------------------------
      Layer 2 — semantic.
 
      What a colour is FOR. Components reference only this layer.
-     Defaults are the paper plane; [data-plane="console"] overrides them
-     below.
+     There is ONE environment. Platform, tenant, employee and viewer all
+     stand on the same ground: the role changes what is reachable, never
+     what Arc looks like.
 
      Measured against every surface each can sit on (worst case, on the
      sunk surface):
@@ -206,74 +199,6 @@
   }
 }
 
-/* ====================================================================
-   Context grounds.
-
-   Each product area stands on a slightly different paper. The shift is
-   small enough to register as movement rather than as a theme change, and
-   the foreground tokens are untouched — so contrast, hierarchy and every
-   component are identical on all of them.
-   ==================================================================== */
-[data-surface="brain"] {
-  --color-canvas: var(--arc-ground-brain);
-  --color-line: #dde3e5;
-  --color-surface-sunk: #e9eef0;
-}
-[data-surface="ask"] {
-  --color-canvas: var(--arc-ground-ask);
-  --color-line: #e4e1d8;
-  --color-surface-sunk: #efece4;
-}
-[data-surface="quiet"] {
-  --color-canvas: var(--arc-ground-quiet);
-  --color-line: #e3e5e8;
-  --color-surface-sunk: #eceef1;
-}
-
-/* ====================================================================
-   The console plane.
-
-   Scoped override of the semantic layer only. Every utility in the app
-   resolves through these names, so the whole tree flips with the
-   attribute — no component knows which plane it is on.
-   ==================================================================== */
-[data-plane="console"] {
-  color-scheme: dark;
-
-  --color-canvas: var(--arc-console-0);
-  --color-surface: var(--arc-console-1);
-  --color-surface-raised: var(--arc-console-2);
-  --color-surface-overlay: var(--arc-console-2);
-  --color-surface-sunk: var(--arc-console-0);
-  --color-surface-selected: var(--arc-console-3);
-
-  --color-fg: var(--arc-console-ink-0);
-  --color-fg-subtle: var(--arc-console-ink-1);
-  --color-fg-muted: var(--arc-console-ink-1);
-
-  --color-line: var(--arc-console-rule-0);
-  --color-line-strong: var(--arc-console-rule-1);
-
-  --color-accent: var(--arc-accent-dark);
-  --color-primary: var(--arc-accent-dark);
-  --color-success: var(--arc-success-dark);
-  --color-warning: var(--arc-warning-dark);
-  --color-danger: var(--arc-danger-dark);
-  --color-info: var(--arc-info-dark);
-
-  --color-action: var(--arc-console-ink-0);
-  --color-on-action: var(--arc-console-0);
-
-  --color-base: var(--arc-console-0);
-  --color-raised: var(--arc-console-1);
-  --color-panel: var(--arc-console-1);
-  --color-elevated: var(--arc-console-2);
-
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5);
-  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.5), 0 2px 8px rgb(0 0 0 / 0.35);
-  --shadow-overlay: 0 12px 40px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
-}
-
 :root {
   color-scheme: light;
 }
@@ -303,24 +228,28 @@ body {
    ==================================================================== */
 .type-display-lg {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 1.4rem + 2vw, 2.75rem);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  font-weight: 400;
+  font-size: clamp(2.25rem, 1.5rem + 2.6vw, 3.25rem);
+  line-height: 1.02;
+  /* Tight negative tracking is what makes a grotesque read as display
+     type rather than as very large body text. It scales with size: the
+     larger the setting, the more the default spacing shows. */
+  letter-spacing: -0.035em;
+  font-weight: 500;
   text-wrap: balance;
 }
 .type-display {
   font-family: var(--font-display);
-  font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  font-size: clamp(1.5rem, 1.15rem + 1.2vw, 2rem);
   line-height: 1.12;
-  letter-spacing: -0.015em;
-  font-weight: 400;
+  letter-spacing: -0.025em;
+  font-weight: 500;
   text-wrap: balance;
 }
 .type-prose {
-  font-family: var(--font-display);
-  font-size: 1.0625rem;
+  font-family: var(--font-sans);
+  font-size: 1rem;
   line-height: 1.65;
+  letter-spacing: -0.005em;
   font-weight: 400;
 }
 /* The reading measure. Prose past ~68 characters loses the line. */
@@ -330,11 +259,14 @@ body {
 .measure-tight {
   max-width: 54ch;
 }
+/* Small text goes the other way: positive tracking, because at 11px the
+   default spacing closes up. The references set labels at 9-12px with
+   0.6-1px of tracking, which is this. */
 .type-label {
   font-size: 0.6875rem;
   line-height: 1.2;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-weight: 500;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 .type-data {

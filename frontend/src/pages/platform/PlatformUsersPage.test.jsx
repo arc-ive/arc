@@ -48,7 +48,12 @@ describe('PlatformUsersPage', () => {
 
     renderWithProviders(<PlatformUsersPage />)
 
-    expect(screen.getByText('Users')).toBeInTheDocument()
+    // The page is "People" on both planes now. Platform and workspace
+    // directories are the same object at different scope, and calling one
+    // "Users" and the other "People" made them read as two products.
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'People' }),
+    ).toBeInTheDocument()
   })
 
   it('shows empty state when no users exist', async () => {
@@ -57,8 +62,9 @@ describe('PlatformUsersPage', () => {
 
     renderWithProviders(<PlatformUsersPage />)
 
-    const emptyText = await screen.findByText('No users provisioned yet')
-    expect(emptyText).toBeInTheDocument()
+    expect(
+      await screen.findByText(/nobody has been provisioned on this platform/i),
+    ).toBeInTheDocument()
   })
 
   it('shows New user button', async () => {
@@ -94,10 +100,14 @@ describe('PlatformUsersPage', () => {
 
     renderWithProviders(<PlatformUsersPage />)
 
-    expect(await screen.findByText('alice@example.com')).toBeInTheDocument()
-    expect(screen.getByText('bob@example.com')).toBeInTheDocument()
-    expect(screen.getByText('alice')).toBeInTheDocument()
-    expect(screen.getByText('—')).toBeInTheDocument()
+    // Alice has a display name, so her name leads and her email sits
+    // under it. Bob has none, so his email IS his name — printed once.
+    // The old table put an em-dash in a Username column and the address
+    // in another; a dash identifies nobody.
+    expect(await screen.findByText('alice')).toBeInTheDocument()
+    expect(screen.getByText('alice@example.com')).toBeInTheDocument()
+    expect(screen.getAllByText('bob@example.com')).toHaveLength(1)
+    expect(screen.queryByText('—')).not.toBeInTheDocument()
   })
 
   it('enables New user for a platform administrator', async () => {

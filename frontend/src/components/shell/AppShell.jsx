@@ -5,7 +5,6 @@ import { Sidebar } from './Sidebar.jsx'
 import { Masthead } from './Masthead.jsx'
 import { CommandPalette } from './CommandPalette.jsx'
 import { IconButton } from '../ui/IconButton.jsx'
-import { useCapabilities } from '../../auth/capabilities.js'
 import { SkipLink } from './SkipLink.jsx'
 import { RouteAnnouncer } from './RouteAnnouncer.jsx'
 
@@ -16,29 +15,20 @@ import { RouteAnnouncer } from './RouteAnnouncer.jsx'
  * survives as the mobile sheet, where a vertical list is the right shape and
  * where it costs nothing because it is not on screen.
  *
- * The frame also decides the plane. V2-ADR-003 makes the platform and the
- * tenant workspace distinct planes, and the Platform Console renders on
- * near-black while a workspace renders on paper — so an administrator knows
- * which one they are on before reading a word. `data-plane` is read by a
- * scoped token override in index.css; no component below here knows about it.
+ * There is ONE Arc. Platform, tenant, employee and viewer stand on the
+ * same ground, in the same type, with the same components — the role
+ * changes what is reachable and what is shown, never what Arc looks like.
+ * An earlier version gave the Platform Console its own dark plane and each
+ * area its own paper; that made four products out of one.
+ *
+ * Context is carried where it belongs: by the masthead, which names the
+ * workspace or says Platform, and by the navigation, which is filtered to
+ * what the role may reach.
  */
-/** Which paper an area stands on. Console has its own plane and opts out. */
-function surfaceForPath(pathname) {
-  if (pathname.startsWith('/platform')) return null
-  if (/\/(knowledge|connectors)(\/|$)/.test(pathname)) return 'brain'
-  if (/\/ask(\/|$)/.test(pathname)) return 'ask'
-  if (/\/(settings|users|overview|profile)(\/|$)/.test(pathname)) return 'quiet'
-  return null
-}
-
 export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const { isPlatformAdministrator } = useCapabilities()
   const location = useLocation()
-
-  const inPlatform = location.pathname.startsWith('/platform')
-  const plane = inPlatform && isPlatformAdministrator ? 'console' : 'workspace'
 
   useEffect(() => {
     const handler = (event) => {
@@ -50,21 +40,6 @@ export function AppShell() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
-
-  // The plane owns the whole document, not just this subtree — otherwise
-  // overscroll and the area behind a sheet show the other plane's colour.
-  useEffect(() => {
-    document.documentElement.setAttribute('data-plane', plane)
-    return () => document.documentElement.removeAttribute('data-plane')
-  }, [plane])
-
-  // Each area stands on its own paper. A few percent apart, so moving
-  // between areas registers as movement rather than as a theme change.
-  useEffect(() => {
-    const surface = surfaceForPath(location.pathname)
-    if (surface) document.documentElement.setAttribute('data-surface', surface)
-    else document.documentElement.removeAttribute('data-surface')
-  }, [location.pathname])
 
   return (
     <div className="flex min-h-dvh flex-col bg-canvas">
