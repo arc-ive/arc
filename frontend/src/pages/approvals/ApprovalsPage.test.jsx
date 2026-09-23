@@ -7,6 +7,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const mockListApprovals = vi.fn()
 const mockDecideApproval = vi.fn()
 
+const mockExecuteTool = vi.fn()
+vi.mock('../../api/endpoints/tools.js', () => ({
+  executeTool: (...args) => mockExecuteTool(...args),
+}))
+
 vi.mock('../../api/endpoints/approvals.js', () => ({
   listApprovals: (...args) => mockListApprovals(...args),
   decideApproval: (...args) => mockDecideApproval(...args),
@@ -160,5 +165,70 @@ describe('ApprovalsPage status filter', () => {
 
     expect(await screen.findByText('Send notification')).toBeInTheDocument()
     expect(screen.getByText('Rotate credentials')).toBeInTheDocument()
+  })
+})
+
+describe('spending an approved request (issue #300)', () => {
+  const APPROVED = {
+    id: 'appr-run-1',
+    tool_name: 'grant_temporary_access',
+    tool_version: '1',
+    risk_level: 'high',
+    status: 'approved',
+    requester_user_id: 'demo-user',
+    input_summary: '{"justification": "INC-1"}',
+    created_at: '2026-01-01T00:00:00Z',
+    expires_at: '2026-01-02T00:00:00Z',
+    decided_at: '2026-01-01T01:00:00Z',
+    decided_by_user_id: 'someone-else',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockCan.mockReturnValue(true)
+    mockUseAuth.mockReturnValue({ principal: { sub: 'demo-user' } })
+  })
+
+  it('offers the requester a way to run what was approved', async () => {
+    // An approved request is a licence the requester still has to use.
+    // With nowhere to spend it the approval is a dead end.
+    mockListApprovals.mockResolvedValue([APPROVED])
+    mockExecuteTool.mockResolvedValue({ status: 'executed', output: {} })
+    const user = userEvent.setup()
+    renderWithProviders()
+
+    const run = await screen.findByRole('button', { name: /run it now/i })
+    await user.click(run)
+
+    await waitFor(() => expect(mockExecuteTool).toHaveBeenCalled())
+    // The approval alone — the arguments are not re-asserted by the client.
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      't-123',
+      'grant_temporary_access',
+      {},
+      'appr-run-1',
+    )
+  })
+
+  it('does not offer it to someone who did not request it', async () => {
+    mockListApprovals.mockResolvedValue([
+      { ...APPROVED, requester_user_id: 'another-person' },
+    ])
+    renderWithProviders()
+
+    await screen.findByText(/grant temporary access/i)
+    expect(
+      screen.queryByRole('button', { name: /run it now/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('does not offer it while a request is still pending', async () => {
+    mockListApprovals.mockResolvedValue([{ ...APPROVED, status: 'pending' }])
+    renderWithProviders()
+
+    await screen.findByText(/grant temporary access/i)
+    expect(
+      screen.queryByRole('button', { name: /run it now/i }),
+    ).not.toBeInTheDocument()
   })
 })

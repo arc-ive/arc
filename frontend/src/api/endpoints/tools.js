@@ -5,9 +5,15 @@ export async function listTools(tenantId) {
   return response.data.items
 }
 
-export async function executeTool(tenantId, toolName, input = {}) {
-  const response = await client.post(`/tenants/${tenantId}/tools/${toolName}/execute`, {
-    input,
-  })
+export async function executeTool(tenantId, toolName, input = {}, approvalId = null) {
+  // Resuming an approved call sends the approval alone: the server holds
+  // the exact approved arguments and re-checks them against the approval
+  // digest. Re-sending arguments from the client would be re-asserting
+  // what was approved rather than replaying it.
+  const body = approvalId ? { approval_id: approvalId } : { input }
+  const response = await client.post(
+    `/tenants/${tenantId}/tools/${toolName}/execute`,
+    body,
+  )
   return response.data
 }

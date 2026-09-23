@@ -21,6 +21,7 @@ Privileged and identity-sensitive development endpoints (membership
 provisioning) are isolated in ``arc.api.dev_controllers``.
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -104,6 +105,7 @@ from arc.security.dependencies import (
     require_permission,
     require_tenant_permission,
 )
+from arc.security.encryption import EncryptionService
 from arc.security.models import AuthenticatedPrincipal
 from arc.services.agent import AgentExecutionService
 from arc.services.approvals import (
@@ -1602,6 +1604,41 @@ async def execute_tool(
 
     raw_input = body.input
     approval_id = body.approval_id
+
+    # Resume (issue #300). Approval is asynchronous: by the time a second
+    # person decides, the requester's browser no longer holds the
+    # arguments, and input_summary is deliberately redacted and truncated
+    # so it cannot reconstruct them. When a resume arrives with an
+    # approval and no arguments, the exact approved arguments are
+    # recovered from encrypted storage.
+    #
+    # This is a convenience, never an authority: the recovered arguments
+    # are still hashed and checked against the approval's
+    # arguments_digest by ToolExecutionService before anything executes,
+    # exactly as caller-supplied arguments are. A caller who DOES send
+    # arguments keeps the existing behaviour unchanged, including the
+    # digest mismatch that rejects modified arguments.
+    if approval_id is not None and not raw_input:
+        approval_service = app_context.human_approval_service
+        if approval_service is not None:
+            try:
+                ciphertext = await approval_service.approved_input_for_resume(context, approval_id)
+            except ApprovalError:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tool execution is not permitted",
+                )
+            if ciphertext is not None:
+                try:
+                    raw_input = json.loads(EncryptionService().decrypt(ciphertext))
+                except Exception:
+                    # Missing key, rotated key, tampered ciphertext,
+                    # unparseable payload. Fail closed and let the caller
+                    # re-send the arguments explicitly.
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Approved input could not be recovered; resend the input",
+                    )
 
     try:
         result = await tool_service.execute_tool(

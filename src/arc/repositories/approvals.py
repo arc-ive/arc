@@ -27,6 +27,10 @@ import asyncpg
 from arc.db.connection import ArcDatabase, CorruptDataError, DuplicateKeyError, NotFoundError
 from arc.domain.models import ApprovalRequest, ApprovalStatus
 
+# Deliberately does NOT include encrypted_input / input_key_version.
+# Every ordinary read goes through this list, so the ciphertext never
+# travels with a request object and cannot leak through a serializer.
+# The resume path reads it explicitly via ``get_encrypted_input``.
 _COLUMNS = """
     id, tenant_id, requester_user_id, tool_name, tool_version,
     risk_level, input_summary, arguments_digest, status,
@@ -76,8 +80,10 @@ class PostgreSQLApprovalRequestRepository:
                     INSERT INTO approval_requests
                         (id, tenant_id, requester_user_id, tool_name,
                          tool_version, risk_level, input_summary,
-                         arguments_digest, status, created_at, expires_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                         arguments_digest, status, created_at, expires_at,
+                         encrypted_input, input_key_version)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                            $12, $13)
                     """,
                     request.id,
                     request.tenant_id,
@@ -90,6 +96,8 @@ class PostgreSQLApprovalRequestRepository:
                     request.status.value,
                     request.created_at,
                     request.expires_at,
+                    request.encrypted_input,
+                    request.input_key_version,
                 )
         except (DuplicateKeyError, asyncpg.UniqueViolationError):
             # Concurrent creation raced: the unique partial index on
@@ -108,6 +116,31 @@ class PostgreSQLApprovalRequestRepository:
             # (should not happen). Re-raise so the caller sees the error.
             raise
         return request
+
+    async def get_encrypted_input(self, approval_id: str, tenant_id: str):
+        """Return ``(ciphertext, key_version)`` for an approval, or None.
+
+        Deliberately separate from every other read. The ciphertext is
+        not part of ``_COLUMNS`` and never rides along on an
+        ``ApprovalRequest`` returned to a caller, so no serializer can
+        leak it by accident; the resume path has to ask for it by name.
+
+        Tenant-scoped like every other read here: an approval id from
+        another tenant resolves to nothing.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT encrypted_input, input_key_version
+                FROM approval_requests
+                WHERE id = $1 AND tenant_id = $2
+                """,
+                approval_id,
+                tenant_id,
+            )
+        if row is None or row["encrypted_input"] is None:
+            return None
+        return bytes(row["encrypted_input"]), row["input_key_version"]
 
     async def get_by_id(self, approval_id: str, tenant_id: str) -> ApprovalRequest:
         async with self.db._connection_pool.acquire() as conn:
