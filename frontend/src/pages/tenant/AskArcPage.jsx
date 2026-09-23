@@ -4,62 +4,24 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useMutation } from '@tanstack/react-query'
 import {
   ArrowUpRight,
-  BookOpen,
-  FileSearch,
   Loader2,
   Sparkles,
-  Workflow,
-  Wrench,
-  Copy,
-  CircleAlert,
-  ShieldCheck,
   RotateCcw,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
+import { Link } from 'react-router-dom'
+import { Card, CardContent } from '../../components/ui/Card.jsx'
+import { parseCitations, groundingSummary } from '../../lib/citations.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
 import { useTenant } from '../../tenant/useTenant.js'
 import { queryIntelligence } from '../../api/endpoints/intelligence.js'
-import { errorMessage } from '../../api/errors.js'
+import { toApiError } from '../../api/errors.js'
 
 const EXAMPLE_QUESTIONS = [
   'How do I request production access?',
   'What is our leave policy?',
   'What is the procedure for recovering a locked account?',
   'Show me the approved process for X.',
-]
-
-const PIPELINE_STEPS = [
-  {
-    icon: FileSearch,
-    title: 'Retrieve',
-    description:
-      'Arc searches the tenant\'s Company Brain — policies, procedures, decisions, incidents, and solutions — for context it is authorized to use.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Reason',
-    description:
-      'Arc answers from company knowledge it retrieved for you, always with its source — never from unverified content.',
-  },
-  {
-    icon: Workflow,
-    title: 'Apply skills',
-    description:
-      'Approved procedures are applied as structured skills when the question matches an authorized workflow.',
-  },
-  {
-    icon: Wrench,
-    title: 'Execute permitted tools',
-    description:
-      'If an action is required, only tools the user is permitted to execute are offered, with visible execution status.',
-  },
-  {
-    icon: CircleAlert,
-    title: 'Verify and escalate',
-    description:
-      'High-risk actions require human approval; failed or sensitive situations escalate to the operations team.',
-  },
 ]
 
 /**
@@ -69,11 +31,35 @@ const PIPELINE_STEPS = [
  * The backend Unified Intelligence / chat contract now exists:
  * POST /tenants/{tenant_id}/intelligence/query
  */
+
+/**
+ * What went wrong, in terms the reader can act on.
+ *
+ * Three outcomes are worth telling apart: they cannot do this, the network
+ * is down, or the request failed. Anything finer is the server's own
+ * message, which is for logs and observability — not for the person who
+ * asked a question.
+ */
+function askErrorTitle(error) {
+  const api = toApiError(error)
+  if (api.isForbidden) return "You don't have access to ask questions here."
+  if (api.isNetwork) return "Can't reach Arc."
+  return "That question couldn't be answered."
+}
+
+function askErrorHelp(error) {
+  const api = toApiError(error)
+  if (api.isForbidden) return 'Ask your workspace administrator for access to Company Brain.'
+  if (api.isNetwork) return 'Check your connection and try again.'
+  return 'Something went wrong on our side. Try asking again.'
+}
+
 export function AskArcPage() {
   const { tenantId } = useTenant()
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState(null)
   const [error, setError] = useState(null)
+  const sources = answer ? parseCitations(answer.citations, tenantId) : []
   const lastSubmitRef = useRef(0)
 
   const mutation = useMutation({
@@ -124,7 +110,7 @@ export function AskArcPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             <PageHeader title="Ask Arc"
-          description="Company-aware answers grounded in the Company Brain, with        sources, skills, and permitted actions." />
+          description="Answers grounded in your company's own knowledge, with the documents they came from." />
           </div>
         </div>
       </section>
@@ -180,77 +166,84 @@ export function AskArcPage() {
 
       {error && (
         <InlineError>
-          <p className="font-semibold">Error:</p>
-          <p className="mt-1">{errorMessage(error)}</p>
+          {/* Deliberately not errorMessage(error): that returns the
+              backend's own `detail`, which on a 500 is whatever the server
+              said ("Internal Server Error", "boom"). ARC_UX_SPEC.md §1
+              rules out raw API errors, and the primary product surface is
+              the last place to leak one. Permission and connectivity are
+              distinguished because a reader can act on those; everything
+              else is "try again". */}
+          <p className="font-medium text-fg">{askErrorTitle(error)}</p>
+          <p className="mt-1">{askErrorHelp(error)}</p>
         </InlineError>
       )}
 
       {answer && (
-        <Card className="overflow-hidden">
-          <CardHeader
-            title="Answer"
-            description={answer.request_id ? `Request: ${answer.request_id}` : undefined}
-          />
-          <CardContent className="py-5">
-            {answer.answer ? (
-              <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300">
-                {answer.answer}
-              </div>
-            ) : (
-              <p className="text-sm text-fg-muted">
-                No answer could be generated from the available knowledge.
-              </p>
-            )}
-          </CardContent>
+        <section className="flex flex-col gap-4" aria-live="polite">
+          <Card className="overflow-hidden">
+            <CardContent className="py-6">
+              {answer.answer ? (
+                <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-fg">
+                  {answer.answer}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[15px] font-medium text-fg">
+                    No grounded answer for this question.
+                  </p>
+                  <p className="text-[13px] leading-relaxed text-fg-muted">
+                    Nothing in your Company Brain covers it yet. Arc will not
+                    answer from outside your company&apos;s own knowledge.
+                  </p>
+                </div>
+              )}
+            </CardContent>
 
-          {(answer.citations?.length ?? 0) > 0 && (
-            <div className="border-t border-zinc-800/70 px-5 py-4">
-              <h3 className="text-sm font-semibold text-zinc-200 mb-3">
-                Sources & Provenance
-              </h3>
-              <div className="flex flex-col gap-2">
-                {answer.citations.map((citation, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-lg border border-zinc-800/70 bg-zinc-900/40 p-3 text-sm text-zinc-300"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-fg-muted">
-                        [{idx + 1}]
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCopy(citation)}
-                        className="h-6 px-2"
-                      >
-                        <Copy className="size-3.5" />
-                      </Button>
-                    </div>
-                    <p className="mt-1 font-mono text-[11px] leading-relaxed">{citation}</p>
-                  </div>
-                ))}
-              </div>
+            <div className="border-t border-line px-5 py-3">
+              <p className="text-[13px] text-fg-muted">{groundingSummary(answer, tenantId)}</p>
             </div>
+          </Card>
+
+          {sources.length > 0 && (
+            <section>
+              <h2 className="mb-2 text-[13px] font-semibold text-fg">
+                Sources
+              </h2>
+              <ol className="flex flex-col gap-1.5">
+                {sources.map((source, index) => (
+                  <li key={source.documentId}>
+                    <Link
+                      to={`../knowledge/${encodeURIComponent(source.documentId)}`}
+                      className="group flex items-center gap-3 rounded-lg border border-line bg-surface px-3.5 py-2.5 transition-colors duration-150 hover:border-line-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    >
+                      <span className="shrink-0 font-mono text-[11px] text-fg-muted">
+                        [{index + 1}]
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">
+                        {source.label}
+                      </span>
+                      <ArrowUpRight className="size-3.5 shrink-0 text-fg-muted transition-colors group-hover:text-fg" />
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </section>
           )}
 
-          <div className="border-t border-zinc-800/70 px-5 py-4 text-xs text-fg-muted">
-            <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
-              <div>
-                <dt>Retrieval method</dt>
-                <dd className="font-mono">{answer.retrieval_method}</dd>
-              </div>
-              <div>
-                <dt>Context used</dt>
-                <dd className="font-mono">{answer.context_used ? 'Yes' : 'No'}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt>Principal</dt>
-                <dd className="font-mono truncate">{answer.principal_id}</dd>
-              </div>
-            </dl>
-          </div>
-        </Card>
+          {answer.request_id && (
+            <p className="text-xs text-fg-muted">
+              Something wrong with this answer?{' '}
+              <button
+                type="button"
+                onClick={() => handleCopy(answer.request_id)}
+                className="underline underline-offset-2 transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                Copy the reference
+              </button>{' '}
+              to include when you report it.
+            </p>
+          )}
+        </section>
       )}
 
       {!mutation.isPending && !answer && !error && (
@@ -275,87 +268,12 @@ export function AskArcPage() {
         </section>
       )}
 
-      <Card>
-        <CardHeader
-          title="How Arc answers"
-          description="Company-aware, sourced, and controlled."
-        />
-        <CardContent>
-          <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {PIPELINE_STEPS.map((step, index) => (
-              <li
-                key={step.title}
-                className="flex flex-col gap-2.5 rounded-lg border border-zinc-800/70 bg-zinc-900/40 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex size-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-indigo-400">
-                    <step.icon className="size-4" />
-                  </div>
-                  <span className="font-mono text-[11px] text-fg-muted">
-                    0{index + 1}
-                  </span>
-                </div>
-                <p className="text-[13px] font-semibold text-zinc-100">
-                  {step.title}
-                </p>
-                <p className="text-xs leading-relaxed text-fg-muted">
-                  {step.description}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader
-          title="What an answer includes"
-          description="What Arc includes with every answer."
-        />
-        <CardContent>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-start gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-4 py-3">
-              <BookOpen className="mt-0.5 size-4 shrink-0 text-fg-muted" />
-              <div>
-                <p className="text-[13px] font-semibold text-zinc-200">
-                  Sources & provenance
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
-                  Every claim links to the Company Brain documents it came
-                  from — policy, procedure, incident, or solution — with
-                  version and provenance.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-4 py-3">
-              <Workflow className="mt-0.5 size-4 shrink-0 text-fg-muted" />
-              <div>
-                <p className="text-[13px] font-semibold text-zinc-200">
-                  Skill & tool execution
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
-                  Approved procedures appear as selectable skills; permitted
-                  actions show live execution status (requested, running,
-                  completed, failed).
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3 rounded-lg border border-zinc-800/70 bg-zinc-900/40 px-4 py-3">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-fg-muted" />
-              <div>
-                <p className="text-[13px] font-semibold text-zinc-200">
-                  Human approval & escalation
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-fg-muted">
-                  High-risk actions present an explicit Approve / Reject
-                  decision; escalation routes to the operations team when
-                  required. Internal chain-of-thought is never exposed.
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {!answer && !mutation.isPending && (
+        <p className="max-w-[70ch] text-[13px] leading-relaxed text-fg-muted">
+          Arc answers from your company&apos;s own knowledge and shows the
+          documents it used. It never answers from outside them.
+        </p>
+      )}
     </div>
   )
 }
