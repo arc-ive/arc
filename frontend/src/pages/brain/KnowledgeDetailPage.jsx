@@ -1,4 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
+import { documentTitle } from '../../lib/knowledge.js'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect } from 'react'
 import { ArrowLeft, BookOpen, FileText, SearchX, Edit, Save, X, Loader2 } from 'lucide-react'
@@ -6,7 +7,7 @@ import { getKnowledgeDocument, updateKnowledge } from '../../api/endpoints/knowl
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryState.js'
-import { sourceLabels, sourceVariants, KNOWLEDGE_SOURCES } from '../../lib/sources.js'
+import { sourceLabels, KNOWLEDGE_SOURCES } from '../../lib/sources.js'
 import { formatDateTime } from '../../lib/format.js'
 import { Card, CardHeader, CardContent } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
@@ -183,14 +184,14 @@ export function KnowledgeDetailPage() {
             <BookOpen className="size-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-100 sm:text-2xl">
-              {doc.provenance || 'Untitled document'}
+            <h1 className="truncate text-xl font-semibold tracking-tight text-fg sm:text-2xl">
+              {documentTitle(doc)}
             </h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <Badge variant={sourceVariants[doc.source] ?? 'neutral'}>
+              <Badge variant="neutral">
                 {sourceLabels[doc.source] ?? doc.source}
               </Badge>
-              <Badge size="sm" dot variant={doc.status === 'active' ? 'green' : 'neutral'}>
+              <Badge size="sm" dot variant={doc.status === 'active' ? 'success' : 'neutral'}>
                 {doc.status}
               </Badge>
               <span className="font-mono text-xs text-fg-muted">
@@ -241,7 +242,7 @@ export function KnowledgeDetailPage() {
               <CardContent className="py-4 space-y-4">
                 <div>
                   <label htmlFor="edit-source" className="block text-sm font-medium text-zinc-300 mb-1">
-                    Source
+                    Document type
                   </label>
                   <Select
                     id="edit-source"
@@ -258,8 +259,11 @@ export function KnowledgeDetailPage() {
                 </div>
                 <div>
                   <label htmlFor="edit-provenance" className="block text-sm font-medium text-zinc-300 mb-1">
-                    Provenance
+                    Source
                   </label>
+                  <p className="mb-1.5 text-xs text-fg-muted">
+                    Where this document came from — a system, a team, or a person.
+                  </p>
                   <input
                     id="edit-provenance"
                     type="text"

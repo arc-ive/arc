@@ -45,7 +45,7 @@ export function NewKnowledgePage() {
   const validate = () => {
     const next = {}
     if (!form.provenance.trim()) {
-      next.provenance = 'Provenance is required.'
+      next.provenance = 'Source is required.'
     }
     if (!form.content.trim()) {
       next.content = 'Content is required.'
@@ -90,7 +90,7 @@ export function NewKnowledgePage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <Select
-                label="Source"
+                label="Document type"
                 required
                 value={form.source}
                 onChange={(e) => setForm({ ...form, source: e.target.value })}
@@ -116,7 +116,7 @@ export function NewKnowledgePage() {
             </div>
 
             <Input
-              label="Provenance"
+              label="Source"
               required
               placeholder="e.g. SOC-2 policy revision, incident INC-1234 postmortem…"
               value={form.provenance}

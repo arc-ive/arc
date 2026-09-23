@@ -7,12 +7,13 @@ import { getKnowledge, searchKnowledge, KNOWLEDGE_SOURCES } from '../../api/endp
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { sourceLabels, sourceVariants } from '../../lib/sources.js'
-import { truncate, relativeTime } from '../../lib/format.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Tabs } from '../../components/ui/Tabs.jsx'
+import { DocumentRow } from './DocumentRow.jsx'
+import { groupChunksByDocument, bestPassage } from '../../lib/knowledge.js'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { SkeletonCard } from '../../components/ui/Skeleton.jsx'
@@ -226,42 +227,19 @@ export function CompanyBrainPage() {
         !search.isPending &&
         !search.isError &&
         search.data?.length > 0 && (
-          <section className="grid gap-4 sm:grid-cols-2">
-            {search.data.map((chunk) => (
-              <Card
-                key={chunk.chunk_id}
-                hover
-                className="group flex cursor-pointer flex-col gap-3 p-5"
-                onClick={() => navigate(`../knowledge/${chunk.document_id}`)}
-                role="link"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') navigate(`../knowledge/${chunk.document_id}`)
+          <section className="flex flex-col gap-2.5">
+            {groupChunksByDocument(search.data).map((doc) => (
+              <DocumentRow
+                key={doc.documentId}
+                to={doc.documentId}
+                query={debouncedQuery}
+                passageCount={doc.passages.length}
+                document={{
+                  ...doc,
+                  id: doc.documentId,
+                  passage: bestPassage(doc.passages, debouncedQuery),
                 }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <Badge variant={sourceVariants[chunk.source] ?? 'neutral'}>
-                    {sourceLabels[chunk.source] ?? chunk.source}
-                  </Badge>
-                  <span className="font-mono text-[11px] text-fg-muted">
-                    v{chunk.document_version}
-                  </span>
-                </div>
-                <p className="text-sm font-medium leading-snug text-zinc-100">
-                  {chunk.provenance || 'Untitled document'}
-                </p>
-                <p className="line-clamp-3 text-[13px] leading-relaxed text-fg-muted">
-                  {truncate(chunk.content, 240)}
-                </p>
-                <div className="mt-auto flex items-center justify-between pt-1">
-                  <span className="text-xs text-fg-muted">
-                    Similarity: {(chunk.similarity * 100).toFixed(1)}%
-                  </span>
-                  <Badge variant="accent" size="sm" dot>
-                    Search result
-                  </Badge>
-                </div>
-              </Card>
+              />
             ))}
           </section>
         )}
@@ -302,46 +280,13 @@ export function CompanyBrainPage() {
       {!isSearching &&
         filtered.length > 0 &&
         tab !== 'sources' && (
-          <section className="grid gap-4 sm:grid-cols-2">
+          <section className="flex flex-col gap-2.5">
             {filtered.map((doc) => (
-              <Card
+              <DocumentRow
                 key={doc.id}
-                hover
-                className="group flex cursor-pointer flex-col gap-3 p-5"
-                onClick={() => navigate(doc.id)}
-                role="link"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') navigate(doc.id)
-                }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <Badge variant={sourceVariants[doc.source] ?? 'neutral'}>
-                    {sourceLabels[doc.source] ?? doc.source}
-                  </Badge>
-                  <span className="font-mono text-[11px] text-fg-muted">
-                    v{doc.version}
-                  </span>
-                </div>
-                <p className="text-sm font-medium leading-snug text-zinc-100">
-                  {doc.provenance || 'Untitled document'}
-                </p>
-                <p className="line-clamp-3 text-[13px] leading-relaxed text-fg-muted">
-                  {truncate(doc.content, 240)}
-                </p>
-                <div className="mt-auto flex items-center justify-between pt-1">
-                  <span className="text-xs text-fg-muted">
-                    Updated {relativeTime(doc.updated_at)}
-                  </span>
-                  <Badge
-                    variant={doc.status === 'active' ? 'green' : 'neutral'}
-                    size="sm"
-                    dot
-                  >
-                    {doc.status}
-                  </Badge>
-                </div>
-              </Card>
+                to={doc.id}
+                document={{ ...doc, passage: doc.content }}
+              />
             ))}
           </section>
         )}
