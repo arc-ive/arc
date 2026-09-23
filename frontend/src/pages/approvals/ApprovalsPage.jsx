@@ -2,88 +2,132 @@ import { useState } from 'react'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Clock, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { CheckCircle, XCircle } from 'lucide-react'
 import { useCapabilities } from '../../auth/capabilities.js'
+import { useAuth } from '../../auth/useAuth.js'
 import { listApprovals, decideApproval } from '../../api/endpoints/approvals.js'
 import { queryKeys } from '../../api/queryKeys.js'
-import { errorMessage } from '../../api/errors.js'
+import { errorMessage, toApiError } from '../../api/errors.js'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { Card, CardContent } from '../../components/ui/Card.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { ApprovalTimeline } from './ApprovalTimeline.jsx'
+import { toolLabel, formatSummary } from '../../lib/approvals.js'
 
-const STATUS_STYLES = {
-  pending: { color: 'text-amber-400', icon: Clock, label: 'Pending' },
-  approved: { color: 'text-emerald-400', icon: CheckCircle, label: 'Approved' },
-  rejected: { color: 'text-red-400', icon: XCircle, label: 'Rejected' },
-  expired: { color: 'text-fg-muted', icon: AlertTriangle, label: 'Expired' },
-  consumed: { color: 'text-blue-400', icon: CheckCircle, label: 'Consumed' },
-}
+/**
+ * Risk is the reason a decision is being asked for, so it leads.
+ */
+const RISK_TONE = { high: 'danger', medium: 'warning', low: 'neutral' }
 
-function ApprovalCard({ approval, onDecide }) {
-  const style = STATUS_STYLES[approval.status] || STATUS_STYLES.pending
-  const Icon = style.icon
-  const canDecide = approval.status === 'pending'
+function ApprovalCard({ approval, onDecide, viewerUserId, canDecide, pending }) {
+  const isPending = approval.status === 'pending'
+
+  // approvals.py:255 — the requester may NOT decide their own request.
+  // Letting them click and collect a 403 is not a decision surface.
+  const viewerIsRequester = approval.requester_user_id === viewerUserId
+  const blockedByFourEyes = isPending && viewerIsRequester
+  const decidable = isPending && canDecide && !viewerIsRequester
 
   return (
     <Card>
-      <CardContent>
-        <div className="flex items-start justify-between gap-4">
+      <CardContent className="py-5">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium text-zinc-100">
-                {approval.tool_name}
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-[15px] font-semibold text-fg">
+                {toolLabel(approval.tool_name)}
               </h3>
-              <Badge variant="neutral">{approval.tool_version}</Badge>
-              <span className={`flex items-center gap-1 text-xs ${style.color}`}>
-                <Icon className="size-3" />
-                {style.label}
-              </span>
+              <Badge variant={RISK_TONE[approval.risk_level] ?? 'neutral'} size="sm">
+                {approval.risk_level} risk
+              </Badge>
             </div>
+
             {approval.input_summary && (
-              <p className="mt-1 text-xs text-fg-muted line-clamp-2">
-                {approval.input_summary}
+              <p className="mt-2 line-clamp-3 text-[13px] leading-relaxed text-fg-muted">
+                {formatSummary(approval.input_summary)}
               </p>
             )}
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-fg-muted">
-              <span>Risk: {approval.risk_level}</span>
-              <span>By: {approval.requester_user_id}</span>
-              <span>Created: {new Date(approval.created_at).toLocaleString()}</span>
-              {approval.expires_at && (
-                <span>Expires: {new Date(approval.expires_at).toLocaleString()}</span>
-              )}
+
+            <div className="mt-4">
+              <ApprovalTimeline
+                approval={approval}
+                viewerIsRequester={viewerIsRequester}
+              />
             </div>
           </div>
-          {canDecide && (
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onDecide(approval.id, 'approve')}
-              >
-                <CheckCircle className="mr-1 size-3" />
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={() => onDecide(approval.id, 'reject')}
-              >
-                <XCircle className="mr-1 size-3" />
-                Reject
-              </Button>
-            </div>
-          )}
+
+          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:w-52">
+            {decidable && (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => onDecide(approval.id, 'approve')}
+                  disabled={pending}
+                >
+                  <CheckCircle className="mr-1 size-3.5" />
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => onDecide(approval.id, 'reject')}
+                  disabled={pending}
+                >
+                  <XCircle className="mr-1 size-3.5" />
+                  Reject
+                </Button>
+                <p className="text-[11px] leading-relaxed text-fg-muted">
+                  Approving authorises this action. It does not run it.
+                </p>
+              </>
+            )}
+
+            {blockedByFourEyes && (
+              <div className="rounded-lg border border-line bg-surface-raised px-3 py-2.5">
+                <p className="text-[12px] font-medium text-fg">
+                  You requested this
+                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-fg-muted">
+                  Someone else has to decide it. Arc does not let a person
+                  approve their own request.
+                </p>
+              </div>
+            )}
+
+            {isPending && !canDecide && !viewerIsRequester && (
+              <p className="text-[11px] leading-relaxed text-fg-muted">
+                You don&apos;t have access to decide approvals.
+              </p>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
   )
 }
 
+
+/**
+ * Decision failures a reader can act on.
+ *
+ * The most likely one is the four-eyes rule (approvals.py:255), which the
+ * card already prevents — but a stale list can still produce it.
+ */
+function decisionErrorMessage(error) {
+  const api = toApiError(error)
+  if (api.isForbidden) {
+    return "That decision wasn't allowed. A request can't be decided by the person who made it."
+  }
+  if (api.isNetwork) return "Can't reach Arc. Check your connection and try again."
+  return 'The decision could not be recorded. Try again.'
+}
+
 export function ApprovalsPage() {
   const { tenantId } = useParams()
+  const { principal } = useAuth()
   const { can } = useCapabilities()
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState(null)
@@ -131,7 +175,7 @@ export function ApprovalsPage() {
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <PageHeader title="Approvals"
-          description="Human Intervention approval requests for this tenant." />
+          description="High-risk actions waiting on a human decision." />
         </div>
         <div className="flex gap-2">
           {[null, 'pending', 'approved', 'rejected'].map((s) => (
@@ -157,7 +201,7 @@ export function ApprovalsPage() {
         <EmptyState
           title={
             statusFilter
-              ? `No ${STATUS_STYLES[statusFilter]?.label.toLowerCase() ?? statusFilter} approvals`
+              ? `No ${statusFilter} approvals`
               : 'No approvals'
           }
           description={
@@ -170,21 +214,26 @@ export function ApprovalsPage() {
 
       {!isPending && !isError && approvals?.length > 0 && (
         <div className="flex flex-col gap-3">
-          {approvals.map((approval) => (
+          {[...approvals]
+            .sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending'))
+            .map((approval) => (
             <ApprovalCard
               key={approval.id}
               approval={approval}
-              onDecide={canDecide ? handleDecide : undefined}
+              onDecide={handleDecide}
+              viewerUserId={principal?.sub}
+              canDecide={canDecide}
+              pending={decideMutation.isPending}
             />
-          ))}
+            ))}
         </div>
       )}
 
       {decideMutation.isError && (
         <Card>
           <CardContent>
-            <p className="text-[13px] text-red-400">
-              Decision failed: {errorMessage(decideMutation.error)}
+            <p className="text-[13px] text-danger">
+              {decisionErrorMessage(decideMutation.error)}
             </p>
           </CardContent>
         </Card>

@@ -106,7 +106,7 @@ describe('ApprovalsPage status filter', () => {
     const user = userEvent.setup()
     renderWithProviders()
 
-    expect(await screen.findByText('check_service_health')).toBeInTheDocument()
+    expect(await screen.findByText('Check service health')).toBeInTheDocument()
     expect(mockListApprovals).toHaveBeenCalledTimes(1)
     expect(mockListApprovals).toHaveBeenLastCalledWith('t-123', { status: null })
 
@@ -121,44 +121,44 @@ describe('ApprovalsPage status filter', () => {
     const user = userEvent.setup()
     renderWithProviders()
 
-    expect(await screen.findByText('check_service_health')).toBeInTheDocument()
-    expect(screen.getByText('send_notification')).toBeInTheDocument()
+    expect(await screen.findByText('Check service health')).toBeInTheDocument()
+    expect(screen.getByText('Send notification')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'approved' }))
 
     await waitFor(() =>
-      expect(screen.queryByText('send_notification')).not.toBeInTheDocument(),
+      expect(screen.queryByText('Send notification')).not.toBeInTheDocument(),
     )
-    expect(screen.getByText('check_service_health')).toBeInTheDocument()
-    expect(screen.queryByText('rotate_credentials')).not.toBeInTheDocument()
+    expect(screen.getByText('Check service health')).toBeInTheDocument()
+    expect(screen.queryByText('Rotate credentials')).not.toBeInTheDocument()
   })
 
   it('renders an explicit empty state when the filter matches nothing', async () => {
     const user = userEvent.setup()
     renderWithProviders()
 
-    expect(await screen.findByText('check_service_health')).toBeInTheDocument()
+    expect(await screen.findByText('Check service health')).toBeInTheDocument()
 
     // None of the seeded approvals are pending — the reproduction case.
     await user.click(screen.getByRole('button', { name: 'pending' }))
 
     expect(await screen.findByText('No pending approvals')).toBeInTheDocument()
-    expect(screen.queryByText('check_service_health')).not.toBeInTheDocument()
+    expect(screen.queryByText('Check service health')).not.toBeInTheDocument()
   })
 
   it('returns to the full list when All is selected again', async () => {
     const user = userEvent.setup()
     renderWithProviders()
 
-    expect(await screen.findByText('check_service_health')).toBeInTheDocument()
+    expect(await screen.findByText('Check service health')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'approved' }))
     await waitFor(() =>
-      expect(screen.queryByText('send_notification')).not.toBeInTheDocument(),
+      expect(screen.queryByText('Send notification')).not.toBeInTheDocument(),
     )
 
     await user.click(screen.getByRole('button', { name: 'All' }))
 
-    expect(await screen.findByText('send_notification')).toBeInTheDocument()
-    expect(screen.getByText('rotate_credentials')).toBeInTheDocument()
+    expect(await screen.findByText('Send notification')).toBeInTheDocument()
+    expect(screen.getByText('Rotate credentials')).toBeInTheDocument()
   })
 })
