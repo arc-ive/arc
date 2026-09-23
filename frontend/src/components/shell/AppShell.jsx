@@ -9,6 +9,8 @@ import { UserMenu } from './UserMenu.jsx'
 import { IconButton } from '../ui/IconButton.jsx'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { cn } from '../../lib/cn.js'
+import { SkipLink } from './SkipLink.jsx'
+import { RouteAnnouncer } from './RouteAnnouncer.jsx'
 
 function Kbd({ children }) {
   return (
@@ -40,6 +42,8 @@ export function AppShell() {
 
   return (
     <div className="flex h-dvh overflow-hidden">
+      <SkipLink />
+      <RouteAnnouncer />
       <aside className="hidden w-60 shrink-0 lg:block">
         <Sidebar />
       </aside>
@@ -106,7 +110,11 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto focus:outline-none"
+        >
           <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
             <Outlet />
           </div>

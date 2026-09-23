@@ -181,7 +181,7 @@ export function PlatformTenantsPage() {
                 <div className="flex size-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/60 text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
                   <Building2 className="size-4.5" />
                 </div>
-                <Badge variant={tenant.status === 'active' ? 'green' : 'neutral'} dot>
+                <Badge variant={tenant.status === 'active' ? 'success' : 'neutral'} dot>
                   {tenant.status}
                 </Badge>
               </div>

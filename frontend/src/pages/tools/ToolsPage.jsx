@@ -58,7 +58,7 @@ function ToolExecuteDialog({ tool, open, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-full max-w-lg rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-xl max-h-[80vh] overflow-y-auto">
-        <h3 className="text-lg font-semibold text-zinc-100 mb-1">Execute Tool</h3>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-1">Execute Tool</h2>
         <p className="text-sm text-fg-muted mb-4">{tool.name} — {tool.description}</p>
 
         {tool.input_schema && (
@@ -168,8 +168,8 @@ export function ToolsPage() {
                 <p className="text-sm font-semibold text-zinc-100">{tool.name}</p>
                 <Badge
                   variant={
-                    tool.risk_level === 'high' ? 'red' :
-                    tool.risk_level === 'medium' ? 'amber' : 'success'
+                    tool.risk_level === 'high' ? 'danger' :
+                    tool.risk_level === 'medium' ? 'warning' : 'success'
                   }
                   size="sm"
                 >
