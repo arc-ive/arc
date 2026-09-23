@@ -5,7 +5,7 @@ import { Search, CornerDownLeft } from 'lucide-react'
 import { cn } from '../../lib/cn.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { useCapabilities } from '../../auth/capabilities.js'
-import { personalNav, platformNav, tenantNavForRole } from './navigation.js'
+import { personalNav, platformNav, tenantRoutesForCapabilities } from './navigation.js'
 
 /**
  * Rendered only while open (AppShell conditionally mounts it), so all
@@ -14,7 +14,7 @@ import { personalNav, platformNav, tenantNavForRole } from './navigation.js'
 export function CommandPalette({ onClose }) {
   const navigate = useNavigate()
   const { tenantId } = useTenant()
-  const { role } = useCapabilities()
+  const { can } = useCapabilities()
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef(null)
@@ -33,7 +33,7 @@ export function CommandPalette({ onClose }) {
     if (tenantId) {
       push(
         'Tenant',
-        tenantNavForRole(role).map((item) => ({
+        tenantRoutesForCapabilities(can).map((item) => ({
           ...item,
           to: `/app/t/${encodeURIComponent(tenantId)}/${item.to}`,
         })),
@@ -41,7 +41,7 @@ export function CommandPalette({ onClose }) {
     }
     push('Personal', personalNav)
     return groups
-  }, [query, tenantId, role])
+  }, [query, tenantId, can])
 
   const flat = useMemo(() => results.flatMap((g) => g.items), [results])
 

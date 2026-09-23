@@ -7,7 +7,7 @@ import { cn } from '../../lib/cn.js'
 import { Avatar } from '../ui/Avatar.jsx'
 
 export function UserMenu() {
-  const { principal, signOut, isDemo } = useAuth()
+  const { principal, signOut } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
@@ -51,7 +51,7 @@ export function UserMenu() {
                 {principal?.sub}
               </p>
               <p className="text-[11px] text-fg-muted">
-                {isDemo ? 'Development demo session' : 'Signed in via session'}
+                {'Signed in via session'}
               </p>
             </div>
           </div>

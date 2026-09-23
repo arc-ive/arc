@@ -26,19 +26,19 @@ import { formatDate } from '../../lib/format.js'
  */
 export function PlatformTenantDetailPage() {
   const { tenantId } = useParams()
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 30 * 1000,
   })
 
   const members = useQuery({
     queryKey: queryKeys.tenantUsers(tenantId),
     queryFn: () => getTenantUsers(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const tenant = userTenants.data?.find((t) => t.id === tenantId)
@@ -106,7 +106,7 @@ export function PlatformTenantDetailPage() {
           <div>
             <p className="text-[13px] text-fg-muted">Members (visible to you)</p>
             <p className="mt-1 text-lg font-semibold text-zinc-100">
-              {isDemo ? '—' : members.isPending ? '—' : members.data?.length ?? 0}
+              {members.isPending ? '—' : members.data?.length ?? 0}
             </p>
           </div>
           <span className="text-[13px] text-fg-muted">
@@ -118,15 +118,7 @@ export function PlatformTenantDetailPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-zinc-200">Members</h2>
         <Card className="overflow-hidden">
-          {isDemo && (
-            <EmptyState
-              icon={Building2}
-              title="Demo Mode — backend data unavailable"
-              description="Member data is not fetched in Demo Mode. Sign in with a real session to load this tenant's members."
-              compact
-            />
-          )}
-          {!isDemo && members.isPending && (
+          {members.isPending && (
             <div className="flex flex-col gap-4 p-5">
               {Array.from({ length: 3 }, (_, i) => (
                 <div key={i} className="flex items-center gap-3">
@@ -139,7 +131,7 @@ export function PlatformTenantDetailPage() {
               ))}
             </div>
           )}
-          {!isDemo && members.isError && (
+          {members.isError && (
             <ErrorState
               title="Member listing denied"
               message={errorMessage(members.error)}
@@ -147,8 +139,7 @@ export function PlatformTenantDetailPage() {
               error={members.error}
             />
           )}
-          {!isDemo &&
-            !members.isPending &&
+          {!members.isPending &&
             !members.isError &&
             members.data?.length === 0 && (
             <EmptyState
@@ -158,7 +149,7 @@ export function PlatformTenantDetailPage() {
               compact
             />
           )}
-          {!isDemo && members.data?.length > 0 && (
+          {members.data?.length > 0 && (
             <div className="divide-y divide-zinc-800/60">
               {members.data.map((user) => (
                 <div key={user.id} className="flex items-center gap-3 px-5 py-3">

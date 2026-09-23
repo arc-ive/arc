@@ -16,7 +16,7 @@ const ROLE_LABELS = {
 }
 
 export function ProfilePage() {
-  const { principal, isDemo, signOut } = useAuth()
+  const { principal, signOut } = useAuth()
   const me = useMe()
 
   return (
@@ -42,11 +42,6 @@ export function ProfilePage() {
                 <p className="mt-0.5 text-xs text-fg-muted">{me.data.email}</p>
               )}
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                {isDemo && (
-                  <Badge variant="info" dot>
-                    Demo session
-                  </Badge>
-                )}
                 <Badge variant="neutral" size="sm">
                   Server-managed session
                 </Badge>
@@ -85,11 +80,6 @@ export function ProfilePage() {
                   </Badge>
                 ) : (
                   <Badge variant="neutral">None assigned</Badge>
-                )}
-                {me.data?.is_demo && (
-                  <Badge variant="info" size="sm">
-                    Demo — no backend context
-                  </Badge>
                 )}
               </div>
               <div>

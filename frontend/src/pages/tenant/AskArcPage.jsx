@@ -15,11 +15,9 @@ import {
   ShieldCheck,
   RotateCcw,
 } from 'lucide-react'
-import { Badge } from '../../components/ui/Badge.jsx'
 import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Button } from '../../components/ui/Button.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
-import { useAuth } from '../../auth/useAuth.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { queryIntelligence } from '../../api/endpoints/intelligence.js'
 import { errorMessage } from '../../api/errors.js'
@@ -72,7 +70,6 @@ const PIPELINE_STEPS = [
  * POST /tenants/{tenant_id}/intelligence/query
  */
 export function AskArcPage() {
-  const { isDemo } = useAuth()
   const { tenantId } = useTenant()
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState(null)
@@ -150,16 +147,6 @@ export function AskArcPage() {
         />
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            {isDemo && (
-              <>
-                <Badge variant="warning" dot size="sm">
-                  Demo Mode
-                </Badge>
-                <span className="hidden text-xs text-fg-muted sm:inline">
-                  No backend session in Demo Mode.
-                </span>
-              </>
-            )}
           </div>
           <div className="flex items-center gap-2">
             {(answer || error || question.trim()) && (
@@ -174,7 +161,7 @@ export function AskArcPage() {
                 Clear
               </Button>
             )}
-            <Button type="submit" disabled={!question.trim() || mutation.isPending || isDemo} isLoading={mutation.isPending} loadingText="Thinking…">
+            <Button type="submit" disabled={!question.trim() || mutation.isPending} isLoading={mutation.isPending} loadingText="Thinking…">
               <Sparkles className="size-4" />
               Ask
             </Button>
@@ -277,7 +264,7 @@ export function AskArcPage() {
                 key={example}
                 type="button"
                 onClick={() => handleExampleClick(example)}
-                disabled={mutation.isPending || isDemo}
+                disabled={mutation.isPending}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-[13px] text-zinc-400 transition-colors duration-150 hover:border-zinc-700 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ArrowUpRight className="size-3.5" />

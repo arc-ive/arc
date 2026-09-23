@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom'
 import { Building2, ShieldCheck } from 'lucide-react'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { errorMessage } from '../../api/errors.js'
-import { tenantLandingForRole } from '../../components/shell/navigation.js'
+import { tenantLandingForCapabilities } from '../../components/shell/navigation.js'
 import { Spinner } from '../../components/ui/Spinner.jsx'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
@@ -21,7 +21,7 @@ import { ErrorState } from '../../components/ui/ErrorState.jsx'
  * permissions on every request.
  */
 export function WorkspaceDispatch() {
-  const { me, role, isPlatformAdministrator } = useCapabilities()
+  const { me, can, isPlatformAdministrator } = useCapabilities()
 
   if (me.isPending) {
     return (
@@ -42,7 +42,7 @@ export function WorkspaceDispatch() {
     )
   }
 
-  if (isPlatformAdministrator || me.data?.is_demo) {
+  if (isPlatformAdministrator) {
     return <Navigate to="/platform/dashboard" replace />
   }
 
@@ -50,7 +50,7 @@ export function WorkspaceDispatch() {
   const first = memberships[0]
 
   if (first?.tenant_id) {
-    const landing = tenantLandingForRole(role)
+    const landing = tenantLandingForCapabilities(can)
     return (
       <Navigate
         to={`/app/t/${encodeURIComponent(first.tenant_id)}/${landing}`}

@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { Webhook, AlertTriangle, CheckCircle } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { useTenant } from '../../tenant/useTenant.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { listWebhookEvents } from '../../api/endpoints/webhooks.js'
@@ -14,12 +13,11 @@ import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryS
 
 export function WebhooksPage() {
   const { tenantId } = useTenant()
-  const { isDemo } = useAuth()
 
   const eventsQuery = useQuery({
     queryKey: queryKeys.webhookEvents(tenantId),
     queryFn: () => listWebhookEvents(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
   const events = eventsQuery.data
   const isLoading = isQueryLoading(eventsQuery)

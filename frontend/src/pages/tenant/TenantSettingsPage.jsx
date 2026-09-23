@@ -18,7 +18,7 @@ import { Badge } from '../../components/ui/Badge.jsx'
 
 export function TenantSettingsPage() {
   const { tenantId } = useParams()
-  const { isDemo, principal } = useAuth()
+  const { principal } = useAuth()
   const { can } = useCapabilities()
   const queryClient = useQueryClient()
   const canUpdate = can('tenant:update')
@@ -26,7 +26,7 @@ export function TenantSettingsPage() {
   const tenantQuery = useQuery({
     queryKey: queryKeys.tenant(tenantId),
     queryFn: () => getTenant(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const [form, setForm] = useState(null)
@@ -47,28 +47,6 @@ export function TenantSettingsPage() {
       setTimeout(() => setSaved(false), 3000)
     },
   })
-
-  if (isDemo) {
-    return (
-      <div className="flex flex-col gap-6">
-        <section>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <PageHeader title="Settings"
-          description="Tenant configuration and preferences." />
-            </div>
-          </div>
-        </section>
-        <Card>
-          <CardContent>
-            <p className="py-8 text-center text-sm text-fg-muted">
-              Settings require a backend session. Sign in with a real JWT to view tenant configuration.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
 
   if (tenantQuery.isLoading) {
     return (

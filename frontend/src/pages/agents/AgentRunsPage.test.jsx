@@ -76,7 +76,7 @@ function grant({ execute = true, observability = true } = {}) {
 describe('AgentRunsPage (Issue #226)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAuth.mockReturnValue({ isDemo: false })
+    mockUseAuth.mockReturnValue({ principal: { sub: "u-1" } })
     mockListAgentRuns.mockResolvedValue(RUNS)
     grant()
   })
@@ -184,10 +184,14 @@ describe('AgentRunsPage (Issue #226)', () => {
     await waitFor(() => expect(mockGetAgentRun).toHaveBeenCalledWith('t-1', 'run-1'))
   })
 
-  it('does not call the API in demo mode', async () => {
-    mockUseAuth.mockReturnValue({ isDemo: true })
+  it('does not request run history without observability:read', async () => {
+    // Replaces a demo-mode test. Demo Mode is gone (PR-2 decision D4); the
+    // real reason this page withholds history is the permission itself.
+    grant({ observability: false })
     renderPage()
-    expect(await screen.findByText(/Demo Mode/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/don't have access to run history/i),
+    ).toBeInTheDocument()
     expect(mockListAgentRuns).not.toHaveBeenCalled()
   })
 })

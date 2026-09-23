@@ -48,13 +48,13 @@ function EmployeeCapability({ to, label, description, icon: Icon }) {
  */
 export function EmployeeHomePage() {
   const { tenantId } = useParams()
-  const { principal, isDemo } = useAuth()
-  const { role, me } = useCapabilities()
+  const { principal } = useAuth()
+  const { role } = useCapabilities()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -143,7 +143,7 @@ export function EmployeeHomePage() {
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-[13px] text-fg-muted">Application role</dt>
                 <dd className="font-mono text-xs text-zinc-300">
-                  {role ?? (me.data?.is_demo ? 'demo' : '—')}
+                  {role ?? '—'}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4">

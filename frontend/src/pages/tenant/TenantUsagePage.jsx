@@ -3,7 +3,6 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'react-router'
 import { BarChart3 } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { getTenantUsageSummary } from '../../api/endpoints/observability.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -69,13 +68,12 @@ function StatCard({ label, value, hint }) {
 
 export function TenantUsagePage() {
   const { tenantId } = useParams()
-  const { isDemo } = useAuth()
   const [hours, setHours] = useState(24)
 
   const usage = useQuery({
     queryKey: queryKeys.observabilityTenant(tenantId, hours),
     queryFn: () => getTenantUsageSummary(tenantId, { hours }),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const data = usage.data
@@ -107,15 +105,7 @@ export function TenantUsagePage() {
         </div>
       </section>
 
-      {isDemo && (
-        <Card>
-          <p className="text-sm text-fg-muted">
-            Usage metrics are only available with a live backend session.
-          </p>
-        </Card>
-      )}
-
-      {usage.isError && !isDemo && (
+      {usage.isError && (
         <Card>
           <ErrorState
             title="Could not load usage metrics"
@@ -125,7 +115,7 @@ export function TenantUsagePage() {
         </Card>
       )}
 
-      {usage.isPending && !isDemo && (
+      {usage.isPending && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 10 }).map((_, i) => (
             <div key={i} className="rounded-xl border border-zinc-800/80 bg-panel p-4 shadow-card">
@@ -136,7 +126,7 @@ export function TenantUsagePage() {
         </div>
       )}
 
-      {data && !isDemo && (
+      {data && (
         <>
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard
@@ -190,6 +180,15 @@ export function TenantUsagePage() {
               value={isMeasured(data.http?.avg_duration_ms) ? `${Math.round(data.http.avg_duration_ms)}ms` : null}
               hint="Mean response time"
             />
+            {/* Carried over from the Observability page, which was a second
+                view of this same endpoint. P95 was the only figure it showed
+                that this page did not, so folding the two together must not
+                lose it. */}
+            <MetricCard
+              label="P95 Latency"
+              value={isMeasured(data.http?.p95_duration_ms) ? `${Math.round(data.http.p95_duration_ms)}ms` : null}
+              hint="Slowest 5% of requests"
+            />
             <MetricCard
               label="Error Rate"
               value={isMeasured(data.http?.error_rate) ? `${(data.http.error_rate * 100).toFixed(1)}%` : null}
@@ -224,7 +223,7 @@ export function TenantUsagePage() {
         </>
       )}
 
-      {!data && !usage.isPending && !usage.isError && !isDemo && (
+      {!data && !usage.isPending && !usage.isError  && (
         <Card>
           <div className="flex flex-col items-center gap-2 py-4 text-center">
             <BarChart3 className="size-8 text-zinc-700" />

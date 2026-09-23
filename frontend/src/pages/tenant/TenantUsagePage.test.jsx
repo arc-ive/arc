@@ -100,7 +100,7 @@ function renderWithProviders(ui, { queryClient } = {}) {
 describe('TenantUsagePage field mapping', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAuth.mockReturnValue({ isDemo: false })
+    mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
     mockGetTenantUsageSummary.mockResolvedValue(FIXTURE)
   })
 
@@ -211,7 +211,7 @@ describe('TenantUsagePage field mapping', () => {
 describe('TenantUsagePage metric honesty (Issue #223)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAuth.mockReturnValue({ isDemo: false })
+    mockUseAuth.mockReturnValue({ principal: { sub: 'user-1' } })
     mockGetTenantUsageSummary.mockResolvedValue(FIXTURE)
   })
 

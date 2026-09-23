@@ -4,7 +4,6 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2, UserPlus, Users } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import {
   createTenantMembership,
   deleteTenantMembership,
@@ -167,14 +166,13 @@ function ConfirmRemoveDialog({ open, onClose, tenantId, user }) {
 
 export function TenantUsersPage() {
   const { tenantId } = useParams()
-  const { isDemo } = useAuth()
   const [addOpen, setAddOpen] = useState(false)
   const [removeTarget, setRemoveTarget] = useState(null)
 
   const users = useQuery({
     queryKey: queryKeys.tenantUsers(tenantId),
     queryFn: () => getTenantUsers(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   return (
@@ -187,21 +185,11 @@ export function TenantUsersPage() {
         <Button
           variant="secondary"
           onClick={() => setAddOpen(true)}
-          disabled={isDemo}
         >
           <UserPlus className="size-4" />
           Add member
         </Button>
       </section>
-
-      {isDemo && (
-        <Card className="p-5">
-          <p className="text-[13px] text-fg-muted">
-            Demo Mode — membership provisioning requires a backend session.
-            Sign in with a real JWT to manage memberships.
-          </p>
-        </Card>
-      )}
 
       {users.isPending && (
         <Card className="p-5">

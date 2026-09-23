@@ -37,12 +37,12 @@ function HealthPill() {
 }
 
 export function PlatformDashboardPage() {
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -73,16 +73,12 @@ export function PlatformDashboardPage() {
               <Building2 className="size-4.5" />
             </div>
             <p className="mt-4 text-2xl font-semibold tracking-tight text-zinc-100">
-              {isDemo
-                ? '—'
-                : userTenants.isPending
+              {userTenants.isPending
                   ? '—'
                   : userTenants.data?.length ?? '0'}
             </p>
             <p className="mt-0.5 text-[13px] text-fg-muted">
-              {isDemo
-                ? 'Demo Mode — backend data unavailable'
-                : 'Your tenant memberships'}
+              {'Your tenant memberships'}
             </p>
           </div>
           <Link

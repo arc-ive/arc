@@ -21,12 +21,12 @@ const staticLabels = {
 
 export function Breadcrumbs() {
   const location = useLocation()
-  const { principal, isDemo } = useAuth()
+  const { principal } = useAuth()
 
   const userTenants = useQuery({
     queryKey: queryKeys.userTenants(principal?.sub),
     queryFn: () => getUserTenants(principal.sub),
-    enabled: !isDemo && Boolean(principal),
+    enabled: Boolean(principal),
     staleTime: 5 * 60 * 1000,
   })
 

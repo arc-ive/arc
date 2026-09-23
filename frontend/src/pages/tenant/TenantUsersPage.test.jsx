@@ -51,7 +51,6 @@ describe('TenantUsersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUseAuth.mockReturnValue({
-      isDemo: false,
       user: { user_id: 'test-user', role: 'platform_administrator', permissions: ['membership:create'] },
     })
   })
@@ -76,15 +75,11 @@ describe('TenantUsersPage', () => {
     expect(addButton).toBeInTheDocument()
   })
 
-  it('disables Add member button in demo mode', async () => {
-    mockUseAuth.mockReturnValue({
-      isDemo: true,
-      user: null,
-    })
-
+  it('renders the member list for a user who can read the workspace', async () => {
+    // Replaces a demo-mode test. Demo Mode is gone (PR-2 decision D4).
+    // Reaching this page at all now requires tenant:read, enforced by the
+    // route guard, so the page itself no longer has a disabled variant.
     renderWithProviders(<TenantUsersPage />)
-
-    const addButton = await screen.findByText('Add member')
-    expect(addButton.closest('button')).toBeDisabled()
+    expect(await screen.findByText('Add member')).toBeInTheDocument()
   })
 })

@@ -8,7 +8,6 @@ import { PlatformUsersPage } from './PlatformUsersPage.jsx'
 vi.mock('../../auth/useAuth.js', () => ({
   useAuth: () => ({
     principal: { sub: 'demo-user', roles: ['platform_administrator'] },
-    isDemo: false,
   }),
 }))
 
@@ -101,27 +100,13 @@ describe('PlatformUsersPage', () => {
     expect(screen.getByText('—')).toBeInTheDocument()
   })
 
-  it('disables New user button in demo mode', async () => {
-    vi.resetModules()
-    vi.doMock('../../auth/useAuth.js', () => ({
-      useAuth: () => ({
-        principal: null,
-        isDemo: true,
-      }),
-    }))
-
-    const { listPlatformUsers } = await import('../../api/endpoints/users.js')
-    listPlatformUsers.mockResolvedValue([])
-
-    const { PlatformUsersPage: DemoPage } = await import(
-      './PlatformUsersPage.jsx'
-    )
-    renderWithProviders(<DemoPage />)
-
+  it('enables New user for a platform administrator', async () => {
+    // Replaces a demo-mode test. Demo Mode is gone (PR-2 decision D4) and
+    // with it the disabled variant it was the only cause of. Reaching this
+    // page requires the platform-admin guard, so the control is live.
+    renderWithProviders(<PlatformUsersPage />)
     const addButton = await screen.findByText('New user')
-    expect(addButton.closest('button')).toBeDisabled()
-
-    vi.doUnmock('../../auth/useAuth.js')
+    expect(addButton.closest('button')).not.toBeDisabled()
   })
 
   describe('user creation dialog focus', () => {

@@ -3,7 +3,6 @@ import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, FilePlus2, Search, X } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { getKnowledge, searchKnowledge, KNOWLEDGE_SOURCES } from '../../api/endpoints/knowledge.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
@@ -50,7 +49,6 @@ function useDebounced(value, delay = 200) {
 export function CompanyBrainPage() {
   const { tenantId } = useParams()
   const navigate = useNavigate()
-  const { isDemo } = useAuth()
   const { can } = useCapabilities()
   const [tab, setTab] = useState('all')
   const [query, setQuery] = useState('')
@@ -59,13 +57,13 @@ export function CompanyBrainPage() {
   const knowledge = useQuery({
     queryKey: queryKeys.knowledge(tenantId),
     queryFn: () => getKnowledge(tenantId),
-    enabled: !isDemo && Boolean(tenantId),
+    enabled: Boolean(tenantId),
   })
 
   const search = useQuery({
     queryKey: queryKeys.knowledgeSearch(tenantId, debouncedQuery, 20),
     queryFn: () => searchKnowledge(tenantId, debouncedQuery, 20),
-    enabled: !isDemo && Boolean(tenantId) && Boolean(debouncedQuery.trim()),
+    enabled: Boolean(tenantId) && Boolean(debouncedQuery.trim()),
   })
 
   const canCreate = can('knowledge:create')
@@ -347,7 +345,6 @@ export function CompanyBrainPage() {
             ))}
           </section>
         )}
-
 
     </div>
   )
