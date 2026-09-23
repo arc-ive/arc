@@ -54,7 +54,7 @@ export function PlatformTenantDetailPage() {
           Back to Tenants
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
+          <div className="flex shrink-0 items-center text-fg-muted">
             <Building2 className="size-5" />
           </div>
           <div className="min-w-0 flex-1">

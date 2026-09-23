@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Badge } from '../../components/ui/Badge.jsx'
+import { ArrowUpRight } from 'lucide-react'
 import { sourceLabels } from '../../lib/sources.js'
 import {
   documentTitle,
@@ -39,7 +39,7 @@ import { cn } from '../../lib/cn.js'
  * token is the contrast floor, so it cannot be darkened to signal "less
  * important" (see the token layer in PR-0).
  */
-export function DocumentRow({ document, to, query = '', passageCount = 0 }) {
+export function DocumentRow({ document, to, query = '', passageCount = 0, index }) {
   const title = documentTitle(document)
   const origin = originRepeatsTitle(document) ? null : documentOrigin(document)
   const passage = document.passage ?? ''
@@ -49,52 +49,83 @@ export function DocumentRow({ document, to, query = '', passageCount = 0 }) {
     <Link
       to={to}
       className={cn(
-        'group flex flex-col gap-2 rounded-xl border border-line bg-surface p-4',
-        'transition-colors duration-150 hover:border-line-strong hover:bg-surface-raised',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+        'group relative flex items-baseline gap-5 border-b border-line py-5 sm:gap-7',
+        'transition-colors duration-200 hover:bg-surface-sunk/70',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug text-fg">
+      {/* The index number is the editorial device that makes this a
+          catalogue rather than a list of links — and it is honest, because
+          the order is the ranking the backend returned. */}
+      {index != null && (
+        <span className="type-data shrink-0 pt-1 text-fg-muted tabular-nums">
+          {String(index + 1).padStart(2, '0')}
+        </span>
+      )}
+
+      <span className="min-w-0 flex-1">
+        <span className="type-display block text-[1.375rem] leading-snug text-fg">
           {title}
-        </h2>
-        <Badge variant="neutral" size="sm">
-          {sourceLabels[document.source] ?? document.source}
-        </Badge>
-      </div>
+        </span>
 
-      {origin && (
-        <p className="truncate text-xs text-fg-muted">
-          <span className="text-fg-muted/80">Source</span> · {origin}
-        </p>
-      )}
-
-      {passage && (
-        <p className="line-clamp-2 text-[13px] leading-relaxed text-fg-muted">
-          {splitOnQuery(passage, query).map((seg, i) =>
-            seg.match ? (
-              <mark
-                key={i}
-                className="rounded-sm bg-primary/20 px-0.5 text-fg [font-weight:500]"
-              >
-                {seg.text}
-              </mark>
-            ) : (
-              <span key={i}>{seg.text}</span>
-            ),
+        {/* Kind and date sit on one quiet line under the title — the
+            metadata column they used to occupy competed with the titles
+            down the page. */}
+        <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-fg-muted">
+          <span>{sourceLabels[document.source] ?? document.source}</span>
+          {updatedAt && (
+            <>
+              <span aria-hidden>·</span>
+              <span>Updated {relativeTime(updatedAt)}</span>
+            </>
           )}
-        </p>
-      )}
+          {document.version != null && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="type-data">v{document.version}</span>
+            </>
+          )}
+          {passageCount > 1 && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{passageCount} matching passages</span>
+            </>
+          )}
+        </span>
 
-      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
-        {passageCount > 1 && (
-          <span>
-            {passageCount} matching passages
+        {passage && (
+          <span className="measure mt-2 block line-clamp-2 text-[14px] leading-relaxed text-fg-subtle">
+            {splitOnQuery(passage, query).map((seg, i) =>
+              seg.match ? (
+                <mark key={i} className="bg-accent/12 px-0.5 font-medium text-fg">
+                  {seg.text}
+                </mark>
+              ) : (
+                <span key={i}>{seg.text}</span>
+              ),
+            )}
           </span>
         )}
-        {updatedAt && <span>Updated {relativeTime(updatedAt)}</span>}
-        {document.version != null && <span>Version {document.version}</span>}
-      </div>
+
+        {origin && (
+          <span className="type-data mt-1.5 block truncate text-fg-muted">
+            {origin}
+          </span>
+        )}
+      </span>
+
+      {/* Revealed on approach rather than drawn on every row. Twelve
+          static arrows down a page is twelve pieces of furniture; one that
+          appears where the pointer is, is a response. */}
+      <ArrowUpRight
+        aria-hidden
+        className={cn(
+          'mt-1 size-4 shrink-0 text-fg-muted',
+          'translate-x-[-4px] opacity-0 transition-all duration-200',
+          'group-hover:translate-x-0 group-hover:opacity-100 group-hover:text-fg',
+          'group-focus-visible:translate-x-0 group-focus-visible:opacity-100',
+        )}
+      />
     </Link>
   )
 }

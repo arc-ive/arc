@@ -24,7 +24,7 @@ function EmployeeCapability({ to, label, description, icon: Icon }) {
       className="group flex flex-col gap-3 rounded-xl border border-line/80 bg-panel p-5 shadow-card transition-colors duration-150 hover:border-line-strong hover:bg-elevated focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
     >
       <div className="flex items-center justify-between">
-        <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted transition-colors duration-150 group-hover:text-indigo-400">
+        <div className="flex shrink-0 items-center text-fg-muted transition-colors duration-150 group-hover:text-accent">
           <Icon className="size-4.5" />
         </div>
         <ArrowUpRight className="size-4 text-fg-muted transition-colors duration-150 group-hover:text-fg-subtle" />
@@ -104,7 +104,7 @@ export function EmployeeHomePage() {
               />
             ) : tenant ? (
               <div className="flex items-center gap-3 rounded-lg border border-line/70 bg-surface px-3.5 py-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line bg-surface-raised text-fg-muted">
+                <div className="flex shrink-0 items-center text-fg-muted">
                   <Building2 className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -158,7 +158,7 @@ export function EmployeeHomePage() {
             <div className="mt-4 flex">
               <Link
                 to="/app/profile"
-                className="inline-flex items-center gap-1 rounded text-[13px] font-medium text-indigo-400 transition-colors duration-150 hover:text-indigo-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                className="inline-flex items-center gap-1 rounded text-[13px] font-medium text-accent transition-colors duration-150 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
               >
                 View profile and session details
                 <ArrowUpRight className="size-3.5" />

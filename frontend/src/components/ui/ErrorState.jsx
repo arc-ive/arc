@@ -33,7 +33,7 @@ export function ErrorState({
         className,
       )}
     >
-      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-red-900/60 bg-red-950/30 text-red-400">
+      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-danger/30 bg-danger/10 text-danger">
         <Icon className="size-5" />
       </div>
       <h3 className="text-sm font-semibold text-fg">{displayTitle}</h3>
@@ -59,7 +59,7 @@ export function ForbiddenState({ message, className }) {
         className,
       )}
     >
-      <div className="mb-1 flex size-11 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
+      <div className="flex shrink-0 items-center text-fg-muted">
         <ShieldX className="size-5" />
       </div>
       <h3 className="text-sm font-semibold text-fg">

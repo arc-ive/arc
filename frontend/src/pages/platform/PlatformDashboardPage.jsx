@@ -1,17 +1,10 @@
 import { Link } from 'react-router-dom'
 import { PageHeader } from '../../components/ui/PageHeader.jsx'
-import { useQuery } from '@tanstack/react-query'
+import { cn } from '../../lib/cn.js'
 import {
   ArrowUpRight,
-  Building2,
-  ShieldCheck,
-  Users,
 } from 'lucide-react'
-import { useAuth } from '../../auth/useAuth.js'
 import { getHealth } from '../../api/endpoints/health.js'
-import { getUserTenants } from '../../api/endpoints/tenants.js'
-import { queryKeys } from '../../api/queryKeys.js'
-import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
 
@@ -36,97 +29,58 @@ function HealthPill() {
   )
 }
 
-export function PlatformDashboardPage() {
-  const { principal } = useAuth()
-
-  const userTenants = useQuery({
-    queryKey: queryKeys.userTenants(principal?.sub),
-    queryFn: () => getUserTenants(principal.sub),
-    enabled: Boolean(principal),
-    staleTime: 5 * 60 * 1000,
-  })
-
+function ConsoleLink({ to, label, description, figure, figureLabel }) {
   return (
-    <div className="flex flex-col gap-8">
-      <section>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <PageHeader title="ARC Platform Console" />
-              <Badge variant="accent">
-                <ShieldCheck className="mr-1 size-3" />
-                Platform Administrator
-              </Badge>
-            </div>
-            <p className="mt-1 text-sm text-fg-muted">
-              Platform-level administration of tenants and users.
-            </p>
-          </div>
-          <HealthPill />
-        </div>
-      </section>
-
-      <section className="grid gap-4 sm:grid-cols-3">
-        <Card className="flex flex-col justify-between gap-6 p-5">
-          <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
-              <Building2 className="size-4.5" />
-            </div>
-            <p className="mt-4 text-2xl font-semibold tracking-tight text-fg">
-              {userTenants.isPending
-                  ? '—'
-                  : userTenants.data?.length ?? '0'}
-            </p>
-            <p className="mt-0.5 text-[13px] text-fg-muted">
-              {'Your tenant memberships'}
-            </p>
-          </div>
-          <Link
-            to="/platform/tenants"
-            className="inline-flex items-center gap-1 rounded text-[13px] font-medium text-indigo-400 transition-colors duration-150 hover:text-indigo-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-          >
-            Manage tenants
-            <ArrowUpRight className="size-3.5" />
-          </Link>
-        </Card>
-
-        <Card className="flex flex-col justify-between gap-6 p-5">
-          <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
-              <Users className="size-4.5" />
-            </div>
-            <p className="mt-4 text-[15px] font-semibold text-fg">
-              User provisioning
-            </p>
-            <p className="mt-0.5 text-[13px] text-fg-muted">
-              Create and manage platform users
-            </p>
-          </div>
-          <Link
-            to="/platform/users"
-            className="inline-flex items-center gap-1 rounded text-[13px] font-medium text-indigo-400 transition-colors duration-150 hover:text-indigo-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
-          >
-            Manage users
-            <ArrowUpRight className="size-3.5" />
-          </Link>
-        </Card>
-
-        <Card className="flex flex-col justify-between gap-6 p-5">
-          <div>
-            <div className="flex size-9 items-center justify-center rounded-lg border border-line bg-surface-raised text-fg-muted">
-              <ShieldCheck className="size-4.5" />
-            </div>
-            <p className="mt-4 text-[15px] font-semibold text-fg">
-              Authorization
-            </p>
-            <p className="mt-0.5 text-[13px] text-fg-muted">
-              Tenant membership and roles are enforced by the backend
-            </p>
-          </div>
-          <span className="text-[13px] text-fg-muted">
-            Platform administration ≠ tenant administration
+    <Link
+      to={to}
+      className={cn(
+        'group flex items-start justify-between gap-6 border-b border-line py-5',
+        'transition-colors duration-150 hover:bg-surface-sunk/60',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary',
+      )}
+    >
+      <span className="min-w-0">
+        <span className="type-display block text-[1.25rem] leading-snug text-fg">
+          {label}
+        </span>
+        <span className="measure mt-0.5 block text-[13.5px] leading-relaxed text-fg-muted">
+          {description}
+        </span>
+        {figure && (
+          <span className="mt-2 block text-[12.5px] text-fg-muted">
+            <span className="tabular-nums text-fg">{figure}</span> {figureLabel}
           </span>
-        </Card>
+        )}
+      </span>
+      <ArrowUpRight className="mt-1 size-4 shrink-0 text-fg-muted transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:text-fg" />
+    </Link>
+  )
+}
+
+export function PlatformDashboardPage() {
+  return (
+    <div className="flex flex-col gap-12">
+      <PageHeader
+        title="Platform"
+        description="Administration of the Arc platform itself — the workspaces on it and the people who can reach them."
+        actions={<HealthPill />}
+      />
+
+      {/* Two destinations, not three cards. The third used to explain the
+          authorization model back at the administrator ("Platform
+          administration ≠ tenant administration"), which is architecture,
+          not a control — and the plane they are standing on now says it. */}
+      <section className="grid border-t border-line sm:grid-cols-2 sm:gap-x-12">
+        <ConsoleLink
+          to="/platform/tenants"
+          label="Workspaces"
+          description="Every workspace on this platform, and the people in each."
+        />
+        <ConsoleLink
+          to="/platform/users"
+          label="People"
+          description="Everyone provisioned on the platform, across all workspaces."
+        />
       </section>
 
     </div>

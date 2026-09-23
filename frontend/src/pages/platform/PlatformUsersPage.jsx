@@ -148,7 +148,7 @@ export function PlatformUsersPage() {
       <section className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <PageHeader title="Users"
-          description="Platform-level user directory. All provisioned users are listed       here regardless of tenant membership." />
+          description="Everyone provisioned on this Arc platform, across all workspaces." />
         </div>
         <Button
           variant="secondary"

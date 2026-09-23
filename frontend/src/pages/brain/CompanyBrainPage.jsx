@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BookOpen, FilePlus2, Search, X } from 'lucide-react'
@@ -13,6 +12,7 @@ import { Card, CardContent, CardHeader } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
 import { Tabs } from '../../components/ui/Tabs.jsx'
 import { DocumentRow } from './DocumentRow.jsx'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 import { groupChunksByDocument, bestPassage } from '../../lib/knowledge.js'
 import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
@@ -48,6 +48,7 @@ function useDebounced(value, delay = 200) {
 }
 
 export function CompanyBrainPage() {
+  useDocumentTitle('Company Brain')
   const { tenantId } = useParams()
   const navigate = useNavigate()
   const { can } = useCapabilities()
@@ -91,10 +92,21 @@ export function CompanyBrainPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <PageHeader title="Company Brain"
-          description="The company&apos;s intelligence — knowledge, procedures, policies,       decisions, incidents, and solutions with provenance." />
+      {/* The description said "The company's intelligence — knowledge,
+          procedures, policies, decisions, incidents, and solutions with
+          provenance." Two lines of category list under a title that
+          already says what this is. The count below is a fact; the
+          sentence was not. */}
+      <header className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="type-display-lg text-fg">Company Brain</h1>
+          {!knowledge.isPending && documents.length > 0 && (
+            <p className="mt-2 text-[14px] text-fg-muted">
+              {documents.length}{' '}
+              {documents.length === 1 ? 'document' : 'documents'} Arc can
+              answer from
+            </p>
+          )}
         </div>
         {canCreate && (
           <Button onClick={() => navigate('new')}>
@@ -102,23 +114,22 @@ export function CompanyBrainPage() {
             New document
           </Button>
         )}
-      </section>
+      </header>
 
-      <Tabs tabs={BRAIN_TABS} active={tab} onChange={setTab} size="sm" className="max-w-full overflow-x-auto" />
-
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
+      {/* Search and filters share one line: they are the same job — narrow
+          the index — and stacking them cost a third of the fold. */}
+      <section className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-8">
+        <div className="relative min-w-0 lg:w-[22rem]">
+          <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search provenance and content…"
+            placeholder="Search this workspace’s knowledge"
             aria-label="Search knowledge"
             className={cn(
-              'h-9 w-full rounded-lg border border-line bg-surface-raised pl-9 pr-8 text-sm text-fg',
+              'h-12 w-full border-b border-line bg-transparent pl-8 pr-8 text-[15px] text-fg',
               'placeholder:text-fg-muted transition-colors duration-150',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400',
-              'hover:border-line-strong',
+              'focus:border-fg focus-visible:outline-none',
             )}
           />
           {query && (
@@ -126,11 +137,14 @@ export function CompanyBrainPage() {
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+              className="absolute right-0 top-1/2 -translate-y-1/2 rounded p-1 text-fg-muted transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               <X className="size-3.5" />
             </button>
           )}
+        </div>
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <Tabs tabs={BRAIN_TABS} active={tab} onChange={setTab} size="sm" />
         </div>
       </section>
 
@@ -227,10 +241,11 @@ export function CompanyBrainPage() {
         !search.isPending &&
         !search.isError &&
         search.data?.length > 0 && (
-          <section className="flex flex-col gap-2.5">
-            {groupChunksByDocument(search.data).map((doc) => (
+          <section className="stagger border-t border-line">
+            {groupChunksByDocument(search.data).map((doc, i) => (
               <DocumentRow
                 key={doc.documentId}
+                index={i}
                 to={doc.documentId}
                 query={debouncedQuery}
                 passageCount={doc.passages.length}
@@ -280,10 +295,11 @@ export function CompanyBrainPage() {
       {!isSearching &&
         filtered.length > 0 &&
         tab !== 'sources' && (
-          <section className="flex flex-col gap-2.5">
-            {filtered.map((doc) => (
+          <section className="stagger border-t border-line">
+            {filtered.map((doc, i) => (
               <DocumentRow
                 key={doc.id}
+                index={i}
                 to={doc.id}
                 document={{ ...doc, passage: doc.content }}
               />

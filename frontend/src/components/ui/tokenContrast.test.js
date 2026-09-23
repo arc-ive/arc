@@ -51,6 +51,7 @@ const SURFACES = [
   '--color-surface',
   '--color-surface-raised',
   '--color-surface-overlay',
+  '--color-surface-sunk',
   '--color-surface-selected',
 ]
 const FOREGROUNDS = [
@@ -79,8 +80,13 @@ describe('token contrast', () => {
     expect(failures).toEqual([])
   })
 
-  it('the primary button reads as an inversion, not a tint', () => {
-    expect(contrast(resolve('--color-on-action'), resolve('--color-action'))).toBeGreaterThan(15)
+  it('the primary button carries its own label', () => {
+    // This used to assert an inversion ratio above 15:1, when the primary
+    // button was near-white on near-black. It is now an Arc Ink fill with
+    // paper on top, so the number that matters is the ordinary one: the
+    // label has to clear AA against the fill it sits on.
+    const ratio = contrast(resolve('--color-on-action'), resolve('--color-action'))
+    expect(ratio).toBeGreaterThanOrEqual(4.5)
   })
 
   it('declares no token that nothing can use', () => {

@@ -55,17 +55,29 @@ describe('TenantUsersPage', () => {
     })
   })
 
-  it('renders the page title', async () => {
+  it('names the page for the people on it, not the data model', async () => {
+    // Was "Tenant users", with "as authorized by the backend" underneath.
+    // A person in their own workspace is not in "a tenant" — that is the
+    // platform's word for a customer, and ARC_UX_SPEC.md §1 keeps
+    // implementation vocabulary out of the product. The nav has always
+    // said "People"; the page now agrees with it.
     renderWithProviders(<TenantUsersPage />)
 
-    expect(screen.getByText('Tenant users')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'People' })).toBeInTheDocument()
+    expect(screen.queryByText(/tenant users/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/authorized by the backend/i)).not.toBeInTheDocument()
   })
 
-  it('shows empty state when no users exist', async () => {
+  it('says plainly when nobody has access yet', async () => {
+    // Was "No users in this tenant" inside an icon tile and a card, with
+    // "Click 'Add member' to provision a membership" underneath — the word
+    // "provision" is the data model talking, and the Add member button is
+    // already on the page saying what it does.
     renderWithProviders(<TenantUsersPage />)
 
-    const emptyText = await screen.findByText('No users in this tenant')
-    expect(emptyText).toBeInTheDocument()
+    expect(
+      await screen.findByText(/nobody has been given access to this workspace/i),
+    ).toBeInTheDocument()
   })
 
   it('shows Add member button', async () => {

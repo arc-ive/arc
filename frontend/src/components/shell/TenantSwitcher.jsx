@@ -73,7 +73,7 @@ export function TenantSwitcher() {
               </div>
             )}
             {userTenants.isError && (
-              <p className="px-3 py-2.5 text-[13px] text-red-400">
+              <p className="px-3 py-2.5 text-[13px] text-danger">
                 Could not load tenants
               </p>
             )}
@@ -96,7 +96,7 @@ export function TenantSwitcher() {
                   <Building2 className="size-4 shrink-0 text-fg-muted" />
                   <span className="flex-1 truncate">{tenant.name}</span>
                   {tenant.id === tenantId && (
-                    <Check className="size-3.5 text-indigo-400" />
+                    <Check className="size-3.5 text-accent" />
                   )}
                 </button>
               ))}

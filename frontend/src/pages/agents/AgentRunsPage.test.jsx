@@ -85,7 +85,16 @@ describe('AgentRunsPage (Issue #226)', () => {
     renderPage()
     expect(await screen.findByText('investigate the production incident')).toBeInTheDocument()
     expect(screen.getByText('summarise open incidents')).toBeInTheDocument()
-    expect(screen.getByText('Reason: agent_decision_unavailable')).toBeInTheDocument()
+    // The reason is stated, not echoed. It used to read
+    // "Reason: agent_decision_unavailable" — the backend's own identifier,
+    // which ARC_UX_SPEC.md §1 rules out and which tells an operator nothing
+    // about what to do. The sentence comes from what that kind actually
+    // means in src/arc/services/agent.py: the default deterministic
+    // provider carries no decision script, so the agent fails closed.
+    expect(
+      screen.getByText(/No decision capability is configured/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/agent_decision_unavailable/)).not.toBeInTheDocument()
     expect(screen.getByText('Succeeded')).toBeInTheDocument()
     expect(mockListAgentRuns).toHaveBeenCalledWith('t-1', { limit: 20 })
   })

@@ -1,11 +1,20 @@
 import { cn } from '../../lib/cn.js'
 
+/**
+ * A placeholder for a value that has not arrived.
+ *
+ * A `span`, not a `div`. Skeletons stand in for content, and content lives
+ * inside headings, paragraphs and table cells — a block element in an
+ * `<h1>` or a `<p>` is invalid HTML and React says so at runtime. As an
+ * inline-block span it is valid wherever the real value would be.
+ */
 export function Skeleton({ className, ...props }) {
   return (
-    <div
+    <span
       aria-hidden
       className={cn(
-        'animate-pulse rounded-md bg-surface-selected motion-reduce:animate-none',
+        'inline-block animate-pulse rounded-md bg-surface-selected align-middle',
+        'motion-reduce:animate-none',
         className,
       )}
       {...props}
@@ -30,7 +39,7 @@ export function SkeletonCard({ className }) {
   return (
     <div
       className={cn(
-        'rounded-xl border border-line/80 bg-panel p-5 shadow-card',
+        'rounded-lg border border-line p-5',
         className,
       )}
     >

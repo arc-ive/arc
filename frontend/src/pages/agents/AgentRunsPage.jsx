@@ -6,6 +6,8 @@ import { CheckCircle2, Clock, ShieldAlert, XCircle } from 'lucide-react'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { getAgentRun, listAgentRuns, runAgent } from '../../api/endpoints/agent.js'
 import { queryKeys } from '../../api/queryKeys.js'
+import { runFailureReason } from '../../lib/agentRuns.js'
+import { cn } from '../../lib/cn.js'
 import { errorMessage } from '../../api/errors.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Card, CardContent } from '../../components/ui/Card.jsx'
@@ -29,13 +31,13 @@ const RUN_LIMIT = 20
 
 const STATUS_STYLE = {
   succeeded: { variant: 'emerald', icon: CheckCircle2, label: 'Succeeded' },
-  failed: { variant: 'red', icon: XCircle, label: 'Failed' },
-  approval_required: { variant: 'amber', icon: ShieldAlert, label: 'Approval required' },
-  max_steps_reached: { variant: 'zinc', icon: Clock, label: 'Max steps reached' },
+  failed: { variant: 'danger', icon: XCircle, label: 'Failed' },
+  approval_required: { variant: 'warning', icon: ShieldAlert, label: 'Approval required' },
+  max_steps_reached: { variant: 'neutral', icon: Clock, label: 'Max steps reached' },
 }
 
 function StatusBadge({ status }) {
-  const style = STATUS_STYLE[status] ?? { variant: 'zinc', icon: Clock, label: status ?? 'Unknown' }
+  const style = STATUS_STYLE[status] ?? { variant: 'neutral', icon: Clock, label: status ?? 'Unknown' }
   const Icon = style.icon
   return (
     <Badge variant={style.variant}>
@@ -50,28 +52,44 @@ function StatusBadge({ status }) {
 function RunSteps({ steps }) {
   if (!steps || steps.length === 0) {
     return (
-      <p className="mt-2 text-[13px] text-fg-muted">
+      <p className="mt-3 text-[13px] text-fg-muted">
         No steps were executed for this run.
       </p>
     )
   }
   return (
-    <ol className="mt-3 flex flex-col gap-2">
+    /* A trace is a sequence, so it is drawn as one: a single spine with
+       marks on it, rather than a stack of separate boxes that happen to be
+       in order. The line is the thing that says "and then". */
+    <ol className="mt-4 flex flex-col">
       {steps.map((step, index) => (
         <li
           key={step.id ?? `${step.skill_id ?? 'step'}-${index}`}
-          className="rounded-lg border border-line/80 bg-surface p-3"
+          className="flex gap-4"
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-fg-muted">Step {index + 1}</span>
-            {step.skill_id && (
-              <span className="text-[13px] text-fg">{step.skill_id}</span>
+          <div className="flex flex-col items-center">
+            <span
+              aria-hidden
+              className="mt-1 size-2 shrink-0 rounded-full bg-fg-muted"
+            />
+            {index < steps.length - 1 && (
+              <span aria-hidden className="w-px flex-1 bg-line" />
             )}
-            {step.status && <StatusBadge status={step.status} />}
           </div>
-          {step.error_kind && (
-            <p className="mt-1 text-[13px] text-red-400">{step.error_kind}</p>
-          )}
+          <div className={cn('min-w-0 pb-5', index === steps.length - 1 && 'pb-0')}>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="type-label text-fg-muted">Step {index + 1}</span>
+              {step.skill_id && (
+                <span className="type-data text-fg">{step.skill_id}</span>
+              )}
+              {step.status && <StatusBadge status={step.status} />}
+            </div>
+            {step.error_kind && (
+              <p className="measure mt-1.5 text-[13px] leading-relaxed text-fg-muted">
+                {runFailureReason(step.error_kind)}
+              </p>
+            )}
+          </div>
         </li>
       ))}
     </ol>
@@ -92,14 +110,18 @@ function RunCard({ run, tenantId, canReadHistory }) {
   const shown = detail.data ?? run
 
   return (
-    <Card>
-      <CardContent>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="border-b border-line py-6">
+      <div>
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-fg">{run.goal}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-fg-muted">
-              <span>By: {run.principal_id}</span>
-              <span>Started: {new Date(run.created_at).toLocaleString()}</span>
+            {/* The goal is what a person wrote, so it is content and takes
+                the serif. Everything else about a run is chrome. */}
+            <p className="type-display text-[1.25rem] leading-snug text-fg">
+              {run.goal}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-fg-muted">
+              <span>{run.principal_id}</span>
+              <span>{new Date(run.created_at).toLocaleString()}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -116,11 +138,13 @@ function RunCard({ run, tenantId, canReadHistory }) {
         </div>
 
         {run.error_kind && (
-          <p className="mt-2 text-[13px] text-red-400">Reason: {run.error_kind}</p>
+          <p className="measure mt-3 text-[13.5px] leading-relaxed text-fg-subtle">
+            {runFailureReason(run.error_kind)}
+          </p>
         )}
 
         {expanded && (
-          <div className="mt-2 border-t border-line/80 pt-3">
+          <div className="mt-4 border-t border-line pt-4">
             {detail.isError ? (
               <ErrorState
                 title="Could not load this trace"
@@ -135,8 +159,8 @@ function RunCard({ run, tenantId, canReadHistory }) {
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -221,7 +245,7 @@ export function AgentRunsPage() {
                   <StatusBadge status={startMutation.data.status} />
                 </div>
                 {startMutation.data.error_kind && (
-                  <p className="mt-1 text-[13px] text-red-400">
+                  <p className="mt-1 text-[13px] text-danger">
                     Reason: {startMutation.data.error_kind}
                   </p>
                 )}
@@ -253,8 +277,8 @@ export function AgentRunsPage() {
       )}
 
       {canReadHistory && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-fg">Recent runs</h2>
+        <section>
+          <h2 className="type-label text-fg-muted">Recent runs</h2>
 
           {runsQuery.isPending && runsQuery.fetchStatus === 'fetching' && <Spinner />}
 
@@ -277,7 +301,7 @@ export function AgentRunsPage() {
           )}
 
           {!runsQuery.isError && runs.length > 0 && (
-            <div className="flex flex-col gap-3">
+            <div className="mt-3 border-t border-line">
               {runs.map((run) => (
                 <RunCard
                   key={run.id}

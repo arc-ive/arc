@@ -159,7 +159,20 @@ describe('design foundation is actually adopted', () => {
     // rendered grey: "active", "healthy" and "received" lost their green,
     // and the error badges lost their red, with nothing failing. The
     // pattern now covers both spellings.
-    const RETIRED = /(?:variant="(?:green|amber|red|cyan|indigo|zinc)")|(?:variant=\{[^}]*'(?:green|amber|red|cyan|indigo|zinc)')/
+    //
+    // Third spelling, found during the redesign: a status map holding
+    // `{ variant: 'red', icon: XCircle, label: 'Failed' }`. Nine of those
+    // sat in Agents and Skills, so every execution status badge in the app
+    // — Succeeded, Failed, Denied, Approval required — rendered grey. Two
+    // guards had already passed over them.
+    //
+    // The lesson is that matching a syntax catches one spelling at a time.
+    // This matches `variant` followed by a retired NAME in any of the three
+    // forms, which is the thing that is actually wrong.
+    const NAMES = 'green|amber|red|cyan|indigo|zinc'
+    const RETIRED = new RegExp(
+      `variant\\s*[:=]\\s*(?:\\{[^}]*)?["'](?:${NAMES})["']`,
+    )
     const offenders = files
       .filter((f) => !f.endsWith('components/ui/Badge.jsx'))
       .filter((f) => RETIRED.test(readFileSync(f, 'utf8')))
@@ -206,7 +219,19 @@ describe('design foundation is actually adopted', () => {
     //
     // index.css is where primitives are allowed to be named, and it is
     // not scanned here.
-    const RAW = /(?:^|["'\s:])(?:hover:|focus:|active:|group-hover:|focus-visible:)?(?:text|bg|border|border-[trbl]|ring|divide|from|via|to)-zinc-\d/
+    //
+    // This checked only `zinc`, and 48 raw colours from other families
+    // walked straight past it — text-red-400, bg-red-950, text-indigo-400,
+    // border-amber-900. Several were dark-plane fills, so when the
+    // workspace moved to paper a near-black red block landed on a white
+    // page. Guarding one family is guarding nothing; the whole palette is
+    // matched now.
+    const FAMILIES =
+      'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|' +
+      'emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose'
+    const RAW = new RegExp(
+      `(?:text|bg|border|border-[trbl]|ring|divide|from|via|to)-(?:${FAMILIES})-\\d{2,3}`,
+    )
     const offenders = files.filter((f) => RAW.test(readFileSync(f, 'utf8')))
     expect(offenders.map((f) => f.replace(SRC, 'src'))).toEqual([])
   })

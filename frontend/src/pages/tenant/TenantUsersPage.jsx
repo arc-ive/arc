@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { InlineError } from '../../components/ui/InlineError.jsx'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Trash2, UserPlus, Users } from 'lucide-react'
+import { Search, Trash2, UserPlus } from 'lucide-react'
 import {
   createTenantMembership,
   deleteTenantMembership,
@@ -12,22 +11,14 @@ import { getTenantUsers } from '../../api/endpoints/users.js'
 import { queryKeys } from '../../api/queryKeys.js'
 import { errorMessage } from '../../api/errors.js'
 import { Button } from '../../components/ui/Button.jsx'
-import { Card } from '../../components/ui/Card.jsx'
+import { IconButton } from '../../components/ui/IconButton.jsx'
 import { Dialog } from '../../components/ui/Dialog.jsx'
 import { Input } from '../../components/ui/Input.jsx'
 import { Select } from '../../components/ui/Select.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
 import { Avatar } from '../../components/ui/Avatar.jsx'
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '../../components/ui/Table.jsx'
 import { Skeleton } from '../../components/ui/Skeleton.jsx'
-import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
 import { formatDate } from '../../lib/format.js'
 
@@ -165,6 +156,7 @@ function ConfirmRemoveDialog({ open, onClose, tenantId, user }) {
 }
 
 export function TenantUsersPage() {
+  useDocumentTitle('People')
   const { tenantId } = useParams()
   const [addOpen, setAddOpen] = useState(false)
   const [removeTarget, setRemoveTarget] = useState(null)
@@ -175,117 +167,131 @@ export function TenantUsersPage() {
     enabled: Boolean(tenantId),
   })
 
+  const [query, setQuery] = useState('')
+
+  const people = users.data ?? []
+  const needle = query.trim().toLowerCase()
+  const shown = needle
+    ? people.filter(
+        (u) =>
+          (u.username ?? '').toLowerCase().includes(needle) ||
+          (u.email ?? '').toLowerCase().includes(needle),
+      )
+    : people
+  const inactive = people.filter((u) => u.status !== 'active').length
+
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <PageHeader title="Tenant users"
-          description="Users with membership in this tenant, as authorized by the backend." />
+    <div className="flex flex-col">
+      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div className="min-w-0">
+          <h1 className="type-display-lg text-fg">People</h1>
+          {/* The count and its one exception, rather than a sentence
+              restating the page title. */}
+          {!users.isPending && people.length > 0 && (
+            <p className="mt-2 text-[14px] text-fg-muted">
+              {people.length} {people.length === 1 ? 'person' : 'people'}
+              {inactive > 0 ? ` · ${inactive} not active` : ' · all active'}
+            </p>
+          )}
         </div>
-        <Button
-          variant="secondary"
-          onClick={() => setAddOpen(true)}
-        >
+        <Button variant="secondary" onClick={() => setAddOpen(true)}>
           <UserPlus className="size-4" />
           Add member
         </Button>
-      </section>
+      </header>
+
+      {people.length > 4 && (
+        <div className="relative mt-8">
+          <Search className="pointer-events-none absolute left-0 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find someone"
+            aria-label="Find someone in this workspace"
+            className="h-11 w-full border-b border-line bg-transparent pl-7 text-[15px] text-fg placeholder:text-fg-muted focus:border-fg focus-visible:outline-none"
+          />
+        </div>
+      )}
 
       {users.isPending && (
-        <Card className="p-5">
-          <div className="flex flex-col gap-4">
-            {Array.from({ length: 4 }, (_, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <Skeleton className="size-8 rounded-full" />
-                <div className="flex flex-1 flex-col gap-1.5">
-                  <Skeleton className="h-3.5 w-1/3" />
-                  <Skeleton className="h-3 w-1/4" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+        <div className="mt-8 flex flex-col gap-5 border-t border-line pt-5">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="flex items-center gap-4">
+              <Skeleton className="size-9 rounded-full" />
+              <span className="flex flex-1 flex-col gap-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-64" />
+              </span>
+            </div>
+          ))}
+        </div>
       )}
 
       {users.isError && (
-        <Card>
+        <div className="mt-8">
           <ErrorState
-            title="Could not load tenant users"
+            title="Could not load the people in this workspace"
             message={errorMessage(users.error)}
             onRetry={() => users.refetch()}
             error={users.error}
           />
-        </Card>
+        </div>
       )}
 
-      {users.data?.length === 0 && (
-        <Card>
-          <EmptyState
-            icon={Users}
-            title="No users in this tenant"
-            description="No user has been assigned to this tenant yet. Click 'Add member' to provision a membership."
-          />
-        </Card>
+      {!users.isPending && people.length === 0 && (
+        <p className="measure mt-8 border-t border-line pt-6 type-prose text-fg-subtle">
+          Nobody has been given access to this workspace yet.
+        </p>
       )}
 
-      {users.data?.length > 0 && (
-        <Card className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Username</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.data.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar name={user.email} size="sm" />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-fg">
-                          {user.email}
-                        </p>
-                        <p className="truncate font-mono text-xs text-fg-muted">
-                          {user.id}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-fg-muted">
-                    {user.username ?? '—'}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={user.status === 'active' ? 'success' : 'neutral'}
-                      size="sm"
-                      dot
-                    >
-                      {user.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-fg-muted">
-                    {formatDate(user.created_at)}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setRemoveTarget(user)}
-                      title="Remove member"
-                    >
-                      <Trash2 className="size-4 text-fg-muted hover:text-red-400" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
+      {shown.length > 0 && (
+        <ul className="stagger mt-8 border-t border-line">
+          {shown.map((user) => (
+            <li
+              key={user.id}
+              className="group flex items-center gap-4 border-b border-line py-4 transition-colors duration-150 hover:bg-surface-sunk/70"
+            >
+              <Avatar name={user.username || user.email} size="md" />
+              <div className="min-w-0 flex-1">
+                {/* A person's name leads; their address is how you reach
+                    them, not who they are. The id — which was printed in
+                    mono under every row — is a database key. */}
+                <p className="truncate text-[15px] font-medium text-fg">
+                  {user.username || user.email}
+                </p>
+                <p className="truncate text-[13px] text-fg-muted">{user.email}</p>
+              </div>
+
+              {user.status !== 'active' && (
+                <Badge variant="neutral" size="sm" dot>
+                  {user.status}
+                </Badge>
+              )}
+
+              <span className="hidden shrink-0 text-[12.5px] text-fg-muted sm:block">
+                Joined {formatDate(user.created_at)}
+              </span>
+
+              {/* The destructive action stays out of the way until the row
+                  is under the pointer or the button is focused. */}
+              <IconButton
+                variant="danger"
+                size="sm"
+                onClick={() => setRemoveTarget(user)}
+                label={`Remove ${user.username || user.email}`}
+                className="opacity-0 transition-opacity duration-150 focus-visible:opacity-100 group-hover:opacity-100"
+              >
+                <Trash2 className="size-4" />
+              </IconButton>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {needle && shown.length === 0 && (
+        <p className="mt-8 border-t border-line pt-6 text-[14px] text-fg-muted">
+          Nobody here matches “{query}”.
+        </p>
       )}
 
       <AddMemberDialog

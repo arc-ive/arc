@@ -180,7 +180,7 @@ export function KnowledgeDetailPage() {
           Back to Company Brain
         </Link>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-line bg-surface-raised text-fg-muted">
+          <div className="flex shrink-0 items-center text-fg-muted">
             <BookOpen className="size-5" />
           </div>
           <div className="min-w-0 flex-1">

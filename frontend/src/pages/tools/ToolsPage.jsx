@@ -1,19 +1,18 @@
 import { useState } from 'react'
 import { InlineError } from '../../components/ui/InlineError.jsx'
-import { PageHeader } from '../../components/ui/PageHeader.jsx'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Wrench, Play, CheckCircle } from 'lucide-react'
+import { Play, CheckCircle } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
 import { listTools, executeTool } from '../../api/endpoints/tools.js'
 import { useCapabilities } from '../../auth/capabilities.js'
 import { useTenant } from '../../tenant/useTenant.js'
-import { Card } from '../../components/ui/Card.jsx'
 import { Badge } from '../../components/ui/Badge.jsx'
+import { Skeleton } from '../../components/ui/Skeleton.jsx'
+import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
+import { toolLabel } from '../../lib/approvals.js'
 import { Button } from '../../components/ui/Button.jsx'
 import { Textarea } from '../../components/ui/Textarea.jsx'
-import { EmptyState } from '../../components/ui/EmptyState.jsx'
 import { ErrorState } from '../../components/ui/ErrorState.jsx'
-import { Spinner } from '../../components/ui/Spinner.jsx'
 import { errorMessage } from '../../api/errors.js'
 import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryState.js'
 
@@ -86,10 +85,10 @@ function ToolExecuteDialog({ tool, open, onClose }) {
         )}
 
         {result && (
-          <div className="mb-4 rounded-lg border border-green-900/50 bg-green-950/20 p-3.5">
+          <div className="mb-4 rounded-lg border border-success/30 bg-success/10 p-3.5">
             <div className="flex items-center gap-2 mb-2">
-              <CheckCircle className="size-4 text-green-400" />
-              <span className="text-sm font-medium text-green-300">Execution successful</span>
+              <CheckCircle className="size-4 text-success" />
+              <span className="text-sm font-medium text-success">Execution successful</span>
             </div>
             <pre className="text-xs text-fg-subtle overflow-x-auto whitespace-pre-wrap">{JSON.stringify(result.output, null, 2)}</pre>
           </div>
@@ -109,7 +108,10 @@ function ToolExecuteDialog({ tool, open, onClose }) {
   )
 }
 
+const RISK_TONE = { high: 'danger', medium: 'warning', low: 'success' }
+
 export function ToolsPage() {
+  useDocumentTitle('Tools')
   const { tenantId } = useTenant()
   const { can } = useCapabilities()
   const canExecute = can('tool:execute')
@@ -127,15 +129,22 @@ export function ToolsPage() {
   const error = toolsQuery.error
 
   return (
-    <div className="flex flex-col gap-6">
-      <section>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <PageHeader title="Tools"
-          description="Platform-owned AI tools available for this tenant." />
-          </div>
+    <div className="flex flex-col">
+      {/* Tools are the actions Arc can take. A person comes here to see
+          what is available and, occasionally, to run one by hand — so the
+          composition is a capability list with its inputs visible, not a
+          grid of identical cards. */}
+      <header className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="type-display-lg text-fg">Tools</h1>
+          {!isLoading && tools?.length > 0 && (
+            <p className="mt-2 measure text-[14px] text-fg-muted">
+              {tools.length} {tools.length === 1 ? 'action' : 'actions'} Arc can
+              take. Registered by the platform — they cannot be changed here.
+            </p>
+          )}
         </div>
-      </section>
+      </header>
 
       <ToolExecuteDialog
         tool={executeTarget}
@@ -143,63 +152,90 @@ export function ToolsPage() {
         onClose={() => setExecuteTarget(null)}
       />
 
-      {isLoading && <Spinner />}
+      {isLoading && (
+        <div className="mt-8 flex flex-col gap-4 border-t border-line pt-6">
+          <Skeleton className="h-6 w-64" />
+          <Skeleton className="h-4 w-full max-w-xl" />
+        </div>
+      )}
+
       {failed && (
-        <ErrorState
-          error={error}
-          message={error ? undefined : STALLED_MESSAGE}
-          onRetry={() => toolsQuery.refetch()}
-        />
+        <div className="mt-8">
+          <ErrorState
+            error={error}
+            message={error ? undefined : STALLED_MESSAGE}
+            onRetry={() => toolsQuery.refetch()}
+          />
+        </div>
       )}
 
       {!isLoading && !failed && (!tools || tools.length === 0) && (
-        <EmptyState
-          icon={Wrench}
-          title="No tools available"
-          description="Tools are registered by the platform and available for agent execution."
-        />
+        <p className="measure mt-8 border-t border-line pt-6 type-prose text-fg-subtle">
+          No tools are registered for this workspace yet.
+        </p>
       )}
 
-      {!isLoading && !failed && tools && tools.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {tools.map((tool) => (
-            <Card key={tool.name} className="flex flex-col gap-3 p-5">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-fg">{tool.name}</p>
-                <Badge
-                  variant={
-                    tool.risk_level === 'high' ? 'danger' :
-                    tool.risk_level === 'medium' ? 'warning' : 'success'
-                  }
-                  size="sm"
-                >
-                  {tool.risk_level}
-                </Badge>
-              </div>
-              <p className="text-[13px] text-fg-muted">{tool.description || 'No description'}</p>
-              {tool.required_permissions && tool.required_permissions.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {tool.required_permissions.map((perm) => (
-                    <Badge key={perm} variant="neutral" size="sm">{perm}</Badge>
-                  ))}
+      {!isLoading && !failed && tools?.length > 0 && (
+        <ul className="mt-8 border-t border-line">
+          {tools.map((tool) => {
+            const inputs = Object.keys(tool.input_schema?.properties ?? {})
+            const required = new Set(tool.input_schema?.required ?? [])
+            return (
+              <li
+                key={tool.name}
+                className="grid grid-cols-1 gap-x-10 gap-y-4 border-b border-line py-6 lg:grid-cols-[minmax(0,1fr)_16rem]"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* The registry key was the heading. It is the name a
+                        person would say, set in the serif, with the key
+                        kept below where it is useful for writing a call. */}
+                    <h2 className="type-display text-[1.25rem] leading-snug text-fg">
+                      {toolLabel(tool.name)}
+                    </h2>
+                    <Badge variant={RISK_TONE[tool.risk_level] ?? 'neutral'} size="sm">
+                      {tool.risk_level} risk
+                    </Badge>
+                  </div>
+                  <p className="measure mt-1.5 text-[14px] leading-relaxed text-fg-subtle">
+                    {tool.description || 'No description.'}
+                  </p>
+                  <p className="type-data mt-2 text-fg-muted">
+                    {tool.name} · v{tool.version}
+                  </p>
                 </div>
-              )}
-              <div className="text-xs text-fg-muted">v{tool.version}</div>
-              <div className="mt-auto pt-2">
-                {canExecute && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setExecuteTarget(tool)}
-                  >
-                    <Play className="size-3.5" />
-                    Execute
-                  </Button>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
+
+                <div className="flex flex-col items-start gap-4 lg:items-end">
+                  {/* What the tool needs, which is the thing a person
+                      actually has to know before running one. The
+                      `tool:execute` permission chip that used to sit here
+                      told them nothing they could act on — if they may not
+                      run it, the button is simply absent. */}
+                  {inputs.length > 0 && (
+                    <dl className="w-full lg:text-right">
+                      <dt className="type-label text-fg-muted">Takes</dt>
+                      <dd className="type-data mt-1 text-fg-subtle">
+                        {inputs
+                          .map((k) => (required.has(k) ? `${k}*` : k))
+                          .join(', ')}
+                      </dd>
+                    </dl>
+                  )}
+                  {canExecute && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setExecuteTarget(tool)}
+                    >
+                      <Play className="size-3.5" />
+                      Execute
+                    </Button>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )

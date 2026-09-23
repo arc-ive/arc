@@ -29,7 +29,7 @@ function NavItem({ to, label, icon: Icon, onNavigate }) {
           {Icon && <Icon
             className={cn(
               'size-4 shrink-0 transition-colors duration-150',
-              isActive ? 'text-indigo-400' : 'text-fg-muted group-hover:text-fg-muted',
+              isActive ? 'text-accent' : 'text-fg-muted group-hover:text-fg-muted',
             )}
           />}
           {label}
