@@ -19,11 +19,19 @@ from arc.domain.models import (
 
 
 class TestKnownCapabilities:
-    def test_exactly_four_capabilities(self):
-        assert len(KNOWN_CAPABILITIES) == 4
+    def test_exactly_five_capabilities(self):
+        assert len(KNOWN_CAPABILITIES) == 5
 
     def test_expected_capability_ids(self):
-        expected = {"skill_execution", "tool_execution", "agent_execution", "connector_sync"}
+        expected = {
+            "skill_execution",
+            "tool_execution",
+            "agent_execution",
+            "connector_sync",
+            # ADR-013: the platform kill switch for anything that leaves
+            # the tenant boundary.
+            "external_action",
+        }
         assert KNOWN_CAPABILITIES == expected
 
     def test_frozen(self):

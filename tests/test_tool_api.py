@@ -102,6 +102,7 @@ class TestToolCatalog:
         assert {tool["name"] for tool in tools} == {
             "check_service_health",
             "grant_temporary_access",
+            "post_channel_message",
         }
         tool = next(t for t in tools if t["name"] == "check_service_health")
         assert tool["version"] == "1"

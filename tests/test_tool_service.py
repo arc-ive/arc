@@ -110,7 +110,11 @@ def _malformed_definition(required_permissions):
 async def test_list_tools_returns_platform_catalog(repositories, db):
     service, _, _ = await _build_service(repositories, db)
     tools = service.list_tools(_context("tenant-a"))
-    assert {tool.name for tool in tools} == {"check_service_health", "grant_temporary_access"}
+    assert {tool.name for tool in tools} == {
+        "check_service_health",
+        "grant_temporary_access",
+        "post_channel_message",
+    }
 
 
 async def test_check_service_health_executes_deterministically(repositories, db):
