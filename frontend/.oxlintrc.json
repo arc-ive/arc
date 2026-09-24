@@ -17,5 +17,13 @@
   "env": {
     "browser": true,
     "es2024": true
-  }
+  },
+  "overrides": [
+    {
+      "files": ["e2e/**/*.js", "playwright.config.js"],
+      "env": {
+        "node": true
+      }
+    }
+  ]
 }
