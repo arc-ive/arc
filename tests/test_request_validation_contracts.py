@@ -68,6 +68,52 @@ class TestMissingRequiredFieldsReturn422:
         response = client.put(f"/tenants/{tenant.id}", json={"name": ""}, headers=_auth(token))
         _assert_structured_422(response)
 
+    async def test_update_tenant_rejects_status(self, client, admin):
+        """A change the endpoint cannot make must fail, not report success.
+
+        status is deliberately not updatable. Before this, sending it
+        returned 200 with the status unchanged: the caller was told their
+        change succeeded when nothing happened, which is worse than a
+        refusal because there is no symptom to notice.
+        """
+        tenant, _, token = admin
+        response = client.put(
+            f"/tenants/{tenant.id}",
+            json={"status": "suspended"},
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_update_tenant_rejects_a_misspelled_field(self, client, admin):
+        """Same failure mode as issue #236 on tool execution: a typo that
+        silently does nothing is indistinguishable from a change that
+        worked."""
+        tenant, _, token = admin
+        response = client.put(
+            f"/tenants/{tenant.id}",
+            json={"nmae": "Typo Industries"},
+            headers=_auth(token),
+        )
+        _assert_structured_422(response)
+
+    async def test_update_tenant_still_accepts_every_declared_field(self, client, admin):
+        """Rejecting unknown keys must not reject the real contract."""
+        tenant, _, token = admin
+        response = client.put(
+            f"/tenants/{tenant.id}",
+            json={
+                "name": "Renamed Co",
+                "industry": "Logistics",
+                "address": "1 Example Way",
+                "phone": "+44 117 000 0000",
+                "website": "https://example.com",
+                "logo_url": "https://example.com/logo.png",
+            },
+            headers=_auth(token),
+        )
+        assert response.status_code == 200
+        assert response.json()["name"] == "Renamed Co"
+
 
 class TestResumeStepsReturn422:
     """R3: a malformed ``previous_steps`` entry produced an unhandled 500.
