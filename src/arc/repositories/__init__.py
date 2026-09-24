@@ -603,10 +603,20 @@ class ObservabilityRepository(Protocol):
     webhook events) which are never duplicated.
 
     Scope contract: ``tenant_id=None`` selects the PLATFORM view —
-    strictly tenant-agnostic operational totals; no method returns
-    per-tenant breakdowns or raw rows. Every tenant-scoped query
-    enforces ``tenant_id`` at the SQL level.
+    strictly tenant-agnostic operational totals, and no method returns
+    raw rows. Every tenant-scoped query enforces ``tenant_id`` at the SQL
+    level.
+
+    One deliberate exception (ADR-010):
+    ``api_request_summary_by_tenant`` returns a per-tenant breakdown of
+    request and error COUNTS, so a platform operator can tell which
+    customer an incident is affecting. It carries no tenant content —
+    no paths, payloads, user identifiers or business data.
     """
+
+    async def api_request_summary_by_tenant(self, hours: int) -> list:
+        """Per-tenant request and error counts for the window (ADR-010)."""
+        ...
 
     async def create_api_request_record(self, record: ApiRequestRecord) -> ApiRequestRecord:
         """Persist one HTTP telemetry record (metadata-only)."""

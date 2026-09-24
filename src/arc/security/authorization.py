@@ -52,9 +52,12 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
 - Observability permissions (PRD 17, TRD 17) follow the approved split:
   ``observability:read`` grants tenant-scoped usage summaries to
   PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and OPERATIONS_USER;
-  ``observability:platform_read`` grants the STRICTLY TENANT-AGNOSTIC
-  platform operational summary to PLATFORM_ADMINISTRATOR only. Platform
-  visibility never exposes per-tenant business data. EMPLOYEE has none.
+  ``observability:platform_read`` grants the tenant-agnostic platform
+  operational summary to PLATFORM_ADMINISTRATOR only, and (ADR-010) the
+  per-tenant breakdown of request and error COUNTS that makes an
+  incident attributable to a customer. Platform visibility still never
+  exposes tenant business data: no paths, payloads, prompts, documents
+  or user identifiers. EMPLOYEE has none.
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``,
   ``knowledge:update``, ``knowledge:delete``) exist for the Company Brain
   foundation: COMPANY_ADMINISTRATOR manages and reads company knowledge;
