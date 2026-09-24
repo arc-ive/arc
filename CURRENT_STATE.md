@@ -26,7 +26,7 @@ Repository Layer (Protocol-based, tenant-scoped SQL)
 Database Layer (PostgreSQL + pgvector)
 ```
 
-Key architectural decisions (ADR-001 through ADR-014) are documented in `docs/architecture/decisions/`. The architecture is framework-agnostic at the domain layer (ADR-001) with explicit boundaries for connectors, webhooks, AI tools, and unified intelligence. Recent decisions cover tenant-scoped membership administration (ADR-009), platform observability attribution (ADR-010), tenant suspension (ADR-011), self-scoped approval reads (ADR-012), and external actions through connectors (ADR-013).
+Key architectural decisions (ADR-001 through ADR-014) are documented in `docs/architecture/decisions/`. The architecture is framework-agnostic at the domain layer (ADR-001) with explicit boundaries for connectors, webhooks, AI tools, and unified intelligence. Recent decisions cover tenant-scoped membership administration (ADR-009), platform observability attribution (ADR-010), tenant suspension (ADR-011), self-scoped approval reads (ADR-012), external actions through connectors (ADR-013), and local OCR off by default (ADR-014).
 
 ---
 
@@ -260,7 +260,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 
 ## 4. API Surface
 
-65 production endpoints + 1 dev endpoint, by route-decorator census at the baseline commit (60 `@api_router` decorators in `controllers.py` — exactly 60 unique method+path combinations, including the HMAC webhook-ingest route — plus 5 `auth_router` routes in `auth_routes.py`, plus 1 `dev_router` route in `dev_controllers.py`, `APP_ENV=development` only).
+65 production endpoints + 4 dev-only endpoints, by route-decorator census at the baseline commit (60 `@api_router` decorators in `controllers.py` — exactly 60 unique method+path combinations, including the HMAC webhook-ingest route — plus 5 `auth_router` routes in `auth_routes.py`; plus 1 `dev_router` route in `dev_controllers.py` and 3 `dev_auth_router` routes in `dev_auth.py`, all under `/internal/dev` and mounted only when `APP_ENV=development`).
 
 | Category | Endpoints | Key Permissions |
 |----------|-----------|-----------------|
