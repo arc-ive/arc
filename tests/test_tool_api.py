@@ -247,6 +247,288 @@ class TestToolExecution:
         assert body["output"]["tenant_id"] == tenant.id
         assert {entry["status"] for entry in body["output"]["services"]} == {"healthy"}
 
+    async def test_approval_gated_tool_reports_approval_required_not_denial(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """A REQUIRE_HUMAN_APPROVAL tool is a controlled outcome, not a denial.
+
+        The service creates a pending approval and carries its id on
+        ToolDeniedError. The endpoint previously discarded that and
+        answered 403 "Tool execution is not permitted" — telling the
+        caller the opposite of what happened, with no id and no way to
+        find the request Arc had just filed in their name.
+
+        Controlled outcomes are structured 200 responses here, matching
+        POST /agent/runs and the skill execution endpoint.
+        """
+        tenant, user = await _seed_member(repositories)
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(token),
+            json={"input": {"justification": "Month-end close access"}},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "approval_required"
+        assert body["approval_id"]
+        assert body["output"] is None
+
+        # The id must actually resolve: an approval the caller cannot find
+        # is no better than the error this replaced.
+        approvals = client.get(
+            f"/tenants/{tenant.id}/approvals",
+            headers=_auth_headers(token),
+        )
+        assert approvals.status_code == 200
+        pending = {item["id"]: item for item in approvals.json()["items"]}
+        assert body["approval_id"] in pending
+        assert pending[body["approval_id"]]["status"] == "pending"
+        assert pending[body["approval_id"]]["tool_name"] == "grant_temporary_access"
+
+    async def test_successful_execution_reports_executed_status(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """The success path names its outcome too, so a client can branch on
+        one field instead of inferring from the absence of an error."""
+        tenant, user = await _seed_member(repositories)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        response = client.post(
+            f"/tenants/{tenant.id}/tools/check_service_health/execute",
+            headers=_auth_headers(token),
+            json={"input": {}},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "executed"
+
+    async def test_resume_recovers_the_approved_input_without_resending_it(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Issue #300: an approved call can be replayed with no arguments.
+
+        Approval is asynchronous. By the time a second person decides,
+        the requester's browser no longer holds the arguments, and
+        input_summary is deliberately redacted and truncated and so
+        cannot reconstruct them. The exact arguments are recovered from
+        encrypted storage and still checked against arguments_digest.
+        """
+        tenant, requester = await _seed_member(repositories)
+        approver = await _seed_user(repositories)
+        await _seed_membership(repositories, approver.id, tenant.id)
+        authorization_override(
+            {
+                requester.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                approver.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        raised = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"input": {"justification": "INC-1 needs billing access"}},
+        )
+        assert raised.status_code == 200
+        approval_id = raised.json()["approval_id"]
+
+        decided = client.post(
+            f"/tenants/{tenant.id}/approvals/{approval_id}/decisions",
+            headers=_auth_headers(make_token(approver.id)),
+            json={"decision": "approve"},
+        )
+        assert decided.status_code == 200
+
+        # No "input" key at all — the whole point of the issue.
+        resumed = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"approval_id": approval_id},
+        )
+
+        assert resumed.status_code == 200
+        body = resumed.json()
+        assert body["status"] == "executed"
+        # The recovered arguments are the EXACT ones that were approved.
+        assert body["output"]["justification"] == "INC-1 needs billing access"
+
+    async def test_resume_is_refused_before_a_decision(
+        self, client, repositories, make_token, authorization_override
+    ):
+        tenant, requester = await _seed_member(repositories)
+        authorization_override({requester.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(requester.id)
+
+        raised = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(token),
+            json={"input": {"justification": "not yet decided"}},
+        )
+        approval_id = raised.json()["approval_id"]
+
+        resumed = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(token),
+            json={"approval_id": approval_id},
+        )
+
+        assert resumed.status_code == 403
+
+    async def test_resume_is_refused_for_a_different_requester(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Deciding an action does not confer the right to perform it.
+
+        V2-ADR-012: approval is not authorization. The approver holds
+        approval:decide, not a licence to run the requester's call.
+        """
+        tenant, requester = await _seed_member(repositories)
+        approver = await _seed_user(repositories)
+        await _seed_membership(repositories, approver.id, tenant.id)
+        authorization_override(
+            {
+                requester.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                approver.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        raised = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"input": {"justification": "requester owns this call"}},
+        )
+        approval_id = raised.json()["approval_id"]
+        client.post(
+            f"/tenants/{tenant.id}/approvals/{approval_id}/decisions",
+            headers=_auth_headers(make_token(approver.id)),
+            json={"decision": "approve"},
+        )
+
+        hijacked = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(approver.id)),
+            json={"approval_id": approval_id},
+        )
+
+        assert hijacked.status_code == 403
+
+    async def test_resume_with_modified_arguments_is_refused(
+        self, client, repositories, make_token, authorization_override
+    ):
+        """Supplying arguments keeps the existing digest check.
+
+        Recovery is a convenience, never an authority: a caller who
+        sends arguments is bound by arguments_digest exactly as before.
+        """
+        tenant, requester = await _seed_member(repositories)
+        approver = await _seed_user(repositories)
+        await _seed_membership(repositories, approver.id, tenant.id)
+        authorization_override(
+            {
+                requester.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                approver.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        raised = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"input": {"justification": "the approved reason"}},
+        )
+        approval_id = raised.json()["approval_id"]
+        client.post(
+            f"/tenants/{tenant.id}/approvals/{approval_id}/decisions",
+            headers=_auth_headers(make_token(approver.id)),
+            json={"decision": "approve"},
+        )
+
+        tampered = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={
+                "input": {"justification": "something else entirely"},
+                "approval_id": approval_id,
+            },
+        )
+
+        assert tampered.status_code == 403
+
+    async def test_an_approval_cannot_be_resumed_twice(
+        self, client, repositories, make_token, authorization_override
+    ):
+        tenant, requester = await _seed_member(repositories)
+        approver = await _seed_user(repositories)
+        await _seed_membership(repositories, approver.id, tenant.id)
+        authorization_override(
+            {
+                requester.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                approver.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        raised = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"input": {"justification": "single use only"}},
+        )
+        approval_id = raised.json()["approval_id"]
+        client.post(
+            f"/tenants/{tenant.id}/approvals/{approval_id}/decisions",
+            headers=_auth_headers(make_token(approver.id)),
+            json={"decision": "approve"},
+        )
+
+        first = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"approval_id": approval_id},
+        )
+        assert first.status_code == 200
+
+        second = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"approval_id": approval_id},
+        )
+        assert second.status_code == 403
+
+    async def test_rejected_approval_cannot_be_resumed(
+        self, client, repositories, make_token, authorization_override
+    ):
+        tenant, requester = await _seed_member(repositories)
+        approver = await _seed_user(repositories)
+        await _seed_membership(repositories, approver.id, tenant.id)
+        authorization_override(
+            {
+                requester.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+                approver.id: ApplicationRole.COMPANY_ADMINISTRATOR,
+            }
+        )
+
+        raised = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"input": {"justification": "will be rejected"}},
+        )
+        approval_id = raised.json()["approval_id"]
+        client.post(
+            f"/tenants/{tenant.id}/approvals/{approval_id}/decisions",
+            headers=_auth_headers(make_token(approver.id)),
+            json={"decision": "reject"},
+        )
+
+        resumed = client.post(
+            f"/tenants/{tenant.id}/tools/grant_temporary_access/execute",
+            headers=_auth_headers(make_token(requester.id)),
+            json={"approval_id": approval_id},
+        )
+
+        assert resumed.status_code == 403
+
     async def test_unknown_envelope_field_is_rejected(
         self, client, repositories, make_token, authorization_override
     ):

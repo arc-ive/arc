@@ -21,6 +21,7 @@ Privileged and identity-sensitive development endpoints (membership
 provisioning) are isolated in ``arc.api.dev_controllers``.
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -104,6 +105,7 @@ from arc.security.dependencies import (
     require_permission,
     require_tenant_permission,
 )
+from arc.security.encryption import EncryptionService
 from arc.security.models import AuthenticatedPrincipal
 from arc.services.agent import AgentExecutionService
 from arc.services.approvals import (
@@ -529,6 +531,20 @@ async def list_platform_users(
     """
     params = PaginationParams.from_query(limit, offset)
     users, total = await user_service.list_all_users_paginated(params.limit, params.offset)
+
+    # Membership, in one query for the page. Without it the platform
+    # directory is a flat list of every person across every customer with
+    # nothing to organise it by, which is unreadable at any real scale.
+    #
+    # This is platform administration metadata, not tenant content:
+    # ADR-008 already allows a PLATFORM_ADMINISTRATOR to CREATE
+    # memberships for any user in any tenant, so reading which ones exist
+    # is strictly less privileged. Tenant content -- knowledge,
+    # approvals, skills -- stays unreachable from this plane.
+    memberships = await app_context.membership_service.memberships_by_user(
+        [user.id for user in users]
+    )
+
     return paginate(
         [
             {
@@ -536,6 +552,7 @@ async def list_platform_users(
                 "email": user.email,
                 "username": user.username,
                 "status": user.status,
+                "memberships": memberships.get(user.id, []),
                 "created_at": user.created_at.isoformat(),
                 "updated_at": user.updated_at.isoformat(),
             }
@@ -1627,11 +1644,57 @@ async def execute_tool(
     declared by the tool, otherwise execution is denied (403). Only
     platform-owned, code-defined tools are executable. Errors are generic
     and safe: no internal details are exposed.
+
+    Controlled outcomes are structured 200 responses carrying ``status``,
+    matching ``POST /agent/runs`` and the skill execution endpoint:
+
+    - ``executed`` — the handler ran; ``output`` carries its result.
+    - ``approval_required`` — the tool is gated by REQUIRE_HUMAN_APPROVAL.
+      Nothing ran; a pending approval was created and ``approval_id``
+      names it. Re-send the identical input with that ``approval_id``
+      once a second person has approved it.
+
+    A genuine denial (missing permission, DENY policy) remains a 403.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
     raw_input = body.input
     approval_id = body.approval_id
+
+    # Resume (issue #300). Approval is asynchronous: by the time a second
+    # person decides, the requester's browser no longer holds the
+    # arguments, and input_summary is deliberately redacted and truncated
+    # so it cannot reconstruct them. When a resume arrives with an
+    # approval and no arguments, the exact approved arguments are
+    # recovered from encrypted storage.
+    #
+    # This is a convenience, never an authority: the recovered arguments
+    # are still hashed and checked against the approval's
+    # arguments_digest by ToolExecutionService before anything executes,
+    # exactly as caller-supplied arguments are. A caller who DOES send
+    # arguments keeps the existing behaviour unchanged, including the
+    # digest mismatch that rejects modified arguments.
+    if approval_id is not None and not raw_input:
+        approval_service = app_context.human_approval_service
+        if approval_service is not None:
+            try:
+                ciphertext = await approval_service.approved_input_for_resume(context, approval_id)
+            except ApprovalError:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tool execution is not permitted",
+                )
+            if ciphertext is not None:
+                try:
+                    raw_input = json.loads(EncryptionService().decrypt(ciphertext))
+                except Exception:
+                    # Missing key, rotated key, tampered ciphertext,
+                    # unparseable payload. Fail closed and let the caller
+                    # re-send the arguments explicitly.
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Approved input could not be recovered; resend the input",
+                    )
 
     try:
         result = await tool_service.execute_tool(
@@ -1646,7 +1709,24 @@ async def execute_tool(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool not found")
     except ToolValidationError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tool input")
-    except ToolDeniedError:
+    except ToolDeniedError as exc:
+        # A REQUIRE_HUMAN_APPROVAL tool is not a denial: the service has
+        # already created a pending approval request and carries its id on
+        # the exception for exactly this purpose. Reporting it as 403
+        # "not permitted" told the caller the opposite of what happened —
+        # Arc had filed an approval in their name and they were shown an
+        # error, with no id and no way to find it.
+        #
+        # Controlled outcomes are structured 200 responses here, matching
+        # POST /agent/runs and the skill execution endpoint, which both
+        # already report approval_required that way.
+        if exc.approval_id is not None:
+            return {
+                "tool": name,
+                "status": "approval_required",
+                "approval_id": exc.approval_id,
+                "output": None,
+            }
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tool execution is not permitted",
@@ -1660,6 +1740,7 @@ async def execute_tool(
     return {
         "tool": result.tool_name,
         "version": result.tool_version,
+        "status": "executed",
         "output": result.output,
     }
 

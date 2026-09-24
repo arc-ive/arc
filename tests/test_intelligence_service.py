@@ -422,6 +422,23 @@ class TestNaturalCitationIntegration:
         assert answer.context_used is True
 
 
+def _budget_with_room(query: str, room: int) -> int:
+    """Budget that leaves exactly ``room`` characters for retrieved content.
+
+    Derived from the real system instruction rather than hardcoded. The
+    fixed overhead (system line + header + query) counts against the
+    context budget by design, so a literal like 300 silently encodes
+    whatever length the instruction happened to have when the test was
+    written — and the test then fails for a reason unrelated to
+    truncation the next time the instruction changes.
+    """
+    from arc.services.intelligence import UnifiedIntelligenceService
+
+    empty = type("_Empty", (), {"items": [], "request_id": "r", "retrieval_method": None})()
+    overhead = len(UnifiedIntelligenceService._build_prompt(empty, query, context_budget=10**6))
+    return overhead + room
+
+
 class TestContextBudget:
     """Prompt assembly is bounded by a character budget (#217)."""
 
@@ -517,7 +534,7 @@ class TestContextBudget:
         # Budget is large enough for first item + citation line of second,
         # but not the full 500-char content of the second item.
         prompt = UnifiedIntelligenceService._build_prompt(
-            approved, "test query", context_budget=300
+            approved, "test query", context_budget=_budget_with_room("test query", 120)
         )
 
         # First item fits fully
@@ -687,7 +704,7 @@ class TestContextBudgetPrecision:
         from arc.services.intelligence import UnifiedIntelligenceService
 
         approved = self._approved_two()
-        budget = 300
+        budget = _budget_with_room("q", 120)
         prompt = UnifiedIntelligenceService._build_prompt(approved, "q", context_budget=budget)
 
         assert "...[truncated]" in prompt
@@ -740,7 +757,9 @@ class TestContextBudgetPrecision:
             security_metadata=ApprovedContextSecurityMetadata(tenant_id="tenant-1"),
         )
         llm = RecordingLlm()
-        service = UnifiedIntelligenceService(FakeRetrieval(approved), llm, context_budget=300)
+        service = UnifiedIntelligenceService(
+            FakeRetrieval(approved), llm, context_budget=_budget_with_room("q", 120)
+        )
 
         answer = await service.answer_query(_context(), "budget question")
 

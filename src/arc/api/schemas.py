@@ -67,7 +67,17 @@ class TenantUpdateRequest(BaseModel):
     Every field is optional: an omitted key leaves the stored value untouched.
     ``status`` is deliberately absent — the endpoint has never allowed a client
     to change it, and a test asserts that.
+
+    Unknown fields are rejected, for the same reason issue #236 rejected
+    them on tool execution. Without this, ``{"status": "suspended"}``
+    returned 200 with the status unchanged: the caller was told their
+    change succeeded when nothing happened, which is worse than a refusal
+    because there is no symptom. A typo in a field name behaved the same
+    way. Deactivating a tenant is a real gap (issue #295); answering the
+    attempt with a silent success is a defect.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     name: Optional[str] = Field(default=None, min_length=1)
     industry: Optional[str] = None

@@ -48,6 +48,7 @@ Security invariants:
 """
 
 import json
+import logging
 import os
 import re
 import uuid
@@ -82,6 +83,8 @@ from arc.services.tools import (
 _OBSERVATION_MAX_CHARS = 1024
 
 _TRUNCATION_SUFFIX = "...[truncated]"
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_PROMPT_CONTEXT_MAX_CHARS = 8192
 
@@ -272,7 +275,9 @@ class UnifiedIntelligenceService:
         if self._tool_calling_enabled(principal, authorization):
             try:
                 raw_proposal = self.llm_provider.propose_tool(
-                    query, [item.content for item in approved.items]
+                    query,
+                    [item.content for item in approved.items],
+                    self._proposable_catalog(),
                 )
             except Exception:
                 await self._record_usage(
@@ -314,6 +319,29 @@ class UnifiedIntelligenceService:
             context_used=True,
             tool_executions=tool_executions,
         )
+
+    def _proposable_catalog(self) -> List[dict]:
+        """The tools the model may propose, from the platform registry.
+
+        Name, description and input schema only. Risk level, required
+        permissions and execution policy are authorization state and must
+        never reach a prompt (TRD 10.3): telling the model which tools are
+        gated invites it to reason about authorization, which is Arc's
+        job and not the model's. The model proposes; Arc decides.
+
+        Returns an empty catalogue when no tool service is wired, which
+        correctly makes nothing proposable.
+        """
+        if self.tool_service is None:
+            return []
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_model.model_json_schema(),
+            }
+            for tool in self.tool_service.registry.list()
+        ]
 
     async def _record_usage(
         self, context, agent_run_id, call_type, request_id=None, succeeded=True
@@ -439,10 +467,27 @@ class UnifiedIntelligenceService:
         """
         if context_budget is None:
             context_budget = get_intelligence_settings().prompt_context_max_chars
+        # The instruction has to cover the case where retrieval returns
+        # something and none of it answers the question. Hybrid retrieval
+        # always returns its top-k, so an off-corpus question ("what is
+        # our share price", "what is the capital of France") arrives here
+        # with a full context block of unrelated company documents. Told
+        # only to "answer using ONLY the approved context", a model
+        # stretches that context to fit rather than declining — which is
+        # exactly the hallucinated company fact Arc must never produce.
+        #
+        # So the refusal is named as a valid answer, and general knowledge
+        # is allowed only when it is labelled as not coming from the
+        # company's own records.
         system_line = (
             "You are Arc's Unified Intelligence. Answer using ONLY the "
             "approved context below. Cite the sources you used with the "
-            "[N] numbers shown in the approved context."
+            "[N] numbers shown in the approved context. "
+            "If the approved context does not contain the answer, say so "
+            "plainly and do not infer, estimate or invent a company fact. "
+            "You may add general knowledge only when it is useful and only "
+            "if you state clearly that it does not come from this "
+            "company's records."
         )
         header_line = "APPROVED CONTEXT:"
         query_line = f"QUERY: {query}"
@@ -450,6 +495,18 @@ class UnifiedIntelligenceService:
         # Fixed overhead: system instruction + header + query + newlines.
         fixed_overhead = len(system_line) + len(header_line) + len(query_line) + 4
         remaining_budget = max(0, context_budget - fixed_overhead)
+
+        # A budget smaller than the fixed overhead silently yields a prompt
+        # with NO retrieved content — the model is asked to answer from an
+        # approved context that is not there, and the only visible symptom
+        # is a bad answer. Say so instead.
+        if remaining_budget == 0 and approved.items:
+            logger.warning(
+                "prompt_context_budget_exhausted_by_overhead budget=%d overhead=%d items=%d",
+                context_budget,
+                fixed_overhead,
+                len(approved.items),
+            )
 
         lines: List[str] = [system_line, header_line]
         for index, item in enumerate(approved.items, start=1):

@@ -251,3 +251,103 @@ describe('PlatformUsersPage', () => {
     })
   })
 })
+
+describe('grouping by company (issue #296)', () => {
+  const ACME = { tenant_id: 't-acme', tenant_name: 'Acme Technologies', role: 'owner' }
+  const NOVA = { tenant_id: 't-nova', tenant_name: 'Nova Systems', role: 'member' }
+
+  const person = (id, email, memberships) => ({
+    id,
+    email,
+    username: null,
+    status: 'active',
+    memberships,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  })
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('groups people under the company they belong to', async () => {
+    // One flat list of every person across every customer is unreadable
+    // the moment there is more than one customer.
+    const { listPlatformUsers } = await import('../../api/endpoints/users.js')
+    listPlatformUsers.mockResolvedValue([
+      person('u1', 'a@acme.example', [ACME]),
+      person('u2', 'b@nova.example', [NOVA]),
+    ])
+
+    renderWithProviders(<PlatformUsersPage />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'Acme Technologies' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Nova Systems' }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a person in every company they belong to', async () => {
+    // Hiding the second membership would misrepresent their access.
+    const { listPlatformUsers } = await import('../../api/endpoints/users.js')
+    listPlatformUsers.mockResolvedValue([
+      person('u1', 'consultant@example.com', [ACME, NOVA]),
+    ])
+
+    renderWithProviders(<PlatformUsersPage />)
+
+    await screen.findByRole('heading', { name: 'Acme Technologies' })
+    expect(screen.getAllByText('consultant@example.com')).toHaveLength(2)
+  })
+
+  it('renders people who belong to no workspace', async () => {
+    // Regression: the no-workspace group was nested inside the company
+    // groups, so a platform holding users but no memberships -- a fresh
+    // deployment -- rendered an empty page.
+    const { listPlatformUsers } = await import('../../api/endpoints/users.js')
+    listPlatformUsers.mockResolvedValue([
+      person('u1', 'platform-admin@example.com', []),
+    ])
+
+    renderWithProviders(<PlatformUsersPage />)
+
+    expect(
+      await screen.findByRole('heading', { name: 'No workspace' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('platform-admin@example.com')).toBeInTheDocument()
+  })
+
+  it('filters by role without emptying the directory', async () => {
+    const { listPlatformUsers } = await import('../../api/endpoints/users.js')
+    listPlatformUsers.mockResolvedValue([
+      person('u1', 'owner@acme.example', [ACME]),
+      person('u2', 'member@nova.example', [NOVA]),
+    ])
+    const user = userEvent.setup()
+    renderWithProviders(<PlatformUsersPage />)
+
+    await screen.findByRole('heading', { name: 'Acme Technologies' })
+    await user.click(screen.getByRole('button', { name: 'Owners' }))
+
+    expect(screen.getByRole('heading', { name: 'Acme Technologies' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Nova Systems' })).not.toBeInTheDocument()
+  })
+
+  it('does not strand unaffiliated people under a role filter', async () => {
+    // A role filter asks "who holds this role"; someone with no
+    // membership holds none, so they belong in neither result.
+    const { listPlatformUsers } = await import('../../api/endpoints/users.js')
+    listPlatformUsers.mockResolvedValue([
+      person('u1', 'owner@acme.example', [ACME]),
+      person('u2', 'nobody@example.com', []),
+    ])
+    const user = userEvent.setup()
+    renderWithProviders(<PlatformUsersPage />)
+
+    await screen.findByRole('heading', { name: 'Acme Technologies' })
+    await user.click(screen.getByRole('button', { name: 'Owners' }))
+
+    expect(screen.queryByText('nobody@example.com')).not.toBeInTheDocument()
+  })
+})
+

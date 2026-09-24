@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { InlineError } from '../../components/ui/InlineError.jsx'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Play, CheckCircle } from 'lucide-react'
+import { Play, CheckCircle, ShieldAlert } from 'lucide-react'
 import { queryKeys } from '../../api/queryKeys.js'
 import { listTools, executeTool } from '../../api/endpoints/tools.js'
 import { useCapabilities } from '../../auth/capabilities.js'
@@ -18,6 +19,7 @@ import { STALLED_MESSAGE, isQueryFailed, isQueryLoading } from '../../api/queryS
 
 function ToolExecuteDialog({ tool, open, onClose }) {
   const { tenantId } = useTenant()
+  const { can } = useCapabilities()
   const [inputJson, setInputJson] = useState('{}')
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -84,7 +86,45 @@ function ToolExecuteDialog({ tool, open, onClose }) {
           </InlineError>
         )}
 
-        {result && (
+        {/* A tool gated by REQUIRE_HUMAN_APPROVAL has NOT run. Arc has
+            filed an approval request instead, and saying "Execution
+            successful" over a null output would be as wrong as the
+            "not permitted" error this replaced. Name the outcome and
+            point at the queue where it now waits. */}
+        {result?.status === 'approval_required' && (
+          <div className="mb-4 rounded-lg border border-warning/30 bg-warning/10 p-3.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <ShieldAlert className="size-4 text-warning" />
+              <span className="text-sm font-medium text-warning">
+                Waiting for approval
+              </span>
+            </div>
+            <p className="text-xs leading-relaxed text-fg-subtle">
+              This action is classified high risk, so it needs a second
+              person to approve it before it runs. Nothing has happened yet.
+            </p>
+            <p className="mt-2 text-xs text-fg-muted">
+              Request <span className="font-mono">{result.approval_id}</span>
+              {/* Raising an approval and reading the queue are different
+                  permissions: an operations user can request this action
+                  but cannot list approvals. Linking them to a page that
+                  will refuse them is a worse answer than not linking. */}
+              {can('approval:read') && (
+                <>
+                  {' · '}
+                  <Link
+                    to={`/app/t/${encodeURIComponent(tenantId)}/approvals`}
+                    className="rounded underline underline-offset-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+                  >
+                    Open approvals
+                  </Link>
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
+        {result && result.status !== 'approval_required' && (
           <div className="mb-4 rounded-lg border border-success/30 bg-success/10 p-3.5">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle className="size-4 text-success" />

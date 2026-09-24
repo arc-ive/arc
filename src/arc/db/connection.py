@@ -578,6 +578,47 @@ class ArcDatabase:
                 )
             return memberships
 
+    async def get_memberships_with_tenant_for_users(self, user_ids: list[str]) -> dict:
+        """Map each user id to their memberships, with tenant names.
+
+        One query for the whole page rather than one per user: the
+        platform directory renders every provisioned user, so a per-user
+        lookup is an N+1 that grows with the customer base.
+
+        Returns ``{user_id: [{tenant_id, tenant_name, role}, ...]}``.
+        Users with no membership are simply absent from the mapping.
+
+        Membership is platform administration metadata, not tenant
+        content. ADR-008 already allows a PLATFORM_ADMINISTRATOR to
+        CREATE memberships for any user in any tenant, so reading which
+        ones exist is strictly less privileged. Tenant content
+        (knowledge, approvals, skills) remains unreachable from the
+        platform plane.
+        """
+        if not user_ids:
+            return {}
+        async with self._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT m.user_id, m.tenant_id, m.role, t.name AS tenant_name
+                FROM memberships m
+                JOIN tenants t ON t.id = m.tenant_id
+                WHERE m.user_id = ANY($1::varchar[])
+                ORDER BY t.name ASC, m.user_id ASC
+                """,
+                user_ids,
+            )
+        grouped: dict = {}
+        for row in rows:
+            grouped.setdefault(row["user_id"], []).append(
+                {
+                    "tenant_id": row["tenant_id"],
+                    "tenant_name": row["tenant_name"],
+                    "role": row["role"],
+                }
+            )
+        return grouped
+
     async def get_memberships_for_tenant(
         self, tenant_id: str, limit: int = DEFAULT_LIST_LIMIT
     ) -> list[Membership]:

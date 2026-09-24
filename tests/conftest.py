@@ -1,5 +1,6 @@
 """Shared fixtures for X-11 authentication and authorization tests."""
 
+import base64
 import os
 import uuid
 from pathlib import Path
@@ -123,6 +124,15 @@ def _test_security_environment():
     os.environ["JWT_AUDIENCE"] = "arc-api"
     os.environ["JWT_EXPIRY_SECONDS"] = "3600"
     os.environ["APPLICATION_ROLE_ASSIGNMENTS"] = "{}"
+    # A fixed, non-secret key so encryption-at-rest paths are exercised
+    # rather than silently skipped. Without it EncryptionService cannot
+    # be constructed, connector credentials degrade to the ENV fallback,
+    # and an approved call's arguments are never stored — so the resume
+    # path (issue #300) would pass tests by not running at all.
+    os.environ.setdefault(
+        "CONNECTOR_ENCRYPTION_KEY",
+        base64.b64encode(b"arc-test-encryption-key-32bytes!").decode(),
+    )
     yield
 
 
