@@ -191,17 +191,25 @@ class TestApprovalsIsolation:
         tenant_a, token_a, tenant_b, token_b = await _two_tenants(
             client, repositories, make_token, authorization_override
         )
-        # Real pending approval in B via gated-tool denial (no handler runs).
-        denied = client.post(
+        # Real pending approval in B via the gated-tool path (no handler
+        # runs). A REQUIRE_HUMAN_APPROVAL gating is a controlled 200 with
+        # status approval_required, not a 403 denial.
+        gated = client.post(
             f"/tenants/{tenant_b.id}/tools/grant_temporary_access/execute",
             headers=_auth(token_b),
             json={"input": {"justification": "matrix probe"}},
         )
-        assert denied.status_code == 403
+        assert gated.status_code == 200
+        gated_body = gated.json()
+        assert gated_body["status"] == "approval_required"
+        tenant_b_approval_id = gated_body["approval_id"]
+        assert tenant_b_approval_id, "gated tool must return the pending approval id"
 
         listing = client.get(f"/tenants/{tenant_a.id}/approvals", headers=_auth(token_a))
         assert listing.status_code == 200
-        assert listing.json()["items"] == []
+        tenant_a_ids = [item["id"] for item in listing.json()["items"]]
+        assert tenant_b_approval_id not in tenant_a_ids
+        assert tenant_a_ids == []
 
 
 class TestAgentRunsIsolation:
