@@ -186,6 +186,27 @@ class MembershipService:
         """
         return await self.membership_repo.get_memberships_with_tenant_for_users(user_ids)
 
+    async def remove_preserving_last_owner(self, user_id: str, tenant_id: str) -> str:
+        """Remove a membership, never leaving the tenant without an owner.
+
+        Returns ``"removed"``, ``"not_found"`` or ``"last_owner"``.
+
+        Deliberately ONE call rather than a separate check and delete.
+        The earlier shape -- is_last_owner() followed by
+        remove_membership() -- was a time-of-check-to-time-of-use race
+        with a real bypass: two owners removing each other concurrently
+        each saw two owners, both deletes proceeded, and the tenant was
+        left with none. Blocking self-removal did not prevent it, because
+        neither admin removed themselves.
+
+        A workspace with no owner cannot be administered by anyone in it;
+        recovering one needs the platform operator. The guarantee is
+        enforced under a row lock in the repository (ADR-009).
+        """
+        return await self.membership_repo.remove_membership_preserving_last_owner(
+            user_id, tenant_id
+        )
+
     async def get_membership(self, user_id: str, tenant_id: str) -> Membership:
         """Get membership by user and tenant IDs."""
         return await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)

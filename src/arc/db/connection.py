@@ -578,6 +578,59 @@ class ArcDatabase:
                 )
             return memberships
 
+    async def remove_membership_preserving_last_owner(self, user_id: str, tenant_id: str) -> str:
+        """Remove a membership atomically, never leaving a tenant ownerless.
+
+        Returns ``"removed"``, ``"not_found"`` or ``"last_owner"``.
+
+        The check and the delete must happen inside ONE transaction
+        holding locks, because doing them as two statements is a
+        time-of-check-to-time-of-use race with a real bypass: two owners
+        removing each other concurrently each observe two owners, both
+        deletes proceed, and the tenant is left with none. Blocking
+        self-removal does not help, because neither admin removes
+        themselves.
+
+        A conditional DELETE with a NOT-EXISTS guard is NOT sufficient
+        either. Under READ COMMITTED each transaction's subquery still
+        sees the other's not-yet-committed row, so both guards pass --
+        the classic write-skew anomaly.
+
+        ``SELECT ... FOR UPDATE`` over the tenant's membership rows is
+        what actually serialises them: the second transaction blocks on
+        the lock until the first commits, then re-reads and sees a single
+        owner remaining.
+
+        Locking every membership row of one tenant is acceptable: the set
+        is bounded by a single customer's headcount, and the lock is held
+        only for the length of this statement pair. It also removes the
+        1000-row list limit the previous check inherited.
+        """
+        async with self.transaction() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, role
+                FROM memberships
+                WHERE tenant_id = $1
+                FOR UPDATE
+                """,
+                tenant_id,
+            )
+
+            if not any(row["user_id"] == user_id for row in rows):
+                return "not_found"
+
+            owners = [row["user_id"] for row in rows if row["role"] == UserRole.OWNER.value]
+            if owners == [user_id]:
+                return "last_owner"
+
+            await conn.execute(
+                "DELETE FROM memberships WHERE tenant_id = $1 AND user_id = $2",
+                tenant_id,
+                user_id,
+            )
+            return "removed"
+
     async def get_memberships_with_tenant_for_users(self, user_ids: list[str]) -> dict:
         """Map each user id to their memberships, with tenant names.
 
