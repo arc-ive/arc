@@ -110,10 +110,12 @@ from arc.security.authorization import (
     AuthorizationService,
 )
 from arc.security.dependencies import (
+    TenantReadScope,
     get_authenticated_principal,
     get_authorization_service,
     require_permission,
     require_tenant_permission,
+    require_tenant_permission_or_self,
 )
 from arc.security.encryption import EncryptionService
 from arc.security.models import AuthenticatedPrincipal
@@ -2666,21 +2668,29 @@ async def list_approval_requests(
     status_filter: Optional[ApprovalStatus] = Query(default=None, alias="status"),
     limit: Optional[int] = Query(default=None),
     offset: Optional[int] = Query(default=None),
-    context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
+    scope: TenantReadScope = Depends(require_tenant_permission_or_self(APPROVAL_READ)),
     human_approval_service: HumanApprovalService = Depends(
         lambda: app_context.human_approval_service
     ),
 ) -> Dict[str, Any]:
     """List Human Intervention approval requests for the trusted tenant.
 
-    Requires ``approval:read`` and path-consistent tenant scope. Expired
-    pending rows are reported as ``expired`` (lazy derivation). Responses
-    contain redacted summaries only -- never raw tool arguments.
+    Requires path-consistent tenant scope. ``approval:read`` grants the
+    tenant-wide listing; a caller without it sees ONLY the requests they
+    themselves raised (ADR-012), narrowed in SQL so both the page and
+    ``total`` are scoped. Expired pending rows are reported as ``expired``
+    (lazy derivation). Responses contain redacted summaries only -- never
+    raw tool arguments.
     """
+    context = scope.context
     params = PaginationParams.from_query(limit, offset)
     try:
         approvals, total = await human_approval_service.list_requests_paginated(
-            context, params.limit, params.offset, status_filter
+            context,
+            params.limit,
+            params.offset,
+            status_filter,
+            requester_user_id=scope.restrict_to_user_id,
         )
     except ApprovalCorruptError:
         logger.exception(
@@ -2700,14 +2710,23 @@ async def list_approval_requests(
 async def get_approval_request(
     tenant_id: str,
     approval_id: str,
-    context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
+    scope: TenantReadScope = Depends(require_tenant_permission_or_self(APPROVAL_READ)),
     human_approval_service: HumanApprovalService = Depends(
         lambda: app_context.human_approval_service
     ),
 ) -> Dict[str, Any]:
-    """Read one approval request within the trusted tenant."""
+    """Read one approval request within the trusted tenant.
+
+    ``approval:read`` reads any request in the tenant; a caller without it
+    reads only their own (ADR-012) and receives 404 for anyone else's --
+    the same answer as a row that does not exist, so an unreadable scope
+    never confirms the approval is there.
+    """
+    context = scope.context
     try:
-        approval = await human_approval_service.get_request(context, approval_id)
+        approval = await human_approval_service.get_request(
+            context, approval_id, requester_user_id=scope.restrict_to_user_id
+        )
     except ApprovalNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found"

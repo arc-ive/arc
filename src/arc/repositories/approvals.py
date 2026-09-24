@@ -172,25 +172,47 @@ class PostgreSQLApprovalRequestRepository:
             )
         return [self._from_row(row) for row in rows]
 
-    async def list_for_tenant_paginated(self, tenant_id: str, limit: int, offset: int) -> tuple:
-        """List approval requests with LIMIT/OFFSET and total count."""
+    async def list_for_tenant_paginated(
+        self,
+        tenant_id: str,
+        limit: int,
+        offset: int,
+        requester_user_id: Optional[str] = None,
+    ) -> tuple:
+        """List approval requests with LIMIT/OFFSET and total count.
+
+        ``requester_user_id`` narrows the result to rows that user
+        created (ADR-012: a requester may always read their own
+        requests). The predicate is applied to the COUNT as well as the
+        SELECT, so a self-scoped caller's ``total`` counts only their own
+        rows and never reveals how much approval traffic the tenant has.
+        Narrowing here rather than in the caller is deliberate: there is
+        no code path that fetches unscoped rows for a scoped caller.
+        """
+        requester_predicate = "AND requester_user_id = $2" if requester_user_id else ""
+        count_args = [tenant_id] + ([requester_user_id] if requester_user_id else [])
+        page_args = count_args + [limit, offset]
+        limit_placeholder = len(count_args) + 1
+        offset_placeholder = len(count_args) + 2
         async with self.db._connection_pool.acquire() as conn:
             count_row = await conn.fetchrow(
-                "SELECT COUNT(*) AS cnt FROM approval_requests WHERE tenant_id = $1",
-                tenant_id,
+                f"""
+                SELECT COUNT(*) AS cnt
+                FROM approval_requests
+                WHERE tenant_id = $1 {requester_predicate}
+                """,
+                *count_args,
             )
             total = count_row["cnt"]
             rows = await conn.fetch(
                 f"""
                 SELECT {_COLUMNS}
                 FROM approval_requests
-                WHERE tenant_id = $1
+                WHERE tenant_id = $1 {requester_predicate}
                 ORDER BY created_at DESC, id ASC
-                LIMIT $2 OFFSET $3
+                LIMIT ${limit_placeholder} OFFSET ${offset_placeholder}
                 """,
-                tenant_id,
-                limit,
-                offset,
+                *page_args,
             )
         items = [self._from_row(row) for row in rows]
         return items, total

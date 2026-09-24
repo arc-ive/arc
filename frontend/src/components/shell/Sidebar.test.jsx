@@ -131,9 +131,17 @@ describe('Sidebar permission-derived navigation', () => {
   describe('employee role', () => {
     it('offers exactly the surfaces its two permissions cover', () => {
       renderSidebar('employee')
-      // knowledge:read -> Ask Arc + Company Brain; agent:execute -> Agents.
-      // Home is the landing page for a member without tenant:read.
-      expect(workspaceRoutes()).toEqual(['home', 'ask', 'knowledge', 'agents'])
+      // knowledge:read -> Ask Arc + Company Brain; agent:execute -> Agents
+      // and, since an agent run can raise an approval, the employee's own
+      // Approvals (ADR-012). Home is the landing page for a member
+      // without tenant:read.
+      expect(workspaceRoutes()).toEqual([
+        'home',
+        'ask',
+        'knowledge',
+        'agents',
+        'approvals',
+      ])
     })
 
     it('now reaches Company Brain, which it holds knowledge:read for', () => {
@@ -145,10 +153,19 @@ describe('Sidebar permission-derived navigation', () => {
 
     it('does not show surfaces it has no permission for', () => {
       renderSidebar('employee')
-      const hidden = ['Overview', 'Skills', 'Tools', 'Connectors', 'Webhooks', 'Settings', 'Approvals', 'Usage']
+      const hidden = ['Overview', 'Skills', 'Tools', 'Connectors', 'Webhooks', 'Settings', 'Usage']
       for (const label of hidden) {
         expect(screen.queryByText(label)).not.toBeInTheDocument()
       }
+    })
+
+    it('shows Approvals — agent:execute can raise one (ADR-012)', () => {
+      // An employee reaches tools through Agent (V2-ADR-005), so an
+      // employee can be a requester. The page shows them their own
+      // requests and is where an approved one is spent, so hiding the
+      // link would strand the approval.
+      renderSidebar('employee')
+      expect(screen.getByText('Approvals')).toBeInTheDocument()
     })
 
     it('does not show the Personal or Platform sections', () => {
@@ -166,7 +183,7 @@ describe('Sidebar permission-derived navigation', () => {
       // rather than Webhooks, Workspace rather than Overview.
       const shown = ['Ask Arc', 'Company Brain', 'Knowledge', 'Sources',
                      'AI Workflows', 'Skills', 'Agents',
-                     'Operations', 'Webhooks', 'Usage',
+                     'Operations', 'Approvals', 'Webhooks', 'Usage',
                      'Administration', 'People', 'Workspace']
       for (const label of shown) {
         expect(screen.getByText(label)).toBeInTheDocument()
@@ -180,9 +197,12 @@ describe('Sidebar permission-derived navigation', () => {
       }
     })
 
-    it('does not show Approvals — it lacks approval:read', () => {
+    it('shows Approvals even though it lacks approval:read (ADR-012)', () => {
+      // This is the role the ADR is about: tool:execute without
+      // approval:read is exactly what raises a request nobody could then
+      // see. It reads only its own requests, and decides none.
       renderSidebar('operations_user')
-      expect(screen.queryByText('Approvals')).not.toBeInTheDocument()
+      expect(screen.getByText('Approvals')).toBeInTheDocument()
     })
 
     it('does not show Settings — it lacks tenant:update', () => {

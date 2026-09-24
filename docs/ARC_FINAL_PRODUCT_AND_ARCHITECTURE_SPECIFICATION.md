@@ -332,6 +332,7 @@ observability:read, observability:platform_read
 | `webhook:read` | YES | YES | YES | NO |
 | `agent:execute` | YES | YES | YES | NO |
 | `approval:read` | YES | YES | NO | NO |
+| *(read own requests — ADR-012)* | YES | YES | YES | YES |
 | `approval:decide` | YES | YES | NO | NO |
 | `observability:read` | YES | YES | YES | NO |
 | `observability:platform_read` | YES | NO | NO | NO |
@@ -966,8 +967,8 @@ class ApprovalStatus(str, Enum):
 
 | Endpoint | Permission | Purpose |
 |---|---|---|
-| `GET /tenants/{tenant_id}/approvals` | `approval:read` | List requests with lazy expiry |
-| `GET /tenants/{tenant_id}/approvals/{id}` | `approval:read` | Read one request |
+| `GET /tenants/{tenant_id}/approvals` | `approval:read`, else self-scoped (ADR-012) | List requests with lazy expiry |
+| `GET /tenants/{tenant_id}/approvals/{id}` | `approval:read`, else own request only (ADR-012) | Read one request |
 | `POST /tenants/{tenant_id}/approvals/{id}/decisions` | `approval:decide` | Approve or reject |
 
 ### Unresolved Issues
@@ -1390,8 +1391,8 @@ Key domain objects include: `Tenant`, `User`, `Membership`, `ConnectorConfig`, `
 | `GET` | `/platform/observability/summary` | `observability:platform_read` | Platform summary |
 | `GET` | `/platform/users` | `user:read` | List all provisioned users (PLATFORM_ADMINISTRATOR only) |
 | `GET` | `/observability/health` | `observability:platform_read` | Component health |
-| `GET` | `/tenants/{tenant_id}/approvals` | `approval:read` | List approval requests (`status` query param optional) |
-| `GET` | `/tenants/{tenant_id}/approvals/{id}` | `approval:read` | Get approval request |
+| `GET` | `/tenants/{tenant_id}/approvals` | `approval:read`, else self-scoped (ADR-012) | List approval requests (`status` query param optional). Without `approval:read` the listing returns only the caller's own requests, narrowed in SQL |
+| `GET` | `/tenants/{tenant_id}/approvals/{id}` | `approval:read`, else own request only (ADR-012) | Get approval request. A self-scoped caller receives 404 for another user's request |
 | `POST` | `/tenants/{tenant_id}/approvals/{id}/decisions` | `approval:decide` | Approve/reject request |
 
 ### Missing Endpoint
