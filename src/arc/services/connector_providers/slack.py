@@ -204,16 +204,24 @@ def _parse_slack_message(message: Dict[str, Any], channel: str) -> ProviderRecor
         raise ProviderResponseError("Slack message is missing required fields")
     user = message.get("user")
     thread_ts = message.get("thread_ts")
-    return ProviderRecord(
-        source_id=f"slack-{channel}-{ts}",
-        title=f"Slack message in #{channel}",
-        content=f"Slack message in #{channel}:\n\n{text}".strip(),
-        author=user if isinstance(user, str) and user else None,
-        external_created_at=ts,
-        parent_source_id=(
-            f"slack-{channel}-{thread_ts}"
-            if isinstance(thread_ts, str) and thread_ts and thread_ts != ts
-            else None
-        ),
-        container_id=channel,
-    )
+    try:
+        return ProviderRecord(
+            source_id=f"slack-{channel}-{ts}",
+            title=f"Slack message in #{channel}",
+            content=f"Slack message in #{channel}:\n\n{text}".strip(),
+            author=user if isinstance(user, str) and user else None,
+            external_created_at=ts,
+            parent_source_id=(
+                f"slack-{channel}-{thread_ts}"
+                if isinstance(thread_ts, str) and thread_ts and thread_ts != ts
+                else None
+            ),
+            container_id=channel,
+        )
+    except ValueError as exc:
+        # Optional source metadata is untrusted provider data: an
+        # oversized author/timestamp must fail closed as a provider
+        # response error (caught by the sync boundary for audit), never
+        # escape as a raw ValueError past ProviderError handling into
+        # an uncontrolled 500.
+        raise ProviderResponseError(f"Slack message has invalid source metadata: {exc}") from exc

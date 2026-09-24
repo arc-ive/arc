@@ -74,8 +74,13 @@ class ProviderRecord:
     optional field has a named downstream consumer:
 
     - ``author``: citation attribution ("who said/wrote this") for Ask
-      Arc answers; travels with content through the PII Guard boundary
-      (never bypassed to preserve attribution).
+      Arc answers. Currently carried as connector metadata ONLY: it is
+      not embedded into ``content``, not persisted, and not consumed
+      downstream — so it does NOT currently traverse the PII Guard.
+      When the retrieval-integration issue persists or exposes author
+      metadata, that path must explicitly route the value through the
+      appropriate sanitization/PII boundary (including Presidio behavior
+      on handles, which is that issue's responsibility to verify).
     - ``external_created_at`` / ``external_updated_at``: provider-side
       timestamps as opaque strings (formats differ per provider, so no
       datetime parsing here); future recency display and incremental-sync

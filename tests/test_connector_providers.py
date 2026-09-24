@@ -938,6 +938,46 @@ class TestGitHubMetadataMapping:
         assert record.author is None
         assert record.external_created_at is None
 
+    async def test_oversized_author_fails_closed_as_provider_response_error(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 10,
+                        "title": "Big author",
+                        "body": "",
+                        "user": {"login": "x" * 256},
+                    }
+                ],
+            )
+
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(handler).fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+                "example/acme",
+            )
+
+    async def test_oversized_timestamp_fails_closed_as_provider_response_error(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 11,
+                        "title": "Big timestamp",
+                        "body": "",
+                        "created_at": "x" * 65,
+                    }
+                ],
+            )
+
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(handler).fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+                "example/acme",
+            )
+
 
 class TestSlackMetadataMapping:
     """Issue #326: Slack parser preserves already-fetched metadata."""
@@ -998,6 +1038,37 @@ class TestSlackMetadataMapping:
         )
         (record,) = result.records
         assert record.author is None
+
+    async def test_oversized_author_fails_closed_as_provider_response_error(self):
+        messages = [{"text": "Big author", "ts": "1700000004.000004", "user": "x" * 256}]
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(self._history_handler(messages)).fetch(
+                ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+                "general",
+            )
+
+    async def test_oversized_thread_parent_fails_closed_as_provider_response_error(self):
+        messages = [
+            {
+                "text": "Deep reply",
+                "ts": "1700000005.000005",
+                "user": "U0000001",
+                "thread_ts": "y" * 300,
+            }
+        ]
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(self._history_handler(messages)).fetch(
+                ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+                "general",
+            )
+
+    async def test_oversized_ts_fails_closed_as_provider_response_error(self):
+        messages = [{"text": "Big ts", "ts": "1" * 65}]
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(self._history_handler(messages)).fetch(
+                ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+                "general",
+            )
 
 
 class TestFakeMetadataParity:

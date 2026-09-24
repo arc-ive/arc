@@ -19,6 +19,7 @@ Security invariants under test:
 import uuid
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from arc.db.connection import NotFoundError
@@ -49,6 +50,7 @@ from arc.services.connector_providers.base import (
     ProviderTransportError,
 )
 from arc.services.connector_providers.fake import FakeGitHubProvider
+from arc.services.connector_providers.github import GitHubProviderAdapter
 from arc.services.connector_providers.registry import ProviderRegistry
 from arc.services.connector_providers.settings import ConnectorCredentialStore
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
@@ -622,6 +624,46 @@ class TestConnectorGrammarWiring:
         for call in knowledge_service.ingest_document.await_args_list:
             for key in ("provenance", "content", "external_id"):
                 assert "dev-token" not in call.kwargs[key]
+
+    async def test_malformed_source_metadata_is_a_controlled_sync_failure(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        """Oversized provider metadata must surface as ConnectorSyncError
+        with an audited failed record — never an uncontrolled ValueError."""
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 1,
+                        "title": "Big author",
+                        "body": "",
+                        "user": {"login": "x" * 256},
+                    }
+                ],
+            )
+
+        adapter = GitHubProviderAdapter(
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        )
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: adapter}),
+            credential_store=ConnectorCredentialStore(raw='{"tenant-1": {"github": "dev-token"}}'),
+            knowledge_service=knowledge_service,
+        )
+
+        with pytest.raises(ConnectorSyncError):
+            await service.sync(_context(), config.id)
+
+        assert knowledge_service.ingest_document.await_count == 0
+        record = sync_repo.create_record.await_args_list[0][0][0]
+        assert record.status is ConnectorSyncStatus.FAILED
+        assert record.error_kind == "invalid_provider_response"
 
 
 class TestConnectorSyncMetadataPersistence:

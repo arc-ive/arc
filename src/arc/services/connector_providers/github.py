@@ -118,18 +118,26 @@ def _parse_github_issues(payload: Any, container: str) -> List[ProviderRecord]:
             raise ProviderResponseError("GitHub issue is missing required fields")
         body_text = body.strip() if isinstance(body, str) else ""
         content = f"Issue #{number}: {title}\n\n{body_text}".strip()
-        records.append(
-            ProviderRecord(
-                source_id=f"github-issue-{number}",
-                title=title,
-                content=content,
-                url=str(html_url) if html_url else None,
-                author=_optional_str(_author_login(item.get("user"))),
-                external_created_at=_optional_str(item.get("created_at")),
-                external_updated_at=_optional_str(item.get("updated_at")),
-                container_id=container,
+        try:
+            records.append(
+                ProviderRecord(
+                    source_id=f"github-issue-{number}",
+                    title=title,
+                    content=content,
+                    url=str(html_url) if html_url else None,
+                    author=_optional_str(_author_login(item.get("user"))),
+                    external_created_at=_optional_str(item.get("created_at")),
+                    external_updated_at=_optional_str(item.get("updated_at")),
+                    container_id=container,
+                )
             )
-        )
+        except ValueError as exc:
+            # Optional source metadata is untrusted provider data: an
+            # oversized author/timestamp must fail closed as a provider
+            # response error (caught by the sync boundary for audit),
+            # never escape as a raw ValueError past ProviderError
+            # handling into an uncontrolled 500.
+            raise ProviderResponseError(f"GitHub issue has invalid source metadata: {exc}") from exc
     return records
 
 
