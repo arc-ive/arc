@@ -117,10 +117,15 @@ class FakeToolAuditRepository:
 class FakeToolService:
     """Scriptable stand-in for policy/failure boundaries."""
 
-    def __init__(self, result=None, error=None):
+    def __init__(self, result=None, error=None, registry=None):
         self.result = result or {"ok": True}
         self.error = error
         self.calls = []
+        # The real service exposes the platform registry, and the
+        # intelligence service reads it to tell the model which tools it
+        # may propose. A fake that omits it is an incomplete fake, not a
+        # reason to make production code defensive.
+        self.registry = registry if registry is not None else build_platform_tool_registry()
 
     async def execute_tool(self, context, principal, tool_name, raw_input, authorization):
         self.calls.append((context.tenant_id, principal.user_id, tool_name, dict(raw_input)))
