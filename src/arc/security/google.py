@@ -176,49 +176,18 @@ class GoogleOIDCService:
             raise GoogleAuthError("Invalid ID token") from e
 
     async def find_or_link_user(self, identity: GoogleIdentity) -> Optional[User]:
-        """Resolve a verified Google identity to an Arc user.
+        """Find an existing Arc user by Google identity.
 
-        Two paths, in order:
-
-        1. **Returning sign-in.** The durable ``(google, sub)`` pair is
-           already bound to a user — return it.
-        2. **First sign-in.** No binding exists yet, so the identity is
-           correlated to an already-provisioned Arc user by verified
-           email and the binding is created. Subsequent sign-ins take
-           path 1 and never consult email again.
-
-        Step 2 is what makes Google sign-in possible at all: nothing
-        else in Arc writes ``provider_subject``, so without it path 1 can
-        never match and every Google sign-in is refused.
-
-        Unknown identities are still NOT auto-provisioned. Correlation
-        only ever finds a user an administrator already created; it never
-        creates one.
-
-        Four conditions guard the binding, and each fails closed:
-
-        - Google must report the address verified. An unverified email is
-          an unproven claim, and binding on it would let anyone who can
-          assert an address take over the Arc user holding it.
-        - The Arc user must exist. No user, no sign-in.
-        - The Arc user must be active.
-        - The Arc user must not already carry a provider binding. A user
-          bound to one Google subject is never re-bound to a different
-          one by this path, so a second identity claiming the same
-          address cannot displace the first.
-
-        Email is a safe correlation key here because ``users.email`` is
-        UNIQUE, and it is used only to FIND the user — the durable
-        subject is what gets stored, and the address is never written
-        back from the provider (see ``link_user_provider``).
+        Does NOT auto-provision unknown identities. Returns None if
+        no matching user exists.
 
         Args:
             identity: The verified Google identity.
 
         Returns:
-            The Arc user, or None when any condition above fails.
+            The Arc user if found and active, None otherwise.
         """
-        # Path 1 — already bound.
+        # Look up by provider subject (durable identity)
         user = await self._db.get_user_by_provider("google", identity.sub)
 
         if user is not None:
@@ -231,55 +200,14 @@ class GoogleOIDCService:
                 return None
             return user
 
-        # Path 2 — first sign-in for a provisioned user.
-        if not identity.email_verified:
-            logger.warning(
-                "Refusing to link unverified Google email: sub=%s",
-                identity.sub,
-            )
-            return None
-
-        candidate = await self._db.get_user_by_email(identity.email)
-
-        if candidate is None:
-            # Unknown identity. Explicit admin provisioning is required.
-            logger.info(
-                "Unknown Google identity: sub=%s email=%s",
-                identity.sub,
-                identity.email,
-            )
-            return None
-
-        if candidate.status != "active":
-            logger.warning(
-                "Google identity %s maps to disabled user %s",
-                identity.sub,
-                candidate.id,
-            )
-            return None
-
-        if candidate.provider_subject is not None:
-            # Already bound to a different subject. Never re-bind.
-            logger.warning(
-                "Refusing to re-link user %s: already bound to provider %s",
-                candidate.id,
-                candidate.auth_provider,
-            )
-            return None
-
-        linked = await self._db.link_user_provider(
-            user_id=candidate.id,
-            auth_provider="google",
-            provider_subject=identity.sub,
-            display_name=identity.name,
-            avatar_url=identity.picture,
-        )
+        # No user found with this Google identity
+        # Do NOT auto-provision — require explicit admin provisioning
         logger.info(
-            "Linked Google identity to existing user: user=%s sub=%s",
-            linked.id,
+            "Unknown Google identity: sub=%s email=%s",
             identity.sub,
+            identity.email,
         )
-        return linked
+        return None
 
     def generate_state(self) -> str:
         """Generate a CSRF-prevention state token."""
