@@ -14,15 +14,30 @@ document the answer must be cited from.
 That makes retrieval objectively testable: an answer is correct only if
 it states the known fact *and* cites the document that contains it.
 
-## Format
+## Formats
 
-Markdown and plain text only, deliberately.
+Markdown is the **source of truth**. The PDF and Word files are
+generated from it by `demo/build_formats.py`, so the facts cannot drift:
+change a figure in the Markdown, regenerate, and every format agrees and
+`EXPECTED_ANSWERS.md` stays valid for all of them.
 
-Arc's ingestion path today accepts text (`POST
-/tenants/{id}/knowledge`). PDF, DOCX and image/OCR ingestion is issue
- #299 and is **not implemented**, so shipping PDFs here would be demo
-material that cannot actually be ingested. When #299 lands, the same
-documents should be added in those formats and this note removed.
+| File | Format | Exercises |
+|---|---|---|
+| `leave-policy.docx` | Word | Tables — entitlements live in them |
+| `product-catalogue.docx` | Word | Pricing tables |
+| `it-security-policy.pdf` | PDF | Multi-page prose with a text layer |
+| `benefits.pdf` | PDF | Prose and figures |
+
+Regenerate with:
+
+```bash
+python demo/build_formats.py
+```
+
+**Images are deliberately absent.** Arc refuses them, because OCR is not
+configured and storing an image would create a document with nothing
+readable in it. A fixture Arc cannot ingest would be demo material
+pretending to be a capability.
 
 ## Fictional company
 
@@ -33,9 +48,20 @@ load into the environment `scripts/dev_reset.py` already creates.
 ## Loading
 
 ```bash
+# The Markdown set, through the JSON create endpoint.
 python demo/load_knowledge.py --tenant ref-acme-technologies \
   --user ref-acme-technologies-company-admin
+
+# OR the PDF/Word set, through the upload endpoint, which exercises
+# extraction.
+python demo/load_knowledge.py --tenant ref-acme-technologies \
+  --user ref-acme-technologies-company-admin --formats
 ```
+
+**Load one set or the other, not both.** They carry the same facts, so
+loading both puts every answer in the corpus twice and splits retrieval
+between two copies of the same document — which makes ranking look worse
+than it is for a reason that has nothing to do with Arc.
 
 The loader goes through the real HTTP API with a real session, so it
 exercises authentication, tenant context, authorization, chunking,

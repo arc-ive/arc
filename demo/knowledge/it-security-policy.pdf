@@ -1,0 +1,63 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 2176 >>
+stream
+BT /F1 10 Tf 54 750 Td 13 TL
+(Acme Technologies ? IT and Security Policy) Tj T*
+(*Synthetic demo document. Version 5.0, effective 1 February 2026.*) Tj T*
+(Passwords and authentication) Tj T*
+(Passwords must be at least 14 characters. Acme does not enforce periodic rotation; passwords are changed) Tj T*
+(only on suspicion of compromise, in line with NCSC guidance.) Tj T*
+(Multi-factor authentication is mandatory for all staff on email, the VPN, the cloud consoles and the) Tj T*
+(client management platform. Hardware security keys are issued to everyone in Security Operations and to) Tj T*
+(all staff with production access.) Tj T*
+(Password reuse across Acme and personal accounts is prohibited. The company password manager is 1Vault,) Tj T*
+(licensed for every employee including personal-family use.) Tj T*
+(Devices) Tj T*
+(Company laptops are fully disk encrypted and enrolled in endpoint management before issue. Personal) Tj T*
+(devices may access email and chat but never client data or production systems.) Tj T*
+(A lost or stolen device must be reported to the Service Desk immediately, and in any case within 2 hours) Tj T*
+(of discovery.) Tj T*
+(Data classification) Tj T*
+(Class | Meaning | Handling) Tj T*
+(Public | Published material | No restriction) Tj T*
+(Internal | Default for company information | Acme staff only) Tj T*
+(Confidential | Client data, contracts, personal data | Named-access only, encrypted at rest) Tj T*
+(Restricted | Credentials, security findings, legal matters | Security team approval per access) Tj T*
+(Client data is Confidential by default.) Tj T*
+(Incident reporting) Tj T*
+(Suspected security incidents go to security@acme.example or the #security-incidents channel. Acme's) Tj T*
+(target is to acknowledge within 30 minutes and to have an incident lead assigned within 1 hour.) Tj T*
+(Staff who report an incident in good faith are never penalised, including when the incident was caused by) Tj T*
+(their own mistake.) Tj T*
+(Access reviews) Tj T*
+(Access to Confidential and Restricted systems is reviewed quarterly by the system owner. Leavers are) Tj T*
+(deprovisioned on their final working day, before 17:00.) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000002469 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+2539
+%%EOF

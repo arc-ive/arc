@@ -35,6 +35,17 @@ DOCUMENTS = [
     ("product-catalogue.md", "internal_knowledge", "Acme Technologies Service Catalogue"),
 ]
 
+# The same documents in the formats a customer actually sends, generated
+# from the Markdown by demo/build_formats.py. Loading these exercises
+# extraction -- a fact has to survive a real parser, not just a text file
+# Arc never had to parse.
+FILE_DOCUMENTS = [
+    ("leave-policy.docx", "policy"),
+    ("product-catalogue.docx", "internal_knowledge"),
+    ("it-security-policy.pdf", "policy"),
+    ("benefits.pdf", "policy"),
+]
+
 PACK = Path(__file__).parent / "knowledge"
 
 
@@ -43,6 +54,12 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--tenant", required=True)
     parser.add_argument("--user", required=True)
+    parser.add_argument(
+        "--formats",
+        action="store_true",
+        help="Load the PDF and Word renderings instead of the Markdown, "
+        "to exercise extraction.",
+    )
     args = parser.parse_args()
 
     jar = CookieJar()
@@ -68,6 +85,50 @@ def main() -> int:
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read().decode()
 
+    def post_file(path: str, file_path, source: str) -> tuple[int, str]:
+        """Upload one file as multipart/form-data.
+
+        Hand-built rather than pulled from a library: the loader has no
+        dependencies today, and one more just to assemble a multipart
+        body is a dependency the demo path then has to carry.
+        """
+        import uuid as _uuid
+
+        boundary = f"----arc{_uuid.uuid4().hex}"
+        parts: list[bytes] = []
+
+        def field(name: str, value: str) -> None:
+            parts.append(
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+                f"\r\n\r\n{value}\r\n".encode()
+            )
+
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+            f'filename="{file_path.name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n".encode()
+        )
+        parts.append(file_path.read_bytes())
+        parts.append(b"\r\n")
+        field("source", source)
+        parts.append(f"--{boundary}--\r\n".encode())
+        body = b"".join(parts)
+
+        request = urllib.request.Request(
+            f"{args.base_url}{path}",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        for cookie in jar:
+            if "csrf" in cookie.name.lower():
+                request.add_header("X-CSRF-Token", cookie.value)
+        try:
+            with opener.open(request, timeout=180) as response:
+                return response.status, response.read().decode()
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read().decode()
+
     status, _ = post("/internal/dev/auth/login", {"user_id": args.user})
     if status != 200:
         print(f"Sign-in failed as {args.user} (HTTP {status}).", file=sys.stderr)
@@ -76,6 +137,31 @@ def main() -> int:
     print(f"Signed in as {args.user}")
 
     loaded = 0
+
+    if args.formats:
+        for filename, source in FILE_DOCUMENTS:
+            path = PACK / filename
+            if not path.exists():
+                print(f"  missing  {filename} — run demo/build_formats.py", file=sys.stderr)
+                continue
+            status, body = post_file(
+                f"/tenants/{args.tenant}/knowledge/upload", path, source
+            )
+            if status in (200, 201):
+                loaded += 1
+                import json as _json
+
+                extraction = _json.loads(body).get("extraction", {})
+                print(
+                    f"  loaded   {filename} "
+                    f"({extraction.get('detected_format')}, "
+                    f"{extraction.get('extracted_characters')} chars)"
+                )
+            else:
+                print(f"  FAILED   {filename} (HTTP {status}) {body[:180]}", file=sys.stderr)
+        print(f"\n{loaded} of {len(FILE_DOCUMENTS)} files loaded into {args.tenant}.")
+        return 0 if loaded == len(FILE_DOCUMENTS) else 1
+
     for filename, source, provenance in DOCUMENTS:
         path = PACK / filename
         if not path.exists():
