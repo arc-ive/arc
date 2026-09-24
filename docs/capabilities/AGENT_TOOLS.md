@@ -60,7 +60,13 @@ prompt is not consulted when deciding what a caller may do.
 
 ## 3. What Arc can actually do externally today
 
-**Nothing.** This is the finding that governs everything below.
+**One thing, and it is gated.** Arc can post a message to a Slack
+channel the tenant has configured as a connector.
+
+This section previously read "**Nothing**", and that finding is what
+drove ADR-013. It is worth keeping the history visible: the gap was never
+a permissions gap or a configuration gap — the capability did not exist
+at any layer.
 
 ### The tool catalogue
 
@@ -68,64 +74,105 @@ prompt is not consulted when deciding what a caller may do.
 |---|---|---|---|
 | `check_service_health` | low | `ALLOW` | Simulated internal services |
 | `grant_temporary_access` | high | `REQUIRE_HUMAN_APPROVAL` | Internal only |
+| `post_channel_message` | high | `REQUIRE_HUMAN_APPROVAL` | **Slack, for real** |
 
-Two tools, neither of which touches an external system.
+### Connectors now have a write side
 
-### Connectors are read-only
-
-The `ProviderAdapter` contract has exactly one method:
+The read contract is unchanged:
 
 ```python
 async def fetch(credential, target, limit) -> ProviderFetchResult
 ```
 
-Slack, GitHub, Google Drive and Linear adapters implement `fetch` and
-nothing else. There is no `send`, `post`, `create`, `write` or `update`
-anywhere in the connector layer. Connectors bring data **into** the
-Company Brain; they cannot act on the outside world.
+Alongside it, a **separate** protocol declares the write side:
 
-### The consequence
-
-"Send an email", "file a ticket", "post to a channel" have **no path**
-in Arc today — not a permissions gap, not a configuration gap. The
-capability does not exist at any layer.
-
-### A second blocker, in the Agent's own prompt
-
-The tool-proposal prompt hardcodes the catalogue as an English string:
-
-```
-"Available tools: check_service_health (checks health of an external service)"
+```python
+async def act(credential, action) -> ProviderActionResult
 ```
 
-The prompt builder never receives the registry. `grant_temporary_access`
-is therefore **invisible to the proposal path** — the model cannot
-propose it because it is never told it exists. Every tool added to the
-registry stays dead to the Agent until someone edits that string.
+Separate rather than a second method on the same protocol, for two
+reasons. Read-only adapters are not forced to grow a method that exists
+only to raise; and "can this provider act?" is answerable by shape rather
+than by calling it and catching an error. Today only Slack implements it.
 
-Adding external tools without fixing this yields tools no Agent can
-ever choose.
+### Read and act are different credentials
 
-## 4. What building external actions would require
+`connector_credentials` is keyed by `(tenant, provider, scope)`. A token
+that can read a channel is not a token that can post to it — the scopes
+differ at Slack, and the blast radius differs at Arc: a leaked read
+credential exposes data, a leaked act credential speaks as the company.
 
-In dependency order:
+There is no ENV fallback for act credentials. The read path allows one for
+development convenience; a development convenience that posts to a real
+workspace is not a convenience.
 
-1. **Pass the registry into the prompt.** Until this is done, new tools
-   are unreachable. Smallest change, largest unblock.
-2. **Extend the adapter contract** with a write side — an `act()`
-   alongside `fetch()`, with its own schema and its own permission.
-   Read and write credentials should not be assumed interchangeable.
-3. **Define external tools in the platform registry** with input
-   schemas, required permissions, risk levels and execution policies.
-   Anything that leaves the tenant boundary is `REQUIRE_HUMAN_APPROVAL`
-   until there is evidence to relax it.
-4. **Native tool calling.** Tool selection is currently *"return EXACTLY
-   a JSON object"* followed by fence-stripping and parsing. Structured
-   tool calling and `response_format` are supported by the configured
-   provider and unused.
-5. **Idempotency.** `fetch` is safe to retry; `send_email` is not. The
-   bounded-retry logic in the LLM layer has no equivalent for actions,
-   and an action tool needs an idempotency key before retries are safe.
+### What still has no path
+
+Email and document workflows. Both need a provider Arc does not have,
+which means a new credential type and a new trust boundary — a decision
+of its own, not an extension of this one.
+
+### The prompt blocker, for the record
+
+The tool-proposal prompt used to hardcode the catalogue as an English
+string, so `grant_temporary_access` was invisible to the proposal path and
+any tool added to the registry stayed dead to the Agent. The prompt
+builder now receives the registry (name, description and input schema
+only — risk level, required permissions and execution policy are
+authorization state and never reach a prompt).
+
+## 4. What building external actions required
+
+In dependency order, as scoped before the work started. Items 1–3 and 5
+are done; item 4 is not.
+
+1. ~~**Pass the registry into the prompt.**~~ Done. Until it was, new
+   tools were unreachable — the smallest change and the largest unblock.
+2. ~~**Extend the adapter contract** with a write side.~~ Done:
+   `ProviderActionAdapter.act`, its own credential scope, its own
+   permission (`connector:act`).
+3. ~~**Define external tools in the platform registry.**~~ Done:
+   `post_channel_message`. Anything that leaves the tenant boundary is
+   `REQUIRE_HUMAN_APPROVAL`, and that is now enforced at ToolDefinition
+   construction rather than left to reviewer diligence.
+4. **Native tool calling.** Still outstanding. Tool selection is
+   *"return EXACTLY a JSON object"* followed by fence-stripping and
+   parsing. Structured tool calling and `response_format` are supported
+   by the configured provider and unused.
+5. ~~**Idempotency.**~~ Resolved without a second mechanism. `fetch` is
+   safe to retry and posting a message is not, so the **single-use
+   approval** is the guarantee: it is consumed atomically before the
+   handler runs, and the same approval cannot post twice. The cost is
+   deliberate — an action that fails after consumption leaves the
+   approval spent, so a failure can cost a re-request and can never cost
+   a duplicate message.
+
+## 4a. The five gates an action passes
+
+None of them is the model.
+
+| Gate | What it is | What it stops |
+|---|---|---|
+| Capability | `external_action` (V2-ADR-004) | A platform administrator switching off all outbound actions, per tenant or globally, without a deploy |
+| Permission | `connector:act`, declared by the tool | `tool:execute` alone; an employee via Agent; a webhook-triggered execution |
+| Approval | HIGH risk + `REQUIRE_HUMAN_APPROVAL`, bound to a digest of the validated arguments, single use | Acting without a named human decision; editing the message or the channel after approval; posting twice |
+| Destination | The target must match an ACTIVE connector the tenant configured, matched in SQL | A channel name proposed by a model — or by anything that reached the model's input — addressing a destination nobody set up |
+| Credential | Resolved at `CredentialScope.ACT` | Borrowing the read token to post |
+
+Measured, with the fake provider recording what would have been sent:
+
+| Attempt | Result | Posted |
+|---|---|---|
+| Attempt the action | 200 `approval_required` + approval id | nothing |
+| Approve it | 200 `approved` | nothing |
+| Requester spends it, sending no arguments | 200 `executed` + provider reference | the message, once |
+| Spend it again | refused | nothing further |
+| Resume with a different message | refused (digest mismatch) | nothing |
+| Resume with a different channel | refused (digest mismatch) | nothing |
+| `tool:execute` without `connector:act` | denied, `authorization_denied` | nothing |
+| Destination not configured | failed | nothing |
+| Read credential only | failed, `missing_act_credential` | nothing |
+| Capability disabled | failed, `capability_disabled` | nothing, and nothing decrypted |
 
 ## 5. Arcade — decision
 
@@ -155,16 +202,25 @@ behind that boundary — in which case it is an adapter, and Arc's own
 adapter contract is the cheaper shape — or beside it, which breaks the
 guarantee the whole design rests on.
 
-**Evidence before expansion.** Arc has two tools and no external action.
-The correct next step is one real external action end to end, through
-the existing architecture, with approval and audit. That proves or
-disproves the shape. Then reconsider a broker with evidence about which
-integrations are actually wanted.
+**Evidence before expansion.** When this was written Arc had two tools and
+no external action, and the correct next step was one real external action
+end to end, through the existing architecture, with approval and audit.
+
+That has now been done (ADR-013), and the shape held: every gate the
+action passes was machinery Arc already had. The recommendation therefore
+stands unchanged, but for a better reason than "we have not tried yet" —
+the adapter route works, so a broker would have to earn its extra trust
+boundary against a working alternative rather than against a gap.
+
+The open question is no longer architectural. It is which integrations
+customers actually want, and whether several are wanted at once — the
+first of the conditions below.
 
 ### What would change this
 
 Reconsider if: several integrations are needed at once and the adapter
-work becomes the bottleneck; per-user OAuth (rather than per-tenant
+work becomes the bottleneck (each provider is its own `act`
+implementation, and that cost recurs); per-user OAuth (rather than per-tenant
 credentials) becomes a requirement, which is genuinely hard and is what
 brokers are good at; or a compliance requirement makes a third-party
 broker's attestations preferable to Arc's own.
@@ -181,15 +237,24 @@ approval flow rather than the broker's.
 |---|---|
 | Tool permissions | Declared per tool; the caller must hold every one. `tool:execute` is not a master key. |
 | Approval | Per-tool execution policy; see `APPROVALS.md` |
-| Secrets | AES-256-GCM, key-versioned, one credential per `(tenant, provider)`, never returned by any API |
+| Secrets | AES-256-GCM, key-versioned, one credential per `(tenant, provider, scope)`, never returned by any API |
+| Act credentials | A separate row from the read credential, no ENV fallback, decrypted narrowly for one call (ADR-013) |
 | Secrets and the LLM | No credential is ever placed in a prompt; the model receives only ApprovedContext |
 | Audit | Every tool execution records tenant, principal, tool, version, risk, redacted input summary and outcome |
 
 ## 7. Summary
 
 Arc's Agent security model is sound and already implemented. What Arc
-lacks is not safety but **capability**: two internal tools, read-only
-connectors, and a proposal prompt that cannot see the registry.
+lacked was not safety but **capability**: two internal tools, read-only
+connectors, and a proposal prompt that could not see the registry.
 
-The first commit toward external actions is not an integration. It is
-passing the tool registry into the prompt.
+All three are addressed. Arc now has one real external action, and it
+reaches the outside world through five gates that all existed already —
+the capability ceiling, the RBAC matrix, the approval gate, the connector
+configuration and the credential encryption. Nothing new was invented to
+make it safe; the write side was built to fit what was already there.
+
+That is the evidence ADR-013 wanted before reconsidering a broker. The
+shape holds. The next question is not "is this safe" but "which
+integrations do customers actually want", and the conditions for
+revisiting the broker decision are in §5.

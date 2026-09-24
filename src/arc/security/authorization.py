@@ -139,6 +139,11 @@ CONNECTOR_CREATE = Permission(resource="connector", action="create")
 CONNECTOR_READ = Permission(resource="connector", action="read")
 CONNECTOR_SYNC = Permission(resource="connector", action="sync")
 CONNECTOR_MANAGE_CREDENTIALS = Permission(resource="connector", action="manage_credentials")
+#: Take an action on the outside world through a connector (ADR-013).
+#: Deliberately separate from CONNECTOR_SYNC: reading a channel and
+#: speaking in it are different powers, and holding the read one has
+#: never implied the write one.
+CONNECTOR_ACT = Permission(resource="connector", action="act")
 WEBHOOK_READ = Permission(resource="webhook", action="read")
 WEBHOOK_PROCESS = Permission(resource="webhook", action="process")
 OBSERVABILITY_READ = Permission(resource="observability", action="read")
@@ -177,6 +182,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_READ,
             CONNECTOR_SYNC,
             CONNECTOR_MANAGE_CREDENTIALS,
+            CONNECTOR_ACT,
             WEBHOOK_READ,
             WEBHOOK_PROCESS,
             OBSERVABILITY_READ,
@@ -208,6 +214,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             CONNECTOR_READ,
             CONNECTOR_SYNC,
             CONNECTOR_MANAGE_CREDENTIALS,
+            CONNECTOR_ACT,
             WEBHOOK_READ,
             WEBHOOK_PROCESS,
             OBSERVABILITY_READ,
@@ -226,6 +233,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TOOL_EXECUTE,
             CONNECTOR_READ,
             CONNECTOR_SYNC,
+            CONNECTOR_ACT,
             WEBHOOK_READ,
             WEBHOOK_PROCESS,
             OBSERVABILITY_READ,

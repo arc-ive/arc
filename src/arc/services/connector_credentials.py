@@ -9,6 +9,11 @@ Provides tenant-scoped CRUD for connector credentials with:
 
 The service owns the narrowest possible execution scope for plaintext:
 decrypt internally, pass to provider, discard immediately.
+
+Every operation names a ``CredentialScope`` (ADR-013). ``READ`` is the
+default so the sync path is unchanged; ``ACT`` addresses the separate
+credential an external action uses. The two are distinct rows, and a
+caller asking for one never receives the other.
 """
 
 import logging
@@ -21,6 +26,7 @@ from arc.domain.models import (
     ConnectorCredential,
     ConnectorCredentialAudit,
     ConnectorProvider,
+    CredentialScope,
     TenantContext,
 )
 from arc.repositories import ConnectorCredentialRepository
@@ -54,15 +60,21 @@ class ConnectorCredentialService:
         context: TenantContext,
         provider: ConnectorProvider,
         plaintext_credential: str,
+        scope: CredentialScope = CredentialScope.READ,
     ) -> dict:
-        """Create or replace a connector credential for a tenant/provider.
+        """Create a connector credential for a tenant/provider/scope.
 
         Returns safe metadata only (never the plaintext or encrypted credential).
+        A read credential and an act credential for the same provider are
+        separate rows; creating one never replaces the other (ADR-013).
         """
-        existing = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
+        existing = await self._repo.get_by_tenant_and_provider(
+            context.tenant_id, provider.value, scope.value
+        )
         if existing is not None:
             raise ConnectorCredentialError(
-                f"Credential already exists for provider {provider.value}. Use rotate to update."
+                f"Credential already exists for provider {provider.value} "
+                f"({scope.value}). Use rotate to update."
             )
 
         encrypted, key_version = self._encryption.encrypt(plaintext_credential)
@@ -74,12 +86,14 @@ class ConnectorCredentialService:
             encrypted_credential=encrypted,
             key_version=key_version,
             created_at=datetime.now(timezone.utc),
+            scope=scope,
         )
         try:
             await self._repo.create(credential)
         except DuplicateKeyError:
             raise ConnectorCredentialError(
-                f"Credential already exists for provider {provider.value}. Use rotate to update."
+                f"Credential already exists for provider {provider.value} "
+                f"({scope.value}). Use rotate to update."
             )
 
         await self._record_audit(
@@ -88,6 +102,7 @@ class ConnectorCredentialService:
             "create",
             context.user_id,
             key_version,
+            scope,
         )
 
         logger.info(
@@ -103,16 +118,20 @@ class ConnectorCredentialService:
         context: TenantContext,
         provider: ConnectorProvider,
         new_plaintext: str,
+        scope: CredentialScope = CredentialScope.READ,
     ) -> dict:
-        """Rotate an existing connector credential.
+        """Rotate an existing connector credential for one scope.
 
         Decrypts with existing key version, encrypts with current key version,
         and updates the stored credential. Returns safe metadata only.
         """
-        existing = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
+        existing = await self._repo.get_by_tenant_and_provider(
+            context.tenant_id, provider.value, scope.value
+        )
         if existing is None:
             raise ConnectorCredentialError(
-                f"No credential found for provider {provider.value}. Use create to add one."
+                f"No credential found for provider {provider.value} "
+                f"({scope.value}). Use create to add one."
             )
 
         encrypted, key_version = self._encryption.encrypt(new_plaintext)
@@ -125,6 +144,7 @@ class ConnectorCredentialService:
             key_version=key_version,
             created_at=existing.created_at,
             rotated_at=datetime.now(timezone.utc),
+            scope=scope,
         )
         await self._repo.update(credential)
 
@@ -134,6 +154,7 @@ class ConnectorCredentialService:
             "rotate",
             context.user_id,
             key_version,
+            scope,
         )
 
         logger.info(
@@ -148,13 +169,18 @@ class ConnectorCredentialService:
         self,
         context: TenantContext,
         provider: ConnectorProvider,
+        scope: CredentialScope = CredentialScope.READ,
     ) -> None:
-        """Delete a connector credential for a tenant/provider."""
-        existing = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
+        """Delete a connector credential for a tenant/provider/scope."""
+        existing = await self._repo.get_by_tenant_and_provider(
+            context.tenant_id, provider.value, scope.value
+        )
         if existing is None:
-            raise ConnectorCredentialError(f"No credential found for provider {provider.value}")
+            raise ConnectorCredentialError(
+                f"No credential found for provider {provider.value} ({scope.value})"
+            )
 
-        await self._repo.delete(context.tenant_id, provider.value)
+        await self._repo.delete(context.tenant_id, provider.value, scope.value)
 
         await self._record_audit(
             context.tenant_id,
@@ -162,6 +188,7 @@ class ConnectorCredentialService:
             "delete",
             context.user_id,
             existing.key_version,
+            scope,
         )
 
         logger.info(
@@ -174,9 +201,12 @@ class ConnectorCredentialService:
         self,
         context: TenantContext,
         provider: ConnectorProvider,
+        scope: CredentialScope = CredentialScope.READ,
     ) -> Optional[dict]:
         """Return safe metadata for a credential (never the secret)."""
-        credential = await self._repo.get_by_tenant_and_provider(context.tenant_id, provider.value)
+        credential = await self._repo.get_by_tenant_and_provider(
+            context.tenant_id, provider.value, scope.value
+        )
         if credential is None:
             return None
         return self._safe_metadata(credential)
@@ -185,17 +215,26 @@ class ConnectorCredentialService:
         self,
         tenant_id: str,
         provider: ConnectorProvider,
+        scope: CredentialScope = CredentialScope.READ,
     ) -> Optional[str]:
         """Resolve the plaintext credential for connector execution.
 
         This is the narrow internal resolution mechanism: decrypt
-        in-memory, return to caller, caller discards after use.
-        Used only by ConnectorSyncService; never exposed through APIs.
+        in-memory, return to caller, caller discards after use. Used by
+        ConnectorSyncService for ``READ`` and by ExternalActionService for
+        ``ACT``; never exposed through APIs.
+
+        A missing credential for the requested scope resolves to None even
+        when the other scope is configured. That is the point: an act with
+        no act credential must fail, not quietly borrow the read token.
         """
-        credential = await self._repo.get_by_tenant_and_provider(tenant_id, provider.value)
+        credential = await self._repo.get_by_tenant_and_provider(
+            tenant_id, provider.value, scope.value
+        )
         if credential is None:
             logger.debug(
-                "No credential configured for tenant=%s provider=%s",
+                "No %s credential configured for tenant=%s provider=%s",
+                scope.value,
                 tenant_id,
                 provider.value,
             )
@@ -246,6 +285,7 @@ class ConnectorCredentialService:
         operation: str,
         actor_user_id: str,
         key_version: int,
+        scope: CredentialScope = CredentialScope.READ,
     ) -> None:
         """Record a credential lifecycle audit event."""
         audit = ConnectorCredentialAudit(
@@ -256,6 +296,7 @@ class ConnectorCredentialService:
             actor_user_id=actor_user_id,
             key_version=key_version,
             created_at=datetime.now(timezone.utc),
+            scope=scope,
         )
         await self._repo.create_audit(audit)
 
@@ -269,4 +310,5 @@ class ConnectorCredentialService:
             "key_version": credential.key_version,
             "created_at": credential.created_at.isoformat(),
             "rotated_at": credential.rotated_at.isoformat() if credential.rotated_at else None,
+            "scope": credential.scope.value,
         }

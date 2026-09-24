@@ -48,12 +48,18 @@ substitutes for holding the permission.
 Approval is a property of the **tool**, declared in the platform
 registry — never inferred from risk level, and never decided by the LLM.
 
-Today the platform catalogue holds two tools:
+Today the platform catalogue holds three tools:
 
-| Tool | Risk | Policy |
-|---|---|---|
-| `check_service_health` | low | `ALLOW` |
-| `grant_temporary_access` | high | `REQUIRE_HUMAN_APPROVAL` |
+| Tool | Risk | Policy | Reaches |
+|---|---|---|---|
+| `check_service_health` | low | `ALLOW` | internal, simulated |
+| `grant_temporary_access` | high | `REQUIRE_HUMAN_APPROVAL` | internal |
+| `post_channel_message` | high | `REQUIRE_HUMAN_APPROVAL` | Slack, for real |
+
+`post_channel_message` (ADR-013) is the first tool for which an approval
+authorises something a customer cannot undo by deleting a row. Its gate is
+not a different mechanism — it is this one, with real stakes. See
+`AGENT_TOOLS.md` §4a for the other four gates an external action passes.
 
 Risk level and approval policy are deliberately independent fields. A
 high-risk tool is not automatically gated, and a gated tool is not
@@ -68,14 +74,23 @@ tool.
 
 Deciding requires `approval:decide`.
 
+Reading has two scopes (ADR-012). `approval:read` is the **tenant-wide**
+read. A member without it still reads the requests **they themselves
+raised** — narrowed in SQL, so both the page and its `total` cover only
+their own rows, and a request by ID that belongs to someone else answers
+404. Reading your own request never implies deciding it.
+
 Measured in the reference environment:
 
-| Role | `tool:execute` | `approval:read` | `approval:decide` |
-|---|---|---|---|
-| `platform_administrator` | ✓ | ✓ | ✓ |
-| `company_administrator` | ✓ | ✓ | ✓ |
-| `operations_user` | ✓ | — | — |
-| `employee` | — | — | — |
+| Role | `tool:execute` | `approval:read` | reads own requests | `approval:decide` |
+|---|---|---|---|---|
+| `platform_administrator` | ✓ | ✓ | ✓ | ✓ |
+| `company_administrator` | ✓ | ✓ | ✓ | ✓ |
+| `operations_user` | ✓ | — | ✓ | — |
+| `employee` | — | — | ✓ | — |
+
+The employee column is not a typo: an employee reaches tools through
+Agent (V2-ADR-005), so an employee can be a requester too.
 
 A platform administrator holds these permissions globally but, per
 V2-ADR-003, is not a member of any customer tenant and therefore
@@ -135,6 +150,8 @@ Every one of these was exercised against a running instance and refused:
 | Reuse of a consumed approval | 403 — single use |
 | Decision by a user without `approval:decide` | 403 |
 | Requester deciding their own request | 403 — four-eyes |
+| Self-scoped reader listing the tenant | only their own rows, and `total` counts only those |
+| Self-scoped reader fetching another user's approval by id | 404 — an unreadable row must not confirm it exists |
 
 The model never participates. An LLM may *propose* a tool call; the
 proposal is untrusted data. Authorization, policy, approval and audit
@@ -217,14 +234,26 @@ POST …/execute {"approval_id": "appr-358b…"}
 → 403
 ```
 
-## 11. Known gap
+## 11. Closing the UI loop
 
-A requester holding `tool:execute` but **not** `approval:read` cannot
-reach the Approvals page to spend their own approval. In the reference
-environment that is the operations user. The company administrator who
-does hold `approval:read` cannot approve their own request under
-four-eyes.
+A requester holding `tool:execute` but **not** `approval:read` used to be
+unable to reach the Approvals page at all, which stranded the approval
+they had been granted: step 4 above ("the requester spends it") is driven
+from that page's "Run it now" and from nowhere else. In the reference
+environment that requester is the operations user.
 
-The API loop is complete; the UI loop needs a decision — either a second
-administrator in the reference data, or a self-scoped read letting a
-requester always see the requests they made.
+ADR-012 resolved it with a self-scoped read rather than by granting
+`approval:read` more widely, which would have meant tenant-wide
+visibility of every colleague's request to fix a self-service problem.
+The page now has two modes:
+
+- with `approval:read` — titled **Approvals**, the whole workspace, with
+  decisions in reach.
+- without it — titled **Your requests**, only the reader's own rows, no
+  decision column, and a line saying other people's requests are not
+  shown so a short list is not mistaken for a quiet workspace.
+
+The four-eyes rule is unchanged and is still the reason a requester sees
+no Approve button on their own row. A company administrator who raises a
+request still needs a second administrator to decide it; that is the
+rule working, not a gap.

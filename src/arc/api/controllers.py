@@ -65,6 +65,7 @@ from arc.domain.models import (
     AgentExecutionResult,
     ApprovalStatus,
     ConnectorProvider,
+    CredentialScope,
     IntelligenceAnswer,
     KnowledgeDocument,
     KnowledgeMatch,
@@ -112,11 +113,13 @@ from arc.security.authorization import (
     AuthorizationService,
 )
 from arc.security.dependencies import (
+    TenantReadScope,
     get_authenticated_principal,
     get_authorization_service,
     require_membership_administration,
     require_permission,
     require_tenant_permission,
+    require_tenant_permission_or_self,
 )
 from arc.security.encryption import EncryptionService
 from arc.security.models import AuthenticatedPrincipal
@@ -2068,6 +2071,23 @@ async def sync_connector(
 # ---------------------------------------------------------------------------
 
 
+def _credential_scope(value: str) -> CredentialScope:
+    """Resolve the ``scope`` query parameter, or 400 (ADR-013).
+
+    Defaults to ``read`` at every call site, so an administrator who does
+    not know about act credentials keeps managing exactly the credential
+    they used to manage. An act credential is only ever touched by a
+    request that names it.
+    """
+    try:
+        return CredentialScope(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scope must be 'read' or 'act'",
+        )
+
+
 @api_router.get(
     "/tenants/{tenant_id}/connectors/credentials/{provider}",
     responses=AUTHENTICATED_ERROR_RESPONSES,
@@ -2075,13 +2095,17 @@ async def sync_connector(
 async def get_credential_metadata(
     tenant_id: str,
     provider: str,
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
     """Return safe metadata for a connector credential (never the secret).
 
     Protected: requires ``connector:manage_credentials`` and a trusted
-    tenant context. Returns only provider, key_version, and timestamps.
+    tenant context. Returns only provider, scope, key_version, and
+    timestamps. ``scope`` selects the read credential (default) or the
+    act credential (ADR-013); they are separate credentials and this
+    never conflates them.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
@@ -2093,7 +2117,9 @@ async def get_credential_metadata(
             detail="Invalid connector provider",
         )
 
-    metadata = await credential_service.get_credential_metadata(context, provider_enum)
+    metadata = await credential_service.get_credential_metadata(
+        context, provider_enum, _credential_scope(scope)
+    )
     if metadata is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -2110,6 +2136,7 @@ async def create_credential(
     tenant_id: str,
     provider: str,
     body: Dict[str, Any],
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
@@ -2118,6 +2145,11 @@ async def create_credential(
     Protected: requires ``connector:manage_credentials`` and a trusted
     tenant context. The credential is encrypted at rest; the response
     contains only safe metadata.
+
+    ``scope=act`` stores the credential Arc uses to ACT on the outside
+    world (ADR-013). It is a separate row from the read credential and
+    creating one never replaces the other -- at Slack, for example, the
+    act token carries ``chat:write`` and the read token does not.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
@@ -2147,7 +2179,7 @@ async def create_credential(
 
     try:
         result = await credential_service.create_credential(
-            context, provider_enum, credential_value
+            context, provider_enum, credential_value, _credential_scope(scope)
         )
     except ConnectorCredentialError as exc:
         raise HTTPException(
@@ -2166,6 +2198,7 @@ async def rotate_credential(
     tenant_id: str,
     provider: str,
     body: Dict[str, Any],
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
@@ -2203,7 +2236,7 @@ async def rotate_credential(
 
     try:
         result = await credential_service.rotate_credential(
-            context, provider_enum, credential_value
+            context, provider_enum, credential_value, _credential_scope(scope)
         )
     except ConnectorCredentialError as exc:
         raise HTTPException(
@@ -2221,6 +2254,7 @@ async def rotate_credential(
 async def delete_credential(
     tenant_id: str,
     provider: str,
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> None:
@@ -2240,7 +2274,7 @@ async def delete_credential(
         )
 
     try:
-        await credential_service.delete_credential(context, provider_enum)
+        await credential_service.delete_credential(context, provider_enum, _credential_scope(scope))
     except ConnectorCredentialError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -2832,21 +2866,29 @@ async def list_approval_requests(
     status_filter: Optional[ApprovalStatus] = Query(default=None, alias="status"),
     limit: Optional[int] = Query(default=None),
     offset: Optional[int] = Query(default=None),
-    context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
+    scope: TenantReadScope = Depends(require_tenant_permission_or_self(APPROVAL_READ)),
     human_approval_service: HumanApprovalService = Depends(
         lambda: app_context.human_approval_service
     ),
 ) -> Dict[str, Any]:
     """List Human Intervention approval requests for the trusted tenant.
 
-    Requires ``approval:read`` and path-consistent tenant scope. Expired
-    pending rows are reported as ``expired`` (lazy derivation). Responses
-    contain redacted summaries only -- never raw tool arguments.
+    Requires path-consistent tenant scope. ``approval:read`` grants the
+    tenant-wide listing; a caller without it sees ONLY the requests they
+    themselves raised (ADR-012), narrowed in SQL so both the page and
+    ``total`` are scoped. Expired pending rows are reported as ``expired``
+    (lazy derivation). Responses contain redacted summaries only -- never
+    raw tool arguments.
     """
+    context = scope.context
     params = PaginationParams.from_query(limit, offset)
     try:
         approvals, total = await human_approval_service.list_requests_paginated(
-            context, params.limit, params.offset, status_filter
+            context,
+            params.limit,
+            params.offset,
+            status_filter,
+            requester_user_id=scope.restrict_to_user_id,
         )
     except ApprovalCorruptError:
         logger.exception(
@@ -2866,14 +2908,23 @@ async def list_approval_requests(
 async def get_approval_request(
     tenant_id: str,
     approval_id: str,
-    context: TenantContext = Depends(require_tenant_permission(APPROVAL_READ)),
+    scope: TenantReadScope = Depends(require_tenant_permission_or_self(APPROVAL_READ)),
     human_approval_service: HumanApprovalService = Depends(
         lambda: app_context.human_approval_service
     ),
 ) -> Dict[str, Any]:
-    """Read one approval request within the trusted tenant."""
+    """Read one approval request within the trusted tenant.
+
+    ``approval:read`` reads any request in the tenant; a caller without it
+    reads only their own (ADR-012) and receives 404 for anyone else's --
+    the same answer as a row that does not exist, so an unreadable scope
+    never confirms the approval is there.
+    """
+    context = scope.context
     try:
-        approval = await human_approval_service.get_request(context, approval_id)
+        approval = await human_approval_service.get_request(
+            context, approval_id, requester_user_id=scope.restrict_to_user_id
+        )
     except ApprovalNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found"

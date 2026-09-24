@@ -22,6 +22,7 @@ import pytest
 
 from arc.domain.models import ConnectorProvider
 from arc.services.connector_providers.base import (
+    ProviderAction,
     ProviderAuthError,
     ProviderCredential,
     ProviderRateLimitError,
@@ -49,7 +50,11 @@ from arc.services.connector_providers.settings import (
     _parse_connector_credentials,
     get_connector_settings,
 )
-from arc.services.connector_providers.slack import SlackProviderAdapter
+from arc.services.connector_providers.slack import (
+    SLACK_CHAT_POST_MESSAGE_URL,
+    SLACK_MAX_MESSAGE_CHARS,
+    SlackProviderAdapter,
+)
 from arc.services.connector_providers.targets import assert_approved_provider_url
 
 ALL_PROVIDERS = {
@@ -413,6 +418,139 @@ class TestSlackAdapter:
                 ProviderCredential(provider=ConnectorProvider.SLACK, token="t"),
                 "Bad Channel",
             )
+
+
+class TestSlackActAdapter:
+    """The write side of the Slack adapter (ADR-013).
+
+    ``fetch`` is covered above; these cover ``act``, which is the first
+    adapter method whose success means something happened outside Arc.
+    """
+
+    def _adapter(self, handler):
+        transport = httpx.MockTransport(handler)
+        return SlackProviderAdapter(client=httpx.AsyncClient(transport=transport))
+
+    def _credential(self):
+        return ProviderCredential(provider=ConnectorProvider.SLACK, token="xoxb-act")
+
+    async def test_posts_to_the_resolved_channel_id(self):
+        """The channel is resolved by NAME; no ID or URL comes from input."""
+        seen = {}
+
+        def handler(request):
+            if request.url.path == "/api/conversations.list":
+                return httpx.Response(
+                    200, json={"ok": True, "channels": [{"id": "C999", "name": "ops"}]}
+                )
+            assert request.url.path == "/api/chat.postMessage"
+            assert request.method == "POST"
+            seen["body"] = json.loads(request.content)
+            seen["auth"] = request.headers.get("authorization")
+            return httpx.Response(200, json={"ok": True, "ts": "1700000009.000009"})
+
+        result = await self._adapter(handler).act(
+            self._credential(), ProviderAction(target="ops", body="Deploy finished")
+        )
+
+        assert result.reference == "1700000009.000009"
+        assert seen["body"] == {"channel": "C999", "text": "Deploy finished"}
+        assert seen["auth"] == "Bearer xoxb-act"
+
+    async def test_an_invalid_channel_name_makes_no_request(self):
+        """Validation happens before the network, not after."""
+        calls = []
+
+        def handler(request):
+            calls.append(request.url.path)
+            return httpx.Response(200, json={"ok": True})
+
+        with pytest.raises(ProviderValidationError):
+            await self._adapter(handler).act(
+                self._credential(), ProviderAction(target="Bad Channel", body="hello")
+            )
+        assert calls == []
+
+    async def test_an_over_long_message_makes_no_request(self):
+        """Refused rather than silently truncated or split by Slack."""
+        calls = []
+
+        def handler(request):
+            calls.append(request.url.path)
+            return httpx.Response(200, json={"ok": True})
+
+        with pytest.raises(ProviderValidationError, match="characters"):
+            await self._adapter(handler).act(
+                self._credential(),
+                ProviderAction(target="ops", body="x" * (SLACK_MAX_MESSAGE_CHARS + 1)),
+            )
+        assert calls == []
+
+    async def test_an_unknown_channel_is_refused_before_posting(self):
+        posted = []
+
+        def handler(request):
+            if request.url.path == "/api/conversations.list":
+                return httpx.Response(
+                    200, json={"ok": True, "channels": [{"id": "C1", "name": "other"}]}
+                )
+            posted.append(request.url.path)
+            return httpx.Response(200, json={"ok": True, "ts": "1.1"})
+
+        with pytest.raises(ProviderValidationError, match="was not found"):
+            await self._adapter(handler).act(
+                self._credential(), ProviderAction(target="ops", body="hello")
+            )
+        assert posted == []
+
+    async def test_a_rejected_token_raises_an_auth_error(self):
+        """The act token can be wrong even when the read token is right."""
+
+        def handler(request):
+            if request.url.path == "/api/conversations.list":
+                return httpx.Response(
+                    200, json={"ok": True, "channels": [{"id": "C1", "name": "ops"}]}
+                )
+            return httpx.Response(200, json={"ok": False, "error": "not_authed"})
+
+        with pytest.raises(ProviderAuthError):
+            await self._adapter(handler).act(
+                self._credential(), ProviderAction(target="ops", body="hello")
+            )
+
+    async def test_a_missing_scope_error_is_not_reported_as_success(self):
+        """``chat:write`` absent is the most likely real-world failure."""
+
+        def handler(request):
+            if request.url.path == "/api/conversations.list":
+                return httpx.Response(
+                    200, json={"ok": True, "channels": [{"id": "C1", "name": "ops"}]}
+                )
+            return httpx.Response(200, json={"ok": False, "error": "missing_scope"})
+
+        with pytest.raises(ProviderResponseError, match="missing_scope"):
+            await self._adapter(handler).act(
+                self._credential(), ProviderAction(target="ops", body="hello")
+            )
+
+    async def test_a_response_without_a_timestamp_fails_closed(self):
+        """No reference means Arc cannot evidence what it created."""
+
+        def handler(request):
+            if request.url.path == "/api/conversations.list":
+                return httpx.Response(
+                    200, json={"ok": True, "channels": [{"id": "C1", "name": "ops"}]}
+                )
+            return httpx.Response(200, json={"ok": True})
+
+        with pytest.raises(ProviderResponseError, match="timestamp"):
+            await self._adapter(handler).act(
+                self._credential(), ProviderAction(target="ops", body="hello")
+            )
+
+    async def test_the_post_endpoint_is_on_the_provider_allowlist(self):
+        """Defense in depth: the URL is checked even though it is a constant."""
+        assert_approved_provider_url(ConnectorProvider.SLACK, SLACK_CHAT_POST_MESSAGE_URL)
 
 
 class TestLinearAdapter:

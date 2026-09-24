@@ -2,6 +2,11 @@
 
 Credentials are stored encrypted (BYTEA). The repository never handles
 plaintext credentials. Every query is tenant-scoped to enforce isolation.
+
+Every query also names a ``scope`` (ADR-013). Read and act credentials
+live in the same table but are never interchangeable, and the scope is a
+predicate on every statement rather than a filter applied afterwards, so
+no code path can reach an act credential while asking for a read one.
 """
 
 from typing import List, Optional
@@ -13,6 +18,7 @@ from arc.domain.models import (
     ConnectorCredential,
     ConnectorCredentialAudit,
     ConnectorProvider,
+    CredentialScope,
 )
 from arc.repositories import DEFAULT_LIST_LIMIT
 
@@ -24,19 +30,28 @@ class PostgreSQLConnectorCredentialRepository:
         self._db = db
 
     async def get_by_tenant_and_provider(
-        self, tenant_id: str, provider: str
+        self,
+        tenant_id: str,
+        provider: str,
+        scope: str = CredentialScope.READ.value,
     ) -> Optional[ConnectorCredential]:
-        """Return the encrypted credential for a tenant/provider, or None."""
+        """Return the encrypted credential for a tenant/provider/scope, or None.
+
+        ``scope`` defaults to ``read`` so every pre-ADR-013 call site keeps
+        the behaviour it had. An act credential is only ever returned to a
+        caller that asked for one by name.
+        """
         async with self._db._connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT id, tenant_id, provider, encrypted_credential,
-                       key_version, created_at, rotated_at
+                       key_version, created_at, rotated_at, scope
                 FROM connector_credentials
-                WHERE tenant_id = $1 AND provider = $2
+                WHERE tenant_id = $1 AND provider = $2 AND scope = $3
                 """,
                 tenant_id,
                 provider,
+                scope,
             )
         if row is None:
             return None
@@ -46,8 +61,8 @@ class PostgreSQLConnectorCredentialRepository:
         """Persist a new encrypted credential.
 
         Raises ``DuplicateKeyError`` when a credential already exists for
-        the same ``(tenant_id, provider)`` pair.  Callers must translate
-        this into a domain-appropriate 409 Conflict.
+        the same ``(tenant_id, provider, scope)`` triple.  Callers must
+        translate this into a domain-appropriate 409 Conflict.
         """
         async with self._db._connection_pool.acquire() as conn:
             try:
@@ -55,8 +70,8 @@ class PostgreSQLConnectorCredentialRepository:
                     """
                     INSERT INTO connector_credentials
                         (id, tenant_id, provider, encrypted_credential,
-                         key_version, created_at, rotated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                         key_version, created_at, rotated_at, scope)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     """,
                     credential.id,
                     credential.tenant_id,
@@ -65,6 +80,7 @@ class PostgreSQLConnectorCredentialRepository:
                     credential.key_version,
                     credential.created_at,
                     credential.rotated_at,
+                    credential.scope.value,
                 )
             except asyncpg.UniqueViolationError as exc:
                 raise DuplicateKeyError(
@@ -81,28 +97,35 @@ class PostgreSQLConnectorCredentialRepository:
                 SET encrypted_credential = $1,
                     key_version = $2,
                     rotated_at = $3
-                WHERE tenant_id = $4 AND provider = $5
+                WHERE tenant_id = $4 AND provider = $5 AND scope = $6
                 """,
                 credential.encrypted_credential,
                 credential.key_version,
                 credential.rotated_at,
                 credential.tenant_id,
                 credential.provider.value,
+                credential.scope.value,
             )
             if result == "UPDATE 0":
                 raise NotFoundError("Connector credential not found")
         return credential
 
-    async def delete(self, tenant_id: str, provider: str) -> None:
-        """Delete the credential for a tenant/provider."""
+    async def delete(
+        self,
+        tenant_id: str,
+        provider: str,
+        scope: str = CredentialScope.READ.value,
+    ) -> None:
+        """Delete the credential for a tenant/provider/scope."""
         async with self._db._connection_pool.acquire() as conn:
             result = await conn.execute(
                 """
                 DELETE FROM connector_credentials
-                WHERE tenant_id = $1 AND provider = $2
+                WHERE tenant_id = $1 AND provider = $2 AND scope = $3
                 """,
                 tenant_id,
                 provider,
+                scope,
             )
             if result == "DELETE 0":
                 raise NotFoundError("Connector credential not found")
@@ -114,8 +137,8 @@ class PostgreSQLConnectorCredentialRepository:
                 """
                 INSERT INTO connector_credential_audit
                     (id, tenant_id, provider, operation, actor_user_id,
-                     key_version, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                     key_version, created_at, scope)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
                 audit.id,
                 audit.tenant_id,
@@ -124,6 +147,7 @@ class PostgreSQLConnectorCredentialRepository:
                 audit.actor_user_id,
                 audit.key_version,
                 audit.created_at,
+                audit.scope.value,
             )
         return audit
 
@@ -139,7 +163,7 @@ class PostgreSQLConnectorCredentialRepository:
                 rows = await conn.fetch(
                     """
                     SELECT id, tenant_id, provider, operation, actor_user_id,
-                           key_version, created_at
+                           key_version, created_at, scope
                     FROM connector_credential_audit
                     WHERE tenant_id = $1 AND provider = $2
                     ORDER BY created_at DESC, id ASC
@@ -153,7 +177,7 @@ class PostgreSQLConnectorCredentialRepository:
                 rows = await conn.fetch(
                     """
                     SELECT id, tenant_id, provider, operation, actor_user_id,
-                           key_version, created_at
+                           key_version, created_at, scope
                     FROM connector_credential_audit
                     WHERE tenant_id = $1
                     ORDER BY created_at DESC, id ASC
@@ -180,7 +204,7 @@ class PostgreSQLConnectorCredentialRepository:
                 rows = await conn.fetch(
                     """
                     SELECT id, tenant_id, provider, operation, actor_user_id,
-                           key_version, created_at
+                           key_version, created_at, scope
                     FROM connector_credential_audit
                     WHERE tenant_id = $1 AND provider = $2
                     ORDER BY created_at DESC, id ASC
@@ -200,7 +224,7 @@ class PostgreSQLConnectorCredentialRepository:
                 rows = await conn.fetch(
                     """
                     SELECT id, tenant_id, provider, operation, actor_user_id,
-                           key_version, created_at
+                           key_version, created_at, scope
                     FROM connector_credential_audit
                     WHERE tenant_id = $1
                     ORDER BY created_at DESC, id ASC
@@ -223,6 +247,7 @@ class PostgreSQLConnectorCredentialRepository:
             key_version=row["key_version"],
             created_at=row["created_at"],
             rotated_at=row["rotated_at"],
+            scope=CredentialScope(row["scope"]),
         )
 
     @staticmethod
@@ -235,4 +260,5 @@ class PostgreSQLConnectorCredentialRepository:
             actor_user_id=row["actor_user_id"],
             key_version=row["key_version"],
             created_at=row["created_at"],
+            scope=CredentialScope(row["scope"]),
         )

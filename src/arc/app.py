@@ -38,6 +38,7 @@ from arc.services.connector_sync import ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.domain import ServiceFactory
 from arc.services.embeddings import build_embedding_provider, get_embedding_settings
+from arc.services.external_actions import ExternalActionService
 from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
 from arc.services.llm import build_llm_provider, get_llm_settings
@@ -184,6 +185,34 @@ class Application:
         # Fail-open for PII guard: unlike Knowledge/Skill services which
         # fail closed on PII errors, tool audit must never be lost. A
         # PiiGuardError during sanitization preserves the redacted summary.
+        #
+        # The connector provider catalog and credential service are built
+        # HERE, above the tool service, because an external-action tool
+        # (ADR-013) needs both. The same provider registry and the same
+        # credential service are reused by connector sync below: read and
+        # act share the adapters but never the credential, which is
+        # separated by CredentialScope inside the credential service.
+        connector_settings = get_connector_settings()
+        provider_registry = build_provider_registry(connector_settings)
+        credential_service = build_credential_service(self.repositories)
+        if credential_service is not None:
+            self.services["connector_credential_service"] = credential_service
+
+        # External actions are available only when credential storage is
+        # configured. Without CONNECTOR_ENCRYPTION_KEY there is nowhere to
+        # keep an act credential, and the ENV fallback the read path allows
+        # is deliberately NOT extended to acting: a development shortcut
+        # that posts to a real workspace is not a shortcut worth having.
+        external_action_service = None
+        if credential_service is not None:
+            external_action_service = ExternalActionService(
+                connector_repo=self.repositories["connector"],
+                provider_registry=provider_registry,
+                credential_service=credential_service,
+                capability_service=self.services["capability_service"],
+            )
+            self.services["external_action_service"] = external_action_service
+
         # Optional OCR for Company Brain ingestion (issue #299, ADR-014).
         # Off unless OCR_PROVIDER names one; None means uploads behave
         # exactly as they did before OCR existed. A provider that is
@@ -197,6 +226,7 @@ class Application:
             self.repositories["tool_execution"],
             pii_guard=pii_guard,
             capability_service=self.services["capability_service"],
+            external_action_service=external_action_service,
         )
 
         # Initialize skill service
@@ -277,21 +307,14 @@ class Application:
         # ADR-002); simulated mode uses the deterministic controlled/fake
         # clients, live mode uses the httpx adapters. Credentials are read
         # lazily from the environment and never logged or returned.
-        connector_settings = get_connector_settings()
-
-        # Initialize connector credential management (V2-ADR-015, TRD 20):
-        # encrypted-at-rest credential storage with key versioning. The
-        # encryption key is loaded from CONNECTOR_ENCRYPTION_KEY; if
-        # unconfigured, credential management is skipped and ENV fallback
-        # remains the only credential source.
-        credential_service = build_credential_service(self.repositories)
-        if credential_service is not None:
-            self.services["connector_credential_service"] = credential_service
-
+        #
+        # ``connector_settings``, ``provider_registry`` and
+        # ``credential_service`` are built above, where the tool service
+        # needs them for ADR-013 external actions.
         self.services["connector_sync_service"] = ConnectorSyncService(
             connector_repo=self.repositories["connector"],
             sync_repo=self.repositories["connector_sync"],
-            registry=build_provider_registry(connector_settings),
+            registry=provider_registry,
             credential_store=ConnectorCredentialStore(),
             knowledge_service=KnowledgeService(
                 self.repositories["knowledge"], indexer=retrieval_service

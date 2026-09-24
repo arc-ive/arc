@@ -33,6 +33,7 @@ from arc.domain.models import (
     ConnectorCredential,
     ConnectorCredentialAudit,
     ConnectorProvider,
+    CredentialScope,
     TenantContext,
     UserRole,
 )
@@ -72,29 +73,36 @@ def _make_encryption_service() -> EncryptionService:
 
 
 class FakeConnectorCredentialRepository:
-    """In-memory fake for ConnectorCredentialRepository."""
+    """In-memory fake for ConnectorCredentialRepository.
+
+    Keyed by ``(tenant, provider, scope)`` like the real unique index
+    (ADR-013), so a test using this fake cannot pass on a conflation the
+    database would refuse.
+    """
 
     def __init__(self):
-        self._credentials: dict[tuple[str, str], ConnectorCredential] = {}
+        self._credentials: dict[tuple[str, str, str], ConnectorCredential] = {}
         self._audit: list[ConnectorCredentialAudit] = []
 
-    async def get_by_tenant_and_provider(self, tenant_id: str, provider: str):
-        return self._credentials.get((tenant_id, provider))
+    async def get_by_tenant_and_provider(
+        self, tenant_id: str, provider: str, scope: str = CredentialScope.READ.value
+    ):
+        return self._credentials.get((tenant_id, provider, scope))
 
     async def create(self, credential: ConnectorCredential):
-        key = (credential.tenant_id, credential.provider.value)
+        key = (credential.tenant_id, credential.provider.value, credential.scope.value)
         self._credentials[key] = credential
         return credential
 
     async def update(self, credential: ConnectorCredential):
-        key = (credential.tenant_id, credential.provider.value)
+        key = (credential.tenant_id, credential.provider.value, credential.scope.value)
         if key not in self._credentials:
             raise NotFoundError("not found")
         self._credentials[key] = credential
         return credential
 
-    async def delete(self, tenant_id: str, provider: str):
-        key = (tenant_id, provider)
+    async def delete(self, tenant_id: str, provider: str, scope: str = CredentialScope.READ.value):
+        key = (tenant_id, provider, scope)
         if key not in self._credentials:
             raise NotFoundError("not found")
         del self._credentials[key]
@@ -587,7 +595,9 @@ class TestFailureSafety:
         """A repository failure must never be converted to None (missing credential)."""
 
         class _FailingRepository(FakeConnectorCredentialRepository):
-            async def get_by_tenant_and_provider(self, tenant_id: str, provider: str):
+            async def get_by_tenant_and_provider(
+                self, tenant_id: str, provider: str, scope: str = CredentialScope.READ.value
+            ):
                 raise RuntimeError("pool exhausted")
 
         svc = ConnectorCredentialService(
@@ -996,3 +1006,248 @@ class TestModelRepr:
         assert "cred-1" in repr_str
         assert "t-1" in repr_str
         assert "github" in repr_str
+
+
+# ---------------------------------------------------------------------------
+# R. Credential scope — read and act are separate credentials (ADR-013)
+# ---------------------------------------------------------------------------
+
+
+class TestCredentialScope:
+    """A read token and an act token are never the same credential.
+
+    These run against PostgreSQL because the guarantee is partly the
+    schema's: uniqueness moved from ``(tenant, provider)`` to
+    ``(tenant, provider, scope)``, and a fake repository could claim
+    either behaviour.
+    """
+
+    @staticmethod
+    async def _tenant(credential_db) -> str:
+        tenant_id = _unique("tenant")
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO tenants (id, name) VALUES ($1, $2)",
+                tenant_id,
+                "Scope Tenant",
+            )
+        return tenant_id
+
+    @staticmethod
+    async def _drop_tenant(credential_db, tenant_id: str) -> None:
+        async with credential_db._connection_pool.acquire() as conn:
+            await conn.execute("DELETE FROM tenants WHERE id = $1", tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_read_and_act_credentials_coexist_for_one_provider(
+        self, credential_db, credential_repo
+    ):
+        """The whole point: both, for the same provider, at the same time."""
+        tenant_id = await self._tenant(credential_db)
+        try:
+            read = ConnectorCredential(
+                id=_unique("cred"),
+                tenant_id=tenant_id,
+                provider=ConnectorProvider.SLACK,
+                encrypted_credential=b"\x01" * 48,
+                scope=CredentialScope.READ,
+            )
+            act = ConnectorCredential(
+                id=_unique("cred"),
+                tenant_id=tenant_id,
+                provider=ConnectorProvider.SLACK,
+                encrypted_credential=b"\x02" * 48,
+                scope=CredentialScope.ACT,
+            )
+            await credential_repo.create(read)
+            await credential_repo.create(act)
+
+            got_read = await credential_repo.get_by_tenant_and_provider(
+                tenant_id, ConnectorProvider.SLACK.value, CredentialScope.READ.value
+            )
+            got_act = await credential_repo.get_by_tenant_and_provider(
+                tenant_id, ConnectorProvider.SLACK.value, CredentialScope.ACT.value
+            )
+            assert got_read.id == read.id
+            assert got_act.id == act.id
+            assert got_read.encrypted_credential != got_act.encrypted_credential
+            assert got_read.scope == CredentialScope.READ
+            assert got_act.scope == CredentialScope.ACT
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_a_read_only_tenant_has_no_act_credential(self, credential_db, credential_repo):
+        """Asking for act when only read exists returns nothing, not the read row."""
+        tenant_id = await self._tenant(credential_db)
+        try:
+            await credential_repo.create(
+                ConnectorCredential(
+                    id=_unique("cred"),
+                    tenant_id=tenant_id,
+                    provider=ConnectorProvider.SLACK,
+                    encrypted_credential=b"\x01" * 48,
+                    scope=CredentialScope.READ,
+                )
+            )
+            assert (
+                await credential_repo.get_by_tenant_and_provider(
+                    tenant_id, ConnectorProvider.SLACK.value, CredentialScope.ACT.value
+                )
+                is None
+            )
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_the_default_scope_is_read(self, credential_db, credential_repo):
+        """Pre-ADR-013 call sites keep reading exactly what they read before."""
+        tenant_id = await self._tenant(credential_db)
+        try:
+            await credential_repo.create(
+                ConnectorCredential(
+                    id=_unique("cred"),
+                    tenant_id=tenant_id,
+                    provider=ConnectorProvider.SLACK,
+                    encrypted_credential=b"\x01" * 48,
+                )
+            )
+            got = await credential_repo.get_by_tenant_and_provider(
+                tenant_id, ConnectorProvider.SLACK.value
+            )
+            assert got is not None
+            assert got.scope == CredentialScope.READ
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_duplicate_within_one_scope_is_still_refused(
+        self, credential_db, credential_repo
+    ):
+        """Widening uniqueness must not have removed it."""
+        tenant_id = await self._tenant(credential_db)
+        try:
+            await credential_repo.create(
+                ConnectorCredential(
+                    id=_unique("cred"),
+                    tenant_id=tenant_id,
+                    provider=ConnectorProvider.SLACK,
+                    encrypted_credential=b"\x01" * 48,
+                    scope=CredentialScope.ACT,
+                )
+            )
+            with pytest.raises(DuplicateKeyError):
+                await credential_repo.create(
+                    ConnectorCredential(
+                        id=_unique("cred"),
+                        tenant_id=tenant_id,
+                        provider=ConnectorProvider.SLACK,
+                        encrypted_credential=b"\x02" * 48,
+                        scope=CredentialScope.ACT,
+                    )
+                )
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_deleting_one_scope_leaves_the_other(self, credential_db, credential_repo):
+        """Removing the act token must not disable connector sync."""
+        tenant_id = await self._tenant(credential_db)
+        try:
+            for scope in (CredentialScope.READ, CredentialScope.ACT):
+                await credential_repo.create(
+                    ConnectorCredential(
+                        id=_unique("cred"),
+                        tenant_id=tenant_id,
+                        provider=ConnectorProvider.SLACK,
+                        encrypted_credential=b"\x01" * 48,
+                        scope=scope,
+                    )
+                )
+
+            await credential_repo.delete(
+                tenant_id, ConnectorProvider.SLACK.value, CredentialScope.ACT.value
+            )
+
+            assert (
+                await credential_repo.get_by_tenant_and_provider(
+                    tenant_id, ConnectorProvider.SLACK.value, CredentialScope.ACT.value
+                )
+                is None
+            )
+            assert (
+                await credential_repo.get_by_tenant_and_provider(
+                    tenant_id, ConnectorProvider.SLACK.value, CredentialScope.READ.value
+                )
+                is not None
+            )
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_rotating_one_scope_leaves_the_other_untouched(
+        self, credential_db, credential_repo
+    ):
+        tenant_id = await self._tenant(credential_db)
+        service = ConnectorCredentialService(credential_repo, _make_encryption_service())
+        context = _context(tenant_id=tenant_id)
+        try:
+            await service.create_credential(
+                context, ConnectorProvider.SLACK, "read-token", CredentialScope.READ
+            )
+            await service.create_credential(
+                context, ConnectorProvider.SLACK, "act-token", CredentialScope.ACT
+            )
+
+            await service.rotate_credential(
+                context, ConnectorProvider.SLACK, "act-token-2", CredentialScope.ACT
+            )
+
+            assert (
+                await service.resolve_credential(
+                    tenant_id, ConnectorProvider.SLACK, CredentialScope.READ
+                )
+                == "read-token"
+            )
+            assert (
+                await service.resolve_credential(
+                    tenant_id, ConnectorProvider.SLACK, CredentialScope.ACT
+                )
+                == "act-token-2"
+            )
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_the_audit_trail_says_which_credential_changed(
+        self, credential_db, credential_repo
+    ):
+        """An act-credential rotation is the one worth being able to find."""
+        tenant_id = await self._tenant(credential_db)
+        service = ConnectorCredentialService(credential_repo, _make_encryption_service())
+        context = _context(tenant_id=tenant_id)
+        try:
+            await service.create_credential(
+                context, ConnectorProvider.SLACK, "act-token", CredentialScope.ACT
+            )
+            records = await credential_repo.list_audit_for_tenant(tenant_id)
+            assert [r.scope for r in records] == [CredentialScope.ACT]
+            assert records[0].operation == "create"
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)
+
+    @pytest.mark.asyncio
+    async def test_metadata_reports_the_scope_and_no_secret(self, credential_db, credential_repo):
+        tenant_id = await self._tenant(credential_db)
+        service = ConnectorCredentialService(credential_repo, _make_encryption_service())
+        context = _context(tenant_id=tenant_id)
+        try:
+            metadata = await service.create_credential(
+                context, ConnectorProvider.SLACK, "act-token", CredentialScope.ACT
+            )
+            assert metadata["scope"] == "act"
+            serialized = str(metadata)
+            assert "act-token" not in serialized
+            assert "encrypted_credential" not in metadata
+        finally:
+            await self._drop_tenant(credential_db, tenant_id)

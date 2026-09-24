@@ -232,3 +232,115 @@ describe('spending an approved request (issue #300)', () => {
     ).not.toBeInTheDocument()
   })
 })
+
+describe('the self-scoped reader (ADR-012)', () => {
+  // A requester who holds neither approval:read nor approval:decide. Before
+  // ADR-012 this page refused to render for them, which stranded the
+  // approval they had been granted: "Run it now" lives here and nowhere
+  // else.
+  const OWN_APPROVED = {
+    id: 'appr-mine-1',
+    tool_name: 'grant_temporary_access',
+    tool_version: '1',
+    risk_level: 'high',
+    status: 'approved',
+    requester_user_id: 'ops-user',
+    input_summary: '{"justification": "INC-9"}',
+    created_at: '2026-01-01T00:00:00Z',
+    expires_at: '2026-01-02T00:00:00Z',
+    decided_at: '2026-01-01T01:00:00Z',
+    decided_by_user_id: 'someone-else',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseAuth.mockReturnValue({ principal: { sub: 'ops-user' } })
+    mockCan.mockReturnValue(false)
+    mockListApprovals.mockResolvedValue([OWN_APPROVED])
+  })
+
+  it('renders the page instead of refusing it', async () => {
+    renderWithProviders()
+
+    await screen.findByText(/grant temporary access/i)
+    expect(
+      screen.queryByText(/don't have access to approvals/i),
+    ).not.toBeInTheDocument()
+  })
+
+  it('still fetches, rather than leaving the query disabled', async () => {
+    renderWithProviders()
+
+    await waitFor(() => expect(mockListApprovals).toHaveBeenCalled())
+    expect(mockListApprovals).toHaveBeenCalledWith('t-123', { status: null })
+  })
+
+  it('lets the requester spend the approval they were granted', async () => {
+    mockExecuteTool.mockResolvedValue({ status: 'executed', output: {} })
+    const user = userEvent.setup()
+    renderWithProviders()
+
+    await user.click(await screen.findByRole('button', { name: /run it now/i }))
+
+    expect(mockExecuteTool).toHaveBeenCalledWith(
+      't-123',
+      'grant_temporary_access',
+      {},
+      'appr-mine-1',
+    )
+  })
+
+  it('says the list is only their own requests', async () => {
+    renderWithProviders()
+
+    await screen.findByText(/grant temporary access/i)
+    expect(
+      screen.getByText(/requests raised by other people/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: /your requests/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers no decision on their own pending request', async () => {
+    mockListApprovals.mockResolvedValue([
+      { ...OWN_APPROVED, status: 'pending', decided_at: null, decided_by_user_id: null },
+    ])
+    renderWithProviders()
+
+    await screen.findByText(/grant temporary access/i)
+    expect(screen.queryByRole('button', { name: /^approve$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^reject$/i })).not.toBeInTheDocument()
+    // Not "you don't have access to decide" either — the four-eyes rule is
+    // the honest reason, and it applies to every role.
+    expect(screen.getByText(/you requested this/i)).toBeInTheDocument()
+  })
+
+  it('does not describe an empty list as the whole workspace being empty', async () => {
+    mockListApprovals.mockResolvedValue([])
+    renderWithProviders()
+
+    expect(
+      await screen.findByText(/you have not asked for an approval yet/i),
+    ).toBeInTheDocument()
+  })
+})
+
+describe('the tenant-wide reader keeps its own copy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseAuth.mockReturnValue({ principal: { sub: 'admin-user' } })
+    mockCan.mockReturnValue(true)
+  })
+
+  it('is not told the list is scoped to them', async () => {
+    mockListApprovals.mockResolvedValue(MOCK_APPROVALS)
+    renderWithProviders()
+
+    await screen.findByText(/check service health/i)
+    expect(
+      screen.queryByText(/requests raised by other people/i),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^approvals$/i })).toBeInTheDocument()
+  })
+})

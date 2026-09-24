@@ -15,19 +15,27 @@ import inspect
 import uuid
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from arc.domain.models import ToolRiskLevel
-from arc.security.authorization import TOOL_EXECUTE
+from arc.security.authorization import CONNECTOR_ACT, TOOL_EXECUTE
 from arc.security.models import Permission
 from arc.services.tools import (
     PLATFORM_TOOLS,
     SERVICE_HEALTH_TOOL,
+    ToolAuditPolicy,
     ToolDefinition,
     ToolExecutionPolicy,
     ToolExecutionPolicyMode,
     ToolRegistry,
     build_platform_tool_registry,
 )
+
+
+class _EmptyInput(BaseModel):
+    """Minimal schema for definitions that must fail construction."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 def _unique(prefix: str) -> str:
@@ -41,16 +49,19 @@ def test_platform_catalog_contains_check_service_health():
 
 
 def test_platform_catalog_has_expected_approved_tools():
-    assert len(PLATFORM_TOOLS) == 2
+    assert len(PLATFORM_TOOLS) == 3
     assert {tool.name for tool in PLATFORM_TOOLS} == {
         "check_service_health",
         "grant_temporary_access",
+        "post_channel_message",
     }
 
 
 def test_platform_registry_names():
     registry = build_platform_tool_registry()
-    assert registry.names() == frozenset({"check_service_health", "grant_temporary_access"})
+    assert registry.names() == frozenset(
+        {"check_service_health", "grant_temporary_access", "post_channel_message"}
+    )
 
 
 def test_definition_metadata_complete():
@@ -67,7 +78,79 @@ def test_definition_metadata_complete():
         assert tool.risk_level in ToolRiskLevel
         assert tool.execution_policy.mode in ToolExecutionPolicyMode
         assert tool.audit_policy.record_summary_only is True
-        assert callable(tool.handler)
+        # Exactly one handler, and the right kind for the tool (ADR-013).
+        assert callable(tool.handler) ^ callable(tool.action_handler)
+
+
+def test_every_external_action_tool_is_gated_by_human_approval():
+    """ADR-013: anything that leaves the tenant boundary needs a human.
+
+    Asserted over the whole catalog rather than over one tool, so a tool
+    added later cannot arrive ungated.
+    """
+    actions = [tool for tool in PLATFORM_TOOLS if tool.is_external_action]
+    assert actions, "the catalog should contain at least one external action"
+    for tool in actions:
+        assert tool.risk_level == ToolRiskLevel.HIGH
+        assert tool.execution_policy.mode == ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL
+        assert CONNECTOR_ACT in tool.required_permissions
+
+
+def test_an_external_action_tool_cannot_be_declared_low_risk():
+    """The rule above is enforced at construction, not only asserted."""
+
+    async def _handler(input_data, invocation):  # pragma: no cover - never called
+        return {}
+
+    with pytest.raises(ValueError, match="external action"):
+        ToolDefinition(
+            name=_unique("low-risk-action"),
+            version="1",
+            description="Should not be constructible",
+            input_model=_EmptyInput,
+            output_model=_EmptyInput,
+            required_permissions=frozenset({TOOL_EXECUTE}),
+            risk_level=ToolRiskLevel.LOW,
+            execution_policy=ToolExecutionPolicy(),
+            audit_policy=ToolAuditPolicy(),
+            action_handler=_handler,
+        )
+
+
+def test_a_tool_must_declare_exactly_one_handler():
+    async def _action(input_data, invocation):  # pragma: no cover - never called
+        return {}
+
+    def _sync(input_data, tenant_id):  # pragma: no cover - never called
+        return {}
+
+    with pytest.raises(ValueError, match="exactly one"):
+        ToolDefinition(
+            name=_unique("no-handler"),
+            version="1",
+            description="No handler at all",
+            input_model=_EmptyInput,
+            output_model=_EmptyInput,
+            required_permissions=frozenset({TOOL_EXECUTE}),
+            risk_level=ToolRiskLevel.LOW,
+            execution_policy=ToolExecutionPolicy(),
+            audit_policy=ToolAuditPolicy(),
+        )
+
+    with pytest.raises(ValueError, match="exactly one"):
+        ToolDefinition(
+            name=_unique("two-handlers"),
+            version="1",
+            description="Both handlers",
+            input_model=_EmptyInput,
+            output_model=_EmptyInput,
+            required_permissions=frozenset({TOOL_EXECUTE}),
+            risk_level=ToolRiskLevel.HIGH,
+            execution_policy=ToolExecutionPolicy(mode=ToolExecutionPolicyMode.DENY),
+            audit_policy=ToolAuditPolicy(),
+            handler=_sync,
+            action_handler=_action,
+        )
 
 
 def test_check_service_health_requires_tool_execute_permission():
@@ -116,6 +199,7 @@ def test_registry_exposes_only_read_operations():
     assert {tool.name for tool in registry.list()} == {
         "check_service_health",
         "grant_temporary_access",
+        "post_channel_message",
     }
 
 
@@ -200,8 +284,9 @@ def test_handlers_are_plain_platform_owned_functions():
     """Approved handlers are module-level functions owned by the platform,
     never closures over user input or dynamically generated code."""
     for tool in PLATFORM_TOOLS:
-        assert inspect.isfunction(tool.handler)
-        assert tool.handler.__module__ == "arc.services.tools"
+        handler = tool.handler or tool.action_handler
+        assert inspect.isfunction(handler)
+        assert handler.__module__ == "arc.services.tools"
 
 
 def test_tool_layer_has_no_arbitrary_execution_mechanism():
@@ -223,10 +308,27 @@ def test_tool_layer_has_no_arbitrary_execution_mechanism():
 
 
 def test_handlers_cannot_reach_external_systems():
-    """Security guard: approved handlers are plain functions that cannot
-    open network, database, or filesystem channels from user input."""
+    """Security guard: no handler opens a channel of its own.
 
+    ADR-013 gave one tool the ability to affect the outside world, and
+    this guard is what keeps that from becoming "handlers may do network
+    I/O". The rule is unchanged for every handler -- no client, no socket,
+    no file, no database, and no import to fetch one -- and an action
+    handler reaches outward ONLY through the ``external_actions`` boundary
+    it is handed, which applies the capability ceiling, the destination
+    check and the act-credential scope.
+    """
     for tool in PLATFORM_TOOLS:
-        source = inspect.getsource(tool.handler)
+        handler = tool.handler or tool.action_handler
+        source = inspect.getsource(handler)
         for token in ("import ", "requests", "httpx", "asyncpg", "open(", "socket"):
             assert token not in source, f"forbidden channel token found in handler: {token}"
+
+
+def test_action_handlers_reach_outward_only_through_the_boundary():
+    """An action handler's only route outside is the injected service."""
+    actions = [tool for tool in PLATFORM_TOOLS if tool.is_external_action]
+    assert actions
+    for tool in actions:
+        source = inspect.getsource(tool.action_handler)
+        assert "invocation.external_actions" in source

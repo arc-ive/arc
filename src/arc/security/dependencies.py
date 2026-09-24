@@ -9,10 +9,13 @@ Responsibilities are separated:
 - ``get_authenticated_principal`` — authentication (session cookie OR JWT bearer).
 - ``get_trusted_tenant_context`` — X-10 tenant boundary only.
 - ``require_permission`` / ``require_tenant_permission`` — authorization only.
+- ``require_tenant_permission_or_self`` — the same, narrowed to the
+  caller's own rows when the permission is absent (ADR-012).
 """
 
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Callable
+from typing import Callable, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -170,6 +173,48 @@ def require_permission(permission: Permission) -> Callable:
         if not authorization.has_permission(principal, permission):
             raise _forbidden("Insufficient permissions")
         return principal
+
+    return dependency
+
+
+@dataclass(frozen=True)
+class TenantReadScope:
+    """A trusted tenant context plus the row scope the caller has earned.
+
+    ``restrict_to_user_id`` is ``None`` when the caller holds the
+    tenant-wide read permission. Otherwise it carries the caller's own
+    authenticated user ID, and the route MUST narrow its query to rows
+    owned by that user — in SQL, not after fetching (ADR-012).
+
+    Read routes only. "Self-scoped" has no meaning for a write.
+    """
+
+    context: TenantContext
+    restrict_to_user_id: Optional[str]
+
+
+def require_tenant_permission_or_self(permission: Permission) -> Callable:
+    """Return a dependency granting tenant-wide OR self-scoped read (ADR-012).
+
+    Order is unchanged: authenticated principal -> X-10 trusted tenant
+    context -> permission check. A non-member is still refused before the
+    permission is consulted, so self-scope never crosses a tenant.
+
+    The only difference from :func:`require_tenant_permission` is that a
+    missing permission narrows the caller instead of denying them: they
+    may read the rows they themselves created, and nothing else. A caller
+    with no application role at all therefore resolves to self-scope, and
+    since such a caller cannot execute tools they own no rows to read.
+    """
+
+    def dependency(
+        context: TenantContext = Depends(get_trusted_tenant_context),
+        principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+        authorization: AuthorizationService = Depends(get_authorization_service),
+    ) -> TenantReadScope:
+        if authorization.has_permission(principal, permission):
+            return TenantReadScope(context=context, restrict_to_user_id=None)
+        return TenantReadScope(context=context, restrict_to_user_id=principal.user_id)
 
     return dependency
 
