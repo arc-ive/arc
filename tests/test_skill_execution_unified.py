@@ -15,10 +15,12 @@ caller-asserted (SKILLS.md §9) and never widen tool capability.
 """
 
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from arc.api.controllers import app_context
 from arc.db.connection import NotFoundError
 from arc.domain.models import (
     Membership,
@@ -37,7 +39,9 @@ from arc.repositories.skills import PostgreSQLSkillRepository
 from arc.repositories.tools import PostgreSQLToolExecutionRepository
 from arc.security.authorization import TOOL_EXECUTE, AuthorizationService
 from arc.security.models import ApplicationRole, AuthenticatedPrincipal, Permission
+from arc.services.agent import AgentExecutionService
 from arc.services.approvals import HumanApprovalService
+from arc.services.llm import SkillSelectingLlm
 from arc.services.skill_execution import SkillExecutionService
 from arc.services.skills import SkillService
 from arc.services.tools import (
@@ -156,10 +160,7 @@ async def _build_env(repositories, db):
         "engine": engine,
         "record_repo": record_repo,
         "skill_record_repo": skill_record_repo,
-        "approval_service": approval_service,
         "calls": calls,
-        "registry": registry,
-        "tool_service": tool_service,
     }
 
 
@@ -210,11 +211,6 @@ async def test_manual_skill_execution_goes_through_governed_path(repositories, d
 
 async def test_agent_invoked_skill_uses_same_governed_path(repositories, db):
     """Agent → Skill → same SkillExecutionService → same ToolExecutionService."""
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     env = await _build_env(repositories, db)
     skill = await _create_skill(env, allowed_tools=["echo_tool"])
 
@@ -243,7 +239,9 @@ async def test_agent_invoked_skill_uses_same_governed_path(repositories, db):
     assert any(r.tool_name == "echo_tool" for r in records)
 
 
-async def test_both_paths_reject_disallowed_tool_identically(repositories, db):
+async def test_both_paths_reject_disallowed_tool_governance_equivalent(repositories, db):
+    """Disallowed tool is denied on both paths; Agent wraps DENIED as FAILED."""
+
     env = await _build_env(repositories, db)
     skill = await _create_skill(env, allowed_tools=["echo_tool"])
 
@@ -264,11 +262,6 @@ async def test_both_paths_reject_disallowed_tool_identically(repositories, db):
     assert env["calls"] == []
 
     # Agent denied (same skill, same disallowed tool via LLM decision)
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     mock_llm = MagicMock(spec=SkillSelectingLlm)
     mock_llm.skill_decision_capable = True
     mock_llm.propose_skill.return_value = {
@@ -312,11 +305,6 @@ async def test_tenant_isolation_manual_and_agent(repositories, db):
         )
 
     # Agent cross-tenant also fails
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     mock_llm = MagicMock(spec=SkillSelectingLlm)
     mock_llm.skill_decision_capable = True
     mock_llm.propose_skill.return_value = {
@@ -372,11 +360,6 @@ async def test_approval_required_tool_level_blocks_both_paths(repositories, db):
     )
 
     # Agent path — same skill and same tool via LLM decision
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     mock_llm = MagicMock(spec=SkillSelectingLlm)
     mock_llm.skill_decision_capable = True
     mock_llm.propose_skill.return_value = {
@@ -411,11 +394,6 @@ async def test_agent_grant_temporary_access_requires_human_approval(repositories
     noted in the review: previously only skill-level approval was exercised
     for the Agent.
     """
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     env = await _build_env(repositories, db)
     skill = await _create_skill(env, allowed_tools=["grant_temporary_access"])
 
@@ -455,16 +433,12 @@ async def test_production_wiring_converges_on_same_governed_services(client):
     fail this test. The assertion is against the live ``app_context`` wired
     at startup, not the test-created environment object.
     """
-    from arc.api.controllers import app_context
-
     assert app_context.agent_service.skill_execution_service is app_context.skill_execution_service
     assert app_context.skill_execution_service.tool_service is app_context.services.get(
         "tool_service"
     )
-    assert (
-        app_context.skill_execution_service.tool_service.registry
-        is app_context.tool_service.registry
-    )
+    assert app_context.agent_service.skill_service is app_context.skill_service
+    assert app_context.skill_execution_service.skill_service is app_context.skill_service
 
 
 # ---------------------------------------------------------------------------
@@ -612,11 +586,6 @@ async def test_audit_records_present_for_both_paths(repositories, db):
     records1 = await env["record_repo"].list_for_tenant(env["tenant"].id)
     assert len(records1) >= 1
 
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     mock_llm = MagicMock(spec=SkillSelectingLlm)
     mock_llm.skill_decision_capable = True
     mock_llm.propose_skill.side_effect = [
@@ -734,11 +703,6 @@ async def test_unauthorized_tool_is_denied_on_both_paths(repositories, db):
     denied_records = await record_repo.list_for_tenant(tenant.id)
     assert any(rr.error_kind == "authorization_denied" for rr in denied_records)
 
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     mock_llm = MagicMock(spec=SkillSelectingLlm)
     mock_llm.skill_decision_capable = True
     mock_llm.propose_skill.return_value = {
@@ -775,11 +739,6 @@ async def test_inactive_skill_rejected_on_both_paths(repositories, db):
     assert r.error_kind == "inactive_skill"
     assert r.steps == []
     assert env["calls"] == []
-
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
 
     mock_llm = MagicMock(spec=SkillSelectingLlm)
     mock_llm.skill_decision_capable = True
@@ -824,18 +783,18 @@ async def test_tool_output_not_exposing_secrets_via_persisted_records(repositori
     assert secret_value not in blob
     assert "[REDACTED]" in blob
 
+    # SkillExecutionRecord currently stores only a safe result_summary
+    # (status/steps), not raw tool input. This assertion is a
+    # format-regression guard: if a future change starts embedding input
+    # into result_summary, it must not leak the raw secret.
     skill_records = await env["skill_record_repo"].list_for_tenant(env["tenant"].id)
     skill_blob = " ".join(f"{r.result_summary or ''} {r.failure_code or ''}" for r in skill_records)
     assert secret_value not in skill_blob
 
     # Agent path must also redact when the same secret travels through it
-    from unittest.mock import MagicMock
-
-    from arc.services.agent import AgentExecutionService
-    from arc.services.llm import SkillSelectingLlm
-
     secret_agent = "should_not_persist_raw_agent_11223"
     skill2 = await _create_skill(env, allowed_tools=["echo_tool"])
+    records_before_agent = await env["record_repo"].list_for_tenant(env["tenant"].id)
     mock_llm = MagicMock(spec=SkillSelectingLlm)
     mock_llm.skill_decision_capable = True
     mock_llm.propose_skill.side_effect = [
@@ -852,7 +811,10 @@ async def test_tool_output_not_exposing_secrets_via_persisted_records(repositori
         llm_provider=mock_llm,
     )
     await agent.run(env["context"], env["principal"], "secret agent", env["authorization"])
-    records2 = await env["record_repo"].list_for_tenant(env["tenant"].id)
-    blob2 = " ".join(f"{r.input_summary} {r.output_summary or ''}" for r in records2)
-    assert secret_agent not in blob2
-    assert "[REDACTED]" in blob2
+    records_after_agent = await env["record_repo"].list_for_tenant(env["tenant"].id)
+    ids_before = {r.id for r in records_before_agent}
+    agent_records = [r for r in records_after_agent if r.id not in ids_before]
+    assert len(agent_records) >= 1
+    blob_agent = " ".join(f"{r.input_summary} {r.output_summary or ''}" for r in agent_records)
+    assert secret_agent not in blob_agent
+    assert "[REDACTED]" in blob_agent
