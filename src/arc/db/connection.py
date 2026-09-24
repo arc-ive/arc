@@ -340,8 +340,65 @@ class ArcDatabase:
             )
             return [_tenant_from_row(row) for row in rows], total
 
+    async def set_tenant_status(self, tenant_id: str, new_status: str) -> Tenant:
+        """Write ONLY the status column (ADR-011).
+
+        Deliberately not read-modify-write through ``update_tenant``,
+        which writes every column. Doing it that way loses concurrent
+        edits in both directions: a company administrator renaming the
+        workspace while a platform operator suspends it means whichever
+        commits second overwrites the other's field entirely.
+
+        The dangerous direction is losing the SUSPENSION -- the operator
+        believes a customer is stopped and they are not, with nothing to
+        indicate it. Writing one column makes the two operations
+        independent, so neither can silently revert the other.
+
+        The row is re-read on the same connection so the caller sees the
+        committed state rather than a value from another pooled
+        connection.
+        """
+        async with self.transaction() as conn:
+            updated = await conn.fetchrow(
+                """
+                UPDATE tenants
+                SET status = $2, updated_at = NOW()
+                WHERE id = $1
+                RETURNING id, name, status, industry, address, phone,
+                          website, logo_url, created_at, updated_at
+                """,
+                tenant_id,
+                new_status,
+            )
+            if updated is None:
+                raise NotFoundError(f"Tenant with id {tenant_id} not found")
+            return Tenant(
+                id=updated["id"],
+                name=updated["name"],
+                status=updated["status"],
+                industry=updated["industry"],
+                address=updated["address"],
+                phone=updated["phone"],
+                website=updated["website"],
+                logo_url=updated["logo_url"],
+                created_at=updated["created_at"],
+                updated_at=updated["updated_at"],
+            )
+
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration.
+
+        Writes profile columns ONLY. ``status`` is deliberately absent
+        (ADR-011): no endpoint may change it here, and writing it back
+        from a read-modify-write meant a profile edit silently reverted a
+        suspension -- the caller re-read the row while the tenant was
+        active, then wrote that stale value over a suspension committed
+        in between. The operator would believe a customer was stopped
+        when they were not, with nothing to indicate it.
+
+        Status is changed only through ``set_tenant_status``, which
+        writes that one column, so the two operations are independent
+        and neither can overwrite the other.
 
         The SELECT re-reads within the same transaction connection so it
         sees the updated row before the transaction commits.  This avoids
@@ -353,13 +410,12 @@ class ArcDatabase:
                 await conn.execute(
                     """
                     UPDATE tenants
-                    SET name = $2, status = $3, industry = $4, address = $5,
-                        phone = $6, website = $7, logo_url = $8, updated_at = $9
+                    SET name = $2, industry = $3, address = $4,
+                        phone = $5, website = $6, logo_url = $7, updated_at = $8
                     WHERE id = $1
                     """,
                     tenant.id,
                     tenant.name,
-                    tenant.status,
                     tenant.industry,
                     tenant.address,
                     tenant.phone,

@@ -54,6 +54,7 @@ from arc.api.schemas import (
     SkillResumeRequest,
     SkillUpdateRequest,
     TenantCreateRequest,
+    TenantStatusRequest,
     TenantUpdateRequest,
     ToolExecuteRequest,
     UserCreateRequest,
@@ -99,6 +100,7 @@ from arc.security.authorization import (
     TENANT_CREATE,
     TENANT_LIST,
     TENANT_READ,
+    TENANT_SUSPEND,
     TENANT_UPDATE,
     TOOL_EXECUTE,
     TOOL_READ,
@@ -451,6 +453,49 @@ async def get_tenant(
         "phone": tenant.phone,
         "website": tenant.website,
         "logo_url": tenant.logo_url,
+        "created_at": tenant.created_at.isoformat(),
+        "updated_at": tenant.updated_at.isoformat(),
+    }
+
+
+@api_router.post("/tenants/{tenant_id}/status", responses=AUTHENTICATED_ERROR_RESPONSES)
+async def set_tenant_status(
+    tenant_id: str,
+    body: TenantStatusRequest,
+    _: AuthenticatedPrincipal = Depends(require_permission(TENANT_SUSPEND)),
+    tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
+) -> Dict[str, Any]:
+    """Suspend or restore a tenant (ADR-011).
+
+    Protected by ``tenant:suspend``, held by PLATFORM_ADMINISTRATOR
+    alone. Deliberately NOT ``tenant:update``: a company administrator
+    holds that for editing their own company profile, and it is checked
+    globally, so reusing it would have let any company administrator
+    suspend any tenant. A customer can neither suspend nor un-suspend
+    themselves, nor anyone else.
+
+    Separate from ``PUT /tenants/{tenant_id}`` on purpose: a tenant must
+    never be suspended as a side effect of editing a company profile.
+    That endpoint still refuses ``status`` outright.
+
+    Suspension has a real effect rather than a decorative one. A
+    suspended tenant cannot establish a trusted tenant context, so every
+    tenant-scoped route fails closed — knowledge, skills, tools,
+    approvals, agents, connectors, observability and Ask Arc alike,
+    because each establishes a context first.
+
+    Platform routes still list and read a suspended tenant, so a stopped
+    customer stays administrable and auditable. The change is lossless
+    and reversible: restoring is the same call with ``active``.
+    """
+    try:
+        tenant = await tenant_service.set_tenant_status(tenant_id, body.status)
+    except NotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "status": tenant.status,
         "created_at": tenant.created_at.isoformat(),
         "updated_at": tenant.updated_at.isoformat(),
     }

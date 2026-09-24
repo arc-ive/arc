@@ -25,6 +25,7 @@ from arc.security.models import AuthenticatedPrincipal, Permission
 from arc.security.session import SESSION_COOKIE_NAME, SessionService
 from arc.security.settings import SecurityConfigurationError
 from arc.security.settings import get_security_settings as load_security_settings
+from arc.services.domain import TenantSuspendedError
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -142,6 +143,13 @@ async def get_trusted_tenant_context(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tenant context"
         )
+    except TenantSuspendedError:
+        # Deliberately the same wording as a missing membership. A
+        # suspended customer's users learn that access is denied, not
+        # that their company has been suspended by the platform
+        # operator -- that is the operator's news to deliver, not an
+        # error message's (ADR-011).
+        raise _forbidden("Access to the requested tenant is denied")
     except NotFoundError:
         raise _forbidden("Access to the requested tenant is denied")
     request.state.resolved_tenant_id = context.tenant_id

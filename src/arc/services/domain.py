@@ -60,6 +60,24 @@ class TenantService:
         """List tenants with LIMIT/OFFSET and total count."""
         return await self.tenant_repo.list_all_paginated(limit, offset)
 
+    async def set_tenant_status(self, tenant_id: str, new_status: str) -> Tenant:
+        """Suspend or restore a tenant (ADR-011).
+
+        Lossless and reversible: nothing is removed, and restoring
+        returns the tenant to exactly its prior state. Deletion is
+        deliberately not offered -- approval_requests and
+        api_request_records both cascade from tenants, so removing the
+        row would destroy the audit trail of a departed customer, which
+        is usually the moment it is most needed.
+        """
+        # A targeted single-column write, not read-modify-write. Reading
+        # the row and writing it back writes EVERY column, so a
+        # concurrent profile edit and a suspension silently overwrite
+        # each other -- and the direction that matters is losing the
+        # suspension, leaving an operator believing a customer is
+        # stopped when they are not.
+        return await self.tenant_repo.set_status(tenant_id, new_status)
+
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration."""
         if not tenant.id:
@@ -144,6 +162,19 @@ class UserService:
     async def list_all_users_paginated(self, limit: int, offset: int) -> Tuple[List[User], int]:
         """List all users with LIMIT/OFFSET and total count."""
         return await self.user_repo.list_all_paginated(limit, offset)
+
+
+# A tenant is usable only when its status is exactly this. Anything else
+# -- suspended, an unrecognised value, a future state -- denies access.
+TENANT_STATUS_ACTIVE = "active"
+
+
+class TenantSuspendedError(Exception):
+    """Raised when a trusted context is requested for a non-active tenant.
+
+    Distinct from NotFoundError so the API can answer correctly: the
+    tenant exists and the membership is real, but access is withdrawn.
+    """
 
 
 class MembershipService:
@@ -288,6 +319,7 @@ class TenantContextService:
         Raises:
             ValueError: If tenant_id or user_id is empty.
             NotFoundError: If the tenant, user, or membership does not exist.
+            TenantSuspendedError: If the tenant is not active (ADR-011).
         """
         if not tenant_id:
             raise ValueError("Tenant ID cannot be empty in context")
@@ -296,6 +328,18 @@ class TenantContextService:
             raise ValueError("User ID cannot be empty in context")
 
         tenant = await self.tenant_repo.get_by_id(tenant_id)
+
+        # Suspension is enforced here, and only here, because every
+        # tenant-scoped route establishes a context before doing anything
+        # (ADR-011). That covers routes which do not exist yet, rather
+        # than being a check each new endpoint has to remember.
+        #
+        # Fail closed on anything that is not explicitly active: a tenant
+        # is usable only when its status says so, so an unrecognised or
+        # unreadable value denies rather than admits.
+        if tenant.status != TENANT_STATUS_ACTIVE:
+            raise TenantSuspendedError(f"Tenant {tenant_id} is not active and cannot be accessed")
+
         await self.user_repo.get_by_id(user_id)
 
         membership = await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)

@@ -110,6 +110,12 @@ TENANT_UPDATE = Permission(resource="tenant", action="update")
 TENANT_LIST = Permission(resource="tenant", action="list")
 USER_CREATE = Permission(resource="user", action="create")
 USER_READ = Permission(resource="user", action="read")
+# Suspending or restoring a tenant (ADR-011). Deliberately NOT
+# tenant:update: that is held by COMPANY_ADMINISTRATOR for editing their
+# own company profile and is checked globally, so reusing it would let
+# any company administrator suspend any tenant. Stopping a customer is
+# platform authority and needs a permission only the platform holds.
+TENANT_SUSPEND = Permission(resource="tenant", action="suspend")
 MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
 # Tenant-scoped membership administration (ADR-009). Distinct from
 # MEMBERSHIP_CREATE, which is the platform-wide authority: this one is
@@ -151,6 +157,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_CREATE,
             TENANT_UPDATE,
             TENANT_LIST,
+            TENANT_SUSPEND,
             USER_CREATE,
             USER_READ,
             MEMBERSHIP_CREATE,
