@@ -20,4 +20,4 @@ None found. All exercised workflows behave per the documented authorization mode
 
 ## Pre-existing failures (not caused by Phase 3)
 
-- Vitest `customerFacingLanguage`, `designFoundation`, `accessibility` scan failures reproduce on clean `origin/main` (frontend redesign fallout).
+- Vitest `customerFacingLanguage`, `designFoundation`, `accessibility` scan failures reproduce on clean `origin/main` **on Windows only** (forward-slash path comparisons against `node:path.join()` output; Linux CI on `main` is green). Fixed in Phase 4 by normalising separators at the scan ingestion boundary.

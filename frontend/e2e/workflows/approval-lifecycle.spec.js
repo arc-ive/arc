@@ -10,16 +10,14 @@ import { apiUrl, csrfHeaders } from '../helpers/api.js'
 import { requesterContext, deciderContext } from '../helpers/two-users.js'
 
 const TENANT_ID = 'ref-acme-technologies'
-const STAMP = `${Date.now()}`
-const JUSTIFICATION = `e2e approval ${STAMP}`
 
-async function createGatedSkill(api, headers) {
+async function createGatedSkill(api, headers, stamp) {
   // Created as company-admin: ops-user holds skill:execute but not
   // skill:create, mirroring the real separation of duties.
   const response = await api.post(`${apiUrl()}/tenants/${TENANT_ID}/skills`, {
     headers,
     data: {
-      name: `E2E Approval Skill ${STAMP}`,
+      name: `E2E Approval Skill ${stamp}`,
       purpose: 'E2E approval lifecycle',
       allowed_tools: ['grant_temporary_access'],
     },
@@ -28,14 +26,14 @@ async function createGatedSkill(api, headers) {
   return (await response.json()).id
 }
 
-async function triggerApproval(page, skillId) {
+async function triggerApproval(page, skillId, stamp, justification) {
   await page.goto(`/app/t/${TENANT_ID}/skills`)
-  await page.getByTitle(new RegExp(`Execute.*${STAMP}`)).click()
+  await page.getByTitle(new RegExp(`Execute.*${stamp}`)).click()
   const toolCalls = page.getByPlaceholder(/"tool_name"/)
   await expect(toolCalls).toBeVisible()
   await toolCalls.clear()
   await toolCalls.fill(
-    `[{"tool_name": "grant_temporary_access", "input": {"justification": "${JUSTIFICATION}"}}]`,
+    `[{"tool_name": "grant_temporary_access", "input": {"justification": "${justification}"}}]`,
   )
   const submitted = page.waitForResponse(
     (response) =>
@@ -49,6 +47,11 @@ async function triggerApproval(page, skillId) {
 }
 
 test('approve → resume executes → replay refused; reject path refused', async ({ browser }) => {
+  // Generated per attempt, not per module: a CI retry re-runs in the same
+  // worker with the module already loaded, and a stale name would collide
+  // with the UNIQUE(tenant_id, name, version) skill row just created.
+  const STAMP = `${Date.now()}`
+  const JUSTIFICATION = `e2e approval ${STAMP}`
   const requester = await requesterContext(browser)
   const decider = await deciderContext(browser)
   const requesterPage = await requester.newPage()
@@ -59,10 +62,10 @@ test('approve → resume executes → replay refused; reject path refused', asyn
   const deciderApi = decider.request
   const headers = await csrfHeaders(requester)
   const deciderHeaders = await csrfHeaders(decider)
-  const skillId = await createGatedSkill(deciderApi, deciderHeaders)
+  const skillId = await createGatedSkill(deciderApi, deciderHeaders, STAMP)
 
   // 1. Requester triggers gated tool through the real UI.
-  const approvalId = await triggerApproval(requesterPage, skillId)
+  const approvalId = await triggerApproval(requesterPage, skillId, STAMP, JUSTIFICATION)
 
   // 2. Decider sees the pending approval with its metadata.
   await deciderPage.goto(`/app/t/${TENANT_ID}/approvals`)

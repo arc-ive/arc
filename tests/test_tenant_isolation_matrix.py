@@ -8,7 +8,8 @@ listings, and search. See docs/qa/TENANT_ISOLATION_MATRIX.md.
 
 import uuid
 
-from arc.domain.models import Membership, Tenant, User, UserRole
+from arc.domain.models import Membership, Tenant, User, UserRole, WebhookEvent
+from arc.repositories.webhook_events import PostgreSQLWebhookEventRepository
 from arc.security.models import ApplicationRole
 
 
@@ -178,9 +179,17 @@ class TestApprovalsIsolation:
         tenant_a, token_a, tenant_b, token_b = await _two_tenants(
             client, repositories, make_token, authorization_override
         )
+        # Real pending approval in B; reading it as A must not disclose it.
+        gated = client.post(
+            f"/tenants/{tenant_b.id}/tools/grant_temporary_access/execute",
+            headers=_auth(token_b),
+            json={"input": {"justification": "matrix probe"}},
+        )
+        assert gated.status_code == 200
+        tenant_b_approval_id = gated.json()["approval_id"]
 
         response = client.get(
-            f"/tenants/{tenant_a.id}/approvals/{_unique('approval')}",
+            f"/tenants/{tenant_a.id}/approvals/{tenant_b_approval_id}",
             headers=_auth(token_a),
         )
         assert response.status_code == 404
@@ -242,9 +251,17 @@ class TestAgentRunsIsolation:
         tenant_a, token_a, tenant_b, token_b = await _two_tenants(
             client, repositories, make_token, authorization_override
         )
+        # Real trace row in B; reading it as A must not disclose it.
+        run = client.post(
+            "/agent/runs",
+            headers=_auth(token_b),
+            json={"tenant_id": tenant_b.id, "goal": "matrix probe"},
+        )
+        assert run.status_code == 200
+        run_id = run.json()["id"]
 
         response = client.get(
-            f"/tenants/{tenant_a.id}/observability/agent-runs/{_unique('run')}",
+            f"/tenants/{tenant_a.id}/observability/agent-runs/{run_id}",
             headers=_auth(token_a),
         )
         assert response.status_code == 404
@@ -291,15 +308,30 @@ class TestConnectorsIsolation:
 
 class TestWebhooksIsolation:
     async def test_cross_tenant_webhook_events_excluded_from_list(
-        self, client, repositories, make_token, authorization_override
+        self, client, db, repositories, make_token, authorization_override
     ):
         tenant_a, token_a, tenant_b, token_b = await _two_tenants(
             client, repositories, make_token, authorization_override
         )
+        # Real event row in B, seeded at the repository: inbound ingest is
+        # HMAC-gated by endpoint configuration (uniform 401 without it),
+        # so the API cannot create one here; the list's tenant filtering
+        # is what this test proves.
+        event = await PostgreSQLWebhookEventRepository(db).create(
+            WebhookEvent(
+                id=_unique("event"),
+                tenant_id=tenant_b.id,
+                endpoint_id="matrix-endpoint",
+                event_id=_unique("sender-event"),
+                event_type="matrix.probe",
+            )
+        )
 
         listing = client.get(f"/tenants/{tenant_a.id}/webhooks/events", headers=_auth(token_a))
         assert listing.status_code == 200
-        assert listing.json()["items"] == []
+        ids = [item["id"] for item in listing.json()["items"]]
+        assert event.id not in ids
+        assert ids == []
 
 
 class TestObservabilityIsolation:
@@ -309,11 +341,25 @@ class TestObservabilityIsolation:
         tenant_a, token_a, tenant_b, token_b = await _two_tenants(
             client, repositories, make_token, authorization_override
         )
+        # Real activity in B: a gated-tool call records a tool execution
+        # row and a pending approval row, both attributed to B.
+        gated = client.post(
+            f"/tenants/{tenant_b.id}/tools/grant_temporary_access/execute",
+            headers=_auth(token_b),
+            json={"input": {"justification": "matrix probe"}},
+        )
+        assert gated.status_code == 200
+        assert gated.json()["status"] == "approval_required"
 
+        # The summary carries aggregates only, so "no foreign rows" means
+        # B's activity must not move any of A's counters.
         response = client.get(
             f"/tenants/{tenant_a.id}/observability/usage-summary", headers=_auth(token_a)
         )
         assert response.status_code == 200
+        summary = response.json()
+        assert summary["approvals"]["total"] == 0
+        assert summary["tools"]["total_executions"] == 0
 
     async def test_cross_tenant_llm_usage_excluded(
         self, client, repositories, make_token, authorization_override

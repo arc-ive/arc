@@ -11,7 +11,7 @@ API (`tests/test_tenant_isolation_matrix.py`, 16 tests): skills get/list/execute
 ## Gaps (not vulnerabilities — untested paths)
 
 - Approval consume with a foreign approval ID at API level (covered at service level in existing suites, not via HTTP here).
-- Webhook event injection into Tenant B then read as A (requires HMAC endpoint config; list-emptiness asserted).
+- Webhook event injection into Tenant B then read as A: inbound ingest is HMAC-gated by endpoint configuration, so the matrix seeds B's event row at the repository and proves the list's tenant filtering (not the ingest path, which has dedicated webhook suites).
 - Platform-admin cross-tenant visibility is by design (admin routes), not tested here.
 
 ## Environment notes

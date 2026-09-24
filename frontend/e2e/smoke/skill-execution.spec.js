@@ -7,12 +7,15 @@ import { watchBrowserHealth, expectHealthyBrowser } from '../helpers/browser-hea
 import { apiUrl, csrfHeaders } from '../helpers/api.js'
 
 const TENANT_ID = 'ref-acme-technologies'
-// Note: the skill name is PII-sanitized on render (e.g. words replaced),
-// so UI locators below match the numeric suffix, which survives verbatim.
-const SKILL_SUFFIX = `${Date.now()}`
-const SKILL_NAME = `E2E Smoke Skill ${SKILL_SUFFIX}`
 
 test('skill executes end to end with visible result', async ({ page, request, context }) => {
+  // Generated per attempt, not per module: a CI retry re-runs in the same
+  // worker with the module already loaded, and a stale name would collide
+  // with the UNIQUE(tenant_id, name, version) skill row just created.
+  // Note: the skill name is PII-sanitized on render (e.g. words replaced),
+  // so UI locators below match the numeric suffix, which survives verbatim.
+  const SKILL_SUFFIX = `${Date.now()}`
+  const SKILL_NAME = `E2E Smoke Skill ${SKILL_SUFFIX}`
   const health = watchBrowserHealth(page)
   const headers = await csrfHeaders(context)
 

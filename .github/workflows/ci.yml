@@ -229,12 +229,8 @@ jobs:
     name: Playwright E2E (Phase 1-3)
     runs-on: ubuntu-latest
 
-    # Uploading failure reports needs the artifacts API; everything else
-    # stays at the workflow-minimum contents:read.
-    permissions:
-      contents: read
-      actions: write
-
+    # Inherits the workflow-minimum contents:read. upload-artifact@v4
+    # uses its own artifact scope and needs nothing beyond that.
     # Same ephemeral CI backend as the sharded pytest suite, except
     # APPLICATION_ROLE_ASSIGNMENTS carries the development role mapping
     # from .env.example: the Playwright auth setup logs in as the seeded
