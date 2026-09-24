@@ -51,6 +51,8 @@ from arc.services.connector_providers.base import (
     ProviderResponseError,
     ProviderTransportError,
     ProviderValidationError,
+    build_connector_external_id,
+    build_connector_provenance,
 )
 from arc.services.connector_providers.registry import ProviderRegistry
 from arc.services.connector_providers.settings import ConnectorCredentialStore
@@ -168,13 +170,18 @@ class ConnectorSyncService:
                 await self.knowledge_service.ingest_document(
                     context,
                     source=KnowledgeSource.INTERNAL_KNOWLEDGE,
-                    provenance=f"connector:{config.provider.value}:{record.source_id}",
+                    # Source metadata contract (Issue #326): grammar helpers
+                    # pin the frozen `connector:{provider}:{source_id}` /
+                    # `{provider}:{source_id}` shapes. Byte-stable by test;
+                    # never enrich here (provenance is write-once, the
+                    # external_id is ADR-003 identity).
+                    provenance=build_connector_provenance(config.provider, record.source_id),
                     content=record.content,
                     # ADR-003 logical identity: repeated syncs of one source
                     # record resolve to ONE tenant-scoped document instead of
                     # duplicating it. The provider prefix keeps identities of
                     # different providers distinct within a tenant.
-                    external_id=f"{config.provider.value}:{record.source_id}",
+                    external_id=build_connector_external_id(config.provider, record.source_id),
                 )
         except PiiGuardError as exc:
             await self._record_failure(context, config, "pii_guard_failed")

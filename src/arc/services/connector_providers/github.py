@@ -61,7 +61,7 @@ class GitHubProviderAdapter:
         params: Dict[str, Any] = {"state": "all", "per_page": max(1, min(int(limit), 100))}
         response = await self._request("GET", url, headers=headers, params=params)
         return ProviderFetchResult(
-            provider=self.provider, records=_parse_github_issues(response.json())
+            provider=self.provider, records=_parse_github_issues(response.json(), target)
         )
 
     async def _request(self, method: str, url: str, **kwargs):
@@ -92,8 +92,18 @@ class GitHubProviderAdapter:
         return response
 
 
-def _parse_github_issues(payload: Any) -> List[ProviderRecord]:
-    """Validate a GitHub issues response into typed records."""
+def _parse_github_issues(payload: Any, container: str) -> List[ProviderRecord]:
+    """Validate a GitHub issues response into typed records.
+
+    Source metadata contract (Issue #326): preserves the author
+    (``user.login``), provider timestamps (``created_at``/``updated_at``),
+    and container identity (the validated ``owner/repo`` target) that the
+    response already carries. Deliberately dropped (no consumer yet):
+    labels, assignees, state, comment counts, reactions, timeline events.
+    Pull-request payloads and comments are a later scope, not this parser.
+    Required-field failures still fail closed; absent optional metadata
+    degrades to ``None``, never to an invented value.
+    """
     if not isinstance(payload, list):
         raise ProviderResponseError("GitHub issues response must be a list")
     records: List[ProviderRecord] = []
@@ -114,6 +124,26 @@ def _parse_github_issues(payload: Any) -> List[ProviderRecord]:
                 title=title,
                 content=content,
                 url=str(html_url) if html_url else None,
+                author=_optional_str(_author_login(item.get("user"))),
+                external_created_at=_optional_str(item.get("created_at")),
+                external_updated_at=_optional_str(item.get("updated_at")),
+                container_id=container,
             )
         )
     return records
+
+
+def _author_login(user: Any) -> Optional[str]:
+    """Extract the author login from a GitHub ``user`` object, if present."""
+    if isinstance(user, dict):
+        login = user.get("login")
+        if isinstance(login, str) and login:
+            return login
+    return None
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    """Pass through a present non-empty string, else ``None`` (absent)."""
+    if isinstance(value, str) and value:
+        return value
+    return None
