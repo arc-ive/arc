@@ -133,6 +133,7 @@ from arc.services.connector_credentials import (
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
 from arc.services.connectors import ConnectorService
 from arc.services.document_extraction import (
+    MAX_UPLOAD_BYTES,
     EmptyExtractionError,
     ExtractionError,
     ExtractionUnavailableError,
@@ -1380,6 +1381,7 @@ async def create_knowledge_document(
 @api_router.post("/tenants/{tenant_id}/knowledge/upload", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def upload_knowledge_document(
     tenant_id: str,
+    request: Request,
     file: UploadFile = File(...),
     source: KnowledgeSource = Form(...),
     provenance: Optional[str] = Form(default=None),
@@ -1411,7 +1413,25 @@ async def upload_knowledge_document(
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
-    data = await file.read()
+    # Content-Length is an EARLY-REJECTION FAST PATH only, exactly as in
+    # _read_capped_body. It is client-controlled, so it never counts as
+    # enforcement: when it is absent, non-numeric, chunked or simply
+    # lying, the capped read below is the actual limit.
+    content_length = request.headers.get("content-length")
+    if (
+        content_length is not None
+        and content_length.isdigit()
+        and int(content_length) > MAX_UPLOAD_BYTES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File is larger than the {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit.",
+        )
+
+    # Bounded read. extract() still enforces the same limit, but it can
+    # no longer be the first thing to notice: nothing reaches a PDF or
+    # Word parser without having passed this.
+    data = await _read_upload_capped(file, MAX_UPLOAD_BYTES)
 
     try:
         extracted = extract_document(data, file.filename)
@@ -2087,6 +2107,41 @@ def _webhook_event_payload(event: WebhookEvent, duplicate: bool) -> Dict[str, An
         "next_retry_at": event.next_retry_at.isoformat() if event.next_retry_at else None,
         "processed_at": event.processed_at.isoformat() if event.processed_at else None,
     }
+
+
+# Read granularity for capped uploads. Small enough that an oversized
+# file is refused one chunk past the cap, large enough that a legitimate
+# 20MB document is not thousands of awaits.
+_UPLOAD_CHUNK_BYTES = 64 * 1024
+
+
+async def _read_upload_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an uploaded file under a hard cumulative byte cap.
+
+    Mirrors ``_read_capped_body`` below, for multipart uploads. The
+    previous ``await file.read()`` pulled the WHOLE upload into memory
+    before ``extract`` checked its size, so the limit was enforced only
+    after the cost it exists to avoid had already been paid.
+
+    Reads incrementally and stops as soon as cumulative size exceeds the
+    cap, so at most ``max_bytes`` plus one chunk is ever held, and no
+    parser runs on an oversized file.
+
+    A client-side ``accept`` attribute or file-picker restriction is not
+    a boundary of any kind. This is.
+    """
+    buffer = bytearray()
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        buffer.extend(chunk)
+        if len(buffer) > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File is larger than the {max_bytes // (1024 * 1024)}MB limit.",
+            )
+    return bytes(buffer)
 
 
 async def _read_capped_body(request: Request, max_bytes: int) -> bytes:

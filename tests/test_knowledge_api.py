@@ -19,6 +19,8 @@ Security invariants under test:
 
 import uuid
 
+import pytest
+
 from arc.domain.models import Membership, Tenant, TenantContext, User, UserRole
 from arc.main import app
 from arc.security.dependencies import get_trusted_tenant_context
@@ -1528,6 +1530,70 @@ class TestKnowledgeUpload:
 
         assert response.status_code == 415
 
+    async def test_an_oversized_upload_is_refused(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Over the limit must be refused, with a 413.
+
+        The frontend restricts what a file picker offers; that is a
+        convenience, never a boundary. This is the boundary.
+        """
+        from arc.services.document_extraction import MAX_UPLOAD_BYTES
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        oversized = b"A" * (MAX_UPLOAD_BYTES + 1024)
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files={"file": ("huge.txt", oversized, "text/plain")},
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 413
+        assert "limit" in response.json()["detail"].lower()
+
+    async def test_an_oversized_upload_is_rejected_before_being_read(
+        self, client, seeded, make_token, authorization_override, monkeypatch
+    ):
+        """Content-Length rejects an honest oversized upload up front.
+
+        This is the fast path, not the enforcement: Content-Length is
+        client-controlled. The enforcement is the capped read, covered
+        directly in TestCappedUploadRead below, because a lying header
+        cannot be forged through the test client -- httpx computes it.
+        """
+        from starlette.datastructures import UploadFile as StarletteUploadFile
+
+        from arc.services.document_extraction import MAX_UPLOAD_BYTES
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        reads: list = []
+        original = StarletteUploadFile.read
+
+        async def recording_read(self, size=-1):
+            reads.append(size)
+            return await original(self, size)
+
+        monkeypatch.setattr(StarletteUploadFile, "read", recording_read)
+
+        oversized = b"A" * (MAX_UPLOAD_BYTES + 1024)
+        response = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files={"file": ("huge.txt", oversized, "text/plain")},
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {make_token(user.id)}"},
+        )
+
+        assert response.status_code == 413
+        # Nothing was read at all, and in particular no unbounded read.
+        assert all(size is not None and size > 0 for size in reads), (
+            f"handler issued an unbounded read: {reads[:5]}"
+        )
+
     async def test_an_invalid_source_is_rejected(
         self, client, seeded, make_token, authorization_override
     ):
@@ -1561,3 +1627,84 @@ class TestKnowledgeUpload:
         )
 
         assert response.status_code == 403
+
+
+class TestCappedUploadRead:
+    """`_read_upload_capped` is the actual size enforcement (issue #299).
+
+    The handler previously did ``await file.read()`` with no argument,
+    pulling the WHOLE upload into memory before extract() checked its
+    size — the limit enforced only after the cost it exists to avoid had
+    already been paid.
+
+    Asserting a 413 would not catch that: the old code returned 413 too,
+    just later. These assert the read itself is bounded, which is the
+    property that matters when Content-Length is absent, chunked or
+    lying — none of which the test client can forge, because httpx
+    computes the header itself.
+    """
+
+    class _Upload:
+        """Minimal stand-in exposing the one method the helper uses."""
+
+        def __init__(self, data: bytes):
+            self._data = data
+            self._offset = 0
+            self.reads: list = []
+
+        async def read(self, size: int = -1) -> bytes:
+            self.reads.append(size)
+            if size < 0:
+                chunk = self._data[self._offset :]
+                self._offset = len(self._data)
+                return chunk
+            chunk = self._data[self._offset : self._offset + size]
+            self._offset += len(chunk)
+            return chunk
+
+    async def test_stops_past_the_cap_instead_of_draining(self):
+        from fastapi import HTTPException
+
+        from arc.api.controllers import _read_upload_capped
+
+        cap = 64 * 1024
+        upload = self._Upload(b"A" * (cap * 20))
+
+        with pytest.raises(HTTPException) as raised:
+            await _read_upload_capped(upload, cap)
+
+        assert raised.value.status_code == 413
+        # At most one chunk beyond the cap is ever pulled, so a 100x
+        # oversized upload costs the same as a slightly oversized one.
+        assert sum(upload.reads) <= cap + (2 * 64 * 1024)
+
+    async def test_never_issues_an_unbounded_read(self):
+        from fastapi import HTTPException
+
+        from arc.api.controllers import _read_upload_capped
+
+        upload = self._Upload(b"A" * (1024 * 1024))
+
+        with pytest.raises(HTTPException):
+            await _read_upload_capped(upload, 4096)
+
+        assert upload.reads, "nothing was read"
+        assert all(size > 0 for size in upload.reads), f"unbounded read issued: {upload.reads}"
+
+    async def test_returns_a_file_at_the_cap_intact(self):
+        """The boundary is exclusive: exactly at the cap is allowed."""
+        from arc.api.controllers import _read_upload_capped
+
+        cap = 4096
+        payload = b"B" * cap
+        upload = self._Upload(payload)
+
+        assert await _read_upload_capped(upload, cap) == payload
+
+    async def test_returns_a_small_file_unchanged(self):
+        from arc.api.controllers import _read_upload_capped
+
+        payload = b"a policy document"
+        upload = self._Upload(payload)
+
+        assert await _read_upload_capped(upload, 20 * 1024 * 1024) == payload
