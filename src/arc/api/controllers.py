@@ -37,6 +37,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from starlette.concurrency import run_in_threadpool
 
 from arc.api.pagination import PaginationParams, paginate
 from arc.api.schemas import (
@@ -201,6 +202,15 @@ class ServiceRegistry:
         """Get a service by name."""
         return self._services[name]
 
+    def get_optional(self, name: str, default=None):
+        """Get a service that may legitimately not be registered.
+
+        Separate from ``get`` on purpose: a missing REQUIRED service is a
+        wiring bug and should raise, while an optional one (OCR, which is
+        off unless configured) has a meaningful absent state.
+        """
+        return self._services.get(name, default)
+
 
 class ApplicationContext:
     """Application context for service access."""
@@ -244,6 +254,11 @@ class ApplicationContext:
     @property
     def knowledge_service(self) -> KnowledgeService:
         return self.services.get("knowledge_service")
+
+    @property
+    def ocr_provider(self):
+        """The configured OCR provider, or None when OCR is off (ADR-014)."""
+        return self.services.get_optional("ocr_provider")
 
     @property
     def retrieval_service(self) -> RetrievalService:
@@ -1509,10 +1524,16 @@ async def upload_knowledge_document(
     endpoint only turns a file into the text that path already accepts;
     it introduces no new trust boundary.
 
-    Accepted: plain text, Markdown, PDF and Word. The format is decided
-    by the file's own bytes, never by its name or declared content type —
-    both are caller input, and dispatching a parser on either is how a
-    parser gets handed something it was never meant to read.
+    Accepted: plain text, Markdown, PDF and Word — and, where a
+    deployment has configured OCR (ADR-014), images and scanned PDFs.
+    The format is decided by the file's own bytes, never by its name or
+    declared content type — both are caller input, and dispatching a
+    parser on either is how a parser gets handed something it was never
+    meant to read.
+
+    The response says whether OCR was used. Text a machine guessed at and
+    text a document carried retrieve and cite identically, so a caller
+    that cares about provenance has to be told which one it got.
 
     Nothing is accepted silently. An unsupported format is refused with a
     reason naming what Arc can read (415), an oversized file is refused
@@ -1546,7 +1567,13 @@ async def upload_knowledge_document(
     data = await _read_upload_capped(file, MAX_UPLOAD_BYTES)
 
     try:
-        extracted = extract_document(data, file.filename)
+        # Off the event loop. PDF and Word parsing were already blocking
+        # here; OCR makes that a real problem, because recognising a
+        # twenty-page scan takes seconds per page and would stall every
+        # other request on this worker for the duration.
+        extracted = await run_in_threadpool(
+            extract_document, data, file.filename, app_context.ocr_provider
+        )
     except FileTooLargeError as exc:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc))
     except UnsupportedFormatError as exc:
@@ -1583,6 +1610,11 @@ async def upload_knowledge_document(
     payload["extraction"] = {
         "detected_format": extracted.detected_format.value,
         "extracted_characters": extracted.char_count,
+        # Machine-read text retrieves and cites exactly like a document's
+        # own text layer, so the difference has to be stated here or it
+        # is lost the moment the document is stored (ADR-014).
+        "ocr_used": extracted.ocr_used,
+        "ocr_provider": extracted.ocr_provider,
     }
     return payload
 
