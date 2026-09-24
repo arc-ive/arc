@@ -531,6 +531,20 @@ async def list_platform_users(
     """
     params = PaginationParams.from_query(limit, offset)
     users, total = await user_service.list_all_users_paginated(params.limit, params.offset)
+
+    # Membership, in one query for the page. Without it the platform
+    # directory is a flat list of every person across every customer with
+    # nothing to organise it by, which is unreadable at any real scale.
+    #
+    # This is platform administration metadata, not tenant content:
+    # ADR-008 already allows a PLATFORM_ADMINISTRATOR to CREATE
+    # memberships for any user in any tenant, so reading which ones exist
+    # is strictly less privileged. Tenant content -- knowledge,
+    # approvals, skills -- stays unreachable from this plane.
+    memberships = await app_context.membership_service.memberships_by_user(
+        [user.id for user in users]
+    )
+
     return paginate(
         [
             {
@@ -538,6 +552,7 @@ async def list_platform_users(
                 "email": user.email,
                 "username": user.username,
                 "status": user.status,
+                "memberships": memberships.get(user.id, []),
                 "created_at": user.created_at.isoformat(),
                 "updated_at": user.updated_at.isoformat(),
             }
