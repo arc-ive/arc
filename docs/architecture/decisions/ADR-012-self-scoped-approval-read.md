@@ -154,6 +154,12 @@ again the next time a role becomes a requester. Option 2 avoids the
 model change only by re-inventing it as a second endpoint, and still
 leaves the requester unable to learn their request was rejected.
 
+Self-scoping is also not a new idea in Arc. `GET /users/{id}/tenants`
+already serves a caller with no matrix permission at all, and refuses the
+same call for another user's ID — the authenticated principal, not a
+role, decides the row set. ADR-012 applies that existing shape to a
+second resource rather than introducing a new kind of rule.
+
 Option 3 is chosen because the rule it adds is the one the system
 already implies everywhere else: `requester_user_id` is durable, is
 written from the authenticated principal inside the execution boundary,
