@@ -536,3 +536,126 @@ class TestAgentRunTraceEndpoints:
         url = f"/tenants/{tenant.id}/observability/agent-runs/nonexistent-id"
         response = _authed_get(client, url, token)
         assert response.status_code == 404
+
+
+class TestTenantAttribution:
+    """GET /platform/observability/tenants (ADR-010).
+
+    Before this, an operator could see the platform error rate rise and
+    could not see which customer was affected -- the first question an
+    incident asks. Attribution covers COUNTS only; tenant content stays
+    unreachable from the platform plane.
+    """
+
+    URL = "/platform/observability/tenants"
+
+    @staticmethod
+    async def _record(db, tenant_id, status_code, count=1):
+        from arc.domain.models import ApiRequestRecord
+        from arc.repositories.observability import PostgreSQLObservabilityRepository
+
+        repo = PostgreSQLObservabilityRepository(db)
+        for index in range(count):
+            await repo.create_api_request_record(
+                ApiRequestRecord(
+                    id=f"obsattr-{uuid.uuid4().hex[:12]}-{index}",
+                    tenant_id=tenant_id,
+                    request_id=uuid.uuid4().hex[:16],
+                    method="GET",
+                    route_template="/tenants/{tenant_id}/knowledge",
+                    status_code=status_code,
+                    duration_ms=12,
+                )
+            )
+
+    async def test_requires_authentication(self, client):
+        assert client.get(self.URL).status_code == 401
+
+    async def test_requires_the_platform_observability_permission(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        """Widens what the permission shows, never who holds it."""
+        _, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        assert _authed_get(client, self.URL, make_token(user.id)).status_code == 403
+
+    async def test_operations_user_is_refused(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        _, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        assert _authed_get(client, self.URL, make_token(user.id)).status_code == 403
+
+    async def test_counts_attribute_to_the_right_tenant(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        (tenant_a, user_a), (tenant_b, _) = two_tenants
+        await self._record(db, tenant_a.id, 200, count=3)
+        await self._record(db, tenant_a.id, 500, count=2)
+        await self._record(db, tenant_b.id, 200, count=1)
+        authorization_override({user_a.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        response = _authed_get(client, self.URL, make_token(user_a.id))
+        assert response.status_code == 200
+        rows = {r["tenant_id"]: r for r in response.json()["tenants"]}
+
+        assert rows[tenant_a.id]["total_requests"] == 5
+        assert rows[tenant_a.id]["error_count"] == 2
+        assert rows[tenant_a.id]["error_rate"] == 0.4
+        assert rows[tenant_a.id]["tenant_name"] == tenant_a.name
+
+        assert rows[tenant_b.id]["error_count"] == 0
+
+    async def test_unattributed_traffic_is_reported_not_dropped(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        """Public and unauthenticated requests have no tenant.
+
+        Dropping them would make the per-tenant figures fail to sum to
+        the platform total, and a reader would have no way to know why.
+        """
+        _, user = two_tenants[0]
+        await self._record(db, None, 200, count=2)
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        response = _authed_get(client, self.URL, make_token(user.id))
+        rows = response.json()["tenants"]
+        unattributed = [r for r in rows if r["tenant_id"] is None]
+
+        assert unattributed, "unattributed traffic must appear as its own row"
+        assert unattributed[0]["tenant_name"] == "Unattributed"
+
+    async def test_carries_no_tenant_content(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        """ADR-010 draws the boundary at attribution.
+
+        Knowing WHICH customer is affected must not become knowing WHAT
+        they were doing.
+        """
+        tenant_a, user_a = two_tenants[0]
+        await self._record(db, tenant_a.id, 500)
+        authorization_override({user_a.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        row = _authed_get(client, self.URL, make_token(user_a.id)).json()["tenants"][0]
+
+        assert set(row.keys()) == {
+            "tenant_id",
+            "tenant_name",
+            "total_requests",
+            "error_count",
+            "error_rate",
+        }
+
+    async def test_the_platform_summary_stays_tenant_agnostic(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        """ADR-010 adds a surface; it does not widen the existing one."""
+        tenant_a, user_a = two_tenants[0]
+        await self._record(db, tenant_a.id, 200)
+        authorization_override({user_a.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        body = _authed_get(client, "/platform/observability/summary", make_token(user_a.id)).json()
+
+        assert "tenants" not in body
+        assert tenant_a.id not in str(body)

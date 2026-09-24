@@ -2383,12 +2383,51 @@ async def get_platform_observability_summary(
 ) -> Dict[str, Any]:
     """Platform operational summary — STRICTLY TENANT-AGNOSTIC.
 
-    PLATFORM_ADMINISTRATOR only. Answers "is the ARC platform operating
+    PLATFORM_ADMINISTRATOR only. Answers "is the Arc platform operating
     correctly?": cross-tenant operational totals without any tenant
-    identifiers, per-tenant usage/rankings, or tenant business data.
-    Tenant-specific investigation uses the tenant-scoped endpoint.
+    identifiers, per-tenant usage, rankings or tenant business data.
+    This endpoint is unchanged by ADR-010.
+
+    "Which customer is affected?" is a different question and has its own
+    endpoint below, so an operator asking only about platform health is
+    never handed customer-identifying data they did not ask for.
     """
     return await observability_service.get_platform_summary(hours)
+
+
+@api_router.get("/platform/observability/tenants", responses=AUTHENTICATED_ERROR_RESPONSES)
+async def get_platform_observability_by_tenant(
+    hours: int = Query(default=24, ge=1, le=168),
+    _: AuthenticatedPrincipal = Depends(require_permission(OBSERVABILITY_PLATFORM_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Per-tenant request and error counts (ADR-010).
+
+    PLATFORM_ADMINISTRATOR only, via the existing
+    ``observability:platform_read``. ADR-010 widens what that permission
+    shows, not who holds it.
+
+    Answers the first question asked during an incident — which customer
+    is affected — which the tenant-agnostic summary above cannot. Before
+    this, an operator could see the error rate rise and had to ask each
+    customer's own administrator to look from inside their workspace.
+
+    Returns counts ONLY: tenant id, tenant name, request count, error
+    count, error rate. No request paths, payloads, user identifiers,
+    prompts or document content. ADR-010 draws the boundary at
+    attribution, never at describing what a tenant was doing.
+
+    Public and unauthenticated traffic has no tenant and is returned as
+    its own "Unattributed" row rather than dropped, so the per-tenant
+    figures sum to the platform total.
+
+    This does NOT give the platform plane a route into tenant-scoped
+    data. A platform administrator still receives 403 on every tenant
+    route (ADR-003).
+    """
+    return await observability_service.get_tenant_attribution(hours)
 
 
 @api_router.get("/observability/health", responses=AUTHENTICATED_ERROR_RESPONSES)
