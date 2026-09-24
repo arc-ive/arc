@@ -1,20 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { PageHeader } from './PageHeader.jsx'
 import { Badge } from './Badge.jsx'
 import { InlineError } from './InlineError.jsx'
 
-const SRC = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const SRC = dirname(dirname(dirname(fileURLToPath(import.meta.url)))).split(sep).join('/')
 
 function sourceFiles(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry)
     if (statSync(full).isDirectory()) sourceFiles(full, acc)
-    else if (/\.jsx?$/.test(entry) && !/\.test\.jsx?$/.test(entry)) acc.push(full)
+    else if (/\.jsx?$/.test(entry) && !/\.test\.jsx?$/.test(entry)) acc.push(full.split(sep).join('/'))
   }
   return acc
 }

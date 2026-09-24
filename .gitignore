@@ -76,5 +76,11 @@ API_KEYS/
 # Playwright MCP snapshots
 .playwright-mcp/
 
+# Playwright E2E artifacts (traces, videos, screenshots, stored auth state)
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/e2e/.auth/
+
 # App state
 data/state.json
