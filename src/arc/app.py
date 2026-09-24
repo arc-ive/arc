@@ -43,6 +43,7 @@ from arc.services.intelligence import UnifiedIntelligenceService
 from arc.services.knowledge import KnowledgeService
 from arc.services.llm import build_llm_provider, get_llm_settings
 from arc.services.observability import ObservabilityService
+from arc.services.ocr import build_ocr_provider
 from arc.services.pii import PiiGuardService
 from arc.services.retrieval import RetrievalService
 from arc.services.skill_execution import SkillExecutionService
@@ -211,6 +212,14 @@ class Application:
                 capability_service=self.services["capability_service"],
             )
             self.services["external_action_service"] = external_action_service
+
+        # Optional OCR for Company Brain ingestion (issue #299, ADR-014).
+        # Off unless OCR_PROVIDER names one; None means uploads behave
+        # exactly as they did before OCR existed. A provider that is
+        # configured and cannot run raises here rather than at upload
+        # time -- an operator who asked for OCR should learn at startup
+        # that the deployment cannot deliver it.
+        self.services["ocr_provider"] = build_ocr_provider()
 
         self.services["tool_service"] = ToolExecutionService(
             build_platform_tool_registry(),

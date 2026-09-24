@@ -247,7 +247,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 | Users | POST /users, GET /platform/users, GET /tenants/{id}/users | user:create, user:read, tenant:read |
 | Memberships | POST, DELETE /tenants/{id}/memberships | membership:create |
 | User Tenants | GET /users/{id}/tenants | Self-scoped |
-| Knowledge | POST, GET, GET list /tenants/{id}/knowledge | knowledge:create, knowledge:read |
+| Knowledge | POST, GET, GET list, PUT /tenants/{id}/knowledge; POST /tenants/{id}/knowledge/upload (text, Markdown, PDF, Word; images and scanned PDFs when OCR is configured per ADR-014) | knowledge:create, knowledge:read, knowledge:update |
 | Search | GET /tenants/{id}/knowledge/search | knowledge:read |
 | Intelligence | POST /tenants/{id}/intelligence/query | knowledge:read |
 | Skills | POST, GET, GET by id, PUT, DELETE, POST execute /tenants/{id}/skills | skill:create/read/update/delete/execute |

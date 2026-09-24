@@ -17,6 +17,8 @@ Security invariants under test:
 - Invalid knowledge input is rejected with 400.
 """
 
+import contextlib
+import io
 import uuid
 
 import pytest
@@ -1459,6 +1461,9 @@ class TestKnowledgeUpload:
         body = response.json()
         assert body["extraction"]["detected_format"] == "text"
         assert body["extraction"]["extracted_characters"] > 0
+        # A plain-text upload is the document's own text, not a guess.
+        assert body["extraction"]["ocr_used"] is False
+        assert body["extraction"]["ocr_provider"] is None
         # The filename becomes the document's identity when no
         # provenance is supplied -- it is the only human name an upload
         # carries.
@@ -1471,13 +1476,17 @@ class TestKnowledgeUpload:
         assert fetched.status_code == 200
         assert "26 days" in fetched.json()["content"]
 
-    async def test_an_image_is_refused_with_a_reason(
+    async def test_an_image_is_refused_with_a_reason_when_ocr_is_off(
         self, client, seeded, make_token, authorization_override
     ):
         """Never silently accept a format Arc cannot read.
 
         Storing an image would create a document with no readable
         content that retrieves as an empty citation.
+
+        OCR off is the default (ADR-014), and this refusal is exactly what
+        it was before OCR existed. ``TestKnowledgeUploadWithOcr`` below
+        covers the opt-in path.
         """
         tenant, user, _ = seeded
         authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
@@ -1708,3 +1717,172 @@ class TestCappedUploadRead:
         upload = self._Upload(payload)
 
         assert await _read_upload_capped(upload, 20 * 1024 * 1024) == payload
+
+
+class TestKnowledgeUploadWithOcr:
+    """The opt-in OCR path, over HTTP (issue #299, ADR-014).
+
+    OCR is off by default, so these install a recogniser on the running
+    application for the duration of one test. Everything else is the real
+    path: the real endpoint, the real format detection, the real
+    extraction, the real ingestion, and a real image.
+
+    The recogniser is a stand-in for Tesseract and nothing else. The
+    engine is the one part of this that cannot be asserted in CI without
+    a system binary; every decision Arc makes around it is real code here.
+    """
+
+    @staticmethod
+    def _png(size=(1000, 1400)) -> bytes:
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("L", size, 255).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    class _Recogniser:
+        name = "test-recogniser"
+
+        def __init__(self, text):
+            self._text = text
+            self.calls = 0
+
+        def extract_text(self, image: bytes) -> str:
+            self.calls += 1
+            return self._text
+
+    @contextlib.contextmanager
+    def _ocr_enabled(self, text):
+        """Install a recogniser on the live application, then remove it."""
+        from arc.api.controllers import app_context
+
+        recogniser = self._Recogniser(text)
+        previous = app_context.services.get_optional("ocr_provider")
+        app_context.services.register("ocr_provider", recogniser)
+        try:
+            yield recogniser
+        finally:
+            app_context.services.register("ocr_provider", previous)
+
+    async def test_a_scanned_image_becomes_a_retrievable_document(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """The capability the refusal message has been promising."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+        policy = "Every permanent employee receives 26 days of paid annual leave per year."
+
+        with self._ocr_enabled(policy) as recogniser:
+            response = client.post(
+                f"/tenants/{tenant.id}/knowledge/upload",
+                files={"file": ("scan.png", self._png(), "image/png")},
+                data={"source": "policy"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["extraction"]["detected_format"] == "image"
+        assert body["extraction"]["ocr_used"] is True
+        assert body["extraction"]["ocr_provider"] == "test-recogniser"
+        assert recogniser.calls == 1
+
+        # And it is really in the Company Brain, not merely accepted.
+        fetched = client.get(
+            f"/tenants/{tenant.id}/knowledge/{body['id']}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert fetched.status_code == 200
+        assert "26 days" in fetched.json()["content"]
+
+    async def test_the_response_says_the_text_was_machine_read(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Machine-read text cites identically to a real text layer.
+
+        A caller that cares about provenance has no other way to tell, so
+        the distinction has to be in the response.
+        """
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        with self._ocr_enabled("Recognised text long enough to be accepted."):
+            ocr_upload = client.post(
+                f"/tenants/{tenant.id}/knowledge/upload",
+                files={"file": ("scan.png", self._png(), "image/png")},
+                data={"source": "policy"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        text_upload = client.post(
+            f"/tenants/{tenant.id}/knowledge/upload",
+            files={"file": ("policy.txt", b"Text the document actually carried.", "text/plain")},
+            data={"source": "policy"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert ocr_upload.json()["extraction"]["ocr_used"] is True
+        assert text_upload.json()["extraction"]["ocr_used"] is False
+
+    async def test_an_image_ocr_cannot_read_is_still_refused(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """Enabling OCR does not make Arc accept documents with no text."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        with self._ocr_enabled("   "):
+            response = client.post(
+                f"/tenants/{tenant.id}/knowledge/upload",
+                files={"file": ("blank.png", self._png(), "image/png")},
+                data={"source": "policy"},
+                headers={"Authorization": f"Bearer {make_token(user.id)}"},
+            )
+
+        assert response.status_code == 422
+        assert "found no text" in response.json()["detail"].lower()
+
+    async def test_ocr_does_not_relax_the_size_limit(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """An image is still a file, and the cap still applies first."""
+        from arc.services.document_extraction import MAX_UPLOAD_BYTES
+
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+        with self._ocr_enabled("anything") as recogniser:
+            response = client.post(
+                f"/tenants/{tenant.id}/knowledge/upload",
+                files={
+                    "file": (
+                        "huge.png",
+                        b"\x89PNG\r\n\x1a\n" + b"\x00" * (MAX_UPLOAD_BYTES + 1),
+                        "image/png",
+                    )
+                },
+                data={"source": "policy"},
+                headers={"Authorization": f"Bearer {make_token(user.id)}"},
+            )
+
+        assert response.status_code == 413
+        assert recogniser.calls == 0
+
+    async def test_ocr_does_not_bypass_authorization(
+        self, client, seeded, make_token, authorization_override
+    ):
+        """The same permission, the same tenant boundary, the same 403."""
+        tenant, user, _ = seeded
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+
+        with self._ocr_enabled("anything") as recogniser:
+            response = client.post(
+                f"/tenants/{tenant.id}/knowledge/upload",
+                files={"file": ("scan.png", self._png(), "image/png")},
+                data={"source": "policy"},
+                headers={"Authorization": f"Bearer {make_token(user.id)}"},
+            )
+
+        assert response.status_code == 403
+        assert recogniser.calls == 0

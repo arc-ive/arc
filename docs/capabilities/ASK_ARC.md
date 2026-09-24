@@ -52,6 +52,10 @@ python demo/load_knowledge.py \
 | `EMBEDDING_PROVIDER` | `deterministic` produces non-semantic vectors: ranking is effectively lexical. |
 | `MIN_RELEVANCE_SCORE` | Floor below which a dense match is dropped. Defaults to `0.0` - disabled - which is correct for the deterministic provider, where cosine values do not separate on- from off-corpus queries. **Set a measured value in production.** |
 | `PROMPT_CONTEXT_MAX_CHARS` | Character budget for the context block. |
+| `OCR_PROVIDER` | `none` (default) refuses images and scanned PDFs with a reason. `tesseract` reads them locally — see ADR-014, and note it needs the `ocr` extra plus the binary. |
+| `OCR_LANGUAGES` | Tesseract language packs, default `eng`. Each must be installed alongside the binary. |
+| `OCR_MAX_PAGES` | Ceiling on images read per document, default 20. A longer scan is read to the bound. |
+| `OCR_TIMEOUT_SECONDS` | Per-image recognition timeout, default 30. |
 
 ## 3. Defined behaviour
 
@@ -99,6 +103,20 @@ half of an answer is a company fact.
 Measured before the instruction existed: *"What is the capital of
 France"* returned `context_used: true` with four citations from Acme HR
 documents. That is the failure this instruction exists to prevent.
+
+### C2. The answer is in a scanned document
+
+With `OCR_PROVIDER` unset — the default — it is not in the corpus at all:
+the upload was refused with a message naming OCR, so the question falls
+through to case B. Nothing is silently missing; the document was never
+accepted.
+
+With OCR configured, the scan is read on upload and the text is an
+ordinary knowledge document from then on: same chunking, same embedding,
+same citations. The upload response says `ocr_used: true`, which is the
+only place the distinction is recorded — a citation to machine-read text
+looks exactly like a citation to a document's own text layer, and
+recognition can be wrong in ways that read as confident prose.
 
 ### D. No documents exist yet
 
@@ -173,4 +191,6 @@ quality with a real embedding model.
 | Ranking is effectively lexical | Configuration - needs a real `EMBEDDING_PROVIDER` |
 | Refusal behaviour unexercised in dev | Follows from the above; the instruction is tested, the behaviour is not |
 | Citations are opaque outside the frontend | Product gap |
-| Text ingestion only | Issue #299 - PDF, DOCX and OCR not implemented |
+| OCR accuracy on hard scans | Deliberate trade — the engine is local so no document leaves the deployment (ADR-014). A photographed or skewed scan reads worse than a hosted API would manage. |
+| OCR loses tables and layout | Tesseract returns plain text, so a table becomes prose |
+| OCR off by default | Configuration — needs `OCR_PROVIDER=tesseract`, the `ocr` extra and the binary. Until then images and scanned PDFs are refused with a reason. |
