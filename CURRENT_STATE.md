@@ -2,7 +2,7 @@
 
 Last Updated: 2026-09-24
 
-Current Phase: Foundation — ADR-001 through ADR-013 accepted and implemented; QA Phases 0–4 complete and merged (PR #320). Product implementation proceeds under approved ADRs.
+Current Phase: Foundation — ADR-001 through ADR-014 accepted and implemented (ADR-014 merged via main after this reconciliation's baseline); QA Phases 0–4 complete and merged (PR #320). Product implementation proceeds under approved ADRs.
 
 Git Baseline: `41f32fd` (origin/main, 2026-09-24 — Merge PR #320)
 
@@ -26,7 +26,7 @@ Repository Layer (Protocol-based, tenant-scoped SQL)
 Database Layer (PostgreSQL + pgvector)
 ```
 
-Key architectural decisions (ADR-001 through ADR-013) are documented in `docs/architecture/decisions/`. The architecture is framework-agnostic at the domain layer (ADR-001) with explicit boundaries for connectors, webhooks, AI tools, and unified intelligence. Recent decisions cover tenant-scoped membership administration (ADR-009), platform observability attribution (ADR-010), tenant suspension (ADR-011), self-scoped approval reads (ADR-012), and external actions through connectors (ADR-013).
+Key architectural decisions (ADR-001 through ADR-014) are documented in `docs/architecture/decisions/`. The architecture is framework-agnostic at the domain layer (ADR-001) with explicit boundaries for connectors, webhooks, AI tools, and unified intelligence. Recent decisions cover tenant-scoped membership administration (ADR-009), platform observability attribution (ADR-010), tenant suspension (ADR-011), self-scoped approval reads (ADR-012), and external actions through connectors (ADR-013).
 
 ---
 
@@ -271,7 +271,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 | Users | POST /users, GET /platform/users, GET /tenants/{id}/users | user:create, user:read, tenant:read |
 | Memberships | POST, DELETE /tenants/{id}/memberships | membership:create (global) or membership:manage (own tenant, ADR-009) |
 | User Tenants | GET /users/{id}/tenants | Self-scoped |
-| Knowledge | POST, GET, PUT, DELETE, GET list /tenants/{id}/knowledge; POST upload | knowledge:create/read/update/delete |
+| Knowledge | POST, GET, GET by id, PUT, DELETE /tenants/{id}/knowledge; POST /tenants/{id}/knowledge/upload (text, Markdown, PDF, Word; images and scanned PDFs when OCR is configured per ADR-014) | knowledge:create/read/update/delete |
 | Search | GET /tenants/{id}/knowledge/search | knowledge:read |
 | Intelligence | POST /tenants/{id}/intelligence/query | knowledge:read |
 | Skills | POST, GET, GET by id, PUT, DELETE, POST execute, POST resume /tenants/{id}/skills | skill:create/read/update/delete/execute |
@@ -430,6 +430,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 | ADR-011 | Tenant Lifecycle — Suspension, Not Deletion (`tenant:suspend`, fail-closed context enforcement) | Accepted |
 | ADR-012 | Self-Scoped Approval Reads (own rows in SQL; decide untouched) | Accepted |
 | ADR-013 | External Actions Through the Connector Architecture (five gates, `connector:act`, scoped act credentials) | Accepted |
+| ADR-014 | Optical Character Recognition — Local Engine, Off By Default (Issue #299; scanned-document/image text extraction for knowledge upload) | Accepted |
 
 ---
 

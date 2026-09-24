@@ -25,12 +25,12 @@ dependencies = [
     # MIT. Neither requires a system binary, so a deployment gains PDF
     # and Word ingestion without new infrastructure.
     #
-    # Image OCR is deliberately NOT here. It needs either a Tesseract
-    # binary -- which is not pip-installable as a working install across
-    # platforms -- or a cloud provider, and choosing where tenant
-    # documents get sent for OCR is an infrastructure and data-residency
-    # decision rather than a dependency choice. Images are refused with a
-    # reason until that decision is made.
+    # Image OCR is in the optional "ocr" extra below rather than here,
+    # because Tesseract needs a system binary that pip cannot install.
+    # ADR-014 records why the shipped engine is a local one and why it is
+    # off by default. Without the extra, images are refused with a reason
+    # naming OCR -- the behaviour this file previously described as
+    # permanent.
     "pypdf>=5.0,<7.0",
     "python-docx>=1.1,<2.0",
     # Required by FastAPI to parse multipart bodies; the upload endpoint
@@ -39,7 +39,34 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Optical character recognition for scanned documents (issue #299,
+# ADR-014). Separate from the base install on purpose:
+#
+#   - pytesseract is a thin wrapper that SHELLS OUT to a `tesseract`
+#     binary. Installing the wheel without the binary yields an import
+#     that works and an engine that does not, so this cannot be a base
+#     dependency without making a broken install look like a working one.
+#   - The engine is local by design. Reading a scan never sends a tenant
+#     document anywhere, so enabling OCR is not also a data-residency
+#     decision (ADR-014).
+#
+# Licences are suitable for commercial multi-tenant use: pytesseract is
+# Apache-2.0, Pillow is MIT-CMU. The Tesseract binary itself is Apache-2.0
+# and is invoked as a separate process, not linked.
+#
+# Install: pip install "arc[ocr]" plus the binary (apt-get install
+# tesseract-ocr, or brew install tesseract), then OCR_PROVIDER=tesseract.
+ocr = [
+    "pytesseract>=0.3.10,<1.0",
+    "Pillow>=10.0,<13.0",
+]
 dev = [
+    # Pillow is how pypdf decodes the images embedded in a PDF, and the
+    # scanned-PDF OCR path depends on that. It reaches a deployment
+    # through the "ocr" extra above; it is repeated here so the tests
+    # covering that path run against the real pypdf image API rather
+    # than a stub, on any machine and in CI.
+    "Pillow>=10.0,<13.0",
     "pytest>=8.4,<9.0",
     "pytest-asyncio>=0.23,<1.0",
     # Splits the suite across CI shards by recorded duration (.test_durations).
