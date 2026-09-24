@@ -115,17 +115,25 @@ and the tenant is never taken from the request body.
 
 ## 8. Which Skills are justified today
 
-**Deliberately few.** The platform tool catalogue currently holds two
-tools:
+**Deliberately few.** The platform tool catalogue currently holds three
+tools (the third, `post_channel_message`, is the first that acts outside
+Arc — ADR-013):
 
 | Tool | Risk | Policy |
 |---|---|---|
 | `check_service_health` | low | `ALLOW` |
 | `grant_temporary_access` | high | `REQUIRE_HUMAN_APPROVAL` |
+| `post_channel_message` | high | `REQUIRE_HUMAN_APPROVAL` |
 
 A Skill can only compose what tools allow, so the honest answer is that
 Arc supports a handful of real Skills, not a catalogue. Inventing more
 would be writing procedures for capabilities that do not exist.
+
+A Skill that reaches `post_channel_message` gains no shortcut: the tool's
+own `REQUIRE_HUMAN_APPROVAL` policy stops the call even inside a Skill
+that is not itself gated (§5), and the Skill's caller must still hold
+`connector:act`. That is the point of keeping the two approval gates
+separate.
 
 ### Recommended now
 

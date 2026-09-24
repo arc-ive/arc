@@ -200,13 +200,15 @@ class ConnectorCredentialRepository(Protocol):
 
     Every operation is tenant scoped. Credentials are stored encrypted;
     the repository never handles plaintext. One credential per
-    (tenant_id, provider) is enforced by a unique constraint.
+    (tenant_id, provider, scope) is enforced by a unique index: a read
+    credential and an act credential for the same provider are separate
+    rows and are never interchangeable (ADR-013).
     """
 
     async def get_by_tenant_and_provider(
-        self, tenant_id: str, provider: str
+        self, tenant_id: str, provider: str, scope: str = "read"
     ) -> Optional[ConnectorCredential]:
-        """Return the encrypted credential for a tenant/provider, or None."""
+        """Return the encrypted credential for a tenant/provider/scope, or None."""
         ...
 
     async def create(self, credential: ConnectorCredential) -> ConnectorCredential:
@@ -217,8 +219,8 @@ class ConnectorCredentialRepository(Protocol):
         """Update an existing encrypted credential (rotation)."""
         ...
 
-    async def delete(self, tenant_id: str, provider: str) -> None:
-        """Delete the credential for a tenant/provider."""
+    async def delete(self, tenant_id: str, provider: str, scope: str = "read") -> None:
+        """Delete the credential for a tenant/provider/scope."""
         ...
 
     async def create_audit(self, audit: ConnectorCredentialAudit) -> ConnectorCredentialAudit:

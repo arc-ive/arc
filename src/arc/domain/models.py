@@ -24,6 +24,25 @@ class ConnectorProvider(str, Enum):
     LINEAR = "linear"
 
 
+class CredentialScope(str, Enum):
+    """Why a connector credential exists.
+
+    ``READ`` credentials bring data INTO the Company Brain; the sync path
+    uses nothing else. ``ACT`` credentials let Arc take an action on the
+    outside world.
+
+    They are stored as separate rows and are never interchangeable. A
+    token that can read a Slack channel must not be assumed able to post
+    to it — the scopes differ at the provider, and more importantly the
+    blast radius differs: a leaked read token exposes data, a leaked act
+    token speaks as the company. Every query names the scope it wants, so
+    a read path cannot silently pick up an act credential.
+    """
+
+    READ = "read"
+    ACT = "act"
+
+
 class ConnectorStatus(str, Enum):
     """Lifecycle status of a connector configuration."""
 
@@ -331,9 +350,13 @@ class ConnectorSyncRecord:
 class ConnectorCredential:
     """Tenant-scoped encrypted connector credential (V2-ADR-015, TRD 20).
 
-    One credential per (tenant_id, provider). The credential is stored
-    encrypted at rest; plaintext is never persisted, logged, or returned
-    through API responses.
+    One credential per (tenant_id, provider, scope). The credential is
+    stored encrypted at rest; plaintext is never persisted, logged, or
+    returned through API responses.
+
+    ``scope`` separates the read credential the sync path uses from the
+    act credential an external action uses (ADR-013). They are different
+    rows and are never substituted for one another.
     """
 
     id: str
@@ -343,6 +366,7 @@ class ConnectorCredential:
     key_version: int = 1
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     rotated_at: Optional[datetime] = None
+    scope: CredentialScope = CredentialScope.READ
 
     def __post_init__(self):
         if not self.id:
@@ -351,6 +375,8 @@ class ConnectorCredential:
             raise ValueError("Tenant ID cannot be empty")
         if not isinstance(self.provider, ConnectorProvider):
             raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if not isinstance(self.scope, CredentialScope):
+            raise ValueError(f"Invalid credential scope: {self.scope!r}")
         if not isinstance(self.encrypted_credential, bytes) or not self.encrypted_credential:
             raise ValueError("Encrypted credential must be non-empty bytes")
         if not isinstance(self.key_version, int) or self.key_version < 1:
@@ -380,6 +406,7 @@ class ConnectorCredentialAudit:
     actor_user_id: str
     key_version: Optional[int] = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    scope: CredentialScope = CredentialScope.READ
 
     def __post_init__(self):
         if not self.id:
@@ -388,6 +415,8 @@ class ConnectorCredentialAudit:
             raise ValueError("Tenant ID cannot be empty")
         if not isinstance(self.provider, ConnectorProvider):
             raise ValueError(f"Invalid connector provider: {self.provider!r}")
+        if not isinstance(self.scope, CredentialScope):
+            raise ValueError(f"Invalid credential scope: {self.scope!r}")
         if self.operation not in ("create", "rotate", "delete"):
             raise ValueError(f"Invalid audit operation: {self.operation!r}")
         if not self.actor_user_id:
@@ -1880,6 +1909,11 @@ KNOWN_CAPABILITIES: FrozenSet[str] = frozenset(
         "tool_execution",
         "agent_execution",
         "connector_sync",
+        # ADR-013. The platform kill switch for everything that leaves the
+        # tenant boundary. Like the others it is effective unless disabled;
+        # the per-call gate is the approval an action tool requires, not
+        # this.
+        "external_action",
     }
 )
 

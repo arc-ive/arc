@@ -64,6 +64,7 @@ from arc.domain.models import (
     AgentExecutionResult,
     ApprovalStatus,
     ConnectorProvider,
+    CredentialScope,
     IntelligenceAnswer,
     KnowledgeDocument,
     KnowledgeMatch,
@@ -2036,6 +2037,23 @@ async def sync_connector(
 # ---------------------------------------------------------------------------
 
 
+def _credential_scope(value: str) -> CredentialScope:
+    """Resolve the ``scope`` query parameter, or 400 (ADR-013).
+
+    Defaults to ``read`` at every call site, so an administrator who does
+    not know about act credentials keeps managing exactly the credential
+    they used to manage. An act credential is only ever touched by a
+    request that names it.
+    """
+    try:
+        return CredentialScope(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scope must be 'read' or 'act'",
+        )
+
+
 @api_router.get(
     "/tenants/{tenant_id}/connectors/credentials/{provider}",
     responses=AUTHENTICATED_ERROR_RESPONSES,
@@ -2043,13 +2061,17 @@ async def sync_connector(
 async def get_credential_metadata(
     tenant_id: str,
     provider: str,
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
     """Return safe metadata for a connector credential (never the secret).
 
     Protected: requires ``connector:manage_credentials`` and a trusted
-    tenant context. Returns only provider, key_version, and timestamps.
+    tenant context. Returns only provider, scope, key_version, and
+    timestamps. ``scope`` selects the read credential (default) or the
+    act credential (ADR-013); they are separate credentials and this
+    never conflates them.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
@@ -2061,7 +2083,9 @@ async def get_credential_metadata(
             detail="Invalid connector provider",
         )
 
-    metadata = await credential_service.get_credential_metadata(context, provider_enum)
+    metadata = await credential_service.get_credential_metadata(
+        context, provider_enum, _credential_scope(scope)
+    )
     if metadata is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -2078,6 +2102,7 @@ async def create_credential(
     tenant_id: str,
     provider: str,
     body: Dict[str, Any],
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
@@ -2086,6 +2111,11 @@ async def create_credential(
     Protected: requires ``connector:manage_credentials`` and a trusted
     tenant context. The credential is encrypted at rest; the response
     contains only safe metadata.
+
+    ``scope=act`` stores the credential Arc uses to ACT on the outside
+    world (ADR-013). It is a separate row from the read credential and
+    creating one never replaces the other -- at Slack, for example, the
+    act token carries ``chat:write`` and the read token does not.
     """
     _require_path_tenant_matches_context(tenant_id, context)
 
@@ -2115,7 +2145,7 @@ async def create_credential(
 
     try:
         result = await credential_service.create_credential(
-            context, provider_enum, credential_value
+            context, provider_enum, credential_value, _credential_scope(scope)
         )
     except ConnectorCredentialError as exc:
         raise HTTPException(
@@ -2134,6 +2164,7 @@ async def rotate_credential(
     tenant_id: str,
     provider: str,
     body: Dict[str, Any],
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> Dict[str, Any]:
@@ -2171,7 +2202,7 @@ async def rotate_credential(
 
     try:
         result = await credential_service.rotate_credential(
-            context, provider_enum, credential_value
+            context, provider_enum, credential_value, _credential_scope(scope)
         )
     except ConnectorCredentialError as exc:
         raise HTTPException(
@@ -2189,6 +2220,7 @@ async def rotate_credential(
 async def delete_credential(
     tenant_id: str,
     provider: str,
+    scope: str = Query(default=CredentialScope.READ.value),
     context: TenantContext = Depends(require_tenant_permission(CONNECTOR_MANAGE_CREDENTIALS)),
     credential_service: ConnectorCredentialService = Depends(_get_credential_service_or_503),
 ) -> None:
@@ -2208,7 +2240,7 @@ async def delete_credential(
         )
 
     try:
-        await credential_service.delete_credential(context, provider_enum)
+        await credential_service.delete_credential(context, provider_enum, _credential_scope(scope))
     except ConnectorCredentialError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

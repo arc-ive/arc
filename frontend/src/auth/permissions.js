@@ -38,6 +38,7 @@ export const PERMISSIONS = {
   CONNECTOR_CREATE: 'connector:create',
   CONNECTOR_SYNC: 'connector:sync',
   CONNECTOR_MANAGE_CREDENTIALS: 'connector:manage_credentials',
+  CONNECTOR_ACT: 'connector:act',
 
   WEBHOOK_READ: 'webhook:read',
   WEBHOOK_PROCESS: 'webhook:process',

@@ -48,12 +48,18 @@ substitutes for holding the permission.
 Approval is a property of the **tool**, declared in the platform
 registry — never inferred from risk level, and never decided by the LLM.
 
-Today the platform catalogue holds two tools:
+Today the platform catalogue holds three tools:
 
-| Tool | Risk | Policy |
-|---|---|---|
-| `check_service_health` | low | `ALLOW` |
-| `grant_temporary_access` | high | `REQUIRE_HUMAN_APPROVAL` |
+| Tool | Risk | Policy | Reaches |
+|---|---|---|---|
+| `check_service_health` | low | `ALLOW` | internal, simulated |
+| `grant_temporary_access` | high | `REQUIRE_HUMAN_APPROVAL` | internal |
+| `post_channel_message` | high | `REQUIRE_HUMAN_APPROVAL` | Slack, for real |
+
+`post_channel_message` (ADR-013) is the first tool for which an approval
+authorises something a customer cannot undo by deleting a row. Its gate is
+not a different mechanism — it is this one, with real stakes. See
+`AGENT_TOOLS.md` §4a for the other four gates an external action passes.
 
 Risk level and approval policy are deliberately independent fields. A
 high-risk tool is not automatically gated, and a gated tool is not

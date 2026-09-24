@@ -223,6 +223,30 @@ CREATE TABLE IF NOT EXISTS connector_credentials (
 
 CREATE INDEX IF NOT EXISTS idx_connector_credentials_tenant_id ON connector_credentials(tenant_id);
 
+-- Credential scope (ADR-013). 'read' credentials feed the sync path and
+-- 'act' credentials let Arc take an action on the outside world. They are
+-- separate rows and are never interchangeable, so the uniqueness moves
+-- from (tenant, provider) to (tenant, provider, scope).
+--
+-- Idempotent for both fresh and existing databases: on a fresh database
+-- the constraint the CREATE TABLE above declared is immediately replaced
+-- by the wider unique index.
+ALTER TABLE connector_credentials
+    ADD COLUMN IF NOT EXISTS scope VARCHAR(20) NOT NULL DEFAULT 'read';
+
+ALTER TABLE connector_credentials
+    DROP CONSTRAINT IF EXISTS ck_connector_credentials_scope;
+
+ALTER TABLE connector_credentials
+    ADD CONSTRAINT ck_connector_credentials_scope
+    CHECK (scope IN ('read', 'act'));
+
+ALTER TABLE connector_credentials
+    DROP CONSTRAINT IF EXISTS uq_connector_credentials_tenant_provider;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_connector_credentials_tenant_provider_scope
+    ON connector_credentials(tenant_id, provider, scope);
+
 -- Credential audit events (Issue #137, V2-ADR-015):
 -- Metadata-only records of credential lifecycle operations. Never
 -- contain plaintext credentials, encryption keys, or decrypted material.
@@ -238,6 +262,19 @@ CREATE TABLE IF NOT EXISTS connector_credential_audit (
     CONSTRAINT ck_connector_credential_audit_operation
         CHECK (operation IN ('create', 'rotate', 'delete'))
 );
+
+-- Which credential the lifecycle event concerned (ADR-013). Without it a
+-- read-credential rotation and an act-credential rotation are the same
+-- audit row, and the act credential is the one worth watching.
+ALTER TABLE connector_credential_audit
+    ADD COLUMN IF NOT EXISTS scope VARCHAR(20) NOT NULL DEFAULT 'read';
+
+ALTER TABLE connector_credential_audit
+    DROP CONSTRAINT IF EXISTS ck_connector_credential_audit_scope;
+
+ALTER TABLE connector_credential_audit
+    ADD CONSTRAINT ck_connector_credential_audit_scope
+    CHECK (scope IN ('read', 'act'));
 
 CREATE INDEX IF NOT EXISTS idx_connector_credential_audit_tenant_id ON connector_credential_audit(tenant_id);
 

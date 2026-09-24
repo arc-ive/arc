@@ -1,9 +1,15 @@
-"""Slack connector adapter (PRD 22, TRD 33, ADR-002).
+"""Slack connector adapter (PRD 22, TRD 33, ADR-002, ADR-013).
 
 Live mode calls the code-defined Slack Web API: the channel list is
 resolved by name (never by tenant-supplied URLs) and messages are fetched
 from the channel history. Responses carry Slack's ``ok`` flag and are
 validated; unexpected shapes fail closed.
+
+The adapter has a read side (``fetch``) and an act side (``act``, posting
+a message). They are the same class because they speak the same API, but
+they are never the same credential: ``act`` is called with an ``ACT``-
+scoped credential, which at Slack means a token carrying ``chat:write``
+rather than the history scopes ``fetch`` needs.
 """
 
 import re
@@ -13,6 +19,8 @@ import httpx
 
 from arc.domain.models import ConnectorProvider
 from arc.services.connector_providers.base import (
+    ProviderAction,
+    ProviderActionResult,
     ProviderAuthError,
     ProviderCredential,
     ProviderFetchResult,
@@ -26,6 +34,11 @@ from arc.services.connector_providers.targets import assert_approved_provider_ur
 
 SLACK_CONVERSATIONS_LIST_URL = "https://slack.com/api/conversations.list"
 SLACK_CONVERSATIONS_HISTORY_URL = "https://slack.com/api/conversations.history"
+SLACK_CHAT_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
+
+#: Slack truncates beyond roughly 4000 characters and starts splitting
+#: messages. Refuse rather than post something the caller did not write.
+SLACK_MAX_MESSAGE_CHARS = 3000
 
 _SLACK_CHANNEL_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
 
@@ -73,6 +86,47 @@ class SlackProviderAdapter:
             if isinstance(message, dict)
         ]
         return ProviderFetchResult(provider=self.provider, records=records)
+
+    async def act(
+        self,
+        credential: ProviderCredential,
+        action: ProviderAction,
+    ) -> ProviderActionResult:
+        """Post one message to a channel (ADR-013).
+
+        The channel is resolved by name exactly as ``fetch`` resolves it,
+        so the destination is a tenant-configured name the workspace
+        already knows -- never a tenant-supplied URL or channel ID.
+
+        ``credential`` must be the tenant's ``ACT``-scoped Slack token.
+        Resolution happens in ExternalActionService; this adapter simply
+        uses what it is given and never reads the credential store.
+        """
+        validate_slack_target(action.target)
+        if len(action.body) > SLACK_MAX_MESSAGE_CHARS:
+            raise ProviderValidationError(
+                f"Slack message exceeds {SLACK_MAX_MESSAGE_CHARS} characters"
+            )
+        channel_id = await self._resolve_channel_id(credential, action.target)
+        response = await self._request(
+            "POST",
+            SLACK_CHAT_POST_MESSAGE_URL,
+            headers={
+                "Authorization": f"Bearer {credential.token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            json={"channel": channel_id, "text": action.body},
+        )
+        payload = response.json()
+        _assert_slack_ok(payload)
+        ts = payload.get("ts")
+        if not isinstance(ts, str) or not ts:
+            raise ProviderResponseError("Slack post response is missing the message timestamp")
+        return ProviderActionResult(
+            provider=self.provider,
+            reference=ts,
+            url=None,
+        )
 
     async def _resolve_channel_id(self, credential: ProviderCredential, target: str) -> str:
         headers = {"Authorization": f"Bearer {credential.token}"}
