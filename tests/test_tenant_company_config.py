@@ -595,3 +595,83 @@ class TestTenantSuspension:
         )
 
         assert response.status_code == 422
+
+    async def test_a_stale_profile_write_cannot_revert_a_suspension(self, seeded, db):
+        """The lost-update this fix exists to prevent.
+
+        update_tenant wrote EVERY column, including status. A profile
+        edit that read the row while the tenant was active, and wrote
+        after a suspension committed in between, carried the stale
+        "active" value back over the suspension. The operator would
+        believe a customer was stopped when they were not, with nothing
+        to indicate it.
+
+        The race is real but not reachable through two sequential HTTP
+        calls, because a suspended tenant's routes are refused -- so the
+        second call would 403 rather than revert. It is reachable when a
+        slow profile edit STRADDLES the suspension: the read is allowed,
+        the write lands after. This reproduces exactly that ordering
+        deterministically, by holding the stale object across the
+        suspension.
+        """
+        tenant, _ = seeded
+        tenants = PostgreSQLTenantRepository(db)
+
+        # A profile edit reads the row while the tenant is still active.
+        stale = await tenants.get_by_id(tenant.id)
+        assert stale.status == "active"
+
+        # A platform operator suspends it in between.
+        await tenants.set_status(tenant.id, "suspended")
+
+        # The in-flight edit now writes, carrying status="active".
+        stale.name = "Renamed Mid-Flight"
+        await tenants.update(stale)
+
+        persisted = await tenants.get_by_id(tenant.id)
+        assert persisted.name == "Renamed Mid-Flight", "the rename was lost"
+        assert persisted.status == "suspended", (
+            "a stale profile write silently reverted the suspension"
+        )
+
+    async def test_setting_status_leaves_every_other_field_untouched(
+        self, client, seeded, db, make_token, authorization_override
+    ):
+        """A targeted write must not blank the columns it does not set."""
+        tenant, user = seeded
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        _authed_request(
+            client,
+            "put",
+            f"/tenants/{tenant.id}",
+            token,
+            {"name": "Acme Co", "industry": "Logistics", "phone": "+44 117 000 0000"},
+        )
+        _authed_request(
+            client, "post", f"/tenants/{tenant.id}/status", token, {"status": "suspended"}
+        )
+
+        tenants = PostgreSQLTenantRepository(db)
+        persisted = await tenants.get_by_id(tenant.id)
+        assert persisted.status == "suspended"
+        assert persisted.name == "Acme Co"
+        assert persisted.industry == "Logistics"
+        assert persisted.phone == "+44 117 000 0000"
+
+    async def test_setting_status_on_an_unknown_tenant_is_not_found(
+        self, client, seeded, make_token, authorization_override
+    ):
+        _, user = seeded
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        response = _authed_request(
+            client,
+            "post",
+            "/tenants/no-such-tenant/status",
+            make_token(user.id),
+            {"status": "suspended"},
+        )
+
+        assert response.status_code == 404

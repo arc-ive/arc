@@ -70,9 +70,13 @@ class TenantService:
         row would destroy the audit trail of a departed customer, which
         is usually the moment it is most needed.
         """
-        tenant = await self.tenant_repo.get_by_id(tenant_id)
-        tenant.status = new_status
-        return await self.tenant_repo.update(tenant)
+        # A targeted single-column write, not read-modify-write. Reading
+        # the row and writing it back writes EVERY column, so a
+        # concurrent profile edit and a suspension silently overwrite
+        # each other -- and the direction that matters is losing the
+        # suspension, leaving an operator believing a customer is
+        # stopped when they are not.
+        return await self.tenant_repo.set_status(tenant_id, new_status)
 
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration."""

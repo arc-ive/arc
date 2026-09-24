@@ -43,6 +43,10 @@ class PostgreSQLTenantRepository:
         """Update tenant."""
         return await self.db.update_tenant(tenant)
 
+    async def set_status(self, tenant_id: str, new_status: str) -> Tenant:
+        """Write only the status column, leaving other fields untouched."""
+        return await self.db.set_tenant_status(tenant_id, new_status)
+
     async def exists(self, tenant_id: str) -> bool:
         """Check if tenant exists."""
         try:
