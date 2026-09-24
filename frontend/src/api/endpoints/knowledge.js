@@ -31,6 +31,28 @@ export async function createKnowledge(tenantId, payload) {
   return data
 }
 
+/**
+ * Ingest a document file into the Company Brain.
+ *
+ * The client sets a JSON content type for every other call; multipart
+ * needs the browser to set it instead, because only the browser knows
+ * the boundary it generated. Passing `undefined` removes the default
+ * rather than overriding it with a value that would be wrong.
+ */
+export async function uploadKnowledge(tenantId, { file, source, provenance }) {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('source', source)
+  if (provenance) body.append('provenance', provenance)
+
+  const { data } = await client.post(
+    `/tenants/${encodeURIComponent(tenantId)}/knowledge/upload`,
+    body,
+    { headers: { 'Content-Type': undefined } },
+  )
+  return data
+}
+
 export async function searchKnowledge(tenantId, query, limit = 5) {
   const { data } = await client.get(
     `/tenants/${encodeURIComponent(tenantId)}/knowledge/search`,
