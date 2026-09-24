@@ -53,18 +53,30 @@ import re
 import uuid
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Pattern, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    FrozenSet,
+    List,
+    Mapping,
+    Optional,
+    Pattern,
+    Tuple,
+)
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from arc.domain.models import (
+    ConnectorProvider,
     TenantContext,
     ToolAuthorizationOutcome,
     ToolExecutionRecord,
     ToolExecutionStatus,
     ToolRiskLevel,
 )
-from arc.security.authorization import TOOL_EXECUTE, AuthorizationService
+from arc.security.authorization import CONNECTOR_ACT, TOOL_EXECUTE, AuthorizationService
 from arc.security.models import AuthenticatedPrincipal, Permission
 
 # Import approval errors so execute_tool callers can catch them.
@@ -172,6 +184,28 @@ class ToolAuditPolicy:
 
 
 @dataclass(frozen=True)
+class ToolInvocation:
+    """What an action handler is allowed to know (ADR-013).
+
+    Pure in-process tools take ``(input_data, tenant_id)`` and need
+    nothing else. A tool that acts on the outside world needs a way to
+    reach the external-action boundary, and this is that way -- not a
+    module-level import, so a handler cannot acquire the capability by
+    reaching for it, and a registry built without the service simply
+    cannot execute an action tool.
+
+    It carries the trusted tenant CONTEXT -- the X-10 type, not a bare
+    string, so the tenant a handler acts for cannot have come from
+    anywhere but the established boundary. It does NOT carry the
+    principal, the authorization service, or any credential: a handler
+    never decides whether it is allowed to run, and never sees a secret.
+    """
+
+    context: TenantContext
+    external_actions: Any
+
+
+@dataclass(frozen=True)
 class ToolDefinition:
     """Declarative definition of one platform-approved AI Tool (PRD 15).
 
@@ -181,12 +215,21 @@ class ToolDefinition:
     exposed as framework-agnostic JSON Schemas; the handler is a plain
     platform-owned function and is never exposed.
 
+    A tool declares EITHER a synchronous ``handler`` (pure, in-process,
+    deterministic) OR an asynchronous ``action_handler`` (ADR-013: it may
+    reach the outside world through ``ExternalActionService`` and nothing
+    else). Never both, and never neither.
+
     The definition fails closed at construction:
 
     - ``required_permissions`` must be a non-empty set of ``Permission``
       objects (missing, empty, or invalid metadata is rejected);
     - a high-risk tool must declare ``REQUIRE_HUMAN_APPROVAL`` or ``DENY``
-      as its execution policy, never ``ALLOW``.
+      as its execution policy, never ``ALLOW``;
+    - an action tool must be HIGH risk. Anything that leaves the tenant
+      boundary is gated by human approval until there is evidence to
+      relax it, and making that a construction-time rule means a future
+      action tool cannot be added at ``low`` risk by oversight.
     """
 
     name: str
@@ -198,13 +241,29 @@ class ToolDefinition:
     risk_level: ToolRiskLevel
     execution_policy: ToolExecutionPolicy
     audit_policy: ToolAuditPolicy
-    handler: Callable[[Dict[str, Any], str], Dict[str, Any]]
+    handler: Optional[Callable[[Dict[str, Any], str], Dict[str, Any]]] = None
+    action_handler: Optional[
+        Callable[[Dict[str, Any], ToolInvocation], Awaitable[Dict[str, Any]]]
+    ] = None
+
+    @property
+    def is_external_action(self) -> bool:
+        """Whether executing this tool can affect something outside Arc."""
+        return self.action_handler is not None
 
     def __post_init__(self):
         if not self.name:
             raise ValueError("Tool name cannot be empty")
         if not self.version:
             raise ValueError("Tool version cannot be empty")
+        if (self.handler is None) == (self.action_handler is None):
+            raise ValueError(
+                f"Tool {self.name!r} must declare exactly one of handler or action_handler"
+            )
+        if self.action_handler is not None and self.risk_level != ToolRiskLevel.HIGH:
+            raise ValueError(
+                f"Tool {self.name!r} performs an external action and must be high-risk"
+            )
         if not self.required_permissions:
             raise ValueError(f"Tool {self.name!r} must declare at least one required permission")
         if not all(isinstance(p, Permission) for p in self.required_permissions):
@@ -486,9 +545,95 @@ SERVICE_HEALTH_TOOL = ToolDefinition(
     handler=_check_service_health_handler,
 )
 
+# ---------------------------------------------------------------------------
+# First external action (ADR-013, Issue #304). Everything above this line
+# is in-process; this is the first tool whose success means something
+# happened outside Arc, and it is deliberately the narrowest useful one:
+# post a message to a Slack channel the tenant has already configured as a
+# connector.
+#
+# The tool itself holds no policy. It validates its input, hands a
+# validated target and body to ExternalActionService, and reports what
+# came back. Authorization (connector:act), the approval gate (HIGH risk
+# + REQUIRE_HUMAN_APPROVAL, single-use, bound to a digest of these exact
+# arguments), the capability ceiling, the destination check and the act
+# credential all live outside it.
+# ---------------------------------------------------------------------------
+
+
+class PostChannelMessageInput(BaseModel):
+    """Input for ``post_channel_message``.
+
+    ``channel`` is a name, never a URL or an ID -- and it must match an
+    ACTIVE connector the tenant configured, which the external-action
+    boundary checks. ``message`` is the exact text that will be posted.
+    """
+
+    channel: str = Field(min_length=1, max_length=80)
+    message: str = Field(min_length=1, max_length=3000)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PostChannelMessageOutput(BaseModel):
+    """Output of ``post_channel_message``.
+
+    ``reference`` is the provider's own identifier for the message that
+    was created, so the audit trail points at the real artifact rather
+    than at Arc's claim that it posted one.
+    """
+
+    tenant_id: str
+    provider: str
+    channel: str
+    reference: str
+
+
+async def _post_channel_message_handler(
+    input_data: Dict[str, Any], invocation: ToolInvocation
+) -> Dict[str, Any]:
+    """Platform-approved handler for ``post_channel_message`` (ADR-013).
+
+    Reaches the outside world through ExternalActionService and nothing
+    else: no client, no URL, no credential. A controlled
+    ``ExternalActionError`` propagates, so ``execute_tool`` records the
+    failure and the caller is never told a message was sent when none was.
+    """
+    outcome = await invocation.external_actions.perform(
+        invocation.context,
+        ConnectorProvider.SLACK,
+        input_data["channel"],
+        input_data["message"],
+    )
+    return {
+        "tenant_id": invocation.context.tenant_id,
+        "provider": outcome.provider.value,
+        "channel": outcome.target,
+        "reference": outcome.reference,
+    }
+
+
+POST_CHANNEL_MESSAGE_TOOL = ToolDefinition(
+    name="post_channel_message",
+    version="1",
+    description=(
+        "Post a message to a Slack channel the tenant has configured as a "
+        "connector. Leaves the tenant boundary, so it is classified HIGH "
+        "risk and gated by human approval (ADR-013)."
+    ),
+    input_model=PostChannelMessageInput,
+    output_model=PostChannelMessageOutput,
+    required_permissions=frozenset({TOOL_EXECUTE, CONNECTOR_ACT}),
+    risk_level=ToolRiskLevel.HIGH,
+    execution_policy=ToolExecutionPolicy(mode=ToolExecutionPolicyMode.REQUIRE_HUMAN_APPROVAL),
+    audit_policy=ToolAuditPolicy(record_summary_only=True),
+    action_handler=_post_channel_message_handler,
+)
+
 PLATFORM_TOOLS: Tuple[ToolDefinition, ...] = (
     SERVICE_HEALTH_TOOL,
     GRANT_TEMPORARY_ACCESS_TOOL,
+    POST_CHANNEL_MESSAGE_TOOL,
 )
 
 
@@ -550,9 +695,15 @@ class ToolExecutionService:
         pii_guard: Optional[PiiGuardService] = None,
         capability_service=None,
         encryption_service=None,
+        external_action_service=None,
     ):
         self.registry = registry
         self.record_repo = record_repo
+        # Optional external-action boundary (ADR-013). Only tools that
+        # declare an ``action_handler`` need it. Left unwired, such a tool
+        # fails closed with a controlled error rather than silently
+        # behaving like an in-process tool that did nothing.
+        self.external_action_service = external_action_service
         # Optional encryption-at-rest for the approved call's arguments
         # (issue #300). Without it an approval is still created and still
         # fully enforced -- it simply cannot be resumed from the server
@@ -857,8 +1008,32 @@ class ToolExecutionService:
                     output={},  # Output not stored in full; idempotent skip.
                 )
 
+        if tool.is_external_action and self.external_action_service is None:
+            # Fail closed and say why. An action tool whose boundary is
+            # not wired must not look like a success that did nothing.
+            await self._record_failure(
+                context=context,
+                user_id=principal.user_id,
+                authorization_outcome=ToolAuthorizationOutcome.GRANTED,
+                tool_name=tool.name,
+                tool_version=tool.version,
+                risk_level=tool.risk_level,
+                input_summary=_summarize(input_data),
+                error_kind="external_actions_unavailable",
+            )
+            raise ToolExecutionError(tool_name)
+
         try:
-            output = tool.handler(input_data, context.tenant_id)
+            if tool.action_handler is not None:
+                output = await tool.action_handler(
+                    input_data,
+                    ToolInvocation(
+                        context=context,
+                        external_actions=self.external_action_service,
+                    ),
+                )
+            else:
+                output = tool.handler(input_data, context.tenant_id)
         except Exception:
             await self._record_failure(
                 context=context,

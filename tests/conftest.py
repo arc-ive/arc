@@ -9,7 +9,7 @@ from urllib.parse import unquote, urlsplit
 import pytest
 from fastapi.testclient import TestClient
 
-from arc.db.connection import ArcDatabase
+from arc.db.connection import ArcDatabase, iter_schema_statements
 from arc.domain.models import Membership, Tenant, User, UserRole
 from arc.main import app
 from arc.repositories.tenancy import (
@@ -104,9 +104,10 @@ async def _initialize_schema():
 
         schema = SCHEMA_PATH.read_text()
 
-        for statement in schema.split(";"):
-            if statement.strip():
-                await conn.execute(statement)
+        # Shares the production splitter rather than re-implementing it, so
+        # the suite bootstraps the schema exactly the way startup does.
+        for statement in iter_schema_statements(schema):
+            await conn.execute(statement)
 
     await database.disconnect()
 

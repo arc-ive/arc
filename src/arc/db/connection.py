@@ -4,7 +4,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Iterator
 
 import asyncpg
 
@@ -109,6 +109,31 @@ def _pool_size_from_env(name: str, default: int) -> int:
     return value
 
 
+def iter_schema_statements(schema_sql: str) -> Iterator[str]:
+    """Yield the executable statements of a schema script, in order.
+
+    Splitting on ``;`` is how the schema has always been applied, and it
+    has one trap: a semicolon inside a ``--`` comment produces a fragment
+    that is nothing but comment text. ``conn.execute`` on such a fragment
+    raises inside asyncpg rather than doing nothing, so a comma-splice in a
+    comment could break application STARTUP -- a failure whose cause is
+    nowhere near its symptom.
+
+    Fragments that carry no SQL are therefore skipped. Comments attached to
+    a real statement are left exactly where the author put them.
+    """
+    for raw in schema_sql.split(";"):
+        stmt = raw.strip()
+        if not stmt:
+            continue
+        has_sql = any(
+            line.strip() and not line.strip().startswith("--") for line in stmt.splitlines()
+        )
+        if not has_sql:
+            continue
+        yield stmt
+
+
 class ArcDatabase:
     """Database manager for Arc domain models."""
 
@@ -206,10 +231,7 @@ class ArcDatabase:
         # Execute each statement from schema.sql in order. Statements
         # that are already satisfied are no-ops due to IF NOT EXISTS.
         async with self._connection_pool.acquire() as conn:
-            for raw in schema_sql.split(";"):
-                stmt = raw.strip()
-                if not stmt:
-                    continue
+            for stmt in iter_schema_statements(schema_sql):
                 try:
                     await conn.execute(stmt)
                 except Exception as exc:

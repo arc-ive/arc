@@ -255,7 +255,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 | Agent | POST /agent/runs | agent:execute |
 | Agent Resume | POST /agent/runs/resume | agent:execute |
 | Tools | GET, POST execute /tenants/{id}/tools | tool:read, tool:execute |
-| Connectors | GET, POST, POST sync /tenants/{id}/connectors | connector:create/read/sync |
+| Connectors | GET, POST, POST sync /tenants/{id}/connectors; GET/POST/PUT/DELETE credentials (`?scope=read\|act`) | connector:create/read/sync, connector:manage_credentials, connector:act (ADR-013 external actions) |
 | Webhooks | POST /webhooks/{id}/events, GET /tenants/{id}/webhooks/events, POST /tenants/{id}/webhooks/process | HMAC auth, webhook:read, webhook:process |
 | Observability | GET /tenants/{id}/observability/usage-summary, GET /platform/observability/summary, GET /observability/health, GET /tenants/{id}/observability/agent-runs | observability:read, observability:platform_read |
 | Approvals | GET, GET by id, POST decide /tenants/{id}/approvals | approval:read (tenant-wide) or self-scoped to the caller's own requests per ADR-012; approval:decide |

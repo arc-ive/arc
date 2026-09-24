@@ -7,7 +7,7 @@ asyncpg.  Every query that reads or modifies a connector row includes a
 SQL level.
 """
 
-from typing import List
+from typing import List, Optional
 
 import asyncpg
 
@@ -104,6 +104,44 @@ class PostgreSQLConnectorRepository:
                 )
                 for row in rows
             ]
+
+    async def find_active_by_provider_and_target(
+        self, tenant_id: str, provider: str, target: str
+    ) -> Optional[ConnectorConfig]:
+        """Return the tenant's ACTIVE connector for a provider/target, or None.
+
+        Used by the external-action boundary (ADR-013): Arc acts only on a
+        destination an administrator already configured as a connector, so
+        a model-proposed channel name cannot reach a place nobody chose.
+
+        Matched in SQL rather than by listing and filtering, so the
+        predicate cannot be lost as the caller grows.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, tenant_id, provider, name, target, status, created_at, updated_at
+                FROM connector_configs
+                WHERE tenant_id = $1 AND provider = $2 AND target = $3 AND status = 'active'
+                ORDER BY created_at DESC, id ASC
+                LIMIT 1
+                """,
+                tenant_id,
+                provider,
+                target,
+            )
+        if row is None:
+            return None
+        return ConnectorConfig(
+            id=row["id"],
+            tenant_id=row["tenant_id"],
+            provider=ConnectorProvider(row["provider"]),
+            name=row["name"],
+            target=row["target"],
+            status=ConnectorStatus(row["status"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
 
     async def list_for_tenant_paginated(self, tenant_id: str, limit: int, offset: int) -> tuple:
         """List connector configs with LIMIT/OFFSET and total count."""

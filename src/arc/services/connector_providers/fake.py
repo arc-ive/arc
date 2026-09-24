@@ -11,6 +11,8 @@ from typing import Optional
 
 from arc.domain.models import ConnectorProvider
 from arc.services.connector_providers.base import (
+    ProviderAction,
+    ProviderActionResult,
     ProviderAuthError,
     ProviderCredential,
     ProviderFetchResult,
@@ -18,10 +20,14 @@ from arc.services.connector_providers.base import (
     ProviderRecord,
     ProviderResponseError,
     ProviderTransportError,
+    ProviderValidationError,
 )
 from arc.services.connector_providers.github import validate_github_target
 from arc.services.connector_providers.linear import validate_linear_target
-from arc.services.connector_providers.slack import validate_slack_target
+from arc.services.connector_providers.slack import (
+    SLACK_MAX_MESSAGE_CHARS,
+    validate_slack_target,
+)
 
 FAILURE_AUTH = "auth"
 FAILURE_RATE_LIMIT = "rate_limit"
@@ -104,6 +110,13 @@ class FakeSlackProvider(_FakeAdapter):
 
     provider = ConnectorProvider.SLACK
 
+    def __init__(self, failure: Optional[str] = None):
+        super().__init__(failure)
+        #: Messages this fake would have posted, in order. Test-visible
+        #: on purpose: an action tool's whole point is the side effect,
+        #: and asserting a returned value alone would not prove one.
+        self.posted: list[tuple[str, str]] = []
+
     async def fetch(
         self,
         credential: ProviderCredential,
@@ -133,6 +146,32 @@ class FakeSlackProvider(_FakeAdapter):
             ),
         ]
         return ProviderFetchResult(provider=self.provider, records=records[: max(1, int(limit))])
+
+    async def act(
+        self,
+        credential: ProviderCredential,
+        action: ProviderAction,
+    ) -> ProviderActionResult:
+        """Deterministic fake of ``chat.postMessage`` (ADR-013).
+
+        Applies the SAME validation the live adapter applies before it
+        would reach the network, so a test that passes here is testing the
+        refusals the live path also makes -- not a permissive stand-in.
+        Nothing leaves the process; the posted message is recorded on the
+        instance so a test can assert what Arc would have sent.
+        """
+        validate_slack_target(action.target)
+        if len(action.body) > SLACK_MAX_MESSAGE_CHARS:
+            raise ProviderValidationError(
+                f"Slack message exceeds {SLACK_MAX_MESSAGE_CHARS} characters"
+            )
+        self._maybe_fail()
+        self.posted.append((action.target, action.body))
+        return ProviderActionResult(
+            provider=self.provider,
+            reference=f"1700000100.{len(self.posted):06d}",
+            url=None,
+        )
 
 
 class FakeLinearProvider(_FakeAdapter):
