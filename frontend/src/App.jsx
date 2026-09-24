@@ -188,9 +188,14 @@ export default function App() {
               />
             </Route>
 
-            <Route element={<RequirePermission permission={PERMISSIONS.APPROVAL_READ} />}>
-              <Route path="approvals" element={<ApprovalsPage />} />
-            </Route>
+            {/* Not permission-gated. ADR-012: any member may read the
+                approval requests THEY raised, and the only place in the
+                product that spends an approved request is this page's
+                "Run it now". Gating the route on APPROVAL_READ made the
+                resume path unreachable for the roles that actually raise
+                requests. The endpoint narrows the rows; the page states
+                which scope the reader is in. */}
+            <Route path="approvals" element={<ApprovalsPage />} />
 
               {/* Removed tenant surfaces (V2-ADR-021, PRD §24, UX_SPEC §1).
                   Operations, Incidents and Activity were shells that called

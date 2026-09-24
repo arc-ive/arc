@@ -437,7 +437,7 @@ class CorruptApprovalRepository(FakeApprovalRepository):
 
         raise CorruptDataError("Stored approval request violates an invariant")
 
-    async def list_for_tenant_paginated(self, tenant_id, limit, offset):
+    async def list_for_tenant_paginated(self, tenant_id, limit, offset, requester_user_id=None):
         from arc.db.connection import CorruptDataError
 
         raise CorruptDataError("Stored approval request violates an invariant")

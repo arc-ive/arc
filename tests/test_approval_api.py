@@ -1,10 +1,11 @@
 """API-level tests for the Human Intervention approval gate (V1).
 
 Covers authentication, the centralized RBAC matrix (platform/company
-admins read+decide; operations user and employees denied), trusted tenant
-scoping with path-consistency 403, lifecycle exposure (including lazy
-expiry), decision terminality, and response minimization (never raw
-arguments, never the internal digest).
+admins read the whole tenant and decide; everyone else reads only their
+own requests and decides nothing -- ADR-012), trusted tenant scoping with
+path-consistency 403, lifecycle exposure (including lazy expiry),
+decision terminality, and response minimization (never raw arguments,
+never the internal digest).
 """
 
 import uuid
@@ -29,12 +30,29 @@ def _unique(prefix):
     return f"apig-{prefix}-{uuid.uuid4().hex[:8]}"
 
 
-async def _seed(db, tenant_id, *, status=ApprovalStatus.PENDING, arguments_digest=_DIGEST):
+def _digest(seed):
+    """A distinct 64-char digest per row.
+
+    A pending request is unique on
+    ``(tenant_id, tool_name, tool_version, arguments_digest)``, so tests
+    that seed several rows in one tenant must vary this.
+    """
+    return f"{seed:064x}"
+
+
+async def _seed(
+    db,
+    tenant_id,
+    *,
+    status=ApprovalStatus.PENDING,
+    arguments_digest=_DIGEST,
+    requester_user_id="requester-1",
+):
     repo = PostgreSQLApprovalRequestRepository(db)
     request = ApprovalRequest(
         id=f"appr-{uuid.uuid4().hex[:14]}",
         tenant_id=tenant_id,
-        requester_user_id="requester-1",
+        requester_user_id=requester_user_id,
         tool_name="restart_service",
         tool_version="1",
         risk_level="high",
@@ -87,32 +105,53 @@ class TestAuthenticationAndRbac:
         )
         assert response.status_code == 401
 
-    async def test_operations_user_cannot_read_or_decide(
-        self, client, seeded, make_token, authorization_override
+    @pytest.mark.parametrize(
+        "assign_role",
+        [None, ApplicationRole.EMPLOYEE, ApplicationRole.OPERATIONS_USER],
+    )
+    async def test_caller_without_approval_read_sees_no_one_elses_request(
+        self, client, seeded, make_token, authorization_override, db, assign_role
     ):
-        tenant, user, _ = seeded
-        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
-        token = make_token(user.id)
-        assert _authed(client, "get", _url(tenant.id), token).status_code == 403
-        assert (
-            _authed(
-                client,
-                "post",
-                _url(tenant.id, f"/{_unique('appr')}/decisions"),
-                token,
-                json={"decision": "approve"},
-            ).status_code
-            == 403
-        )
+        """ADR-012 narrows these callers; it does not widen them.
 
-    @pytest.mark.parametrize("assign_role", [None, ApplicationRole.EMPLOYEE])
-    async def test_employee_and_unassigned_denied(
-        self, client, seeded, make_token, authorization_override, assign_role
-    ):
+        The listing succeeds now, but over the caller's OWN rows only.
+        A colleague's pending request is seeded here and must not appear,
+        and ``total`` must not count it.
+        """
         tenant, user, _ = seeded
+        await _seed(db, tenant.id, requester_user_id="somebody-else")
         authorization_override({} if assign_role is None else {user.id: assign_role})
         token = make_token(user.id)
-        assert _authed(client, "get", _url(tenant.id), token).status_code == 403
+
+        listing = _authed(client, "get", _url(tenant.id), token)
+        assert listing.status_code == 200
+        assert listing.json()["items"] == []
+        assert listing.json()["total"] == 0
+
+    @pytest.mark.parametrize(
+        "assign_role",
+        [None, ApplicationRole.EMPLOYEE, ApplicationRole.OPERATIONS_USER],
+    )
+    async def test_caller_without_approval_decide_cannot_decide(
+        self, client, seeded, make_token, authorization_override, db, assign_role
+    ):
+        """Reading your own request never became deciding it (ADR-012)."""
+        tenant, user, _ = seeded
+        own = await _seed(db, tenant.id, requester_user_id=user.id)
+        authorization_override({} if assign_role is None else {user.id: assign_role})
+        token = make_token(user.id)
+
+        for approval_id in (own.id, _unique("appr")):
+            assert (
+                _authed(
+                    client,
+                    "post",
+                    _url(tenant.id, f"/{approval_id}/decisions"),
+                    token,
+                    json={"decision": "approve"},
+                ).status_code
+                == 403
+            )
 
 
 class TestDecisionsAndLifecycle:
@@ -422,3 +461,168 @@ class TestCorruptRowControlledError:
             self._restore_service(previous)
         assert response.status_code == 500
         assert response.json() == {"detail": "Approval decision failed"}
+
+
+class TestSelfScopedRead:
+    """ADR-012: a requester may always read the requests they raised.
+
+    The role under test is ``OPERATIONS_USER`` because that is the real
+    case: it holds ``tool:execute`` and not ``approval:read``, so it is
+    the role that produces approval requests it could not previously see
+    -- which left the resume path ("Run it now") unreachable for the
+    people most likely to need it.
+
+    Every test here seeds MORE rows in the tenant than the caller
+    authored, so a narrowing applied after fetching a page would show up
+    either in ``items`` or in ``total``.
+    """
+
+    async def test_requester_sees_own_request_and_not_a_colleagues(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        tenant, user, _ = seeded
+        mine = await _seed(db, tenant.id, requester_user_id=user.id)
+        for index in range(6):
+            await _seed(
+                db,
+                tenant.id,
+                requester_user_id=f"colleague-{index % 2}",
+                arguments_digest=_digest(index),
+            )
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        body = _authed(client, "get", _url(tenant.id), token).json()
+
+        assert [item["id"] for item in body["items"]] == [mine.id]
+        # Not just the page: the count is scoped too, so the caller never
+        # learns how much approval traffic the tenant carries.
+        assert body["total"] == 1
+
+    async def test_permission_holder_still_reads_the_whole_tenant(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        tenant, user, _ = seeded
+        await _seed(db, tenant.id, requester_user_id=user.id)
+        await _seed(db, tenant.id, requester_user_id="colleague-1", arguments_digest=_digest(1))
+        await _seed(db, tenant.id, requester_user_id="colleague-2", arguments_digest=_digest(2))
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(user.id)
+
+        body = _authed(client, "get", _url(tenant.id), token).json()
+
+        assert len(body["items"]) == 3
+        assert body["total"] == 3
+
+    async def test_scoped_pagination_pages_over_the_scoped_set(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        """LIMIT/OFFSET must bind to the scoped query, not an unscoped one."""
+        tenant, user, _ = seeded
+        for index in range(3):
+            await _seed(db, tenant.id, requester_user_id=user.id, arguments_digest=_digest(index))
+        for index in range(3, 5):
+            await _seed(
+                db, tenant.id, requester_user_id="colleague-1", arguments_digest=_digest(index)
+            )
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        first = _authed(client, "get", _url(tenant.id) + "?limit=2&offset=0", token).json()
+        second = _authed(client, "get", _url(tenant.id) + "?limit=2&offset=2", token).json()
+
+        assert first["total"] == 3 and second["total"] == 3
+        assert len(first["items"]) == 2
+        assert len(second["items"]) == 1
+        seen = {item["id"] for item in first["items"] + second["items"]}
+        assert len(seen) == 3
+        assert all(item["requester_user_id"] == user.id for item in first["items"])
+
+    async def test_self_scope_does_not_reach_across_tenants(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        """The requester predicate is an extra AND, never a replacement.
+
+        The SAME user authors a request in another tenant. Listing the
+        tenant they are a member of must not surface it.
+        """
+        tenant, user, _ = seeded
+        other_tenant, _ = await _member_tenant_with_user(db)
+        mine_here = await _seed(db, tenant.id, requester_user_id=user.id)
+        await _seed(db, other_tenant.id, requester_user_id=user.id)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        body = _authed(client, "get", _url(tenant.id), token).json()
+
+        assert [item["id"] for item in body["items"]] == [mine_here.id]
+        assert body["total"] == 1
+        # And the tenant they have no membership in is still refused
+        # outright by the X-10 boundary, scope or no scope.
+        assert _authed(client, "get", _url(other_tenant.id), token).status_code == 403
+
+    async def test_requester_can_read_own_approval_by_id(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        tenant, user, _ = seeded
+        mine = await _seed(db, tenant.id, requester_user_id=user.id)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        response = _authed(client, "get", _url(tenant.id, f"/{mine.id}"), token)
+
+        assert response.status_code == 200
+        assert response.json()["id"] == mine.id
+
+    async def test_reading_someone_elses_approval_by_id_is_404_not_403(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        """An unreadable row must not confirm that it exists."""
+        tenant, user, _ = seeded
+        theirs = await _seed(db, tenant.id, requester_user_id="colleague-1")
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        response = _authed(client, "get", _url(tenant.id, f"/{theirs.id}"), token)
+
+        assert response.status_code == 404
+        unknown = _authed(client, "get", _url(tenant.id, f"/{_unique('appr')}"), token)
+        assert response.json() == unknown.json()
+
+    async def test_requester_still_cannot_decide_their_own_request(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        """Read scope did not become decide scope."""
+        tenant, user, _ = seeded
+        mine = await _seed(db, tenant.id, requester_user_id=user.id)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        response = _authed(
+            client,
+            "post",
+            _url(tenant.id, f"/{mine.id}/decisions"),
+            token,
+            json={"decision": "approve"},
+        )
+
+        assert response.status_code == 403
+        # The row is untouched: still pending, still undecided.
+        after = _authed(client, "get", _url(tenant.id, f"/{mine.id}"), token).json()
+        assert after["status"] == "pending"
+        assert after["decided_by_user_id"] is None
+
+    async def test_scoped_read_still_redacts(
+        self, client, seeded, make_token, authorization_override, db
+    ):
+        """Response minimization is not relaxed for the owner of the row."""
+        tenant, user, _ = seeded
+        await _seed(db, tenant.id, requester_user_id=user.id)
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        token = make_token(user.id)
+
+        item = _authed(client, "get", _url(tenant.id), token).json()["items"][0]
+
+        assert "arguments_digest" not in item
+        assert "encrypted_input" not in item
+        assert "input_key_version" not in item

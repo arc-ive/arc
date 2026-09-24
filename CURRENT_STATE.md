@@ -258,7 +258,7 @@ Schema uses idempotent `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF
 | Connectors | GET, POST, POST sync /tenants/{id}/connectors | connector:create/read/sync |
 | Webhooks | POST /webhooks/{id}/events, GET /tenants/{id}/webhooks/events, POST /tenants/{id}/webhooks/process | HMAC auth, webhook:read, webhook:process |
 | Observability | GET /tenants/{id}/observability/usage-summary, GET /platform/observability/summary, GET /observability/health, GET /tenants/{id}/observability/agent-runs | observability:read, observability:platform_read |
-| Approvals | GET, GET by id, POST decide /tenants/{id}/approvals | approval:read, approval:decide |
+| Approvals | GET, GET by id, POST decide /tenants/{id}/approvals | approval:read (tenant-wide) or self-scoped to the caller's own requests per ADR-012; approval:decide |
 
 **API contract note:** Request bodies use `Dict[str, Any]` rather than Pydantic models. Domain models validate via `__post_init__`. This is technical debt — it weakens automatic validation and OpenAPI documentation.
 

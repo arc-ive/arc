@@ -200,11 +200,18 @@ class HumanApprovalService:
         limit: int,
         offset: int,
         status: Optional[ApprovalStatus] = None,
+        requester_user_id: Optional[str] = None,
     ):
-        """List requests with LIMIT/OFFSET and total count."""
+        """List requests with LIMIT/OFFSET and total count.
+
+        ``requester_user_id`` narrows the listing to that user's own
+        requests (ADR-012). It is passed straight to the repository so the
+        narrowing happens in SQL: the count and the page are both scoped,
+        and no unscoped row is ever fetched for a scoped caller.
+        """
         try:
             all_items, total = await self.repository.list_for_tenant_paginated(
-                context.tenant_id, limit, offset
+                context.tenant_id, limit, offset, requester_user_id
             )
         except CorruptDataError as exc:
             raise _corrupt_error("list", context.tenant_id, exc) from exc
@@ -213,7 +220,20 @@ class HumanApprovalService:
             derived = [r for r in derived if r.status == status]
         return derived, total
 
-    async def get_request(self, context: TenantContext, approval_id: str) -> ApprovalRequest:
+    async def get_request(
+        self,
+        context: TenantContext,
+        approval_id: str,
+        requester_user_id: Optional[str] = None,
+    ) -> ApprovalRequest:
+        """Read one request within the trusted tenant.
+
+        ``requester_user_id`` restricts the read to that user's own
+        request (ADR-012). A row owned by someone else raises
+        :class:`ApprovalNotFoundError` — the same outcome as a row that
+        does not exist, so a scope the caller cannot read never confirms
+        that the approval is there.
+        """
         try:
             request = await self.repository.get_by_id(approval_id, context.tenant_id)
         except NotFoundError as exc:
@@ -221,6 +241,11 @@ class HumanApprovalService:
             raise ApprovalNotFoundError(str(exc)) from exc
         except CorruptDataError as exc:
             raise _corrupt_error(approval_id, context.tenant_id, exc) from exc
+        if requester_user_id is not None and request.requester_user_id != requester_user_id:
+            logger.debug(
+                "Approval %s is outside the self-scope of user %s", approval_id, requester_user_id
+            )
+            raise ApprovalNotFoundError("Approval request not found")
         return self._with_effective_status(request)
 
     # ------------------------------------------------------------------

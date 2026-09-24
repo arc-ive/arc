@@ -55,12 +55,22 @@ export const platformNav = [
  *   webhooks      GET  ~/webhooks/events      WEBHOOK_READ
  *   observability GET  ~/observability/*      OBSERVABILITY_READ
  *   usage         GET  ~/observability/*      OBSERVABILITY_READ
- *   approvals     GET  ~/approvals            APPROVAL_READ
+ *   approvals     GET  ~/approvals            (any member — ADR-012)
  *   settings      PUT  ~                      TENANT_UPDATE
  *
  * `settings` is gated on the WRITE permission deliberately: it is a
  * configuration surface, and read-only configuration a user cannot change
  * is not a job anyone has.
+ *
+ * `approvals` is the one item that declares a SET rather than a single
+ * permission, because ADR-012 gave the surface two audiences. A holder of
+ * `approval:read` goes there to decide. Everyone who can initiate an
+ * action that may require an approval goes there to spend one once it is
+ * granted — "Run it now" lives on that page and nowhere else — and the
+ * endpoint returns them only their own requests. So the link follows
+ * "could you have raised one, or may you decide one", which is the set
+ * below. A member holding none of them would land on an empty page and
+ * is not offered the link.
  */
 /**
  * The five product areas from ARC_UX_SPEC.md §8.
@@ -104,9 +114,17 @@ const AREAS = [
     permission: PERMISSIONS.KNOWLEDGE_READ,
   },
   {
+    // `subsumesFirstChild`: the area label and its first child name the
+    // SAME destination, so when that child is the only survivor the area
+    // label is the better of the two — "Company Brain" is the product
+    // concept a user should learn and "Knowledge" is a worse name for it.
+    // Declared per area rather than inferred from position: "Operations"
+    // is a category, not another word for "Approvals", and collapsing
+    // that area to the word "Operations" would hide what the page is.
     id: 'brain',
     label: 'Company Brain',
     icon: BookOpen,
+    subsumesFirstChild: true,
     children: [
       { to: 'knowledge', label: 'Knowledge', permission: PERMISSIONS.KNOWLEDGE_READ },
       { to: 'connectors', label: 'Sources', permission: PERMISSIONS.CONNECTOR_READ },
@@ -116,6 +134,7 @@ const AREAS = [
     id: 'workflows',
     label: 'AI Workflows',
     icon: Workflow,
+    subsumesFirstChild: true,
     children: [
       { to: 'skills', label: 'Skills', permission: PERMISSIONS.SKILL_READ },
       { to: 'agents', label: 'Agents', permission: PERMISSIONS.AGENT_EXECUTE },
@@ -126,7 +145,16 @@ const AREAS = [
     label: 'Operations',
     icon: Gauge,
     children: [
-      { to: 'approvals', label: 'Approvals', permission: PERMISSIONS.APPROVAL_READ },
+      {
+        to: 'approvals',
+        label: 'Approvals',
+        permissionAnyOf: [
+          PERMISSIONS.APPROVAL_READ,
+          PERMISSIONS.AGENT_EXECUTE,
+          PERMISSIONS.SKILL_EXECUTE,
+          PERMISSIONS.TOOL_EXECUTE,
+        ],
+      },
       { to: 'webhooks', label: 'Webhooks', permission: PERMISSIONS.WEBHOOK_READ },
       { to: 'usage', label: 'Usage', permission: PERMISSIONS.OBSERVABILITY_READ },
     ],
@@ -154,33 +182,41 @@ const HOME_ITEM = { to: 'home', label: 'Home', icon: Home }
  * no permissions, so this returns an empty list rather than the full product
  * surface — navigation fails closed (ARC_V2_PRD.md P4).
  */
+function reaches(can, item) {
+  // `permissionAnyOf` means "any one of these is a reason to go here".
+  // Still fails closed: an unresolved profile holds nothing, so `some`
+  // is false and the item is not listed.
+  if (item.permissionAnyOf) return item.permissionAnyOf.some((p) => can(p))
+  return can(item.permission)
+}
+
 export function tenantNavForCapabilities(can) {
   if (typeof can !== 'function') return []
 
   const areas = []
   for (const area of AREAS) {
     if (area.children) {
-      const children = area.children.filter((c) => can(c.permission))
+      const children = area.children.filter((c) => reaches(can, c))
       if (children.length === 0) continue
       // A group of one is just an item wearing a group's clothes. When it
-      // collapses, keep the AREA label if the survivor is the area's primary
-      // child — "Company Brain" is the product concept a user should learn,
-      // and "Knowledge" is a worse name for the same destination. If a
-      // later child is the survivor, its own label is the specific one
-      // ("Agents" beats "AI Workflows" when agents are all you can reach).
+      // collapses, keep the AREA label only where the area declares that
+      // it subsumes its first child and that child is the survivor. Every
+      // other collapse keeps the child's own label, which is the specific
+      // one ("Agents" beats "AI Workflows" when agents are all you can
+      // reach; "Approvals" beats "Operations" always).
       if (children.length === 1) {
         const [only] = children
-        const isPrimary = only.to === area.children[0].to
+        const subsumed = area.subsumesFirstChild && only.to === area.children[0].to
         areas.push({
           ...area,
           to: only.to,
-          label: isPrimary ? area.label : only.label,
+          label: subsumed ? area.label : only.label,
           children: undefined,
         })
       } else {
         areas.push({ ...area, children })
       }
-    } else if (can(area.permission)) {
+    } else if (reaches(can, area)) {
       areas.push(area)
     }
   }
@@ -221,7 +257,7 @@ export function tenantRoutesForCapabilities(can) {
       ? area.children.map((c) => ({ ...c, icon: area.icon }))
       : [area],
   )
-  return [...fromAreas, ...UNLISTED.filter((item) => can(item.permission))]
+  return [...fromAreas, ...UNLISTED.filter((item) => reaches(can, item))]
 }
 
 /** Landing route within a tenant for the authenticated user. */

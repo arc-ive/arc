@@ -29,6 +29,12 @@ import { useDocumentTitle } from '../../lib/useDocumentTitle.js'
  *
  * Risk leads within a row, because risk is the reason a decision is being
  * asked for at all.
+ *
+ * The page has two scopes (ADR-012). A holder of `approval:read` sees the
+ * whole workspace and decides. A member without it sees only the requests
+ * they raised, decides nothing, and comes here to spend an approval once
+ * someone else has granted it — which is the only reason the page is
+ * reachable to them at all.
  */
 
 const RISK_TONE = { high: 'danger', medium: 'warning', low: 'neutral' }
@@ -185,6 +191,24 @@ function decisionErrorMessage(error) {
   return 'The decision could not be recorded. Try again.'
 }
 
+/**
+ * One line saying what is waiting, in the reader's own scope.
+ *
+ * A self-scoped reader decides nothing, so "waiting on you" would be
+ * false for them however few rows they have; what is true is that their
+ * requests are waiting on somebody else.
+ */
+function headerSummary({ readsWholeTenant, waiting, waitingOnYou }) {
+  if (!readsWholeTenant) {
+    return waiting.length === 0
+      ? 'Nothing of yours is waiting on a decision.'
+      : `${waiting.length} of your requests waiting on someone else.`
+  }
+  if (waiting.length === 0) return 'Nothing is waiting on a decision.'
+  if (waitingOnYou.length === waiting.length) return `${waiting.length} waiting on you.`
+  return `${waiting.length} waiting · ${waitingOnYou.length} you can decide.`
+}
+
 export function ApprovalsPage() {
   useDocumentTitle('Approvals')
   const { tenantId } = useParams()
@@ -193,13 +217,18 @@ export function ApprovalsPage() {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState(null)
 
-  const canRead = can('approval:read')
+  // ADR-012. `approval:read` is the TENANT-WIDE read. Without it a member
+  // still reaches this page, and the endpoint returns only the requests
+  // they raised themselves — narrowed in SQL, not here. Nothing on this
+  // page decides what the reader may see; it only says which of the two
+  // scopes they are in, so a short list reads as intentional.
+  const readsWholeTenant = can('approval:read')
   const canDecide = can('approval:decide')
 
   const { data: approvals, isPending, isError, error } = useQuery({
     queryKey: queryKeys.approvalsList(tenantId, statusFilter),
     queryFn: () => listApprovals(tenantId, { status: statusFilter }),
-    enabled: Boolean(tenantId) && canRead,
+    enabled: Boolean(tenantId),
   })
 
   const decideMutation = useMutation({
@@ -227,17 +256,6 @@ export function ApprovalsPage() {
 
   const handleRun = (approval) => runMutation.mutate({ approval })
 
-  if (!canRead) {
-    return (
-      <div className="flex flex-col">
-        <h1 className="type-display-lg text-fg">Approvals</h1>
-        <p className="measure mt-4 type-prose text-fg-subtle">
-          You don&apos;t have access to approvals in this workspace.
-        </p>
-      </div>
-    )
-  }
-
   const rows = approvals ?? []
   const waiting = rows.filter((a) => a.status === 'pending')
   // What is waiting on the reader is not the same as what is waiting:
@@ -249,14 +267,21 @@ export function ApprovalsPage() {
   return (
     <div className="flex flex-col">
       <header>
-        <h1 className="type-display-lg text-fg">Approvals</h1>
+        <h1 className="type-display-lg text-fg">
+          {readsWholeTenant ? 'Approvals' : 'Your requests'}
+        </h1>
         {!isPending && !isError && (
           <p className="measure mt-2 text-[14px] text-fg-muted">
-            {waiting.length === 0
-              ? 'Nothing is waiting on a decision.'
-              : waitingOnYou.length === waiting.length
-                ? `${waiting.length} waiting on you.`
-                : `${waiting.length} waiting · ${waitingOnYou.length} you can decide.`}
+            {headerSummary({ readsWholeTenant, waiting, waitingOnYou })}
+          </p>
+        )}
+        {/* Said once, at the top. A reader who cannot tell their list is
+            scoped will read three rows as "my colleagues barely use
+            this", which is a wrong conclusion the page can prevent. */}
+        {!readsWholeTenant && (
+          <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-muted">
+            This is every approval you have asked for. Requests raised by
+            other people in this workspace are not shown.
           </p>
         )}
       </header>
@@ -309,7 +334,9 @@ export function ApprovalsPage() {
         <p className="measure mt-8 type-prose text-fg-subtle">
           {statusFilter
             ? `No ${statusFilter} approvals`
-            : 'No approval requests have been raised in this workspace yet. Arc asks for one when a skill reaches a tool classified high risk.'}
+            : readsWholeTenant
+              ? 'No approval requests have been raised in this workspace yet. Arc asks for one when a skill reaches a tool classified high risk.'
+              : 'You have not asked for an approval yet. Arc raises one for you when an action you take reaches a tool classified high risk.'}
         </p>
       )}
 
