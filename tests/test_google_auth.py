@@ -4,6 +4,7 @@ Verifies authorization URL generation, code exchange, ID token verification,
 and user mapping logic. Uses mocked HTTP responses to avoid real Google calls.
 """
 
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -593,3 +594,186 @@ class TestFirstSignInLinking:
 
         assert user is None
         db.link_user_provider.assert_not_awaited()
+
+
+class TestFirstSignInLinkingAgainstTheDatabase:
+    """The same Path 2 behaviour, proved against real PostgreSQL.
+
+    The mock-based tests above assert that ``link_user_provider`` is
+    CALLED with the right arguments. That is not the same claim as the
+    binding PERSISTING, or as the user's email surviving the link —
+    both of which are properties of the write, and a mock cannot show
+    either. Review of PR #306 asked for exactly that distinction, and it
+    is a fair one: an auth branch that is only proved against a mock is
+    proved against the test's own assumptions.
+
+    These exercise the real query path end to end: a provisioned user,
+    an unbound row, a sign-in, and then a re-read from the database to
+    see what is actually stored.
+    """
+
+    @staticmethod
+    async def _database():
+        """Standalone connection: the module-level ``db`` fixture is a mock."""
+        import os
+
+        from arc.db.connection import ArcDatabase
+
+        database = ArcDatabase(
+            os.getenv("DATABASE_URL", "postgresql://arc:arc-dev-password@localhost:5432/arc_test")
+        )
+        await database.connect()
+        return database
+
+    @staticmethod
+    async def _provisioned_user(database, *, status: str = "active"):
+        """An administrator-created user with no provider binding."""
+        from arc.domain.models import User
+        from arc.repositories.tenancy import PostgreSQLUserRepository
+
+        users = PostgreSQLUserRepository(database)
+        return await users.create(
+            User(
+                id=f"gauth-{uuid.uuid4().hex[:12]}",
+                email=f"{uuid.uuid4().hex}@acme.example",
+                username="provisioned",
+                status=status,
+            )
+        )
+
+    @staticmethod
+    def _service_over(database, config):
+        return GoogleOIDCService(config, database)
+
+    @staticmethod
+    def _identity(email, **overrides):
+        from arc.security.google import GoogleIdentity
+
+        return GoogleIdentity(
+            **{
+                "sub": f"google-{uuid.uuid4().hex[:12]}",
+                "email": email,
+                "email_verified": True,
+                "name": "Ada Lovelace",
+                "picture": "https://example.com/a.png",
+                **overrides,
+            }
+        )
+
+    async def test_a_verified_email_binds_the_subject_and_it_persists(self, config):
+        """Requirement 1: the binding is durable, not merely attempted."""
+        database = await self._database()
+        try:
+            user = await self._provisioned_user(database)
+            assert user.provider_subject is None, "fixture must start unbound"
+
+            identity = self._identity(user.email)
+            linked = await self._service_over(database, config).find_or_link_user(identity)
+
+            assert linked is not None
+            # Re-read: what the caller got could be an in-memory object.
+            stored = await database.get_user_by_email(user.email)
+            assert stored.provider_subject == identity.sub
+            assert stored.auth_provider == "google"
+
+            # And the durable lookup now resolves, which is the whole
+            # point: the next sign-in takes Path 1.
+            by_subject = await database.get_user_by_provider("google", identity.sub)
+            assert by_subject is not None
+            assert by_subject.id == user.id
+        finally:
+            await database.disconnect()
+
+    async def test_an_unverified_email_writes_nothing(self, config):
+        """Requirement 2: rejected, and no binding left behind.
+
+        Asserting the return is None is not enough — a partial write
+        would still return None.
+        """
+        database = await self._database()
+        try:
+            user = await self._provisioned_user(database)
+            identity = self._identity(user.email, email_verified=False)
+
+            result = await self._service_over(database, config).find_or_link_user(identity)
+
+            assert result is None
+            stored = await database.get_user_by_email(user.email)
+            assert stored.provider_subject is None
+            assert stored.auth_provider == "local"
+        finally:
+            await database.disconnect()
+
+    async def test_an_already_bound_user_is_not_rebound(self, config):
+        """Requirement 3: account-takeover guard, against the stored row.
+
+        A second Google identity asserting the same address must not
+        displace the first, and must leave the original binding intact.
+        """
+        database = await self._database()
+        try:
+            user = await self._provisioned_user(database)
+            service = self._service_over(database, config)
+
+            first = self._identity(user.email)
+            assert await service.find_or_link_user(first) is not None
+
+            attacker = self._identity(user.email)
+            assert await service.find_or_link_user(attacker) is None
+
+            stored = await database.get_user_by_email(user.email)
+            assert stored.provider_subject == first.sub, "original binding was displaced"
+        finally:
+            await database.disconnect()
+
+    async def test_the_email_is_never_written_back_from_the_provider(self, config):
+        """Requirement 4: linking binds a subject; it does not touch email.
+
+        Email is the correlation key for ONE sign-in only. If the
+        provider could rewrite it, a reassigned address would become a
+        path back into an account.
+        """
+        database = await self._database()
+        try:
+            user = await self._provisioned_user(database)
+            original_email = user.email
+
+            # The provider reports a DIFFERENT address in the same claim
+            # set; correlation still happens on the stored one.
+            identity = self._identity(original_email)
+            await self._service_over(database, config).find_or_link_user(identity)
+
+            stored = await database.get_user_by_email(original_email)
+            assert stored.email == original_email
+            assert stored.id == user.id
+        finally:
+            await database.disconnect()
+
+    async def test_a_disabled_user_is_not_bound(self, config):
+        """A disabled account must not gain a working sign-in route."""
+        database = await self._database()
+        try:
+            user = await self._provisioned_user(database, status="disabled")
+            identity = self._identity(user.email)
+
+            result = await self._service_over(database, config).find_or_link_user(identity)
+
+            assert result is None
+            stored = await database.get_user_by_email(user.email)
+            assert stored.provider_subject is None
+        finally:
+            await database.disconnect()
+
+    async def test_an_unknown_email_provisions_nobody(self, config):
+        """Correlation finds a user an administrator created; never creates one."""
+        database = await self._database()
+        try:
+            absent = f"{uuid.uuid4().hex}@nowhere.example"
+            identity = self._identity(absent)
+
+            result = await self._service_over(database, config).find_or_link_user(identity)
+
+            assert result is None
+            assert await database.get_user_by_email(absent) is None
+        finally:
+            await database.disconnect()
