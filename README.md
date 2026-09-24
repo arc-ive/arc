@@ -4,9 +4,9 @@
 
 ## Project Status
 
-**Foundation Phase — X-10 complete, X-11 next**
+**Foundation — ADR-001 through ADR-013 accepted and implemented; QA Phases 0–4 merged (`41f32fd`)**
 
-Arc has completed X-10 (tenant membership boundary enforcement) and is continuing Foundation Phase work. The team is establishing the engineering workflow, development environment, AI development system, documentation, security baseline, architecture decision process, and product roadmap before implementing the product modules.
+Arc has completed tenant membership boundary enforcement (X-10), application RBAC (X-11), and the ADR-009–013 slices (tenant-scoped membership administration, observability attribution, tenant suspension, self-scoped approval reads, external actions). Browser E2E (Playwright, Chromium) and a CI `e2e` quality gate are merged. CI runs on PRs but is not a required check. The team continues product implementation under the approved ADRs. See `CURRENT_STATE.md` for the current engineering state.
 
 ## Domain
 
@@ -92,6 +92,6 @@ job) and covered by ``tests/test_schema_bootstrap.py``.
 
 ## Development Status
 
-X-10 (tenant membership boundary) is implemented and verified. The product modules are **not yet under implementation**.
+X-10 (tenant membership boundary), X-11 (application RBAC), and the ADR-009–013 architecture slices are implemented and verified. Browser E2E coverage (QA Phases 0–4) is merged with a CI quality gate.
 
 See `CURRENT_STATE.md` for the current engineering state.
