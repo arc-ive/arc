@@ -108,6 +108,12 @@ TENANT_LIST = Permission(resource="tenant", action="list")
 USER_CREATE = Permission(resource="user", action="create")
 USER_READ = Permission(resource="user", action="read")
 MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
+# Tenant-scoped membership administration (ADR-009). Distinct from
+# MEMBERSHIP_CREATE, which is the platform-wide authority: this one is
+# only ever meaningful inside the tenant the trusted context names, so a
+# company administrator holding it in their own workspace gains nothing
+# anywhere else.
+MEMBERSHIP_MANAGE = Permission(resource="membership", action="manage")
 TENANT_READ = Permission(resource="tenant", action="read")
 KNOWLEDGE_CREATE = Permission(resource="knowledge", action="create")
 KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
@@ -145,6 +151,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             USER_CREATE,
             USER_READ,
             MEMBERSHIP_CREATE,
+            MEMBERSHIP_MANAGE,
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
@@ -172,6 +179,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
         {
+            MEMBERSHIP_MANAGE,
             AGENT_EXECUTE,
             TENANT_UPDATE,
             TENANT_READ,

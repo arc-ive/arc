@@ -77,7 +77,6 @@ from arc.security.authorization import (
     KNOWLEDGE_DELETE,
     KNOWLEDGE_READ,
     KNOWLEDGE_UPDATE,
-    MEMBERSHIP_CREATE,
     OBSERVABILITY_PLATFORM_READ,
     OBSERVABILITY_READ,
     ROLE_PERMISSIONS,
@@ -101,6 +100,7 @@ from arc.security.authorization import (
 from arc.security.dependencies import (
     get_authenticated_principal,
     get_authorization_service,
+    require_membership_administration,
     require_permission,
     require_tenant_permission,
 )
@@ -584,19 +584,34 @@ async def get_users_for_tenant(
 async def create_membership(
     tenant_id: str,
     membership_data: MembershipCreateRequest,
-    _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
+    effective_tenant_id: str = Depends(require_membership_administration()),
     user_service: UserService = Depends(lambda: app_context.user_service),
 ) -> Dict[str, Any]:
-    """Create a membership associating a user with a tenant.
+    """Add a user to a tenant.
 
-    Protected: requires the global ``membership:create`` permission
-    (PLATFORM_ADMINISTRATOR). The target ``user_id`` and ``role`` are
-    provisioning inputs, not the caller's identity. The caller's identity
-    comes from the authenticated principal (JWT ``sub``).
+    Protected by either authority (ADR-009): the global
+    ``membership:create`` held by PLATFORM_ADMINISTRATOR, or tenant-scoped
+    ``membership:manage`` held by COMPANY_ADMINISTRATOR in their own
+    workspace.
+
+    For a company administrator the tenant comes from the trusted
+    context, so a request aimed at another tenant fails while
+    establishing it. A platform administrator is deliberately not a
+    member of any customer tenant (ADR-003), so requiring a context would
+    lock them out of the provisioning they own; for them the path tenant
+    is authoritative, exactly as before.
+
+    The target ``user_id`` and ``role`` are administration inputs, not the
+    caller's identity, which comes from the authenticated principal.
+    Creating an Arc identity remains platform-only (``user:create``):
+    adding an existing user to a workspace is administration, minting an
+    identity is provisioning, and ADR-009 keeps them separate.
     """
     try:
         membership = await user_service.associate_user_with_tenant(
-            user_id=membership_data.user_id, tenant_id=tenant_id, role=membership_data.role
+            user_id=membership_data.user_id,
+            tenant_id=effective_tenant_id,
+            role=membership_data.role,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
@@ -617,21 +632,47 @@ async def create_membership(
 async def delete_membership(
     tenant_id: str,
     user_id: str,
-    _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
+    effective_tenant_id: str = Depends(require_membership_administration()),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     membership_service: MembershipService = Depends(lambda: app_context.membership_service),
 ) -> Dict[str, Any]:
-    """Remove a user's membership from a tenant.
+    """Remove a user from a tenant.
 
-    Protected: requires the global ``membership:create`` permission
-    (PLATFORM_ADMINISTRATOR). Only an existing membership can be removed.
+    Protected by either authority (ADR-009), as for creation.
+
+    Two invariants are enforced here rather than in any UI, because a UI
+    that hides a control does not prevent the request:
+
+    - **A tenant always keeps at least one OWNER.** Removing the last one
+      leaves a workspace nobody can administer, recoverable only by the
+      platform operator.
+    - **Nobody removes their own membership.** Self-removal is how an
+      administrator locks themselves out of the workspace they are
+      responsible for, and it reads as an accident far more often than an
+      intention.
     """
-    if not await membership_service.membership_exists(user_id, tenant_id):
+    if not await membership_service.membership_exists(user_id, effective_tenant_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No membership found for user {user_id} in tenant {tenant_id}",
         )
 
-    await membership_service.remove_membership(user_id, tenant_id)
+    if user_id == principal.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You cannot remove your own membership from this workspace.",
+        )
+
+    if await membership_service.is_last_owner(user_id, effective_tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This is the workspace's only owner. Make someone else an "
+                "owner before removing them."
+            ),
+        )
+
+    await membership_service.remove_membership(user_id, effective_tenant_id)
     return {"detail": "Membership removed"}
 
 

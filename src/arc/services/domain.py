@@ -170,6 +170,18 @@ class MembershipService:
 
         return await self.membership_repo.create(membership)
 
+    async def is_last_owner(self, user_id: str, tenant_id: str) -> bool:
+        """Whether removing this user would leave the tenant with no OWNER.
+
+        A workspace with no owner cannot be administered by anyone in it;
+        recovering one needs the platform operator. Checked server-side
+        because a UI that hides the control does not stop the request
+        (ADR-009).
+        """
+        memberships = await self.membership_repo.get_memberships_for_tenant(tenant_id)
+        owners = [m for m in memberships if m.role is UserRole.OWNER]
+        return len(owners) == 1 and owners[0].user_id == user_id
+
     async def get_membership(self, user_id: str, tenant_id: str) -> Membership:
         """Get membership by user and tenant IDs."""
         return await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)
