@@ -209,6 +209,10 @@ class PostgreSQLMembershipRepository:
         """Map user ids to their memberships, with tenant names."""
         return await self.db.get_memberships_with_tenant_for_users(user_ids)
 
+    async def remove_membership_preserving_last_owner(self, user_id: str, tenant_id: str) -> str:
+        """Atomic removal that never leaves a tenant ownerless."""
+        return await self.db.remove_membership_preserving_last_owner(user_id, tenant_id)
+
     async def exists(self, user_id: str, tenant_id: str) -> bool:
         """Check if membership exists."""
         try:

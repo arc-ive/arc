@@ -113,6 +113,10 @@ class MembershipRepository(Protocol):
         """Map user ids to their memberships, with tenant names."""
         ...
 
+    async def remove_membership_preserving_last_owner(self, user_id: str, tenant_id: str) -> str:
+        """Atomic removal that never leaves a tenant ownerless."""
+        ...
+
     async def exists(self, user_id: str, tenant_id: str) -> bool:
         """Check if membership exists."""
         ...

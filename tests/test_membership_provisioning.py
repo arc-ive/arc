@@ -515,3 +515,126 @@ async def test_employee_still_cannot_manage_membership(
     )
 
     assert response.status_code == 403
+
+
+class TestLastOwnerUnderConcurrency:
+    """The last-owner invariant must hold when two removals race.
+
+    Review of PR #315 found a time-of-check-to-time-of-use race: the
+    check was a plain SELECT and the delete a separate statement, with
+    no lock or transaction between them. Two owners removing EACH OTHER
+    concurrently each observed two owners, both deletes proceeded, and
+    the tenant was left with no administrator. Blocking self-removal did
+    not help, because neither admin removed themselves.
+
+    Every existing test is sequential and therefore cannot catch this.
+
+    These issue the removals concurrently against ONE ArcDatabase.
+    ``transaction()`` acquires a separate pooled connection per call, so
+    each removal runs in its own transaction and the database -- not the
+    test -- decides the ordering. Opening a pool per removal would also
+    work and was the first attempt; it exhausted PostgreSQL's
+    max_connections and broke unrelated fixtures downstream, which is a
+    worse bug than the one being tested.
+    """
+
+    @staticmethod
+    async def _tenant_with_owners(repositories, count=2):
+        tenant_repo, _, membership_repo = repositories
+        tenant = await tenant_repo.create(
+            Tenant(id=_unique("tenant"), name=f"Co {uuid.uuid4().hex[:6]}")
+        )
+        owners = []
+        for _ in range(count):
+            owner = await _seed_user(repositories)
+            await membership_repo.create(
+                Membership(
+                    id=_unique("membership"),
+                    user_id=owner.id,
+                    tenant_id=tenant.id,
+                    role=UserRole.OWNER,
+                )
+            )
+            owners.append(owner)
+        return tenant, owners
+
+    async def test_two_owners_removing_each_other_cannot_both_succeed(self, db, repositories):
+        """The concrete bypass from the review.
+
+        Without the lock both deletes commit and the tenant is left
+        ownerless. With it, the second transaction blocks, re-reads, and
+        sees a single owner remaining.
+        """
+        import asyncio
+
+        tenant, (first, second) = await self._tenant_with_owners(repositories)
+
+        outcomes = await asyncio.gather(
+            db.remove_membership_preserving_last_owner(second.id, tenant.id),
+            db.remove_membership_preserving_last_owner(first.id, tenant.id),
+        )
+
+        assert sorted(outcomes) == ["last_owner", "removed"], (
+            f"both removals were allowed: {outcomes}"
+        )
+
+        # The invariant itself, checked against the stored rows rather
+        # than inferred from the return values.
+        _, _, membership_repo = repositories
+        remaining = await membership_repo.get_memberships_for_tenant(tenant.id)
+        owners = [m for m in remaining if m.role is UserRole.OWNER]
+        assert len(owners) == 1, f"tenant left with {len(owners)} owners"
+
+    async def test_many_concurrent_removals_leave_exactly_one_owner(self, db, repositories):
+        """Widen the race: five owners, all removed at once.
+
+        A lock that merely narrows the window would let some through.
+        Exactly one must survive.
+        """
+        import asyncio
+
+        tenant, owners = await self._tenant_with_owners(repositories, count=5)
+
+        outcomes = await asyncio.gather(
+            *(db.remove_membership_preserving_last_owner(owner.id, tenant.id) for owner in owners)
+        )
+
+        assert outcomes.count("removed") == 4, outcomes
+        assert outcomes.count("last_owner") == 1, outcomes
+
+        _, _, membership_repo = repositories
+        remaining = await membership_repo.get_memberships_for_tenant(tenant.id)
+        assert len([m for m in remaining if m.role is UserRole.OWNER]) == 1
+
+    async def test_a_non_owner_removal_races_harmlessly(self, db, repositories):
+        """A member and an owner removed together: only the owner is guarded."""
+        import asyncio
+
+        tenant, (owner, _second) = await self._tenant_with_owners(repositories)
+        member = await _seed_user(repositories)
+        _, _, membership_repo = repositories
+        await membership_repo.create(
+            Membership(
+                id=_unique("membership"),
+                user_id=member.id,
+                tenant_id=tenant.id,
+                role=UserRole.MEMBER,
+            )
+        )
+
+        outcomes = await asyncio.gather(
+            db.remove_membership_preserving_last_owner(member.id, tenant.id),
+            db.remove_membership_preserving_last_owner(owner.id, tenant.id),
+        )
+
+        assert outcomes == ["removed", "removed"], outcomes
+        remaining = await membership_repo.get_memberships_for_tenant(tenant.id)
+        assert len([m for m in remaining if m.role is UserRole.OWNER]) == 1
+
+    async def test_removing_an_absent_membership_reports_not_found(self, db, repositories):
+        tenant, _ = await self._tenant_with_owners(repositories)
+        stranger = await _seed_user(repositories)
+
+        outcome = await db.remove_membership_preserving_last_owner(stranger.id, tenant.id)
+
+        assert outcome == "not_found"

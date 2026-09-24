@@ -668,19 +668,29 @@ async def delete_membership(
       responsible for, and it reads as an accident far more often than an
       intention.
     """
-    if not await membership_service.membership_exists(user_id, effective_tenant_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No membership found for user {user_id} in tenant {tenant_id}",
-        )
-
+    # Self-removal is decided from the request alone -- it needs no
+    # database state, so checking it here costs nothing and gives a
+    # clearer message than a generic refusal.
     if user_id == principal.user_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="You cannot remove your own membership from this workspace.",
         )
 
-    if await membership_service.is_last_owner(user_id, effective_tenant_id):
+    # Existence, the last-owner invariant and the delete are ONE atomic
+    # operation under a row lock. Checking then deleting was a
+    # time-of-check-to-time-of-use race: two owners removing each other
+    # concurrently each saw two owners, both deletes proceeded, and the
+    # tenant was left with none. Self-removal blocking does not prevent
+    # that, because neither admin removes themselves.
+    outcome = await membership_service.remove_preserving_last_owner(user_id, effective_tenant_id)
+
+    if outcome == "not_found":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No membership found for user {user_id} in tenant {tenant_id}",
+        )
+    if outcome == "last_owner":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -689,7 +699,6 @@ async def delete_membership(
             ),
         )
 
-    await membership_service.remove_membership(user_id, effective_tenant_id)
     return {"detail": "Membership removed"}
 
 
