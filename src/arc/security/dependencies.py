@@ -28,6 +28,7 @@ from arc.security.models import AuthenticatedPrincipal, Permission
 from arc.security.session import SESSION_COOKIE_NAME, SessionService
 from arc.security.settings import SecurityConfigurationError
 from arc.security.settings import get_security_settings as load_security_settings
+from arc.services.domain import TenantSuspendedError
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -145,6 +146,13 @@ async def get_trusted_tenant_context(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tenant context"
         )
+    except TenantSuspendedError:
+        # Deliberately the same wording as a missing membership. A
+        # suspended customer's users learn that access is denied, not
+        # that their company has been suspended by the platform
+        # operator -- that is the operator's news to deliver, not an
+        # error message's (ADR-011).
+        raise _forbidden("Access to the requested tenant is denied")
     except NotFoundError:
         raise _forbidden("Access to the requested tenant is denied")
     request.state.resolved_tenant_id = context.tenant_id
@@ -207,6 +215,51 @@ def require_tenant_permission_or_self(permission: Permission) -> Callable:
         if authorization.has_permission(principal, permission):
             return TenantReadScope(context=context, restrict_to_user_id=None)
         return TenantReadScope(context=context, restrict_to_user_id=principal.user_id)
+
+    return dependency
+
+
+def require_membership_administration() -> Callable:
+    """Authorize membership administration by either route (ADR-009).
+
+    Two authorities can administer membership, and they reach the tenant
+    differently:
+
+    - A **platform administrator** holds the global ``membership:create``
+      and is deliberately NOT a member of any customer tenant (ADR-003).
+      Requiring a trusted tenant context would lock them out of the
+      provisioning they are responsible for, so for them the path tenant
+      is authoritative, exactly as it was before ADR-009.
+    - A **company administrator** holds tenant-scoped
+      ``membership:manage``. For them the trusted context is
+      authoritative and the path is only validated against it, so a
+      request aimed at another tenant fails while establishing context.
+
+    Returns the tenant id the caller is authorized for. Neither authority
+    can reach a tenant the other could not: the global permission is
+    granted only to the platform role, and the scoped permission is only
+    ever evaluated against a context the caller proved membership of.
+    """
+
+    async def dependency(
+        request: Request,
+        tenant_id: str,
+        principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
+        authorization: AuthorizationService = Depends(get_authorization_service),
+    ) -> str:
+        from arc.security.authorization import MEMBERSHIP_CREATE, MEMBERSHIP_MANAGE
+
+        if authorization.has_permission(principal, MEMBERSHIP_CREATE):
+            return tenant_id
+
+        if not authorization.has_permission(principal, MEMBERSHIP_MANAGE):
+            raise _forbidden("Insufficient permissions")
+
+        # Holding the scoped permission is not enough on its own: the
+        # caller must also prove membership of this tenant, which is what
+        # establishing the trusted context does.
+        context = await get_trusted_tenant_context(request, tenant_id, principal)
+        return context.tenant_id
 
     return dependency
 

@@ -60,6 +60,24 @@ class TenantService:
         """List tenants with LIMIT/OFFSET and total count."""
         return await self.tenant_repo.list_all_paginated(limit, offset)
 
+    async def set_tenant_status(self, tenant_id: str, new_status: str) -> Tenant:
+        """Suspend or restore a tenant (ADR-011).
+
+        Lossless and reversible: nothing is removed, and restoring
+        returns the tenant to exactly its prior state. Deletion is
+        deliberately not offered -- approval_requests and
+        api_request_records both cascade from tenants, so removing the
+        row would destroy the audit trail of a departed customer, which
+        is usually the moment it is most needed.
+        """
+        # A targeted single-column write, not read-modify-write. Reading
+        # the row and writing it back writes EVERY column, so a
+        # concurrent profile edit and a suspension silently overwrite
+        # each other -- and the direction that matters is losing the
+        # suspension, leaving an operator believing a customer is
+        # stopped when they are not.
+        return await self.tenant_repo.set_status(tenant_id, new_status)
+
     async def update_tenant(self, tenant: Tenant) -> Tenant:
         """Update tenant company configuration."""
         if not tenant.id:
@@ -146,6 +164,19 @@ class UserService:
         return await self.user_repo.list_all_paginated(limit, offset)
 
 
+# A tenant is usable only when its status is exactly this. Anything else
+# -- suspended, an unrecognised value, a future state -- denies access.
+TENANT_STATUS_ACTIVE = "active"
+
+
+class TenantSuspendedError(Exception):
+    """Raised when a trusted context is requested for a non-active tenant.
+
+    Distinct from NotFoundError so the API can answer correctly: the
+    tenant exists and the membership is real, but access is withdrawn.
+    """
+
+
 class MembershipService:
     """Domain service for membership operations."""
 
@@ -185,6 +216,27 @@ class MembershipService:
         platform plane.
         """
         return await self.membership_repo.get_memberships_with_tenant_for_users(user_ids)
+
+    async def remove_preserving_last_owner(self, user_id: str, tenant_id: str) -> str:
+        """Remove a membership, never leaving the tenant without an owner.
+
+        Returns ``"removed"``, ``"not_found"`` or ``"last_owner"``.
+
+        Deliberately ONE call rather than a separate check and delete.
+        The earlier shape -- is_last_owner() followed by
+        remove_membership() -- was a time-of-check-to-time-of-use race
+        with a real bypass: two owners removing each other concurrently
+        each saw two owners, both deletes proceeded, and the tenant was
+        left with none. Blocking self-removal did not prevent it, because
+        neither admin removed themselves.
+
+        A workspace with no owner cannot be administered by anyone in it;
+        recovering one needs the platform operator. The guarantee is
+        enforced under a row lock in the repository (ADR-009).
+        """
+        return await self.membership_repo.remove_membership_preserving_last_owner(
+            user_id, tenant_id
+        )
 
     async def get_membership(self, user_id: str, tenant_id: str) -> Membership:
         """Get membership by user and tenant IDs."""
@@ -267,6 +319,7 @@ class TenantContextService:
         Raises:
             ValueError: If tenant_id or user_id is empty.
             NotFoundError: If the tenant, user, or membership does not exist.
+            TenantSuspendedError: If the tenant is not active (ADR-011).
         """
         if not tenant_id:
             raise ValueError("Tenant ID cannot be empty in context")
@@ -275,6 +328,18 @@ class TenantContextService:
             raise ValueError("User ID cannot be empty in context")
 
         tenant = await self.tenant_repo.get_by_id(tenant_id)
+
+        # Suspension is enforced here, and only here, because every
+        # tenant-scoped route establishes a context before doing anything
+        # (ADR-011). That covers routes which do not exist yet, rather
+        # than being a check each new endpoint has to remember.
+        #
+        # Fail closed on anything that is not explicitly active: a tenant
+        # is usable only when its status says so, so an unrecognised or
+        # unreadable value denies rather than admits.
+        if tenant.status != TENANT_STATUS_ACTIVE:
+            raise TenantSuspendedError(f"Tenant {tenant_id} is not active and cannot be accessed")
+
         await self.user_repo.get_by_id(user_id)
 
         membership = await self.membership_repo.get_by_user_and_tenant(user_id, tenant_id)

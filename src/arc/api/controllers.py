@@ -54,6 +54,7 @@ from arc.api.schemas import (
     SkillResumeRequest,
     SkillUpdateRequest,
     TenantCreateRequest,
+    TenantStatusRequest,
     TenantUpdateRequest,
     ToolExecuteRequest,
     UserCreateRequest,
@@ -88,7 +89,6 @@ from arc.security.authorization import (
     KNOWLEDGE_DELETE,
     KNOWLEDGE_READ,
     KNOWLEDGE_UPDATE,
-    MEMBERSHIP_CREATE,
     OBSERVABILITY_PLATFORM_READ,
     OBSERVABILITY_READ,
     ROLE_PERMISSIONS,
@@ -100,6 +100,7 @@ from arc.security.authorization import (
     TENANT_CREATE,
     TENANT_LIST,
     TENANT_READ,
+    TENANT_SUSPEND,
     TENANT_UPDATE,
     TOOL_EXECUTE,
     TOOL_READ,
@@ -113,6 +114,7 @@ from arc.security.dependencies import (
     TenantReadScope,
     get_authenticated_principal,
     get_authorization_service,
+    require_membership_administration,
     require_permission,
     require_tenant_permission,
     require_tenant_permission_or_self,
@@ -458,6 +460,49 @@ async def get_tenant(
     }
 
 
+@api_router.post("/tenants/{tenant_id}/status", responses=AUTHENTICATED_ERROR_RESPONSES)
+async def set_tenant_status(
+    tenant_id: str,
+    body: TenantStatusRequest,
+    _: AuthenticatedPrincipal = Depends(require_permission(TENANT_SUSPEND)),
+    tenant_service: TenantService = Depends(lambda: app_context.tenant_service),
+) -> Dict[str, Any]:
+    """Suspend or restore a tenant (ADR-011).
+
+    Protected by ``tenant:suspend``, held by PLATFORM_ADMINISTRATOR
+    alone. Deliberately NOT ``tenant:update``: a company administrator
+    holds that for editing their own company profile, and it is checked
+    globally, so reusing it would have let any company administrator
+    suspend any tenant. A customer can neither suspend nor un-suspend
+    themselves, nor anyone else.
+
+    Separate from ``PUT /tenants/{tenant_id}`` on purpose: a tenant must
+    never be suspended as a side effect of editing a company profile.
+    That endpoint still refuses ``status`` outright.
+
+    Suspension has a real effect rather than a decorative one. A
+    suspended tenant cannot establish a trusted tenant context, so every
+    tenant-scoped route fails closed — knowledge, skills, tools,
+    approvals, agents, connectors, observability and Ask Arc alike,
+    because each establishes a context first.
+
+    Platform routes still list and read a suspended tenant, so a stopped
+    customer stays administrable and auditable. The change is lossless
+    and reversible: restoring is the same call with ``active``.
+    """
+    try:
+        tenant = await tenant_service.set_tenant_status(tenant_id, body.status)
+    except NotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "status": tenant.status,
+        "created_at": tenant.created_at.isoformat(),
+        "updated_at": tenant.updated_at.isoformat(),
+    }
+
+
 @api_router.put("/tenants/{tenant_id}", responses=AUTHENTICATED_ERROR_RESPONSES)
 async def update_tenant(
     tenant_id: str,
@@ -622,19 +667,34 @@ async def get_users_for_tenant(
 async def create_membership(
     tenant_id: str,
     membership_data: MembershipCreateRequest,
-    _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
+    effective_tenant_id: str = Depends(require_membership_administration()),
     user_service: UserService = Depends(lambda: app_context.user_service),
 ) -> Dict[str, Any]:
-    """Create a membership associating a user with a tenant.
+    """Add a user to a tenant.
 
-    Protected: requires the global ``membership:create`` permission
-    (PLATFORM_ADMINISTRATOR). The target ``user_id`` and ``role`` are
-    provisioning inputs, not the caller's identity. The caller's identity
-    comes from the authenticated principal (JWT ``sub``).
+    Protected by either authority (ADR-009): the global
+    ``membership:create`` held by PLATFORM_ADMINISTRATOR, or tenant-scoped
+    ``membership:manage`` held by COMPANY_ADMINISTRATOR in their own
+    workspace.
+
+    For a company administrator the tenant comes from the trusted
+    context, so a request aimed at another tenant fails while
+    establishing it. A platform administrator is deliberately not a
+    member of any customer tenant (ADR-003), so requiring a context would
+    lock them out of the provisioning they own; for them the path tenant
+    is authoritative, exactly as before.
+
+    The target ``user_id`` and ``role`` are administration inputs, not the
+    caller's identity, which comes from the authenticated principal.
+    Creating an Arc identity remains platform-only (``user:create``):
+    adding an existing user to a workspace is administration, minting an
+    identity is provisioning, and ADR-009 keeps them separate.
     """
     try:
         membership = await user_service.associate_user_with_tenant(
-            user_id=membership_data.user_id, tenant_id=tenant_id, role=membership_data.role
+            user_id=membership_data.user_id,
+            tenant_id=effective_tenant_id,
+            role=membership_data.role,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
@@ -655,21 +715,56 @@ async def create_membership(
 async def delete_membership(
     tenant_id: str,
     user_id: str,
-    _: AuthenticatedPrincipal = Depends(require_permission(MEMBERSHIP_CREATE)),
+    effective_tenant_id: str = Depends(require_membership_administration()),
+    principal: AuthenticatedPrincipal = Depends(get_authenticated_principal),
     membership_service: MembershipService = Depends(lambda: app_context.membership_service),
 ) -> Dict[str, Any]:
-    """Remove a user's membership from a tenant.
+    """Remove a user from a tenant.
 
-    Protected: requires the global ``membership:create`` permission
-    (PLATFORM_ADMINISTRATOR). Only an existing membership can be removed.
+    Protected by either authority (ADR-009), as for creation.
+
+    Two invariants are enforced here rather than in any UI, because a UI
+    that hides a control does not prevent the request:
+
+    - **A tenant always keeps at least one OWNER.** Removing the last one
+      leaves a workspace nobody can administer, recoverable only by the
+      platform operator.
+    - **Nobody removes their own membership.** Self-removal is how an
+      administrator locks themselves out of the workspace they are
+      responsible for, and it reads as an accident far more often than an
+      intention.
     """
-    if not await membership_service.membership_exists(user_id, tenant_id):
+    # Self-removal is decided from the request alone -- it needs no
+    # database state, so checking it here costs nothing and gives a
+    # clearer message than a generic refusal.
+    if user_id == principal.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You cannot remove your own membership from this workspace.",
+        )
+
+    # Existence, the last-owner invariant and the delete are ONE atomic
+    # operation under a row lock. Checking then deleting was a
+    # time-of-check-to-time-of-use race: two owners removing each other
+    # concurrently each saw two owners, both deletes proceeded, and the
+    # tenant was left with none. Self-removal blocking does not prevent
+    # that, because neither admin removes themselves.
+    outcome = await membership_service.remove_preserving_last_owner(user_id, effective_tenant_id)
+
+    if outcome == "not_found":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No membership found for user {user_id} in tenant {tenant_id}",
         )
+    if outcome == "last_owner":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This is the workspace's only owner. Make someone else an "
+                "owner before removing them."
+            ),
+        )
 
-    await membership_service.remove_membership(user_id, tenant_id)
     return {"detail": "Membership removed"}
 
 
@@ -2536,12 +2631,51 @@ async def get_platform_observability_summary(
 ) -> Dict[str, Any]:
     """Platform operational summary — STRICTLY TENANT-AGNOSTIC.
 
-    PLATFORM_ADMINISTRATOR only. Answers "is the ARC platform operating
+    PLATFORM_ADMINISTRATOR only. Answers "is the Arc platform operating
     correctly?": cross-tenant operational totals without any tenant
-    identifiers, per-tenant usage/rankings, or tenant business data.
-    Tenant-specific investigation uses the tenant-scoped endpoint.
+    identifiers, per-tenant usage, rankings or tenant business data.
+    This endpoint is unchanged by ADR-010.
+
+    "Which customer is affected?" is a different question and has its own
+    endpoint below, so an operator asking only about platform health is
+    never handed customer-identifying data they did not ask for.
     """
     return await observability_service.get_platform_summary(hours)
+
+
+@api_router.get("/platform/observability/tenants", responses=AUTHENTICATED_ERROR_RESPONSES)
+async def get_platform_observability_by_tenant(
+    hours: int = Query(default=24, ge=1, le=168),
+    _: AuthenticatedPrincipal = Depends(require_permission(OBSERVABILITY_PLATFORM_READ)),
+    observability_service: ObservabilityService = Depends(
+        lambda: app_context.observability_service
+    ),
+) -> Dict[str, Any]:
+    """Per-tenant request and error counts (ADR-010).
+
+    PLATFORM_ADMINISTRATOR only, via the existing
+    ``observability:platform_read``. ADR-010 widens what that permission
+    shows, not who holds it.
+
+    Answers the first question asked during an incident — which customer
+    is affected — which the tenant-agnostic summary above cannot. Before
+    this, an operator could see the error rate rise and had to ask each
+    customer's own administrator to look from inside their workspace.
+
+    Returns counts ONLY: tenant id, tenant name, request count, error
+    count, error rate. No request paths, payloads, user identifiers,
+    prompts or document content. ADR-010 draws the boundary at
+    attribution, never at describing what a tenant was doing.
+
+    Public and unauthenticated traffic has no tenant and is returned as
+    its own "Unattributed" row rather than dropped, so the per-tenant
+    figures sum to the platform total.
+
+    This does NOT give the platform plane a route into tenant-scoped
+    data. A platform administrator still receives 403 on every tenant
+    route (ADR-003).
+    """
+    return await observability_service.get_tenant_attribution(hours)
 
 
 @api_router.get("/observability/health", responses=AUTHENTICATED_ERROR_RESPONSES)

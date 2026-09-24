@@ -114,6 +114,57 @@ class PostgreSQLObservabilityRepository:
             p95_duration_ms=float(row["p95_ms"]),
         )
 
+    async def api_request_summary_by_tenant(self, hours: int) -> list:
+        """Per-tenant HTTP request and error counts for the window (ADR-010).
+
+        Answers the first question asked during an incident -- which
+        customer is affected -- which the tenant-agnostic platform
+        summary cannot.
+
+        Counts only. No request paths, payloads, user identifiers or any
+        other tenant content: ADR-010 draws the boundary at attribution,
+        not at describing what a tenant was doing.
+
+        Records with a NULL tenant_id are public or unauthenticated
+        traffic. They are returned as their own row rather than dropped,
+        so the per-tenant figures always sum to the platform total and a
+        reader never has to wonder where the difference went.
+        """
+        async with self.db._connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT r.tenant_id,
+                       t.name AS tenant_name,
+                       COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE r.status_code >= 400) AS errors
+                FROM api_request_records r
+                LEFT JOIN tenants t ON t.id = r.tenant_id
+                WHERE r.created_at >= NOW() - make_interval(hours => $1::int)
+                GROUP BY r.tenant_id, t.name
+                ORDER BY COUNT(*) FILTER (WHERE r.status_code >= 400) DESC,
+                         COUNT(*) DESC
+                """,
+                hours,
+            )
+        results = []
+        for row in rows:
+            total = row["total"]
+            errors = row["errors"]
+            results.append(
+                {
+                    "tenant_id": row["tenant_id"],
+                    # A tenant deleted since its requests were recorded
+                    # leaves rows with no name; say so rather than render
+                    # a blank.
+                    "tenant_name": row["tenant_name"]
+                    or ("Unattributed" if row["tenant_id"] is None else "Unknown tenant"),
+                    "total_requests": total,
+                    "error_count": errors,
+                    "error_rate": round((errors / total) if total else 0.0, 4),
+                }
+            )
+        return results
+
     async def tool_execution_activity(
         self, tenant_id: Optional[str], hours: int
     ) -> ToolExecutionActivityMetrics:

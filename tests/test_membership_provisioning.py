@@ -10,7 +10,7 @@ Validates that:
 
 import uuid
 
-from arc.domain.models import Tenant, User
+from arc.domain.models import Membership, Tenant, User, UserRole
 from arc.security.models import ApplicationRole
 
 
@@ -310,3 +310,331 @@ async def test_membership_endpoints_in_production_openapi():
     assert result.returncode == 0, f"openapi subprocess failed: {result.stderr}"
     paths = set(json.loads(result.stdout))
     assert "/tenants/{tenant_id}/memberships" in paths
+
+
+# ---------------------------------------------------------------------------
+# ADR-009: tenant-scoped membership administration
+# ---------------------------------------------------------------------------
+
+
+async def _seed_tenant_with_owner(repositories, owner_role=UserRole.OWNER):
+    """A tenant, an owner, and the owner's membership."""
+    tenant_repo, _, membership_repo = repositories
+    tenant = await tenant_repo.create(
+        Tenant(id=_unique("tenant"), name=f"Company {uuid.uuid4().hex[:6]}")
+    )
+    owner = await _seed_user(repositories)
+    await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=owner.id,
+            tenant_id=tenant.id,
+            role=owner_role,
+        )
+    )
+    return tenant, owner
+
+
+async def test_company_administrator_can_add_a_member_to_their_own_tenant(
+    client, repositories, make_token, authorization_override
+):
+    """ADR-009. Before this, every joiner needed the platform operator."""
+    tenant, admin = await _seed_tenant_with_owner(repositories)
+    newcomer = await _seed_user(repositories)
+    authorization_override({admin.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+    response = client.post(
+        f"/tenants/{tenant.id}/memberships",
+        json={"user_id": newcomer.id, "role": "member"},
+        headers={"Authorization": f"Bearer {make_token(admin.id)}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == newcomer.id
+
+
+async def test_company_administrator_cannot_touch_another_tenant(
+    client, repositories, make_token, authorization_override
+):
+    """The scoped permission is only ever evaluated against a context the
+    caller proved membership of, so another tenant fails before the
+    handler runs."""
+    _, admin = await _seed_tenant_with_owner(repositories)
+    other_tenant, _ = await _seed_tenant_with_owner(repositories)
+    victim = await _seed_user(repositories)
+    authorization_override({admin.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+    response = client.post(
+        f"/tenants/{other_tenant.id}/memberships",
+        json={"user_id": victim.id, "role": "member"},
+        headers={"Authorization": f"Bearer {make_token(admin.id)}"},
+    )
+
+    assert response.status_code == 403
+
+
+async def test_company_administrator_can_remove_a_member(
+    client, repositories, make_token, authorization_override
+):
+    tenant, admin = await _seed_tenant_with_owner(repositories)
+    member = await _seed_user(repositories)
+    _, _, membership_repo = repositories
+    await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=member.id,
+            tenant_id=tenant.id,
+            role=UserRole.MEMBER,
+        )
+    )
+    authorization_override({admin.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+    response = client.delete(
+        f"/tenants/{tenant.id}/memberships/{member.id}",
+        headers={"Authorization": f"Bearer {make_token(admin.id)}"},
+    )
+
+    assert response.status_code == 200
+
+
+async def test_the_last_owner_cannot_be_removed(
+    client, repositories, make_token, authorization_override
+):
+    """A workspace with no owner cannot be administered by anyone in it.
+
+    Enforced server-side rather than by hiding a control: a hidden
+    control does not prevent the request.
+    """
+    tenant, owner = await _seed_tenant_with_owner(repositories)
+    platform_admin = await _seed_user(repositories)
+    authorization_override({platform_admin.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+    response = client.delete(
+        f"/tenants/{tenant.id}/memberships/{owner.id}",
+        headers={"Authorization": f"Bearer {make_token(platform_admin.id)}"},
+    )
+
+    assert response.status_code == 409
+    assert "only owner" in response.json()["detail"].lower()
+
+
+async def test_an_owner_can_be_removed_when_another_owner_remains(
+    client, repositories, make_token, authorization_override
+):
+    """The invariant is 'at least one owner', not 'owners are permanent'."""
+    tenant, first_owner = await _seed_tenant_with_owner(repositories)
+    second_owner = await _seed_user(repositories)
+    _, _, membership_repo = repositories
+    await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=second_owner.id,
+            tenant_id=tenant.id,
+            role=UserRole.OWNER,
+        )
+    )
+    authorization_override({first_owner.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+    response = client.delete(
+        f"/tenants/{tenant.id}/memberships/{second_owner.id}",
+        headers={"Authorization": f"Bearer {make_token(first_owner.id)}"},
+    )
+
+    assert response.status_code == 200
+
+
+async def test_nobody_can_remove_their_own_membership(
+    client, repositories, make_token, authorization_override
+):
+    """Self-removal locks an administrator out of the workspace they are
+    responsible for, and reads as an accident far more often than an
+    intention."""
+    tenant, admin = await _seed_tenant_with_owner(repositories)
+    second_owner = await _seed_user(repositories)
+    _, _, membership_repo = repositories
+    await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=second_owner.id,
+            tenant_id=tenant.id,
+            role=UserRole.OWNER,
+        )
+    )
+    authorization_override({admin.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+
+    response = client.delete(
+        f"/tenants/{tenant.id}/memberships/{admin.id}",
+        headers={"Authorization": f"Bearer {make_token(admin.id)}"},
+    )
+
+    # Refused even though another owner remains, so this is the
+    # self-removal rule and not the last-owner rule.
+    assert response.status_code == 409
+    assert "your own membership" in response.json()["detail"].lower()
+
+
+async def test_operations_user_still_cannot_manage_membership(
+    client, repositories, make_token, authorization_override
+):
+    """ADR-009 widened authority to company administrators only."""
+    tenant, _ = await _seed_tenant_with_owner(repositories)
+    ops = await _seed_user(repositories)
+    _, _, membership_repo = repositories
+    await membership_repo.create(
+        Membership(
+            id=_unique("membership"),
+            user_id=ops.id,
+            tenant_id=tenant.id,
+            role=UserRole.MEMBER,
+        )
+    )
+    target = await _seed_user(repositories)
+    authorization_override({ops.id: ApplicationRole.OPERATIONS_USER})
+
+    response = client.post(
+        f"/tenants/{tenant.id}/memberships",
+        json={"user_id": target.id, "role": "member"},
+        headers={"Authorization": f"Bearer {make_token(ops.id)}"},
+    )
+
+    assert response.status_code == 403
+
+
+async def test_employee_still_cannot_manage_membership(
+    client, repositories, make_token, authorization_override
+):
+    tenant, _ = await _seed_tenant_with_owner(repositories)
+    employee = await _seed_user(repositories)
+    target = await _seed_user(repositories)
+    authorization_override({employee.id: ApplicationRole.EMPLOYEE})
+
+    response = client.post(
+        f"/tenants/{tenant.id}/memberships",
+        json={"user_id": target.id, "role": "member"},
+        headers={"Authorization": f"Bearer {make_token(employee.id)}"},
+    )
+
+    assert response.status_code == 403
+
+
+class TestLastOwnerUnderConcurrency:
+    """The last-owner invariant must hold when two removals race.
+
+    Review of PR #315 found a time-of-check-to-time-of-use race: the
+    check was a plain SELECT and the delete a separate statement, with
+    no lock or transaction between them. Two owners removing EACH OTHER
+    concurrently each observed two owners, both deletes proceeded, and
+    the tenant was left with no administrator. Blocking self-removal did
+    not help, because neither admin removed themselves.
+
+    Every existing test is sequential and therefore cannot catch this.
+
+    These issue the removals concurrently against ONE ArcDatabase.
+    ``transaction()`` acquires a separate pooled connection per call, so
+    each removal runs in its own transaction and the database -- not the
+    test -- decides the ordering. Opening a pool per removal would also
+    work and was the first attempt; it exhausted PostgreSQL's
+    max_connections and broke unrelated fixtures downstream, which is a
+    worse bug than the one being tested.
+    """
+
+    @staticmethod
+    async def _tenant_with_owners(repositories, count=2):
+        tenant_repo, _, membership_repo = repositories
+        tenant = await tenant_repo.create(
+            Tenant(id=_unique("tenant"), name=f"Co {uuid.uuid4().hex[:6]}")
+        )
+        owners = []
+        for _ in range(count):
+            owner = await _seed_user(repositories)
+            await membership_repo.create(
+                Membership(
+                    id=_unique("membership"),
+                    user_id=owner.id,
+                    tenant_id=tenant.id,
+                    role=UserRole.OWNER,
+                )
+            )
+            owners.append(owner)
+        return tenant, owners
+
+    async def test_two_owners_removing_each_other_cannot_both_succeed(self, db, repositories):
+        """The concrete bypass from the review.
+
+        Without the lock both deletes commit and the tenant is left
+        ownerless. With it, the second transaction blocks, re-reads, and
+        sees a single owner remaining.
+        """
+        import asyncio
+
+        tenant, (first, second) = await self._tenant_with_owners(repositories)
+
+        outcomes = await asyncio.gather(
+            db.remove_membership_preserving_last_owner(second.id, tenant.id),
+            db.remove_membership_preserving_last_owner(first.id, tenant.id),
+        )
+
+        assert sorted(outcomes) == ["last_owner", "removed"], (
+            f"both removals were allowed: {outcomes}"
+        )
+
+        # The invariant itself, checked against the stored rows rather
+        # than inferred from the return values.
+        _, _, membership_repo = repositories
+        remaining = await membership_repo.get_memberships_for_tenant(tenant.id)
+        owners = [m for m in remaining if m.role is UserRole.OWNER]
+        assert len(owners) == 1, f"tenant left with {len(owners)} owners"
+
+    async def test_many_concurrent_removals_leave_exactly_one_owner(self, db, repositories):
+        """Widen the race: five owners, all removed at once.
+
+        A lock that merely narrows the window would let some through.
+        Exactly one must survive.
+        """
+        import asyncio
+
+        tenant, owners = await self._tenant_with_owners(repositories, count=5)
+
+        outcomes = await asyncio.gather(
+            *(db.remove_membership_preserving_last_owner(owner.id, tenant.id) for owner in owners)
+        )
+
+        assert outcomes.count("removed") == 4, outcomes
+        assert outcomes.count("last_owner") == 1, outcomes
+
+        _, _, membership_repo = repositories
+        remaining = await membership_repo.get_memberships_for_tenant(tenant.id)
+        assert len([m for m in remaining if m.role is UserRole.OWNER]) == 1
+
+    async def test_a_non_owner_removal_races_harmlessly(self, db, repositories):
+        """A member and an owner removed together: only the owner is guarded."""
+        import asyncio
+
+        tenant, (owner, _second) = await self._tenant_with_owners(repositories)
+        member = await _seed_user(repositories)
+        _, _, membership_repo = repositories
+        await membership_repo.create(
+            Membership(
+                id=_unique("membership"),
+                user_id=member.id,
+                tenant_id=tenant.id,
+                role=UserRole.MEMBER,
+            )
+        )
+
+        outcomes = await asyncio.gather(
+            db.remove_membership_preserving_last_owner(member.id, tenant.id),
+            db.remove_membership_preserving_last_owner(owner.id, tenant.id),
+        )
+
+        assert outcomes == ["removed", "removed"], outcomes
+        remaining = await membership_repo.get_memberships_for_tenant(tenant.id)
+        assert len([m for m in remaining if m.role is UserRole.OWNER]) == 1
+
+    async def test_removing_an_absent_membership_reports_not_found(self, db, repositories):
+        tenant, _ = await self._tenant_with_owners(repositories)
+        stranger = await _seed_user(repositories)
+
+        outcome = await db.remove_membership_preserving_last_owner(stranger.id, tenant.id)
+
+        assert outcome == "not_found"

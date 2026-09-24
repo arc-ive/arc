@@ -52,9 +52,12 @@ Design decisions (X-11 implementation decisions, NOT defined by X-10):
 - Observability permissions (PRD 17, TRD 17) follow the approved split:
   ``observability:read`` grants tenant-scoped usage summaries to
   PLATFORM_ADMINISTRATOR, COMPANY_ADMINISTRATOR, and OPERATIONS_USER;
-  ``observability:platform_read`` grants the STRICTLY TENANT-AGNOSTIC
-  platform operational summary to PLATFORM_ADMINISTRATOR only. Platform
-  visibility never exposes per-tenant business data. EMPLOYEE has none.
+  ``observability:platform_read`` grants the tenant-agnostic platform
+  operational summary to PLATFORM_ADMINISTRATOR only, and (ADR-010) the
+  per-tenant breakdown of request and error COUNTS that makes an
+  incident attributable to a customer. Platform visibility still never
+  exposes tenant business data: no paths, payloads, prompts, documents
+  or user identifiers. EMPLOYEE has none.
 - Knowledge permissions (``knowledge:create``, ``knowledge:read``,
   ``knowledge:update``, ``knowledge:delete``) exist for the Company Brain
   foundation: COMPANY_ADMINISTRATOR manages and reads company knowledge;
@@ -107,7 +110,19 @@ TENANT_UPDATE = Permission(resource="tenant", action="update")
 TENANT_LIST = Permission(resource="tenant", action="list")
 USER_CREATE = Permission(resource="user", action="create")
 USER_READ = Permission(resource="user", action="read")
+# Suspending or restoring a tenant (ADR-011). Deliberately NOT
+# tenant:update: that is held by COMPANY_ADMINISTRATOR for editing their
+# own company profile and is checked globally, so reusing it would let
+# any company administrator suspend any tenant. Stopping a customer is
+# platform authority and needs a permission only the platform holds.
+TENANT_SUSPEND = Permission(resource="tenant", action="suspend")
 MEMBERSHIP_CREATE = Permission(resource="membership", action="create")
+# Tenant-scoped membership administration (ADR-009). Distinct from
+# MEMBERSHIP_CREATE, which is the platform-wide authority: this one is
+# only ever meaningful inside the tenant the trusted context names, so a
+# company administrator holding it in their own workspace gains nothing
+# anywhere else.
+MEMBERSHIP_MANAGE = Permission(resource="membership", action="manage")
 TENANT_READ = Permission(resource="tenant", action="read")
 KNOWLEDGE_CREATE = Permission(resource="knowledge", action="create")
 KNOWLEDGE_READ = Permission(resource="knowledge", action="read")
@@ -142,9 +157,11 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
             TENANT_CREATE,
             TENANT_UPDATE,
             TENANT_LIST,
+            TENANT_SUSPEND,
             USER_CREATE,
             USER_READ,
             MEMBERSHIP_CREATE,
+            MEMBERSHIP_MANAGE,
             TENANT_READ,
             KNOWLEDGE_CREATE,
             KNOWLEDGE_READ,
@@ -172,6 +189,7 @@ ROLE_PERMISSIONS: Dict[ApplicationRole, FrozenSet[Permission]] = {
     ),
     ApplicationRole.COMPANY_ADMINISTRATOR: frozenset(
         {
+            MEMBERSHIP_MANAGE,
             AGENT_EXECUTE,
             TENANT_UPDATE,
             TENANT_READ,

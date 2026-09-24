@@ -43,6 +43,10 @@ class PostgreSQLTenantRepository:
         """Update tenant."""
         return await self.db.update_tenant(tenant)
 
+    async def set_status(self, tenant_id: str, new_status: str) -> Tenant:
+        """Write only the status column, leaving other fields untouched."""
+        return await self.db.set_tenant_status(tenant_id, new_status)
+
     async def exists(self, tenant_id: str) -> bool:
         """Check if tenant exists."""
         try:
@@ -208,6 +212,10 @@ class PostgreSQLMembershipRepository:
     async def get_memberships_with_tenant_for_users(self, user_ids: list) -> dict:
         """Map user ids to their memberships, with tenant names."""
         return await self.db.get_memberships_with_tenant_for_users(user_ids)
+
+    async def remove_membership_preserving_last_owner(self, user_id: str, tenant_id: str) -> str:
+        """Atomic removal that never leaves a tenant ownerless."""
+        return await self.db.remove_membership_preserving_last_owner(user_id, tenant_id)
 
     async def exists(self, user_id: str, tenant_id: str) -> bool:
         """Check if membership exists."""

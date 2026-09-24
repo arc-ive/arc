@@ -370,9 +370,30 @@ class TestCorrelationAndTelemetry:
         assert row["status_code"] == 200
         assert row["error_kind"] is None
 
-    async def test_failed_tenant_request_is_never_attributed(
+    async def test_a_members_failed_request_is_attributed_to_their_tenant(
         self, client, two_tenants, make_token, authorization_override
     ):
+        """A member's failure is that tenant's error (ADR-010).
+
+        This test previously asserted the OPPOSITE -- that the record
+        stayed unattributed -- because attribution was gated on
+        ``status < 400``. That gate made per-tenant error counts
+        structurally always zero, so an error spike pooled entirely into
+        "Unattributed" and could not be traced to a customer. Review of
+        PR #316 identified it; the expectation is changed deliberately,
+        not incidentally.
+
+        The scenario is an EMPLOYEE who genuinely belongs to the tenant
+        and lacks ``observability:read``. The trusted context IS
+        established -- membership was verified -- and the 403 comes from
+        the permission check afterwards. That is this tenant's traffic
+        and this tenant's error.
+
+        The property the old test was protecting is preserved and is
+        asserted directly below: a caller who is NOT a member cannot
+        attribute anything to a tenant, because context establishment
+        fails first.
+        """
         tenant, user = two_tenants[0]
         authorization_override({user.id: ApplicationRole.EMPLOYEE})
         token = make_token(user.id)
@@ -389,8 +410,45 @@ class TestCorrelationAndTelemetry:
         finally:
             await database.disconnect()
         assert row is not None
-        assert row["tenant_id"] is None
+        assert row["tenant_id"] == tenant.id
         assert row["error_kind"] == "client_error"
+
+    async def test_a_non_members_probe_is_never_attributed(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        """The security property, asserted directly.
+
+        A caller probing a tenant they do not belong to must never poison
+        that tenant's telemetry. This holds structurally rather than by
+        convention: context establishment verifies membership, fails
+        first, and the resolved-tenant state key is never written -- so
+        there is nothing for the middleware to attribute.
+
+        Without this, relaxing the status gate above would be a way to
+        write into another customer's error counts by probing them.
+        """
+        tenant_a, _ = two_tenants[0]
+        _, outsider = two_tenants[1]
+        authorization_override({outsider.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        token = make_token(outsider.id)
+
+        response = client.get(
+            _summary_url(tenant_a.id), headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 403
+        request_id = response.headers["x-request-id"]
+
+        database = await _fresh_db()
+        try:
+            async with database._connection_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT tenant_id FROM api_request_records WHERE request_id = $1",
+                    request_id,
+                )
+        finally:
+            await database.disconnect()
+        assert row is not None
+        assert row["tenant_id"] is None, "a non-member probe attributed traffic to another tenant"
 
     async def test_query_strings_are_never_persisted(self, client):
         marker = f"supersecret{uuid.uuid4().hex}"
@@ -536,3 +594,167 @@ class TestAgentRunTraceEndpoints:
         url = f"/tenants/{tenant.id}/observability/agent-runs/nonexistent-id"
         response = _authed_get(client, url, token)
         assert response.status_code == 404
+
+
+class TestTenantAttribution:
+    """GET /platform/observability/tenants (ADR-010).
+
+    Before this, an operator could see the platform error rate rise and
+    could not see which customer was affected -- the first question an
+    incident asks. Attribution covers COUNTS only; tenant content stays
+    unreachable from the platform plane.
+    """
+
+    URL = "/platform/observability/tenants"
+
+    @staticmethod
+    async def _record(db, tenant_id, status_code, count=1):
+        from arc.domain.models import ApiRequestRecord
+        from arc.repositories.observability import PostgreSQLObservabilityRepository
+
+        repo = PostgreSQLObservabilityRepository(db)
+        for index in range(count):
+            await repo.create_api_request_record(
+                ApiRequestRecord(
+                    id=f"obsattr-{uuid.uuid4().hex[:12]}-{index}",
+                    tenant_id=tenant_id,
+                    request_id=uuid.uuid4().hex[:16],
+                    method="GET",
+                    route_template="/tenants/{tenant_id}/knowledge",
+                    status_code=status_code,
+                    duration_ms=12,
+                )
+            )
+
+    async def test_requires_authentication(self, client):
+        assert client.get(self.URL).status_code == 401
+
+    async def test_requires_the_platform_observability_permission(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        """Widens what the permission shows, never who holds it."""
+        _, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.COMPANY_ADMINISTRATOR})
+        assert _authed_get(client, self.URL, make_token(user.id)).status_code == 403
+
+    async def test_operations_user_is_refused(
+        self, client, two_tenants, make_token, authorization_override
+    ):
+        _, user = two_tenants[0]
+        authorization_override({user.id: ApplicationRole.OPERATIONS_USER})
+        assert _authed_get(client, self.URL, make_token(user.id)).status_code == 403
+
+    async def test_counts_attribute_to_the_right_tenant(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        (tenant_a, user_a), (tenant_b, _) = two_tenants
+        await self._record(db, tenant_a.id, 200, count=3)
+        await self._record(db, tenant_a.id, 500, count=2)
+        await self._record(db, tenant_b.id, 200, count=1)
+        authorization_override({user_a.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        response = _authed_get(client, self.URL, make_token(user_a.id))
+        assert response.status_code == 200
+        rows = {r["tenant_id"]: r for r in response.json()["tenants"]}
+
+        assert rows[tenant_a.id]["total_requests"] == 5
+        assert rows[tenant_a.id]["error_count"] == 2
+        assert rows[tenant_a.id]["error_rate"] == 0.4
+        assert rows[tenant_a.id]["tenant_name"] == tenant_a.name
+
+        assert rows[tenant_b.id]["error_count"] == 0
+
+    async def test_unattributed_traffic_is_reported_not_dropped(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        """Public and unauthenticated requests have no tenant.
+
+        Dropping them would make the per-tenant figures fail to sum to
+        the platform total, and a reader would have no way to know why.
+        """
+        _, user = two_tenants[0]
+        await self._record(db, None, 200, count=2)
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        response = _authed_get(client, self.URL, make_token(user.id))
+        rows = response.json()["tenants"]
+        unattributed = [r for r in rows if r["tenant_id"] is None]
+
+        assert unattributed, "unattributed traffic must appear as its own row"
+        assert unattributed[0]["tenant_name"] == "Unattributed"
+
+    async def test_carries_no_tenant_content(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        """ADR-010 draws the boundary at attribution.
+
+        Knowing WHICH customer is affected must not become knowing WHAT
+        they were doing.
+        """
+        tenant_a, user_a = two_tenants[0]
+        await self._record(db, tenant_a.id, 500)
+        authorization_override({user_a.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        row = _authed_get(client, self.URL, make_token(user_a.id)).json()["tenants"][0]
+
+        assert set(row.keys()) == {
+            "tenant_id",
+            "tenant_name",
+            "total_requests",
+            "error_count",
+            "error_rate",
+        }
+
+    async def test_the_platform_summary_stays_tenant_agnostic(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        """ADR-010 adds a surface; it does not widen the existing one."""
+        tenant_a, user_a = two_tenants[0]
+        await self._record(db, tenant_a.id, 200)
+        authorization_override({user_a.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+
+        body = _authed_get(client, "/platform/observability/summary", make_token(user_a.id)).json()
+
+        assert "tenants" not in body
+        assert tenant_a.id not in str(body)
+
+    async def test_a_real_failing_request_attributes_its_error_to_the_tenant(
+        self, client, db, two_tenants, make_token, authorization_override
+    ):
+        """End to end through the middleware, not by seeding records.
+
+        Every other test in this class writes ApiRequestRecords directly,
+        which proves the QUERY and says nothing about the PIPELINE. That
+        masked a real defect: the telemetry middleware attributed a
+        tenant only when status < 400, so every error recorded NULL and
+        per-tenant error counts were structurally always zero. Review of
+        PR #316 caught it.
+
+        This drives a genuine failing tenant request -- a member without
+        the required permission, so the trusted context IS established
+        and the 403 comes from the permission check afterwards -- and
+        asserts the error lands against that tenant.
+        """
+        tenant, user = two_tenants[0]
+        # EMPLOYEE is a member of the tenant but lacks skill:read.
+        authorization_override({user.id: ApplicationRole.EMPLOYEE})
+        token = make_token(user.id)
+
+        before = _authed_get(client, self.URL, token)
+        assert before.status_code == 403, "employee must not read the platform view"
+
+        failing = _authed_get(client, f"/tenants/{tenant.id}/skills", token)
+        assert failing.status_code == 403, "expected a permission failure"
+
+        # Now read the attribution as a platform administrator.
+        authorization_override({user.id: ApplicationRole.PLATFORM_ADMINISTRATOR})
+        response = _authed_get(client, self.URL, make_token(user.id))
+        assert response.status_code == 200
+
+        rows = {r["tenant_id"]: r for r in response.json()["tenants"]}
+        assert tenant.id in rows, (
+            f"the failing request was not attributed to its tenant -- rows: {list(rows)}"
+        )
+        assert rows[tenant.id]["error_count"] >= 1, (
+            f"error not counted for {tenant.id}: {rows[tenant.id]}"
+        )

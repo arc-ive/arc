@@ -61,6 +61,19 @@ class TenantCreateRequest(BaseModel):
     status: str = "active"
 
 
+class TenantStatusRequest(BaseModel):
+    """Body of ``POST /tenants/{tenant_id}/status`` (ADR-011).
+
+    A separate endpoint from ``PUT /tenants/{tenant_id}`` on purpose, so
+    a tenant can never be suspended as a side effect of editing a company
+    profile. Stopping a customer is a decision, not a field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["active", "suspended"]
+
+
 class TenantUpdateRequest(BaseModel):
     """Body of ``PUT /tenants/{tenant_id}``.
 

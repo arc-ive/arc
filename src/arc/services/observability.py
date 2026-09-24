@@ -250,9 +250,15 @@ class ObservabilityService:
     async def get_platform_summary(self, hours: int = DEFAULT_WINDOW_HOURS) -> Dict[str, Any]:
         """Assemble the STRICTLY TENANT-AGNOSTIC platform summary.
 
-        Answers only: is the ARC platform operating correctly? No tenant
-        identifiers, per-tenant usage, rankings, or breakdowns are ever
-        included (approved Joe/Bala policy).
+        Answers only: is the Arc platform operating correctly? No tenant
+        identifiers, per-tenant usage, rankings or breakdowns appear
+        here, and that is unchanged.
+
+        ADR-010 permits per-tenant ATTRIBUTION of request and error
+        counts, but deliberately on a separate surface
+        (``get_tenant_attribution``) rather than by widening this one, so
+        that asking for platform health and asking which customer is
+        affected stay different questions with different answers.
         """
         window = self._validated_window(hours)
         http = await self.repository.api_request_summary(None, window)
@@ -281,6 +287,21 @@ class ObservabilityService:
             "agent_runs_succeeded": agent_runs.succeeded,
             "agent_runs_failed": agent_runs.failed,
         }
+
+    async def get_tenant_attribution(self, hours: int = DEFAULT_WINDOW_HOURS) -> Dict[str, Any]:
+        """Per-tenant request and error counts (ADR-010).
+
+        Deliberately separate from ``get_platform_summary``, which stays
+        tenant-agnostic. An operator who wants only platform health gets
+        exactly that; attribution is asked for explicitly.
+
+        ADR-010 supersedes the previous rule that no method returns a
+        per-tenant breakdown. The scope it permits is counts alone --
+        requests, errors, rate -- and never tenant content.
+        """
+        window = self._validated_window(hours)
+        tenants = await self.repository.api_request_summary_by_tenant(window)
+        return {"window_hours": window, "tenants": tenants}
 
     @staticmethod
     def _http_payload(http) -> Dict[str, Any]:

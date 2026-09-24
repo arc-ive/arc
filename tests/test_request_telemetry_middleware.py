@@ -112,7 +112,13 @@ async def test_raw_client_input_is_never_trusted():
     assert record.tenant_id is None
 
 
-async def test_failed_request_stays_unattributed():
+async def test_failed_request_without_a_context_stays_unattributed():
+    """No established context means no attribution, whatever the status.
+
+    This is the security property: a cross-tenant probe or a failed
+    sign-in fails BEFORE the tenant dependency resolves, so the state key
+    is never written and raw query input cannot supply one.
+    """
     record = await _run(
         "/skills",
         status=404,
@@ -121,6 +127,40 @@ async def test_failed_request_stays_unattributed():
         query=b"tenant_id=t-1",
     )
     assert record.tenant_id is None
+    assert record.error_kind == "client_error"
+
+
+async def test_a_failure_on_an_established_context_is_attributed():
+    """Errors must reach the tenant that caused them.
+
+    Attribution used to be gated on ``status < 400``, so EVERY error
+    recorded NULL and per-tenant error counts were structurally always
+    zero: a spike pooled entirely into "Unattributed" and could not be
+    traced to a customer, which is the one question the per-tenant view
+    exists to answer (ADR-010).
+    """
+    record = await _run(
+        "/tenants/{tenant_id}/skills",
+        status=500,
+        route=_Route("/tenants/{tenant_id}/skills"),
+        path_params={"tenant_id": "t-1"},
+        resolved_tenant="t-1",
+    )
+    assert record.tenant_id == "t-1"
+    assert record.error_kind == "server_error"
+
+
+async def test_a_client_error_on_an_established_context_is_attributed():
+    """A 403 from a permission check runs AFTER the context is
+    established, so it is that tenant's error, not anonymous traffic."""
+    record = await _run(
+        "/tenants/{tenant_id}/skills",
+        status=403,
+        route=_Route("/tenants/{tenant_id}/skills"),
+        path_params={"tenant_id": "t-1"},
+        resolved_tenant="t-1",
+    )
+    assert record.tenant_id == "t-1"
     assert record.error_kind == "client_error"
 
 
