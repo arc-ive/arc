@@ -9,17 +9,25 @@ Responsibilities (Observability-owned correlation infrastructure):
 3. Measure request duration with a monotonic clock.
 4. Record a metadata-only ``ApiRequestRecord`` AFTER the response.
 
-Tenant attribution is SUCCESS-GATED RESOLVED-CONTEXT LABELING (approved
-L1): a request is labelled with a tenant ONLY when it completed with
-status < 400 AND the application's tenant dependency resolved and
-authorized a tenant for this request (published to request state,
-covering path-bound tenant routes such as
-``GET /tenants/{tenant_id}/skills``). Raw client input — path
-parameters, query strings — is never trusted as the attribution
-source, so an unrelated endpoint cannot be attributed by merely adding
-``?tenant_id=``. This is telemetry bookkeeping — it must NEVER
-establish tenant identity or authorization; failed, unauthorized,
-malformed, and public requests are recorded with tenant_id = NULL.
+Tenant attribution is RESOLVED-CONTEXT LABELING: a request is labelled
+with a tenant ONLY when the application's tenant dependency resolved and
+authorized a tenant for it (published to request state, covering
+path-bound tenant routes such as ``GET /tenants/{tenant_id}/skills``).
+Raw client input — path parameters, query strings — is never trusted as
+the attribution source, so an unrelated endpoint cannot be attributed by
+merely adding ``?tenant_id=``. This is telemetry bookkeeping — it must
+NEVER establish tenant identity or authorization; unauthenticated,
+unauthorized, malformed and public requests are recorded with
+tenant_id = NULL, because none of them establishes a context.
+
+Attribution was previously ALSO gated on ``status < 400``. That made
+per-tenant error counts structurally always zero: every failure
+recorded NULL, so an error spike pooled entirely into "Unattributed"
+and could not be traced to a customer. The status gate is gone; the
+context gate, which is the one that carries the security property,
+remains. A request that failed BEFORE establishing a context — a
+cross-tenant probe, a failed sign-in — still records NULL, because the
+state key was never written.
 
 Telemetry writes are BEST-EFFORT: any failure is dropped by the
 observability service without ever failing the served business response.
@@ -89,13 +97,33 @@ class RequestTelemetryMiddleware:
 
         tenant_id: Optional[str] = None
         error_kind: Optional[str] = None
-        if status_code < 400:
-            state = scope.get("state") or {}
-            candidate = state.get(RESOLVED_TENANT_STATE_KEY) if isinstance(state, dict) else None
-            if isinstance(candidate, str) and candidate:
-                tenant_id = candidate
-        else:
+        if status_code >= 400:
             error_kind = "client_error" if status_code < 500 else "server_error"
+
+        # Attribution is keyed on whether a trusted context was actually
+        # ESTABLISHED, not on whether the response succeeded.
+        #
+        # This used to be gated on `status_code < 400`, which meant every
+        # error was recorded with tenant_id = NULL. Per-tenant error
+        # counts were therefore structurally always zero, and an error
+        # spike pooled entirely into "Unattributed" -- defeating the one
+        # question the per-tenant view exists to answer (ADR-010).
+        #
+        # Reading the resolved tenant regardless of status is safe
+        # BECAUSE of what sets it: `get_trusted_tenant_context` writes
+        # RESOLVED_TENANT_STATE_KEY only after membership is verified. A
+        # cross-tenant probe fails while establishing the context, so the
+        # key is never written and the request still records NULL. The
+        # same holds for unauthenticated and failed-auth requests.
+        #
+        # What DOES attribute now is the case that matters: a member of a
+        # tenant whose request reached the handler and then failed -- a
+        # 5xx, or a 403 from a permission check that runs after the
+        # context is established. Those are that tenant's errors.
+        state = scope.get("state") or {}
+        candidate = state.get(RESOLVED_TENANT_STATE_KEY) if isinstance(state, dict) else None
+        if isinstance(candidate, str) and candidate:
+            tenant_id = candidate
 
         logger.info(
             "%s %s -> %d duration_ms=%d tenant=%s",
