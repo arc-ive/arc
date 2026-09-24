@@ -653,7 +653,17 @@ class TestConnectorSyncMetadataPersistence:
             credential_store=ConnectorCredentialStore(
                 raw=f'{{"{tenant.id}": {{"github": "dev-token"}}}}'
             ),
-            knowledge_service=KnowledgeService(knowledge_repo),
+            # Indexed like production: without chunks the Issue #214
+            # backfill path treats every re-ingest as needing chunk
+            # creation and bumps the version, which would mask the
+            # idempotency this test proves.
+            knowledge_service=KnowledgeService(
+                knowledge_repo,
+                indexer=RetrievalService(
+                    PostgreSQLKnowledgeChunkRepository(db),
+                    embedding_provider=DeterministicEmbeddingProvider(),
+                ),
+            ),
         )
         context = _context(tenant_id=tenant.id)
 
