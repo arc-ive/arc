@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { KNOWLEDGE_SOURCES } from './api/endpoints/knowledge.js'
@@ -20,7 +20,7 @@ import { sourceLabels } from './lib/sources.js'
  * is on what a customer can read, not on how the code explains itself.
  */
 
-const SRC = dirname(fileURLToPath(import.meta.url))
+const SRC = dirname(fileURLToPath(import.meta.url)).split(sep).join('/')
 
 function sourceFiles(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
@@ -28,7 +28,9 @@ function sourceFiles(dir, acc = []) {
     if (statSync(full).isDirectory()) {
       sourceFiles(full, acc)
     } else if (/\.jsx?$/.test(entry) && !/\.test\.jsx?$/.test(entry)) {
-      acc.push(full)
+      // Normalise separators: forward-slash comparisons below (endsWith,
+      // '/pages/') must behave identically on Windows and POSIX.
+      acc.push(full.split(sep).join('/'))
     }
   }
   return acc
