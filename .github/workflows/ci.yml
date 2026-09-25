@@ -36,31 +36,60 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Requested for the same-repository push. On a fork PR GitHub issues a
+      # read-only token regardless of what is requested here, and the push
+      # step below is skipped for forks anyway — so this line can never give
+      # untrusted code write access to ARC's package namespace.
       packages: write
     outputs:
-      # Digest, not tag. A tag can be repointed between jobs; a digest
-      # names one immutable manifest for the life of the run.
-      digest: ${{ steps.build.outputs.digest }}
-      image: ghcr.io/${{ github.repository }}-test@${{ steps.build.outputs.digest }}
+      mode: ${{ steps.mode.outputs.mode }}
+      # registry mode (same-repository)
+      digest: ${{ steps.push.outputs.digest }}
+      image: ghcr.io/${{ github.repository }}-test@${{ steps.push.outputs.digest }}
+      # artifact mode (fork)
+      artifact-name: arc-test-image
+      local-tag: arc-app-test:ci
+      image-id: ${{ steps.export.outputs.image-id }}
+      tarball-sha256: ${{ steps.export.outputs.tarball-sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # One decision point for the whole workflow. A PR whose head repo is
+      # not this repository is a fork: untrusted code, read-only token, no
+      # secrets. Everything downstream keys off this single output rather
+      # than re-deriving the condition and risking the two drifting apart.
+      - name: Determine acquisition mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] \
+             && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "mode=artifact" >> "$GITHUB_OUTPUT"
+            echo "fork PR detected: image will be handed off as an ephemeral artifact"
+          else
+            echo "mode=registry" >> "$GITHUB_OUTPUT"
+            echo "same-repository: image will be published to GHCR by digest"
+          fi
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.mode.outputs.mode == 'registry'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The GHA layer cache still does the heavy lifting: the ~400 MB
-      # en_core_web_lg layer is keyed on pyproject.toml alone, so an
+      # ---- registry mode: build once, push, hand consumers the digest ----
+      #
+      # The GHA layer cache does the heavy lifting in both modes: the
+      # ~400 MB en_core_web_lg layer is keyed on pyproject.toml alone, so an
       # ordinary code change restores it rather than refetching it.
       - name: Build and push test image
-        id: build
+        id: push
+        if: steps.mode.outputs.mode == 'registry'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -71,36 +100,121 @@ jobs:
           cache-from: type=gha,scope=arc-test
           cache-to: type=gha,mode=max,scope=arc-test
 
-      - name: Report published artifact
+      # ---- artifact mode: build once, export, hand consumers a tarball ----
+      #
+      # Still exactly one build. The difference is only where the artifact
+      # goes: a fork cannot publish to ARC's registry, so the image travels
+      # as an Actions artifact instead. cache-to is omitted because a fork
+      # PR must not be able to poison the cache that same-repository builds
+      # read from.
+      - name: Build test image for handoff
+        id: build-local
+        if: steps.mode.outputs.mode == 'artifact'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          load: true
+          tags: arc-app-test:ci
+          cache-from: type=gha,scope=arc-test
+
+      - name: Export and fingerprint the image
+        id: export
+        if: steps.mode.outputs.mode == 'artifact'
         run: |
-          echo "digest: ${{ steps.build.outputs.digest }}"
-          echo "image:  ghcr.io/${{ github.repository }}-test@${{ steps.build.outputs.digest }}"
+          mkdir -p /tmp/arc-image
+          docker save arc-app-test:ci -o /tmp/arc-image/image.tar
+          image_id="$(docker image inspect arc-app-test:ci --format '{{.Id}}')"
+          tar_sha="$(sha256sum /tmp/arc-image/image.tar | cut -d' ' -f1)"
+          echo "image-id=$image_id" >> "$GITHUB_OUTPUT"
+          echo "tarball-sha256=$tar_sha" >> "$GITHUB_OUTPUT"
+          echo "image id:      $image_id"
+          echo "tarball sha256: $tar_sha"
+          ls -l /tmp/arc-image/image.tar
+
+      - name: Upload the image artifact
+        if: steps.mode.outputs.mode == 'artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-test-image
+          path: /tmp/arc-image/image.tar
+          retention-days: 1
+          # Already a compressed image; recompressing costs minutes and saves
+          # almost nothing.
+          compression-level: 0
+
+      - name: Report the artifact consumers will receive
+        run: |
+          echo "mode: ${{ steps.mode.outputs.mode }}"
+          if [ "${{ steps.mode.outputs.mode }}" = "registry" ]; then
+            echo "digest: ${{ steps.push.outputs.digest }}"
+            echo "image:  ghcr.io/${{ github.repository }}-test@${{ steps.push.outputs.digest }}"
+          else
+            echo "artifact: arc-test-image"
+            echo "tag:      arc-app-test:ci"
+            echo "image id: ${{ steps.export.outputs.image-id }}"
+            echo "sha256:   ${{ steps.export.outputs.tarball-sha256 }}"
+          fi
 
   build-production-image:
     name: Build production image
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Requested for the same-repository push. On a fork PR GitHub issues a
+      # read-only token regardless of what is requested here, and the push
+      # step below is skipped for forks anyway — so this line can never give
+      # untrusted code write access to ARC's package namespace.
       packages: write
     outputs:
-      digest: ${{ steps.build.outputs.digest }}
-      image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+      mode: ${{ steps.mode.outputs.mode }}
+      # registry mode (same-repository)
+      digest: ${{ steps.push.outputs.digest }}
+      image: ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}
+      # artifact mode (fork)
+      artifact-name: arc-production-image
+      local-tag: arc-app:ci
+      image-id: ${{ steps.export.outputs.image-id }}
+      tarball-sha256: ${{ steps.export.outputs.tarball-sha256 }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # One decision point for the whole workflow. A PR whose head repo is
+      # not this repository is a fork: untrusted code, read-only token, no
+      # secrets. Everything downstream keys off this single output rather
+      # than re-deriving the condition and risking the two drifting apart.
+      - name: Determine acquisition mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] \
+             && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "mode=artifact" >> "$GITHUB_OUTPUT"
+            echo "fork PR detected: image will be handed off as an ephemeral artifact"
+          else
+            echo "mode=registry" >> "$GITHUB_OUTPUT"
+            echo "same-repository: image will be published to GHCR by digest"
+          fi
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.mode.outputs.mode == 'registry'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ---- registry mode: build once, push, hand consumers the digest ----
+      #
+      # The GHA layer cache does the heavy lifting in both modes: the
+      # ~400 MB en_core_web_lg layer is keyed on pyproject.toml alone, so an
+      # ordinary code change restores it rather than refetching it.
       - name: Build and push production image
-        id: build
+        id: push
+        if: steps.mode.outputs.mode == 'registry'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -111,10 +225,61 @@ jobs:
           cache-from: type=gha,scope=arc-prod
           cache-to: type=gha,mode=max,scope=arc-prod
 
-      - name: Report published artifact
+      # ---- artifact mode: build once, export, hand consumers a tarball ----
+      #
+      # Still exactly one build. The difference is only where the artifact
+      # goes: a fork cannot publish to ARC's registry, so the image travels
+      # as an Actions artifact instead. cache-to is omitted because a fork
+      # PR must not be able to poison the cache that same-repository builds
+      # read from.
+      - name: Build production image for handoff
+        id: build-local
+        if: steps.mode.outputs.mode == 'artifact'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          load: true
+          tags: arc-app:ci
+          cache-from: type=gha,scope=arc-prod
+
+      - name: Export and fingerprint the image
+        id: export
+        if: steps.mode.outputs.mode == 'artifact'
         run: |
-          echo "digest: ${{ steps.build.outputs.digest }}"
-          echo "image:  ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
+          mkdir -p /tmp/arc-image
+          docker save arc-app:ci -o /tmp/arc-image/image.tar
+          image_id="$(docker image inspect arc-app:ci --format '{{.Id}}')"
+          tar_sha="$(sha256sum /tmp/arc-image/image.tar | cut -d' ' -f1)"
+          echo "image-id=$image_id" >> "$GITHUB_OUTPUT"
+          echo "tarball-sha256=$tar_sha" >> "$GITHUB_OUTPUT"
+          echo "image id:      $image_id"
+          echo "tarball sha256: $tar_sha"
+          ls -l /tmp/arc-image/image.tar
+
+      - name: Upload the image artifact
+        if: steps.mode.outputs.mode == 'artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-production-image
+          path: /tmp/arc-image/image.tar
+          retention-days: 1
+          # Already a compressed image; recompressing costs minutes and saves
+          # almost nothing.
+          compression-level: 0
+
+      - name: Report the artifact consumers will receive
+        run: |
+          echo "mode: ${{ steps.mode.outputs.mode }}"
+          if [ "${{ steps.mode.outputs.mode }}" = "registry" ]; then
+            echo "digest: ${{ steps.push.outputs.digest }}"
+            echo "image:  ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}"
+          else
+            echo "artifact: arc-production-image"
+            echo "tag:      arc-app:ci"
+            echo "image id: ${{ steps.export.outputs.image-id }}"
+            echo "sha256:   ${{ steps.export.outputs.tarball-sha256 }}"
+          fi
 
   lint:
     name: Lint & Format
@@ -190,37 +355,37 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: "{}"
-      ARC_TEST_IMAGE: ${{ needs.build-test-image.outputs.image }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Registry login is needed only when the image comes from GHCR. A fork
+      # run has no credentials to log in with, and needs none: its image
+      # arrives as an Actions artifact.
       - name: Log in to GHCR
+        if: needs.build-test-image.outputs.mode == 'registry'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Explicit pull, then an assertion. compose runs with pull_policy:never
-      # and no build section (docker-compose.ci.yml), so this is the only way
-      # the image can arrive — and the only artifact it can possibly run.
-      - name: Pull the published test image
-        run: docker pull "$ARC_TEST_IMAGE"
-
-      # Requirement from review: every consumer logs the image ID and digest
-      # it is about to test, so "all shards used one artifact" is verifiable
-      # from the logs rather than inferred from the workflow shape.
-      - name: Assert image identity
-        run: |
-          echo "expected digest: ${{ needs.build-test-image.outputs.digest }}"
-          echo "image ref:       $ARC_TEST_IMAGE"
-          docker image inspect "$ARC_TEST_IMAGE" \
-            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
-          docker image inspect "$ARC_TEST_IMAGE" --format '{{index .RepoDigests 0}}' \
-            | grep -q "${{ needs.build-test-image.outputs.digest }}" \
-            || { echo "::error::pulled image does not match the published digest"; exit 1; }
+      # The ONLY sanctioned way this job obtains an ARC image. It acquires
+      # and then PROVES the artifact is the one the build job produced. It
+      # cannot build: docker-compose.ci.yml strips the build context and
+      # sets pull_policy:never.
+      - name: Acquire the test image
+        id: image
+        uses: ./.github/actions/acquire-arc-image
+        with:
+          mode: ${{ needs.build-test-image.outputs.mode }}
+          image-ref: ${{ needs.build-test-image.outputs.image }}
+          expected-digest: ${{ needs.build-test-image.outputs.digest }}
+          artifact-name: ${{ needs.build-test-image.outputs.artifact-name }}
+          local-tag: ${{ needs.build-test-image.outputs.local-tag }}
+          expected-image-id: ${{ needs.build-test-image.outputs.image-id }}
+          expected-tarball-sha256: ${{ needs.build-test-image.outputs.tarball-sha256 }}
 
       # Each shard is its own runner with its own PostgreSQL container, so the
       # session fixture's DROP SCHEMA only ever affects that shard's database.
@@ -228,12 +393,16 @@ jobs:
       # .test_durations; if that file is absent it falls back to splitting by
       # test count, so a stale or missing file slows CI but never breaks it.
       - name: Run tests (shard ${{ matrix.shard }} of 4)
+        env:
+          ARC_TEST_IMAGE: ${{ steps.image.outputs.image }}
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test run --rm arc-test \
             python -m pytest -q --splits 4 --group ${{ matrix.shard }}
 
       - name: Cleanup
         if: always()
+        env:
+          ARC_TEST_IMAGE: ${{ steps.image.outputs.image }}
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   production-config:
@@ -259,49 +428,53 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: "{}"
-      ARC_TEST_IMAGE: ${{ needs.build-test-image.outputs.image }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Registry login is needed only when the image comes from GHCR. A fork
+      # run has no credentials to log in with, and needs none: its image
+      # arrives as an Actions artifact.
       - name: Log in to GHCR
+        if: needs.build-test-image.outputs.mode == 'registry'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Explicit pull, then an assertion. compose runs with pull_policy:never
-      # and no build section (docker-compose.ci.yml), so this is the only way
-      # the image can arrive — and the only artifact it can possibly run.
-      - name: Pull the published test image
-        run: docker pull "$ARC_TEST_IMAGE"
-
-      # Requirement from review: every consumer logs the image ID and digest
-      # it is about to test, so "all shards used one artifact" is verifiable
-      # from the logs rather than inferred from the workflow shape.
-      - name: Assert image identity
-        run: |
-          echo "expected digest: ${{ needs.build-test-image.outputs.digest }}"
-          echo "image ref:       $ARC_TEST_IMAGE"
-          docker image inspect "$ARC_TEST_IMAGE" \
-            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
-          docker image inspect "$ARC_TEST_IMAGE" --format '{{index .RepoDigests 0}}' \
-            | grep -q "${{ needs.build-test-image.outputs.digest }}" \
-            || { echo "::error::pulled image does not match the published digest"; exit 1; }
+      # The ONLY sanctioned way this job obtains an ARC image. It acquires
+      # and then PROVES the artifact is the one the build job produced. It
+      # cannot build: docker-compose.ci.yml strips the build context and
+      # sets pull_policy:never.
+      - name: Acquire the test image
+        id: image
+        uses: ./.github/actions/acquire-arc-image
+        with:
+          mode: ${{ needs.build-test-image.outputs.mode }}
+          image-ref: ${{ needs.build-test-image.outputs.image }}
+          expected-digest: ${{ needs.build-test-image.outputs.digest }}
+          artifact-name: ${{ needs.build-test-image.outputs.artifact-name }}
+          local-tag: ${{ needs.build-test-image.outputs.local-tag }}
+          expected-image-id: ${{ needs.build-test-image.outputs.image-id }}
+          expected-tarball-sha256: ${{ needs.build-test-image.outputs.tarball-sha256 }}
 
       # PostgreSQL is started even though these tests only inspect the route
       # table and cookie helpers: tests/conftest.py has a session-scoped
       # autouse fixture (_initialize_schema) that connects to the database
       # before any test in tests/ runs, so --no-deps errors the whole file.
       - name: Assert the production configuration boundary
+        env:
+          ARC_TEST_IMAGE: ${{ steps.image.outputs.image }}
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test run --rm arc-test \
             python -m pytest tests/test_production_config.py -q
 
       - name: Cleanup
         if: always()
+        env:
+          ARC_TEST_IMAGE: ${{ steps.image.outputs.image }}
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   schema-bootstrap:
@@ -322,37 +495,37 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: "{}"
-      ARC_TEST_IMAGE: ${{ needs.build-test-image.outputs.image }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Registry login is needed only when the image comes from GHCR. A fork
+      # run has no credentials to log in with, and needs none: its image
+      # arrives as an Actions artifact.
       - name: Log in to GHCR
+        if: needs.build-test-image.outputs.mode == 'registry'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Explicit pull, then an assertion. compose runs with pull_policy:never
-      # and no build section (docker-compose.ci.yml), so this is the only way
-      # the image can arrive — and the only artifact it can possibly run.
-      - name: Pull the published test image
-        run: docker pull "$ARC_TEST_IMAGE"
-
-      # Requirement from review: every consumer logs the image ID and digest
-      # it is about to test, so "all shards used one artifact" is verifiable
-      # from the logs rather than inferred from the workflow shape.
-      - name: Assert image identity
-        run: |
-          echo "expected digest: ${{ needs.build-test-image.outputs.digest }}"
-          echo "image ref:       $ARC_TEST_IMAGE"
-          docker image inspect "$ARC_TEST_IMAGE" \
-            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
-          docker image inspect "$ARC_TEST_IMAGE" --format '{{index .RepoDigests 0}}' \
-            | grep -q "${{ needs.build-test-image.outputs.digest }}" \
-            || { echo "::error::pulled image does not match the published digest"; exit 1; }
+      # The ONLY sanctioned way this job obtains an ARC image. It acquires
+      # and then PROVES the artifact is the one the build job produced. It
+      # cannot build: docker-compose.ci.yml strips the build context and
+      # sets pull_policy:never.
+      - name: Acquire the test image
+        id: image
+        uses: ./.github/actions/acquire-arc-image
+        with:
+          mode: ${{ needs.build-test-image.outputs.mode }}
+          image-ref: ${{ needs.build-test-image.outputs.image }}
+          expected-digest: ${{ needs.build-test-image.outputs.digest }}
+          artifact-name: ${{ needs.build-test-image.outputs.artifact-name }}
+          local-tag: ${{ needs.build-test-image.outputs.local-tag }}
+          expected-image-id: ${{ needs.build-test-image.outputs.image-id }}
+          expected-tarball-sha256: ${{ needs.build-test-image.outputs.tarball-sha256 }}
 
       # This job proves the application provisions the full schema from
       # src/arc/db/schema.sql on startup against a genuinely empty
@@ -361,12 +534,16 @@ jobs:
       # and verifies ArcDatabase.ensure_schema() provisions all tables
       # and is idempotent, leaving existing data intact.
       - name: Run schema bootstrap tests (fresh DB)
+        env:
+          ARC_TEST_IMAGE: ${{ steps.image.outputs.image }}
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test run --rm arc-test \
             python -m pytest tests/test_schema_bootstrap.py -v
 
       - name: Cleanup
         if: always()
+        env:
+          ARC_TEST_IMAGE: ${{ steps.image.outputs.image }}
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   frontend:
@@ -433,7 +610,6 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: '{"ref-platform-admin": "platform_administrator", "ref-acme-technologies-company-admin": "company_administrator", "ref-acme-technologies-ops-user": "operations_user", "ref-acme-technologies-employee-1": "employee", "ref-acme-technologies-employee-2": "employee", "ref-nova-systems-company-admin": "company_administrator", "ref-nova-systems-ops-user": "operations_user", "ref-nova-systems-employee-1": "employee", "ref-nova-systems-employee-2": "employee", "ref-vertex-solutions-company-admin": "company_administrator", "ref-vertex-solutions-ops-user": "operations_user", "ref-vertex-solutions-employee-1": "employee", "ref-vertex-solutions-employee-2": "employee", "ref-northstar-digital-company-admin": "company_administrator", "ref-northstar-digital-ops-user": "operations_user", "ref-northstar-digital-employee-1": "employee", "ref-northstar-digital-employee-2": "employee"}'
-      ARC_IMAGE: ${{ needs.build-production-image.outputs.image }}
 
     steps:
       - name: Checkout repository
@@ -462,26 +638,28 @@ jobs:
       # It builds nothing: compose runs with pull_policy:never and no build
       # section, so the only image it can start is the digest pulled here.
       - name: Log in to GHCR
+        if: needs.build-production-image.outputs.mode == 'registry'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull the published production image
-        run: docker pull "$ARC_IMAGE"
-
-      - name: Assert image identity
-        run: |
-          echo "expected digest: ${{ needs.build-production-image.outputs.digest }}"
-          echo "image ref:       $ARC_IMAGE"
-          docker image inspect "$ARC_IMAGE" \
-            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
-          docker image inspect "$ARC_IMAGE" --format '{{index .RepoDigests 0}}' \
-            | grep -q "${{ needs.build-production-image.outputs.digest }}" \
-            || { echo "::error::pulled image does not match the published digest"; exit 1; }
+      - name: Acquire the production image
+        id: image
+        uses: ./.github/actions/acquire-arc-image
+        with:
+          mode: ${{ needs.build-production-image.outputs.mode }}
+          image-ref: ${{ needs.build-production-image.outputs.image }}
+          expected-digest: ${{ needs.build-production-image.outputs.digest }}
+          artifact-name: ${{ needs.build-production-image.outputs.artifact-name }}
+          local-tag: ${{ needs.build-production-image.outputs.local-tag }}
+          expected-image-id: ${{ needs.build-production-image.outputs.image-id }}
+          expected-tarball-sha256: ${{ needs.build-production-image.outputs.tarball-sha256 }}
 
       - name: Start backend and database
+        env:
+          ARC_IMAGE: ${{ steps.image.outputs.image }}
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
@@ -513,4 +691,6 @@ jobs:
 
       - name: Cleanup
         if: always()
+        env:
+          ARC_IMAGE: ${{ steps.image.outputs.image }}
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
