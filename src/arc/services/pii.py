@@ -27,6 +27,7 @@ Behavior notes (implementation decisions, not product requirements):
   complete detected entity is masked regardless of its length.
 """
 
+import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -105,6 +106,53 @@ _SSN_CONTEXT = [
 # matches score 0.50 before any boost.  0.20 sits between with margin
 # on both sides.  Entity-specific: no other PII category is affected.
 _US_SSN_MIN_SCORE = 0.20
+
+
+# The spaCy model Presidio's NLP engine loads. Only PERSON detection uses it:
+# EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD, IBAN_CODE, IP_ADDRESS, US_SSN and
+# CREDENTIAL are pattern or checksum recognizers that never consult the model.
+# Nothing here reads word vectors or similarity — the capability en_core_web_lg
+# adds over en_core_web_sm — so on paper the small model looks sufficient.
+#
+# It is not, and the default stays large. Measured PERSON recall over 10 names
+# x 8 sentence contexts (80 cases):
+#
+#     en_core_web_lg   79/80  98.8%   445 MB
+#     en_core_web_sm   77/80  96.2%    15 MB
+#
+# The three regressions are the same name in three different contexts, all
+# caught by lg. The whole PII suite (94 tests) passes on both models, which is
+# why the suite alone cannot settle this: only 8 of those tests mention PERSON
+# and they use simple Anglo names. A miss here is not a cosmetic degradation —
+# it is personal data flowing unredacted into embeddings, stored chunks and LLM
+# prompts, which is exactly what this service exists to prevent. ~430 MB does
+# not buy that.
+#
+# Configurable rather than hardcoded so the choice is explicit and testable,
+# and so a deployment that has measured recall on its OWN corpus can opt into
+# the small model deliberately. See docs/evaluation/PII_SPACY_MODEL.md.
+_DEFAULT_SPACY_MODEL = "en_core_web_lg"
+
+
+def _build_nlp_engine():
+    """Build Presidio's NLP engine against the configured spaCy model.
+
+    Presidio's default provider hardcodes en_core_web_lg. Passing an explicit
+    engine is what makes PII_SPACY_MODEL take effect; without it the env var
+    would be silently ignored, which is worse than not offering the knob.
+    """
+    from presidio_analyzer.nlp_engine import NlpEngineProvider
+
+    model_name = os.getenv("PII_SPACY_MODEL", _DEFAULT_SPACY_MODEL).strip()
+    if not model_name:
+        raise PiiGuardError("PII_SPACY_MODEL must not be empty")
+    provider = NlpEngineProvider(
+        nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": model_name}],
+        }
+    )
+    return provider.create_engine()
 
 
 def _build_arc_ssn_recognizer():
@@ -440,7 +488,10 @@ class PiiGuardService:
 
             registry.add_recognizer(_build_arc_ssn_recognizer())
 
-            self._analyzer_engine = AnalyzerEngine(registry=registry)
+            self._analyzer_engine = AnalyzerEngine(
+                registry=registry,
+                nlp_engine=_build_nlp_engine(),
+            )
         return self._analyzer_engine
 
     def _anonymizer(self) -> Any:
