@@ -67,7 +67,7 @@ dev = [
     # covering that path run against the real pypdf image API rather
     # than a stub, on any machine and in CI.
     "Pillow>=10.0,<13.0",
-    "pytest>=8.4,<9.0",
+    "pytest>=9.1.1,<10.0",
     "pytest-asyncio>=0.23,<1.0",
     # Splits the suite across CI shards by recorded duration (.test_durations).
     # Shards are separate jobs with their own PostgreSQL, so the suite's
