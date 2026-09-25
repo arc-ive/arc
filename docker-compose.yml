@@ -19,7 +19,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    environment:
+      # Explicit: the served image carries no tests and no test tooling.
+      target: production
+    environment: &arc_environment
       APP_ENV: ${APP_ENV}
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
@@ -45,6 +47,25 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+
+  # Test image: same application, plus tests/ and the test tooling. Behind a
+  # profile so `docker compose up` and the e2e job never build it, while
+  # `docker compose --profile test run --rm arc-test ...` does.
+  #
+  # It reuses the arc service's environment anchor so the suite runs against
+  # the same configuration the application does; a drift between them would
+  # mean CI validates something production never sees.
+  arc-test:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment: *arc_environment
     depends_on:
       postgres:
         condition: service_healthy

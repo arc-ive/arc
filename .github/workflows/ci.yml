@@ -94,8 +94,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build application image
-        run: docker compose build arc
+      - name: Build test image
+        run: docker compose --profile test build arc-test
 
       # Each shard is its own runner with its own PostgreSQL container, so the
       # session fixture's DROP SCHEMA only ever affects that shard's database.
@@ -104,7 +104,7 @@ jobs:
       # test count, so a stale or missing file slows CI but never breaks it.
       - name: Run tests (shard ${{ matrix.shard }} of 4)
         run: |
-          docker compose run --rm arc \
+          docker compose --profile test run --rm arc-test \
             python -m pytest -q --splits 4 --group ${{ matrix.shard }}
 
       - name: Cleanup
@@ -136,7 +136,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build application image
-        run: docker compose build arc
+        run: docker compose --profile test build arc-test
 
       # PostgreSQL is started even though these tests only inspect the route
       # table and cookie helpers: tests/conftest.py has a session-scoped
@@ -144,7 +144,7 @@ jobs:
       # before any test in tests/ runs, so --no-deps errors the whole file.
       - name: Assert the production configuration boundary
         run: |
-          docker compose run --rm arc \
+          docker compose --profile test run --rm arc-test \
             python -m pytest tests/test_production_config.py -q
 
       - name: Cleanup
@@ -171,7 +171,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build application image
-        run: docker compose build arc
+        run: docker compose --profile test build arc-test
 
       # This job proves the application provisions the full schema from
       # src/arc/db/schema.sql on startup against a genuinely empty
@@ -181,7 +181,7 @@ jobs:
       # and is idempotent, leaving existing data intact.
       - name: Run schema bootstrap tests (fresh DB)
         run: |
-          docker compose run --rm arc \
+          docker compose --profile test run --rm arc-test \
             python -m pytest tests/test_schema_bootstrap.py -v
 
       - name: Cleanup
