@@ -76,7 +76,7 @@ jobs:
 
       - name: Log in to GHCR
         if: steps.mode.outputs.mode == 'registry'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -220,7 +220,7 @@ jobs:
 
       - name: Log in to GHCR
         if: steps.mode.outputs.mode == 'registry'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -423,7 +423,7 @@ jobs:
       # arrives as an Actions artifact.
       - name: Log in to GHCR
         if: needs.build-test-image.outputs.mode == 'registry'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -496,7 +496,7 @@ jobs:
       # arrives as an Actions artifact.
       - name: Log in to GHCR
         if: needs.build-test-image.outputs.mode == 'registry'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -563,7 +563,7 @@ jobs:
       # arrives as an Actions artifact.
       - name: Log in to GHCR
         if: needs.build-test-image.outputs.mode == 'registry'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -697,7 +697,7 @@ jobs:
       # section, so the only image it can start is the digest pulled here.
       - name: Log in to GHCR
         if: needs.build-production-image.outputs.mode == 'registry'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
