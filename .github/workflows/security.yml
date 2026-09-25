@@ -180,7 +180,7 @@ jobs:
       # building a fresh one. Same artifact, same discipline: the thing that
       # was tested is the thing that gets scanned.
       - name: Scan the published production image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}:${{ github.sha }}
           format: table
