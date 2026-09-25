@@ -140,7 +140,7 @@ jobs:
 
       - name: Upload the image artifact
         if: steps.mode.outputs.mode == 'artifact'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arc-test-image
           path: /tmp/arc-image/image.tar
@@ -283,7 +283,7 @@ jobs:
 
       - name: Upload the image artifact
         if: steps.mode.outputs.mode == 'artifact'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arc-production-image
           path: /tmp/arc-image/image.tar
@@ -741,7 +741,7 @@ jobs:
       # e2e/.auth/ (live session cookies) is never uploaded.
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: frontend/playwright-report/
