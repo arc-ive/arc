@@ -94,8 +94,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build test image
-        run: docker compose --profile test build arc-test
+      # Buildx + the Actions cache replace a cold `docker compose build`.
+      # Before this, the image was rebuilt from scratch 7 times per run (4
+      # shards + production-config + schema-bootstrap + e2e), each one
+      # re-downloading the ~400 MB en_core_web_lg wheel. The dependency layer
+      # is keyed on pyproject.toml alone, so an ordinary code change now
+      # restores it from cache instead of refetching the model.
+      #
+      # scope=test is shared by every job that needs the test image, so they
+      # populate and read one cache entry rather than three. `load: true`
+      # puts the image in the local daemon under the tag compose expects, so
+      # the compose step below finds it and does not rebuild.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          tags: arc-app-test:local
+          load: true
+          cache-from: type=gha,scope=arc-test
+          cache-to: type=gha,mode=max,scope=arc-test
 
       # Each shard is its own runner with its own PostgreSQL container, so the
       # session fixture's DROP SCHEMA only ever affects that shard's database.
@@ -135,8 +156,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build application image
-        run: docker compose --profile test build arc-test
+      # Buildx + the Actions cache replace a cold `docker compose build`.
+      # Before this, the image was rebuilt from scratch 7 times per run (4
+      # shards + production-config + schema-bootstrap + e2e), each one
+      # re-downloading the ~400 MB en_core_web_lg wheel. The dependency layer
+      # is keyed on pyproject.toml alone, so an ordinary code change now
+      # restores it from cache instead of refetching the model.
+      #
+      # scope=test is shared by every job that needs the test image, so they
+      # populate and read one cache entry rather than three. `load: true`
+      # puts the image in the local daemon under the tag compose expects, so
+      # the compose step below finds it and does not rebuild.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          tags: arc-app-test:local
+          load: true
+          cache-from: type=gha,scope=arc-test
+          cache-to: type=gha,mode=max,scope=arc-test
 
       # PostgreSQL is started even though these tests only inspect the route
       # table and cookie helpers: tests/conftest.py has a session-scoped
@@ -170,8 +212,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build application image
-        run: docker compose --profile test build arc-test
+      # Buildx + the Actions cache replace a cold `docker compose build`.
+      # Before this, the image was rebuilt from scratch 7 times per run (4
+      # shards + production-config + schema-bootstrap + e2e), each one
+      # re-downloading the ~400 MB en_core_web_lg wheel. The dependency layer
+      # is keyed on pyproject.toml alone, so an ordinary code change now
+      # restores it from cache instead of refetching the model.
+      #
+      # scope=test is shared by every job that needs the test image, so they
+      # populate and read one cache entry rather than three. `load: true`
+      # puts the image in the local daemon under the tag compose expects, so
+      # the compose step below finds it and does not rebuild.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          tags: arc-app-test:local
+          load: true
+          cache-from: type=gha,scope=arc-test
+          cache-to: type=gha,mode=max,scope=arc-test
 
       # This job proves the application provisions the full schema from
       # src/arc/db/schema.sql on startup against a genuinely empty
@@ -271,10 +334,27 @@ jobs:
       # Published ports (8000/5432) so the runner-local vite server and
       # Playwright can reach the backend; `compose run` would not publish
       # them. Bounded poll on /health, not a fixed sleep.
+      # e2e exercises the PRODUCTION image — the one that actually ships —
+      # rather than the test image. Built here with the Actions cache so the
+      # dependency layer is restored instead of refetched, then started
+      # without --build so compose reuses this exact image.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image (cached)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          tags: arc-app:local
+          load: true
+          cache-from: type=gha,scope=arc-prod
+          cache-to: type=gha,mode=max,scope=arc-prod
+
       - name: Start backend and database
         run: |
           set -euo pipefail
-          docker compose up -d --build
+          docker compose up -d
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:8000/health > /dev/null; then
               break

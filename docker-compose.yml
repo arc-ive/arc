@@ -16,6 +16,11 @@ services:
       retries: 10
 
   arc:
+    # Explicit tag so CI can build this image once with buildx (restoring the
+    # dependency layer from the Actions cache) and have compose reuse it
+    # instead of rebuilding. Without a fixed tag compose derives a name from
+    # the project directory, which CI cannot pre-populate.
+    image: ${ARC_IMAGE:-arc-app:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -61,6 +66,7 @@ services:
   # mean CI validates something production never sees.
   arc-test:
     profiles: ["test"]
+    image: ${ARC_TEST_IMAGE:-arc-app-test:local}
     build:
       context: .
       dockerfile: Dockerfile
