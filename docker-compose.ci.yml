@@ -18,13 +18,26 @@
 # The images are pinned by DIGEST, not tag. A tag can be moved; a digest
 # cannot. That is what makes "all four shards tested the same artifact" a
 # checkable claim rather than an assumption.
+# The placeholder defaults are load-bearing, not laziness. Compose
+# interpolates the WHOLE file regardless of which service a command
+# selects, so a `:?` guard on `arc` broke every test-shard run — those
+# jobs legitimately pin only ARC_TEST_IMAGE. Each job pins the image it
+# consumes and leaves the other unset.
+#
+# An unset variable therefore resolves to a reference that cannot exist
+# in any registry. That keeps the failure mode intact: a job reaching for
+# a service it did not pin gets "No such image:
+# arc-image-not-pinned-for-this-job" and stops. It cannot build one,
+# because the build section is gone, and it cannot pull one, because
+# pull_policy is never. Fail-closed and self-explaining, which a bare
+# empty string would not be.
 services:
   arc:
     build: !reset null
-    image: ${ARC_IMAGE:?ARC_IMAGE must be a digest-pinned reference}
+    image: ${ARC_IMAGE:-arc-image-not-pinned-for-this-job}
     pull_policy: never
 
   arc-test:
     build: !reset null
-    image: ${ARC_TEST_IMAGE:?ARC_TEST_IMAGE must be a digest-pinned reference}
+    image: ${ARC_TEST_IMAGE:-arc-test-image-not-pinned-for-this-job}
     pull_policy: never
