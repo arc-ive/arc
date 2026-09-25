@@ -330,6 +330,23 @@ jobs:
       - name: Check formatting
         run: ruff format --check .
 
+      # The CI contract is validated HERE, not in the sharded suite, because
+      # these tests read .github/ and docker-compose.ci.yml — repository
+      # configuration, which the test image deliberately does not ship. They
+      # need no database and no application image.
+      #
+      # ARC_REQUIRE_CI_ARCHITECTURE_TESTS turns "files not found" from a skip
+      # into a hard error, so the invariant cannot quietly stop being checked.
+      - name: Install CI-contract test dependencies
+        run: python -m pip install "pytest>=8.4,<9.0" "PyYAML>=6.0,<7.0"
+
+      - name: Validate the CI image contract
+        env:
+          ARC_REQUIRE_CI_ARCHITECTURE_TESTS: "1"
+        run: |
+          python -m pytest tests/test_ci_architecture.py -q -p no:randomly \
+            --no-header -p no:cacheprovider
+
   test:
     name: Test (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest

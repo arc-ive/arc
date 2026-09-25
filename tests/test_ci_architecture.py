@@ -23,6 +23,7 @@ Deliberately parses the YAML rather than trusting the workflow to be
 well-behaved: the question is what CI *would* do, not what it is meant to.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -36,6 +37,34 @@ CI_WORKFLOW = WORKFLOW_DIR / "ci.yml"
 CI_COMPOSE = REPO_ROOT / "docker-compose.ci.yml"
 BASE_COMPOSE = REPO_ROOT / "docker-compose.yml"
 ACQUIRE_ACTION = REPO_ROOT / ".github" / "actions" / "acquire-arc-image" / "action.yml"
+
+# These tests analyse repository configuration, not application behaviour, so
+# they need the checkout rather than the application image. The test image
+# deliberately ships only src/, tests/ and scripts/ — .github/ is not in it,
+# and putting it there would couple the image to CI config and force a
+# rebuild on every workflow edit.
+#
+# So: skip when the files are not reachable (inside the container), and run
+# for real in the `lint` job, which has the checkout. A silent skip would be
+# a way for the invariant to stop being enforced without anyone noticing, so
+# the job that is supposed to run them sets ARC_REQUIRE_CI_ARCHITECTURE_TESTS
+# and the skip becomes a hard failure instead.
+_WORKFLOW_AVAILABLE = CI_WORKFLOW.is_file() and ACQUIRE_ACTION.is_file()
+
+if not _WORKFLOW_AVAILABLE and os.getenv("ARC_REQUIRE_CI_ARCHITECTURE_TESTS"):
+    raise RuntimeError(
+        "ARC_REQUIRE_CI_ARCHITECTURE_TESTS is set but the workflow files are "
+        f"not readable from {REPO_ROOT}. The CI contract would go unchecked. "
+        "Run these from a repository checkout, not from inside the test image."
+    )
+
+pytestmark = pytest.mark.skipif(
+    not _WORKFLOW_AVAILABLE,
+    reason=(
+        "CI configuration is not present (running inside the test image, which "
+        "ships no .github/). Enforced in the lint job, which has the checkout."
+    ),
+)
 
 # Jobs that consume an ARC image. Adding a consumer means adding it here;
 # that is the intended friction.
