@@ -14,6 +14,7 @@ Tests mock the OpenAI client to avoid network dependency. They cover:
 - credential model (ADR-007 Option A): OPENAI_API_KEY optional when base_url set
 """
 
+import inspect
 from types import SimpleNamespace
 from typing import List
 from unittest.mock import MagicMock, patch
@@ -327,3 +328,68 @@ class TestCredentialModel:
             provider = build_embedding_provider(get_embedding_settings())
 
         assert isinstance(provider, OpenAIEmbeddingProvider)
+
+
+class TestInstalledSdkApiSurface:
+    """Assert the REAL installed SDK still exposes what ARC calls.
+
+    Every other test in this file patches ``openai.OpenAI``, which is correct
+    for behaviour — it keeps the suite offline and credential-free. But a
+    mock accepts any call, so if the SDK renamed ``dimensions``, stopped
+    accepting ``timeout`` on the constructor, or moved ``embeddings.create``,
+    all 29 of them would still pass while production broke.
+
+    That blind spot is not hypothetical here. ``EMBEDDING_PROVIDER`` defaults
+    to ``deterministic``, so CI never constructs a real client: a major SDK
+    upgrade can go green without exercising one line of the OpenAI path.
+
+    These tests close the narrow part of that gap which needs no network and
+    no key — the call surface itself. They construct the client with a dummy
+    key (the SDK does no I/O at construction, verified) and inspect
+    signatures. What they still cannot cover is live request/response shape;
+    that needs the opt-in evaluation workflow.
+    """
+
+    DUMMY_KEY = "sk-not-a-real-key-used-for-signature-inspection-only"
+
+    def test_client_accepts_the_arguments_arc_passes(self):
+        """ARC builds the client with api_key, timeout and optionally base_url."""
+        from openai import OpenAI
+
+        parameters = inspect.signature(OpenAI.__init__).parameters
+        for required in ("api_key", "timeout", "base_url"):
+            assert required in parameters, (
+                f"the installed openai SDK's client no longer accepts {required!r}; "
+                "src/arc/services/embeddings.py passes it in client_kwargs"
+            )
+
+    def test_client_constructs_without_network_or_real_key(self):
+        """Construction must stay side-effect free, as ARC relies on."""
+        from openai import OpenAI
+
+        client = OpenAI(api_key=self.DUMMY_KEY, timeout=30.0)
+        assert client is not None
+        assert hasattr(client, "embeddings")
+
+    def test_embeddings_create_accepts_model_input_and_dimensions(self):
+        """The exact call ARC makes in OpenAIEmbeddingProvider.embed."""
+        from openai import OpenAI
+
+        client = OpenAI(api_key=self.DUMMY_KEY, timeout=30.0)
+        parameters = inspect.signature(client.embeddings.create).parameters
+        for required in ("model", "input", "dimensions"):
+            assert required in parameters, (
+                f"the installed openai SDK's embeddings.create no longer accepts "
+                f"{required!r}; ARC calls it with model/input/dimensions"
+            )
+
+    def test_base_url_is_accepted_for_gateway_routing(self):
+        """ADR-007 routes through a gateway by setting base_url."""
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=self.DUMMY_KEY,
+            timeout=30.0,
+            base_url="http://gateway.invalid/v1",
+        )
+        assert str(client.base_url).startswith("http://gateway.invalid")

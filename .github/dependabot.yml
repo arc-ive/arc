@@ -44,8 +44,22 @@ updates:
       frontend-patch:
         update-types: [patch]
 
+  # `directories`, not `directory`. With `directory: /` Dependabot searches
+  # .github/workflows and the ROOT action.yml only — it does not descend into
+  # .github/actions. That blind spot is not theoretical: it left
+  # actions/download-artifact pinned at v4 inside acquire-arc-image while the
+  # workflows were being offered v7, and Dependabot never once proposed the
+  # composite action's own pin. The download side is half of the fork-safe
+  # artifact handoff, so it going unmonitored is a security-relevant gap, not
+  # just staleness.
+  #
+  # Every directory holding an action.yml that pins a third-party action must
+  # be listed here. tests/test_ci_architecture.py asserts that, so adding a
+  # composite action without adding it here fails the build.
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/acquire-arc-image
     schedule:
       interval: weekly
       day: monday

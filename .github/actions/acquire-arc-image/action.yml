@@ -104,9 +104,15 @@ runs:
 
     # ---------------- artifact mode (fork PRs) ----------------
 
+    # Pinned deliberately alongside actions/upload-artifact in the workflows
+    # that produce this artifact. The two are a matched pair: the upload side
+    # writes the tarball and this reads it back, so they are bumped together
+    # rather than drifting apart. They had drifted — the workflows were
+    # proposed for v7 while this sat on v4, because Dependabot does not scan
+    # composite actions under .github/actions (see .github/dependabot.yml).
     - name: Download the image artifact
       if: inputs.mode == 'artifact'
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: /tmp/arc-image
