@@ -99,6 +99,12 @@ jobs:
             ghcr.io/${{ github.repository }}-test:${{ github.sha }}
           cache-from: type=gha,scope=arc-test
           cache-to: type=gha,mode=max,scope=arc-test
+          # Provenance and SBOM travel with the image in the registry, so an
+          # artifact can be traced back to the commit and workflow run that
+          # produced it without consulting anything outside GHCR. Both are
+          # buildx-native: no scanner, no service, no extra job.
+          provenance: mode=max
+          sbom: true
 
       # ---- artifact mode: build once, export, hand consumers a tarball ----
       #
@@ -143,18 +149,31 @@ jobs:
           # almost nothing.
           compression-level: 0
 
+      # Written to the run summary, not just the log. Which artifact a run
+      # tested is the first question asked when something is wrong, and
+      # scrolling a job log to find it is friction at exactly the wrong
+      # moment.
       - name: Report the artifact consumers will receive
         run: |
-          echo "mode: ${{ steps.mode.outputs.mode }}"
-          if [ "${{ steps.mode.outputs.mode }}" = "registry" ]; then
-            echo "digest: ${{ steps.push.outputs.digest }}"
-            echo "image:  ghcr.io/${{ github.repository }}-test@${{ steps.push.outputs.digest }}"
-          else
-            echo "artifact: arc-test-image"
-            echo "tag:      arc-app-test:ci"
-            echo "image id: ${{ steps.export.outputs.image-id }}"
-            echo "sha256:   ${{ steps.export.outputs.tarball-sha256 }}"
-          fi
+          {
+            echo "### Test image"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| mode | \`${{ steps.mode.outputs.mode }}\` |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| run | [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            if [ "${{ steps.mode.outputs.mode }}" = "registry" ]; then
+              echo "| image | \`ghcr.io/${{ github.repository }}-test@${{ steps.push.outputs.digest }}\` |"
+              echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+            else
+              echo "| artifact | \`arc-test-image\` |"
+              echo "| tag | \`arc-app-test:ci\` |"
+              echo "| image id | \`${{ steps.export.outputs.image-id }}\` |"
+              echo "| tarball sha256 | \`${{ steps.export.outputs.tarball-sha256 }}\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
 
   build-production-image:
     name: Build production image
@@ -224,6 +243,11 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha,scope=arc-prod
           cache-to: type=gha,mode=max,scope=arc-prod
+          # The production image is the one that would ever be promoted, so
+          # its provenance matters most: attestation records the commit, the
+          # workflow run and the build inputs.
+          provenance: mode=max
+          sbom: true
 
       # ---- artifact mode: build once, export, hand consumers a tarball ----
       #
@@ -268,18 +292,31 @@ jobs:
           # almost nothing.
           compression-level: 0
 
+      # Written to the run summary, not just the log. Which artifact a run
+      # tested is the first question asked when something is wrong, and
+      # scrolling a job log to find it is friction at exactly the wrong
+      # moment.
       - name: Report the artifact consumers will receive
         run: |
-          echo "mode: ${{ steps.mode.outputs.mode }}"
-          if [ "${{ steps.mode.outputs.mode }}" = "registry" ]; then
-            echo "digest: ${{ steps.push.outputs.digest }}"
-            echo "image:  ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}"
-          else
-            echo "artifact: arc-production-image"
-            echo "tag:      arc-app:ci"
-            echo "image id: ${{ steps.export.outputs.image-id }}"
-            echo "sha256:   ${{ steps.export.outputs.tarball-sha256 }}"
-          fi
+          {
+            echo "### Production image"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| mode | \`${{ steps.mode.outputs.mode }}\` |"
+            echo "| commit | \`${{ github.sha }}\` |"
+            echo "| run | [\`${{ github.run_id }}\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            if [ "${{ steps.mode.outputs.mode }}" = "registry" ]; then
+              echo "| image | \`ghcr.io/${{ github.repository }}@${{ steps.push.outputs.digest }}\` |"
+              echo "| digest | \`${{ steps.push.outputs.digest }}\` |"
+            else
+              echo "| artifact | \`arc-production-image\` |"
+              echo "| tag | \`arc-app:ci\` |"
+              echo "| image id | \`${{ steps.export.outputs.image-id }}\` |"
+              echo "| tarball sha256 | \`${{ steps.export.outputs.tarball-sha256 }}\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
 
   lint:
     name: Lint & Format
@@ -343,9 +380,13 @@ jobs:
       - name: Validate the CI image contract
         env:
           ARC_REQUIRE_CI_ARCHITECTURE_TESTS: "1"
+        # --noconftest: tests/conftest.py imports arc and opens a database
+        # connection for the application suite. This job installs neither and
+        # needs neither — these tests read files, nothing more. Without the
+        # flag collection fails on the import before a single assertion runs.
         run: |
           python -m pytest tests/test_ci_architecture.py -q -p no:randomly \
-            --no-header -p no:cacheprovider
+            --no-header -p no:cacheprovider --noconftest
 
   test:
     name: Test (shard ${{ matrix.shard }}/4)
