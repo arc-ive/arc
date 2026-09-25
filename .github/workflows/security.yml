@@ -1,0 +1,210 @@
+name: Security
+
+# Split from ci.yml deliberately.
+#
+# These checks answer a different question. CI asks "does this change work?"
+# and must block the merge. These ask "has the world changed underneath us?"
+# — a CVE published against a dependency ARC already shipped makes a run red
+# on a PR that did not touch it, which teaches people to ignore red.
+#
+# So: run on PRs that actually change dependencies, on main, and on a
+# schedule. A scheduled failure is a real signal (something new was
+# disclosed) rather than noise attached to an unrelated change.
+#
+# Scope is ARC's actual risk surface, not a checklist. ARC is multi-tenant,
+# stores tenant documents, encrypts connector credentials at rest, and runs
+# PII detection over customer text. A vulnerable transitive dependency in
+# that path is a tenant-data problem, which is why dependency auditing earns
+# its place. Tools that would duplicate what GitHub already provides
+# natively (secret scanning, Dependabot alerts) are not reimplemented here.
+
+on:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'Dockerfile'
+      - '.github/workflows/security.yml'
+  push:
+    branches: [main]
+  schedule:
+    # 03:17 UTC — an odd minute on purpose: the top of the hour is when
+    # every scheduled workflow on GitHub contends for runners.
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python-dependencies:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # pip-audit queries the Python Packaging Advisory Database against the
+      # resolved environment, so it sees transitive dependencies — which is
+      # where this class of problem actually lives. Chosen over a generic
+      # scanner because it understands Python resolution rather than guessing
+      # from a manifest.
+      - name: Install ARC and pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          python -m pip install pip-audit
+
+      # Audits what is actually installed, including the spaCy/Presidio tree,
+      # which a manifest-only scan misses.
+      #
+      # --strict is NOT used: it treats "could not audit" as an error, and
+      # ARC's own package plus the two direct-URL spaCy model wheels are not
+      # on PyPI by construction. Failing on those would be a permanently red
+      # gate that says nothing about security.
+      #
+      # KNOWN EXCEPTIONS. Each is ignored with a reason, not waved through.
+      # Anything NOT on this list fails the job, which is what gives the gate
+      # teeth. Review this list whenever Presidio is upgraded.
+      #
+      #   PYSEC-2026-3552/3553/3554  cryptography 48.0.1
+      #     ARC does not depend on cryptography directly. presidio-anonymizer
+      #     pins it to >=48.0.1,<49.0.0, and the fixes are 49.0.0 and 50.0.0 —
+      #     outside that range. Overriding an upstream pin to satisfy a
+      #     scanner risks breaking the anonymizer that enforces ARC's PII
+      #     boundary, which is a worse outcome than the CVEs. Genuinely
+      #     relevant: cryptography sits in the connector-credential and
+      #     approval-argument encryption path, so this needs revisiting the
+      #     moment Presidio relaxes the pin.
+      #
+      #   PYSEC-2026-1845  pytest 8.4.2
+      #     Dev-only, and verified absent from the production image: the
+      #     prod/test split means pytest is not installed in the runtime
+      #     container at all. The fix is pytest 9.0.3, outside the
+      #     >=8.4,<9.0 pin; bumping the major is a test-infrastructure
+      #     decision, not a security fix for anything ARC ships.
+      - name: Audit installed dependencies
+        run: |
+          set -o pipefail
+          pip-audit --progress-spinner off --format columns \
+            --ignore-vuln PYSEC-2026-3552 \
+            --ignore-vuln PYSEC-2026-3553 \
+            --ignore-vuln PYSEC-2026-3554 \
+            --ignore-vuln PYSEC-2026-1845 \
+            | tee /tmp/pip-audit.txt
+
+      # Reported separately and never gating, so the exceptions stay visible
+      # instead of quietly becoming permanent.
+      - name: Report the full picture including ignored findings
+        if: always()
+        run: |
+          pip-audit --progress-spinner off --format columns \
+            > /tmp/pip-audit-full.txt 2>&1 || true
+          {
+            echo "### Python dependency audit"
+            echo ""
+            echo "**Gate result** (known exceptions ignored):"
+            echo '```'
+            cat /tmp/pip-audit.txt 2>/dev/null || echo "no output"
+            echo '```'
+            echo ""
+            echo "**All findings including accepted exceptions:**"
+            echo '```'
+            cat /tmp/pip-audit-full.txt 2>/dev/null || echo "no output"
+            echo '```'
+            echo ""
+            echo "_Exceptions are listed with reasons in .github/workflows/security.yml._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  frontend-dependencies:
+    name: Frontend dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # `high` rather than `moderate`: the frontend is a browser bundle with
+      # no server-side execution, and a moderate advisory in a build-time
+      # dependency is not a reason to block a merge. High and critical are.
+      # Raising the bar later is a decision; starting noisy just trains
+      # people to pass --force.
+      - name: Audit production dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  container-image:
+    name: Container image scan
+    runs-on: ubuntu-latest
+    # Not on pull_request: scanning an image means building it, and the PR
+    # path already builds one under the build-once discipline in ci.yml.
+    # Duplicating that here would be a second build of the same source,
+    # which is the thing ARC's CI architecture exists to avoid.
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Scans the image CI already published for this commit rather than
+      # building a fresh one. Same artifact, same discipline: the thing that
+      # was tested is the thing that gets scanned.
+      - name: Scan the published production image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+          output: /tmp/trivy.txt
+
+      # exit-code 0 above: this reports, it does not gate. A base-image CVE
+      # with no fix available is not something a merge can resolve, and a
+      # gate nobody can satisfy gets bypassed. Promote to a gate once the
+      # findings are triaged and an allowlist exists — that is a decision to
+      # take deliberately, not a default to inherit.
+      - name: Publish scan summary
+        if: always()
+        run: |
+          {
+            echo "### Container image scan (HIGH/CRITICAL, fixable only)"
+            echo ""
+            echo "Image: \`ghcr.io/${{ github.repository }}:${{ github.sha }}\`"
+            echo ""
+            echo '```'
+            cat /tmp/trivy.txt 2>/dev/null || echo "no scan output"
+            echo '```'
+            echo ""
+            echo "_Advisory, not gating. See docs/ci/ARCHITECTURE.md._"
+          } >> "$GITHUB_STEP_SUMMARY"

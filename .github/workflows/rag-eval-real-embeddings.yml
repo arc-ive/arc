@@ -1,0 +1,94 @@
+name: RAG eval (real embeddings)
+
+# Manual only. This is the one workflow that needs a provider credential, so
+# it is deliberately kept out of the CI graph: no push trigger, no
+# pull_request trigger, nothing that runs automatically. Normal CI stays
+# credential-free (a standing constraint: customer credentials never appear in
+# ordinary CI), and a provider outage can never turn the build red.
+#
+# Run it when a retrieval-quality claim needs to be made about PRODUCTION.
+# Metrics from the deterministic provider measure lexical overlap, not
+# meaning, and must not be quoted as evidence of semantic retrieval quality.
+on:
+  workflow_dispatch:
+    inputs:
+      embedding_provider:
+        description: "EMBEDDING_PROVIDER to evaluate"
+        required: true
+        default: "openai"
+      embedding_model:
+        description: "EMBEDDING_MODEL (blank uses the provider default)"
+        required: false
+        default: "text-embedding-3-small"
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    name: Recall / grounding / floor measurement
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: arc_test
+          POSTGRES_USER: arc
+          POSTGRES_PASSWORD: arc-ci-password
+        options: >-
+          --health-cmd "pg_isready -U arc -d arc_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql://arc:arc-ci-password@localhost:5432/arc_test
+      JWT_SECRET: arc-ci-jwt-secret-change-me-please-32chars
+      JWT_ISSUER: arc
+      JWT_AUDIENCE: arc-api
+      JWT_EXPIRY_SECONDS: "3600"
+      APPLICATION_ROLE_ASSIGNMENTS: "{}"
+      ARC_REAL_EMBEDDING_EVAL: "1"
+      EMBEDDING_PROVIDER: ${{ inputs.embedding_provider }}
+      EMBEDDING_MODEL: ${{ inputs.embedding_model }}
+      EMBEDDING_DIMENSION: "1536"
+      # Supplied by the repository/environment secret. Absent, the run fails
+      # loudly at the provider call rather than silently falling back to the
+      # deterministic provider and reporting its numbers as production ones —
+      # the guard test test_provider_is_not_deterministic also catches that.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OMNIROUTE_BASE_URL: ${{ secrets.OMNIROUTE_BASE_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]"
+
+      # -s so the measured numbers reach the log. The assertions only catch
+      # gross breakage; the report is the actual deliverable.
+      - name: Run real-provider RAG evaluation
+        run: |
+          python -m pytest tests/evaluation/test_rag_real_embeddings.py -v -s \
+            | tee real-embedding-eval.txt
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-embedding-eval
+          path: real-embedding-eval.txt
+          retention-days: 30

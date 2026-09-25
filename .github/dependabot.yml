@@ -1,0 +1,59 @@
+# Dependabot keeps ARC's dependency surface current so the security workflow
+# has something to find *before* it becomes an incident.
+#
+# GitHub-native on purpose: no external service, no runner cost, and it opens
+# ordinary PRs that go through the same CI as everything else.
+#
+# Weekly rather than daily. ARC has a 24-minute test suite and a review gate;
+# daily bumps across four ecosystems would generate more PRs than the team
+# can review, and an unreviewed dependency PR queue is worse than a slightly
+# staler lockfile.
+
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Patch bumps are reviewed together: individually they are noise, and
+      # in aggregate they are one decision.
+      python-patch:
+        update-types: [patch]
+    ignore:
+      # The spaCy model is a pinned direct-URL wheel tied to the spaCy minor
+      # version, and swapping it changes measured PII detection recall
+      # (docs/evaluation/PII_SPACY_MODEL.md). That is a benchmarked decision,
+      # not a dependency bump — Dependabot must not make it silently.
+      - dependency-name: en-core-web-lg
+      - dependency-name: spacy
+      # Ruff's formatter output can change between releases, which would make
+      # a developer's machine and CI disagree about whether the tree is
+      # formatted. Bumped deliberately, with a reformat in the same commit.
+      - dependency-name: ruff
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      frontend-patch:
+        update-types: [patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3

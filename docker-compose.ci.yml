@@ -1,0 +1,43 @@
+# CI consumer override: run a pre-built image, never build one.
+#
+# Used as an override on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+#     --profile test run --rm arc-test python -m pytest ...
+#
+# `build: !reset null` removes the build section inherited from the base
+# file. That is the point: a consumer job cannot silently fall back to
+# building its own image, because after the reset there is no build context
+# to fall back to. If the pinned image is absent, compose fails loudly
+# instead of quietly producing a second, different artifact.
+#
+# `pull_policy: never` is the second half of the guarantee. Compose will not
+# reach out to the registry either, so the image it runs is exactly the one
+# the job pulled and asserted by digest in an earlier, visible step.
+#
+# The images are pinned by DIGEST, not tag. A tag can be moved; a digest
+# cannot. That is what makes "all four shards tested the same artifact" a
+# checkable claim rather than an assumption.
+# The placeholder defaults are load-bearing, not laziness. Compose
+# interpolates the WHOLE file regardless of which service a command
+# selects, so a `:?` guard on `arc` broke every test-shard run — those
+# jobs legitimately pin only ARC_TEST_IMAGE. Each job pins the image it
+# consumes and leaves the other unset.
+#
+# An unset variable therefore resolves to a reference that cannot exist
+# in any registry. That keeps the failure mode intact: a job reaching for
+# a service it did not pin gets "No such image:
+# arc-image-not-pinned-for-this-job" and stops. It cannot build one,
+# because the build section is gone, and it cannot pull one, because
+# pull_policy is never. Fail-closed and self-explaining, which a bare
+# empty string would not be.
+services:
+  arc:
+    build: !reset null
+    image: ${ARC_IMAGE:-arc-image-not-pinned-for-this-job}
+    pull_policy: never
+
+  arc-test:
+    build: !reset null
+    image: ${ARC_TEST_IMAGE:-arc-test-image-not-pinned-for-this-job}
+    pull_policy: never

@@ -311,6 +311,7 @@ class RetrievalService:
         limit: int = 5,
         source_type: Optional[KnowledgeSource] = None,
         min_relevance_score: Optional[float] = None,
+        min_lexical_relevance_score: Optional[float] = None,
     ) -> ApprovedContext:
         """Return retrieval results as the Approved Context Contract.
 
@@ -322,24 +323,44 @@ class RetrievalService:
         V2 uses hybrid retrieval: dense semantic retrieval + lexical
         retrieval fused via Reciprocal Rank Fusion (``HYBRID_RRF``).
 
-        Items whose dense cosine similarity falls below
-        ``min_relevance_score`` are excluded from the approved context.
-        Lexical-only matches (no dense retrieval hit) are not floored
-        because their score is ts_rank, which is not comparable to
-        cosine similarity.  Note: an off-corpus query that lands a
-        lexical hit (e.g. a word overlap) bypasses the floor entirely.
-        When no items clear the threshold the contract has an empty
+        **Relevance floors.** Each retrieval method is floored on its own
+        scale, because the two scores are not comparable:
+
+        - Items whose dense cosine similarity falls below
+          ``min_relevance_score`` are excluded.
+        - Lexical-only matches (no dense hit, so no cosine exists) are
+          floored against ``min_lexical_relevance_score`` using their
+          ``ts_rank``.
+
+        Applying a cosine threshold to ``ts_rank`` — or to the fused RRF
+        score, which is a sum of ``1/(k+rank)`` terms and carries no
+        similarity semantics at all — would be a category error, so
+        neither is done.
+
+        Both thresholds default to their env vars
+        (``MIN_RELEVANCE_SCORE`` / ``MIN_LEXICAL_RELEVANCE_SCORE``),
+        each falling back to ``0.0``, which disables that floor. A
+        non-numeric value fails closed with ``ValueError`` at query time
+        rather than silently disabling the gate.
+
+        The defaults are deliberately permissive: a correct threshold is
+        a property of the deployed embedding provider *and* the tenant
+        corpus, so shipping a fixed non-zero number would be a guess
+        dressed as a safeguard. Derive them per deployment with
+        ``scripts/measure_relevance_floor.py``, which reports the
+        measured on-/off-corpus separation and the midpoint threshold.
+        See ``docs/evaluation/RELEVANCE_FLOOR.md``.
+
+        Until a floor is configured, an off-corpus query that lands any
+        incidental hit still yields context; that is the documented
+        fail-open default, not an accident. What changed is that
+        configuring the dense floor is no longer defeated by a stray
+        lexical match.
+
+        When no items clear the thresholds the contract has an empty
         ``items`` list; the caller
         (``UnifiedIntelligenceService.answer_query``) returns the
         existing no-answer response in that case.
-
-        The threshold defaults to the ``MIN_RELEVANCE_SCORE`` env var,
-        falling back to ``0.0`` (no filtering).  A value of ``0.0``
-        disables the floor, which is correct for the ``deterministic``
-        provider used in CI where cosine similarity values do not
-        separate on- from off-corpus queries.  Production deployments
-        with a real embedding provider should set this to a measured
-        threshold that rejects known off-corpus queries.
 
         The tenant boundary comes exclusively from the trusted context,
         the SQL similarity search is tenant-scoped, and every returned
@@ -370,6 +391,14 @@ class RetrievalService:
                 min_relevance_score = float(raw)
             except ValueError:
                 raise ValueError(f"MIN_RELEVANCE_SCORE must be a numeric value, got {raw!r}")
+        if min_lexical_relevance_score is None:
+            raw_lexical = os.getenv("MIN_LEXICAL_RELEVANCE_SCORE", "0.0")
+            try:
+                min_lexical_relevance_score = float(raw_lexical)
+            except ValueError:
+                raise ValueError(
+                    f"MIN_LEXICAL_RELEVANCE_SCORE must be a numeric value, got {raw_lexical!r}"
+                )
         dense_matches = await self.search(context, query, limit=limit, source_type=source_type)
         lexical_matches = await self.lexical_search(
             context, query, limit=limit, source_type=source_type
@@ -386,9 +415,22 @@ class RetrievalService:
 
         def _passes_floor(match: KnowledgeMatch) -> bool:
             dense = match.dense_score
-            if dense is None:
+            if dense is not None:
+                return dense >= min_relevance_score
+            # Lexical-only match: no cosine exists for it, so the dense
+            # floor cannot judge it. ts_rank lives on its own scale, so it
+            # gets its own floor rather than being compared against a
+            # cosine threshold (which would be a category error) or waved
+            # through unconditionally (which made the dense floor
+            # bypassable by any incidental word overlap).
+            lexical = match.lexical_score
+            if lexical is None:
+                # Neither score present: the match came from neither
+                # ranked list, which is unreachable through fuse(). Keep
+                # the historical fail-open rather than inventing a
+                # rejection for a state that cannot occur.
                 return True
-            return dense >= min_relevance_score
+            return lexical >= min_lexical_relevance_score
 
         filtered = [match for match in deduped if _passes_floor(match)]
         filtered = filtered[:limit]

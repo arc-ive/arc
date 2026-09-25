@@ -1,0 +1,161 @@
+name: Acquire ARC image
+description: >-
+  Obtain a pre-built ARC image and prove it is the artifact the dedicated
+  build job produced. Never builds. This is the only sanctioned way a
+  consumer job gets an ARC image.
+
+# Why this exists as a composite action rather than copied steps:
+#
+# The invariant "a consumer job never builds an ARC image" has to survive
+# people adding jobs. Seven consumer jobs each hand-rolling a pull and an
+# assertion is seven chances to drop the assertion, or to "temporarily" add
+# a build when an image is missing. One shared entry point means a new
+# consumer gets the guarantee by using it, and a reviewer can see at a
+# glance whether a job acquired its image the sanctioned way.
+#
+# Two acquisition modes, because the trust boundary differs:
+#
+#   registry  same-repository PRs. The build job pushed to GHCR and the
+#             reference is digest-pinned, so immutability is intrinsic:
+#             a digest names exactly one manifest and cannot be repointed.
+#
+#   artifact  fork PRs. The workflow token is read-only and no secrets are
+#             available, so nothing can be published to ARC's package
+#             namespace. The image travels as an Actions artifact instead.
+#             A tag is mutable, so immutability has to be *asserted*: the
+#             tarball checksum proves the bytes that arrived are the bytes
+#             that left, and the image ID proves the loaded image is the
+#             one that was built.
+#
+# `docker save` / `docker load` preserves the image ID exactly (the ID is
+# the sha256 of the config blob), verified before adopting this mechanism
+# rather than assumed.
+
+inputs:
+  mode:
+    description: 'registry (same-repo, GHCR digest) or artifact (fork, ephemeral)'
+    required: true
+  image-ref:
+    description: 'registry mode: the digest-pinned reference to pull'
+    required: false
+    default: ''
+  expected-digest:
+    description: 'registry mode: sha256 digest the build job published'
+    required: false
+    default: ''
+  artifact-name:
+    description: 'artifact mode: the Actions artifact holding the image tarball'
+    required: false
+    default: ''
+  local-tag:
+    description: 'artifact mode: the tag the image carries inside the tarball'
+    required: false
+    default: ''
+  expected-image-id:
+    description: 'artifact mode: image ID the build job reported'
+    required: false
+    default: ''
+  expected-tarball-sha256:
+    description: 'artifact mode: sha256 of the exported tarball'
+    required: false
+    default: ''
+
+outputs:
+  image:
+    description: 'Reference the consumer should use (digest ref, or local tag)'
+    value: ${{ steps.resolve.outputs.image }}
+
+runs:
+  using: composite
+  steps:
+    - name: Reject an unknown mode
+      shell: bash
+      run: |
+        case "${{ inputs.mode }}" in
+          registry|artifact) ;;
+          *) echo "::error::unknown acquisition mode '${{ inputs.mode }}'"; exit 1 ;;
+        esac
+
+    # ---------------- registry mode (same-repository) ----------------
+
+    - name: Pull the published image
+      if: inputs.mode == 'registry'
+      shell: bash
+      run: |
+        test -n "${{ inputs.image-ref }}" || { echo "::error::image-ref required"; exit 1; }
+        test -n "${{ inputs.expected-digest }}" || { echo "::error::expected-digest required"; exit 1; }
+        docker pull "${{ inputs.image-ref }}"
+
+    - name: Verify registry artifact identity
+      if: inputs.mode == 'registry'
+      shell: bash
+      run: |
+        ref='${{ inputs.image-ref }}'
+        expected='${{ inputs.expected-digest }}'
+        echo "mode:            registry"
+        echo "expected digest: $expected"
+        echo "image ref:       $ref"
+        docker image inspect "$ref" \
+          --format 'image id:     {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
+        docker image inspect "$ref" --format '{{index .RepoDigests 0}}' \
+          | grep -q "$expected" \
+          || { echo "::error::pulled image does not match the published digest"; exit 1; }
+        echo "identity verified: digest matches the producing build job"
+
+    # ---------------- artifact mode (fork PRs) ----------------
+
+    - name: Download the image artifact
+      if: inputs.mode == 'artifact'
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: /tmp/arc-image
+
+    # Checksum BEFORE load. If the bytes that arrived differ from the bytes
+    # the build job exported, we stop here and never put the image into the
+    # daemon, rather than discovering the mismatch afterwards.
+    - name: Verify tarball checksum
+      if: inputs.mode == 'artifact'
+      shell: bash
+      run: |
+        tar=/tmp/arc-image/image.tar
+        test -f "$tar" || { echo "::error::artifact did not contain image.tar"; exit 1; }
+        actual="$(sha256sum "$tar" | cut -d' ' -f1)"
+        expected='${{ inputs.expected-tarball-sha256 }}'
+        echo "mode:            artifact"
+        echo "expected sha256: $expected"
+        echo "actual sha256:   $actual"
+        test "$actual" = "$expected" \
+          || { echo "::error::image tarball checksum mismatch — refusing to load"; exit 1; }
+        echo "transfer verified: tarball is byte-identical to the one exported"
+
+    - name: Load the image
+      if: inputs.mode == 'artifact'
+      shell: bash
+      run: docker load -i /tmp/arc-image/image.tar
+
+    # docker load preserves the image ID (sha256 of the config blob), so this
+    # proves the loaded image is the one the build job built — not merely a
+    # well-formed image that happens to carry the same tag.
+    - name: Verify loaded image identity
+      if: inputs.mode == 'artifact'
+      shell: bash
+      run: |
+        tag='${{ inputs.local-tag }}'
+        expected='${{ inputs.expected-image-id }}'
+        actual="$(docker image inspect "$tag" --format '{{.Id}}')"
+        echo "expected image id: $expected"
+        echo "actual image id:   $actual"
+        test "$actual" = "$expected" \
+          || { echo "::error::loaded image id does not match the build job's"; exit 1; }
+        echo "identity verified: loaded image is the artifact the build job produced"
+
+    - name: Resolve the reference for the consumer
+      id: resolve
+      shell: bash
+      run: |
+        if [ '${{ inputs.mode }}' = 'registry' ]; then
+          echo "image=${{ inputs.image-ref }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "image=${{ inputs.local-tag }}" >> "$GITHUB_OUTPUT"
+        fi
