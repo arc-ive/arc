@@ -19,6 +19,103 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # ---------------------------------------------------------------------
+  # Image build jobs. Each target is built EXACTLY ONCE per run and
+  # published to GHCR under an immutable digest. Every consumer job below
+  # pulls that digest; none of them can build.
+  #
+  # A shared layer cache made the seven rebuilds cheap, but cheap is not
+  # the same as identical: four shards each running their own build are
+  # four artifacts that happen to agree, not one artifact under test. The
+  # digest is what turns "the shards tested the same image" from an
+  # assumption into something the logs can prove.
+  # ---------------------------------------------------------------------
+
+  build-test-image:
+    name: Build test image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      # Digest, not tag. A tag can be repointed between jobs; a digest
+      # names one immutable manifest for the life of the run.
+      digest: ${{ steps.build.outputs.digest }}
+      image: ghcr.io/${{ github.repository }}-test@${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The GHA layer cache still does the heavy lifting: the ~400 MB
+      # en_core_web_lg layer is keyed on pyproject.toml alone, so an
+      # ordinary code change restores it rather than refetching it.
+      - name: Build and push test image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-test:${{ github.sha }}
+          cache-from: type=gha,scope=arc-test
+          cache-to: type=gha,mode=max,scope=arc-test
+
+      - name: Report published artifact
+        run: |
+          echo "digest: ${{ steps.build.outputs.digest }}"
+          echo "image:  ghcr.io/${{ github.repository }}-test@${{ steps.build.outputs.digest }}"
+
+  build-production-image:
+    name: Build production image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push production image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha,scope=arc-prod
+          cache-to: type=gha,mode=max,scope=arc-prod
+
+      - name: Report published artifact
+        run: |
+          echo "digest: ${{ steps.build.outputs.digest }}"
+          echo "image:  ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
+
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
@@ -71,6 +168,10 @@ jobs:
   test:
     name: Test (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    needs: build-test-image
+    permissions:
+      contents: read
+      packages: read
 
     strategy:
       # Every shard reports independently: one failing shard must not hide
@@ -89,34 +190,37 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: "{}"
+      ARC_TEST_IMAGE: ${{ needs.build-test-image.outputs.image }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Buildx + the Actions cache replace a cold `docker compose build`.
-      # Before this, the image was rebuilt from scratch 7 times per run (4
-      # shards + production-config + schema-bootstrap + e2e), each one
-      # re-downloading the ~400 MB en_core_web_lg wheel. The dependency layer
-      # is keyed on pyproject.toml alone, so an ordinary code change now
-      # restores it from cache instead of refetching the model.
-      #
-      # scope=test is shared by every job that needs the test image, so they
-      # populate and read one cache entry rather than three. `load: true`
-      # puts the image in the local daemon under the tag compose expects, so
-      # the compose step below finds it and does not rebuild.
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build test image (cached)
-        uses: docker/build-push-action@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          context: .
-          target: test
-          tags: arc-app-test:local
-          load: true
-          cache-from: type=gha,scope=arc-test
-          cache-to: type=gha,mode=max,scope=arc-test
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Explicit pull, then an assertion. compose runs with pull_policy:never
+      # and no build section (docker-compose.ci.yml), so this is the only way
+      # the image can arrive — and the only artifact it can possibly run.
+      - name: Pull the published test image
+        run: docker pull "$ARC_TEST_IMAGE"
+
+      # Requirement from review: every consumer logs the image ID and digest
+      # it is about to test, so "all shards used one artifact" is verifiable
+      # from the logs rather than inferred from the workflow shape.
+      - name: Assert image identity
+        run: |
+          echo "expected digest: ${{ needs.build-test-image.outputs.digest }}"
+          echo "image ref:       $ARC_TEST_IMAGE"
+          docker image inspect "$ARC_TEST_IMAGE" \
+            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
+          docker image inspect "$ARC_TEST_IMAGE" --format '{{index .RepoDigests 0}}' \
+            | grep -q "${{ needs.build-test-image.outputs.digest }}" \
+            || { echo "::error::pulled image does not match the published digest"; exit 1; }
 
       # Each shard is its own runner with its own PostgreSQL container, so the
       # session fixture's DROP SCHEMA only ever affects that shard's database.
@@ -125,16 +229,20 @@ jobs:
       # test count, so a stale or missing file slows CI but never breaks it.
       - name: Run tests (shard ${{ matrix.shard }} of 4)
         run: |
-          docker compose --profile test run --rm arc-test \
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test run --rm arc-test \
             python -m pytest -q --splits 4 --group ${{ matrix.shard }}
 
       - name: Cleanup
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   production-config:
     name: Production config boundary
     runs-on: ubuntu-latest
+    needs: build-test-image
+    permissions:
+      contents: read
+      packages: read
 
     # The sharded suite above runs with APP_ENV=development, which mounts the
     # development auth routers and marks cookies Secure=False. That means the
@@ -151,6 +259,7 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: "{}"
+      ARC_TEST_IMAGE: ${{ needs.build-test-image.outputs.image }}
 
     steps:
       - name: Checkout repository
@@ -167,18 +276,31 @@ jobs:
       # populate and read one cache entry rather than three. `load: true`
       # puts the image in the local daemon under the tag compose expects, so
       # the compose step below finds it and does not rebuild.
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build test image (cached)
-        uses: docker/build-push-action@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          context: .
-          target: test
-          tags: arc-app-test:local
-          load: true
-          cache-from: type=gha,scope=arc-test
-          cache-to: type=gha,mode=max,scope=arc-test
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Explicit pull, then an assertion. compose runs with pull_policy:never
+      # and no build section (docker-compose.ci.yml), so this is the only way
+      # the image can arrive — and the only artifact it can possibly run.
+      - name: Pull the published test image
+        run: docker pull "$ARC_TEST_IMAGE"
+
+      # Requirement from review: every consumer logs the image ID and digest
+      # it is about to test, so "all shards used one artifact" is verifiable
+      # from the logs rather than inferred from the workflow shape.
+      - name: Assert image identity
+        run: |
+          echo "expected digest: ${{ needs.build-test-image.outputs.digest }}"
+          echo "image ref:       $ARC_TEST_IMAGE"
+          docker image inspect "$ARC_TEST_IMAGE" \
+            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
+          docker image inspect "$ARC_TEST_IMAGE" --format '{{index .RepoDigests 0}}' \
+            | grep -q "${{ needs.build-test-image.outputs.digest }}" \
+            || { echo "::error::pulled image does not match the published digest"; exit 1; }
 
       # PostgreSQL is started even though these tests only inspect the route
       # table and cookie helpers: tests/conftest.py has a session-scoped
@@ -186,16 +308,20 @@ jobs:
       # before any test in tests/ runs, so --no-deps errors the whole file.
       - name: Assert the production configuration boundary
         run: |
-          docker compose --profile test run --rm arc-test \
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test run --rm arc-test \
             python -m pytest tests/test_production_config.py -q
 
       - name: Cleanup
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   schema-bootstrap:
     name: Schema Bootstrap (fresh DB)
     runs-on: ubuntu-latest
+    needs: build-test-image
+    permissions:
+      contents: read
+      packages: read
 
     env:
       APP_ENV: development
@@ -207,6 +333,7 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: "{}"
+      ARC_TEST_IMAGE: ${{ needs.build-test-image.outputs.image }}
 
     steps:
       - name: Checkout repository
@@ -223,18 +350,31 @@ jobs:
       # populate and read one cache entry rather than three. `load: true`
       # puts the image in the local daemon under the tag compose expects, so
       # the compose step below finds it and does not rebuild.
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build test image (cached)
-        uses: docker/build-push-action@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          context: .
-          target: test
-          tags: arc-app-test:local
-          load: true
-          cache-from: type=gha,scope=arc-test
-          cache-to: type=gha,mode=max,scope=arc-test
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Explicit pull, then an assertion. compose runs with pull_policy:never
+      # and no build section (docker-compose.ci.yml), so this is the only way
+      # the image can arrive — and the only artifact it can possibly run.
+      - name: Pull the published test image
+        run: docker pull "$ARC_TEST_IMAGE"
+
+      # Requirement from review: every consumer logs the image ID and digest
+      # it is about to test, so "all shards used one artifact" is verifiable
+      # from the logs rather than inferred from the workflow shape.
+      - name: Assert image identity
+        run: |
+          echo "expected digest: ${{ needs.build-test-image.outputs.digest }}"
+          echo "image ref:       $ARC_TEST_IMAGE"
+          docker image inspect "$ARC_TEST_IMAGE" \
+            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
+          docker image inspect "$ARC_TEST_IMAGE" --format '{{index .RepoDigests 0}}' \
+            | grep -q "${{ needs.build-test-image.outputs.digest }}" \
+            || { echo "::error::pulled image does not match the published digest"; exit 1; }
 
       # This job proves the application provisions the full schema from
       # src/arc/db/schema.sql on startup against a genuinely empty
@@ -244,12 +384,12 @@ jobs:
       # and is idempotent, leaving existing data intact.
       - name: Run schema bootstrap tests (fresh DB)
         run: |
-          docker compose --profile test run --rm arc-test \
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test run --rm arc-test \
             python -m pytest tests/test_schema_bootstrap.py -v
 
       - name: Cleanup
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
   frontend:
     name: Frontend (lint, test, build)
@@ -291,6 +431,10 @@ jobs:
   e2e:
     name: Playwright E2E (Phase 1-3)
     runs-on: ubuntu-latest
+    needs: build-production-image
+    permissions:
+      contents: read
+      packages: read
 
     # Inherits the workflow-minimum contents:read. upload-artifact@v4
     # uses its own artifact scope and needs nothing beyond that.
@@ -311,6 +455,7 @@ jobs:
       JWT_AUDIENCE: arc-api
       JWT_EXPIRY_SECONDS: "3600"
       APPLICATION_ROLE_ASSIGNMENTS: '{"ref-platform-admin": "platform_administrator", "ref-acme-technologies-company-admin": "company_administrator", "ref-acme-technologies-ops-user": "operations_user", "ref-acme-technologies-employee-1": "employee", "ref-acme-technologies-employee-2": "employee", "ref-nova-systems-company-admin": "company_administrator", "ref-nova-systems-ops-user": "operations_user", "ref-nova-systems-employee-1": "employee", "ref-nova-systems-employee-2": "employee", "ref-vertex-solutions-company-admin": "company_administrator", "ref-vertex-solutions-ops-user": "operations_user", "ref-vertex-solutions-employee-1": "employee", "ref-vertex-solutions-employee-2": "employee", "ref-northstar-digital-company-admin": "company_administrator", "ref-northstar-digital-ops-user": "operations_user", "ref-northstar-digital-employee-1": "employee", "ref-northstar-digital-employee-2": "employee"}'
+      ARC_IMAGE: ${{ needs.build-production-image.outputs.image }}
 
     steps:
       - name: Checkout repository
@@ -335,26 +480,33 @@ jobs:
       # Playwright can reach the backend; `compose run` would not publish
       # them. Bounded poll on /health, not a fixed sleep.
       # e2e exercises the PRODUCTION image — the one that actually ships —
-      # rather than the test image. Built here with the Actions cache so the
-      # dependency layer is restored instead of refetched, then started
-      # without --build so compose reuses this exact image.
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build production image (cached)
-        uses: docker/build-push-action@v6
+      # and consumes the exact artifact build-production-image published.
+      # It builds nothing: compose runs with pull_policy:never and no build
+      # section, so the only image it can start is the digest pulled here.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          context: .
-          target: production
-          tags: arc-app:local
-          load: true
-          cache-from: type=gha,scope=arc-prod
-          cache-to: type=gha,mode=max,scope=arc-prod
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the published production image
+        run: docker pull "$ARC_IMAGE"
+
+      - name: Assert image identity
+        run: |
+          echo "expected digest: ${{ needs.build-production-image.outputs.digest }}"
+          echo "image ref:       $ARC_IMAGE"
+          docker image inspect "$ARC_IMAGE" \
+            --format 'image id: {{.Id}}{{"\n"}}repo digests: {{.RepoDigests}}'
+          docker image inspect "$ARC_IMAGE" --format '{{index .RepoDigests 0}}' \
+            | grep -q "${{ needs.build-production-image.outputs.digest }}" \
+            || { echo "::error::pulled image does not match the published digest"; exit 1; }
 
       - name: Start backend and database
         run: |
           set -euo pipefail
-          docker compose up -d
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:8000/health > /dev/null; then
               break
@@ -383,4 +535,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
