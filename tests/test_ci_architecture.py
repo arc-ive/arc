@@ -478,3 +478,95 @@ class TestInvariantHoldsAcrossEveryWorkflow:
                 "the scanner must point at the image CI published, not a "
                 f"locally built one (image-ref={ref!r})"
             )
+
+
+class TestDependabotCoversEveryActionPin:
+    """Every file that pins a third-party action must be watched.
+
+    This exists because of a specific miss. Dependabot's github-actions
+    ecosystem with ``directory: /`` searches .github/workflows and the ROOT
+    action.yml — it does not descend into .github/actions. So
+    ``actions/download-artifact`` sat pinned at v4 inside the acquire
+    composite action, four majors behind upstream, while the workflows were
+    being offered v7. Dependabot never proposed it once.
+
+    That is not ordinary staleness: the download side is half of the
+    fork-safe artifact handoff, and the half that verifies what arrived. An
+    unwatched pin there is a security-relevant gap.
+
+    The check is structural rather than a list of known files: it walks
+    .github, finds everything that pins a third-party action, and asserts
+    each one's directory is covered by a Dependabot entry. A new composite
+    action is therefore covered the moment it lands, or the build fails.
+    """
+
+    DEPENDABOT = REPO_ROOT / ".github" / "dependabot.yml"
+
+    @pytest.fixture(scope="class")
+    def config(self):
+        assert self.DEPENDABOT.is_file(), "dependabot.yml is missing"
+        return _load(self.DEPENDABOT)
+
+    @pytest.fixture(scope="class")
+    def actions_dirs(self):
+        """Directories holding a manifest that pins a third-party action.
+
+        Local references (``./.github/actions/...``) are excluded: they are
+        paths within this repository, not versioned dependencies.
+        """
+        found = set()
+        for path in (REPO_ROOT / ".github").rglob("*.y*ml"):
+            text = path.read_text()
+            pins = [
+                line for line in text.splitlines() if re.search(r"^\s*-?\s*uses:\s*[^./\s]", line)
+            ]
+            if pins:
+                rel = path.parent.relative_to(REPO_ROOT)
+                found.add("/" + str(rel))
+        assert found, "no action pins found; this test would pass vacuously"
+        return found
+
+    def test_github_actions_ecosystem_uses_directories(self, config):
+        entries = [u for u in config["updates"] if u["package-ecosystem"] == "github-actions"]
+        assert entries, "no github-actions ecosystem entry"
+        for entry in entries:
+            assert "directories" in entry, (
+                "the github-actions entry must use `directories` (plural). With a "
+                "single `directory: /` Dependabot scans .github/workflows and the "
+                "root action.yml only, and composite actions go unwatched."
+            )
+
+    def test_every_directory_with_action_pins_is_watched(self, config, actions_dirs):
+        watched = set()
+        for entry in config["updates"]:
+            if entry["package-ecosystem"] != "github-actions":
+                continue
+            for directory in entry.get("directories", []) or [entry.get("directory")]:
+                if directory:
+                    watched.add(directory.rstrip("/") or "/")
+
+        # `/` implicitly covers .github/workflows and the root manifest.
+        implicitly_covered = {"/.github/workflows", "/"}
+
+        unwatched = {
+            d for d in actions_dirs if d.rstrip("/") not in watched and d not in implicitly_covered
+        }
+        assert unwatched == set(), (
+            f"these directories pin third-party actions but no Dependabot entry "
+            f"watches them: {sorted(unwatched)}. Add each to the `directories` "
+            "list of the github-actions ecosystem in .github/dependabot.yml, or "
+            "their pins will silently go stale."
+        )
+
+    def test_the_composite_action_is_explicitly_listed(self, config):
+        """Regression guard for the exact gap that motivated this."""
+        watched = {
+            d
+            for entry in config["updates"]
+            if entry["package-ecosystem"] == "github-actions"
+            for d in (entry.get("directories") or [])
+        }
+        assert "/.github/actions/acquire-arc-image" in watched, (
+            "the acquire-arc-image composite action pins "
+            "actions/download-artifact; it must be watched explicitly"
+        )
