@@ -56,14 +56,58 @@ class ProviderCredential:
         return f"ProviderCredential(provider={self.provider.value!r}, token='***')"
 
 
+#: Maximum length for provider record attribution/metadata strings.
+#: Keeps display-bound fields bounded; the knowledge layer enforces its
+#: own limits (e.g. ``external_id`` <= 255 chars) on top of these.
+_PROVIDER_RECORD_AUTHOR_MAX_CHARS = 255
+_PROVIDER_RECORD_TIMESTAMP_MAX_CHARS = 64
+_PROVIDER_RECORD_REFERENCE_MAX_CHARS = 255
+
+
 @dataclass(frozen=True)
 class ProviderRecord:
-    """One validated, normalized record fetched from a provider."""
+    """One validated, normalized record fetched from a provider.
+
+    Source metadata contract (Issue #326): the required fields carry the
+    quotable content; the optional fields preserve provider-origin
+    metadata the adapters already fetch but previously dropped. Every
+    optional field has a named downstream consumer:
+
+    - ``author``: citation attribution ("who said/wrote this") for Ask
+      Arc answers. Currently carried as connector metadata ONLY: it is
+      not embedded into ``content``, not persisted, and not consumed
+      downstream — so it does NOT currently traverse the PII Guard.
+      When the retrieval-integration issue persists or exposes author
+      metadata, that path must explicitly route the value through the
+      appropriate sanitization/PII boundary (including Presidio behavior
+      on handles, which is that issue's responsibility to verify).
+    - ``external_created_at`` / ``external_updated_at``: provider-side
+      timestamps as opaque strings (formats differ per provider, so no
+      datetime parsing here); future recency display and incremental-sync
+      cursors (Issues #332/#333).
+    - ``parent_source_id``: containing object for replies/comments
+      (Slack ``thread_ts``; GitHub comment linkage in a later scope).
+    - ``container_id``: the synced container's stable identity
+      (``owner/repo``, channel name, team key); survives renames because
+      the sync target is re-resolved at sync time.
+
+    Deliberately absent: ``provider`` (redundant — ``ProviderFetchResult``
+    and the connector config already carry it exactly once), and any
+    credential/token material (never metadata). Queryable persistence of
+    these fields is deferred to the retrieval-integration issue, which
+    owns a consumer for them; this contract defines, validates, maps, and
+    carries them to the ingestion boundary.
+    """
 
     source_id: str
     title: str
     content: str
     url: Optional[str] = None
+    author: Optional[str] = None
+    external_created_at: Optional[str] = None
+    external_updated_at: Optional[str] = None
+    parent_source_id: Optional[str] = None
+    container_id: Optional[str] = None
 
     def __post_init__(self):
         if not self.source_id:
@@ -72,6 +116,56 @@ class ProviderRecord:
             raise ValueError("Provider record title cannot be empty")
         if not self.content:
             raise ValueError("Provider record content cannot be empty")
+        _reject_empty_optional("author", self.author, _PROVIDER_RECORD_AUTHOR_MAX_CHARS)
+        _reject_empty_optional(
+            "external_created_at",
+            self.external_created_at,
+            _PROVIDER_RECORD_TIMESTAMP_MAX_CHARS,
+        )
+        _reject_empty_optional(
+            "external_updated_at",
+            self.external_updated_at,
+            _PROVIDER_RECORD_TIMESTAMP_MAX_CHARS,
+        )
+        _reject_empty_optional(
+            "parent_source_id", self.parent_source_id, _PROVIDER_RECORD_REFERENCE_MAX_CHARS
+        )
+        _reject_empty_optional(
+            "container_id", self.container_id, _PROVIDER_RECORD_REFERENCE_MAX_CHARS
+        )
+
+
+def _reject_empty_optional(field_name: str, value: Optional[str], max_chars: int) -> None:
+    """Reject empty or over-long optional metadata (``None`` means absent)."""
+    if value is None:
+        return
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Provider record {field_name} must be a non-empty string when provided")
+    if len(value) > max_chars:
+        raise ValueError(f"Provider record {field_name} cannot exceed {max_chars} characters")
+
+
+def build_connector_external_id(provider: ConnectorProvider, source_id: str) -> str:
+    """Build the knowledge-layer identity for one synced record.
+
+    Grammar (Issue #326, frozen): ``{provider}:{source_id}``. This string
+    is the ADR-003 logical identity together with tenant and source, so
+    it must stay byte-stable: changing it orphans every previously synced
+    document into duplicates. Produces byte-for-byte the legacy string.
+    """
+    return f"{provider.value}:{source_id}"
+
+
+def build_connector_provenance(provider: ConnectorProvider, source_id: str) -> str:
+    """Build the citation provenance for one synced record.
+
+    Grammar (Issue #326, frozen): ``connector:{provider}:{source_id}``.
+    Provenance is write-once (re-ingestion preserves the stored value),
+    so this grammar is pinned, never enriched: enrichment would fork the
+    corpus into legacy and new shapes with no consumer. Produces
+    byte-for-byte the legacy string.
+    """
+    return f"connector:{provider.value}:{source_id}"
 
 
 @dataclass(frozen=True)

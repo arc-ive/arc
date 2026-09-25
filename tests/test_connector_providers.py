@@ -30,6 +30,8 @@ from arc.services.connector_providers.base import (
     ProviderResponseError,
     ProviderTransportError,
     ProviderValidationError,
+    build_connector_external_id,
+    build_connector_provenance,
 )
 from arc.services.connector_providers.fake import (
     FAILURE_AUTH,
@@ -783,6 +785,319 @@ class TestProviderErrorMapping:
             )
         assert "t-secret" not in str(exc_info.value)
         assert "t-secret" not in str(exc_info.value.__cause__)
+
+
+class TestProviderRecordMetadataValidation:
+    """Source metadata contract (Issue #326): optional fields validate."""
+
+    def test_absent_metadata_defaults_to_none(self):
+        record = ProviderRecord(source_id="s", title="t", content="c")
+        assert record.author is None
+        assert record.external_created_at is None
+        assert record.external_updated_at is None
+        assert record.parent_source_id is None
+        assert record.container_id is None
+
+    def test_empty_optional_strings_are_rejected(self):
+        for kwargs in (
+            {"author": ""},
+            {"external_created_at": ""},
+            {"external_updated_at": ""},
+            {"parent_source_id": ""},
+            {"container_id": ""},
+        ):
+            with pytest.raises(ValueError):
+                ProviderRecord(source_id="s", title="t", content="c", **kwargs)
+
+    def test_non_string_optional_is_rejected(self):
+        with pytest.raises(ValueError):
+            ProviderRecord(source_id="s", title="t", content="c", author=123)
+
+    def test_overlong_optional_is_rejected(self):
+        with pytest.raises(ValueError):
+            ProviderRecord(source_id="s", title="t", content="c", author="x" * 256)
+        with pytest.raises(ValueError):
+            ProviderRecord(source_id="s", title="t", content="c", external_created_at="x" * 65)
+
+
+class TestConnectorGrammar:
+    """Issue #326: grammar helpers are byte-identical to the legacy strings."""
+
+    def test_external_id_grammar_is_provider_colon_source_id(self):
+        assert (
+            build_connector_external_id(ConnectorProvider.GITHUB, "github-issue-42")
+            == "github:github-issue-42"
+        )
+        assert (
+            build_connector_external_id(ConnectorProvider.SLACK, "slack-general-1.1")
+            == "slack:slack-general-1.1"
+        )
+        assert (
+            build_connector_external_id(ConnectorProvider.LINEAR, "linear-ABC-101")
+            == "linear:linear-ABC-101"
+        )
+
+    def test_provenance_grammar_is_connector_prefix(self):
+        assert (
+            build_connector_provenance(ConnectorProvider.GITHUB, "github-issue-42")
+            == "connector:github:github-issue-42"
+        )
+        assert (
+            build_connector_provenance(ConnectorProvider.SLACK, "slack-general-1.1")
+            == "connector:slack:slack-general-1.1"
+        )
+
+    def test_legacy_strings_match_helper_output_byte_for_byte(self):
+        # The exact f-strings ConnectorSyncService used before the helpers.
+        provider, source_id = ConnectorProvider.GITHUB, "github-issue-101"
+        assert build_connector_provenance(provider, source_id) == (
+            f"connector:{provider.value}:{source_id}"
+        )
+        assert build_connector_external_id(provider, source_id) == (f"{provider.value}:{source_id}")
+
+
+class TestGitHubMetadataMapping:
+    """Issue #326: GitHub parser preserves already-fetched metadata."""
+
+    def _adapter(self, handler):
+        transport = httpx.MockTransport(handler)
+        return GitHubProviderAdapter(client=httpx.AsyncClient(transport=transport))
+
+    async def test_author_timestamps_and_container_are_preserved(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 7,
+                        "title": "Fix flake",
+                        "body": "Details",
+                        "html_url": "https://github.com/example/acme/issues/7",
+                        "user": {"login": "acme-dev"},
+                        "created_at": "2026-01-10T09:00:00Z",
+                        "updated_at": "2026-01-11T10:00:00Z",
+                        "labels": [{"name": "bug"}],
+                        "state": "open",
+                    }
+                ],
+            )
+
+        result = await self._adapter(handler).fetch(
+            ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+            "example/acme",
+        )
+        (record,) = result.records
+        assert record.author == "acme-dev"
+        assert record.external_created_at == "2026-01-10T09:00:00Z"
+        assert record.external_updated_at == "2026-01-11T10:00:00Z"
+        assert record.container_id == "example/acme"
+        assert record.parent_source_id is None
+        # Dropped by contract (no consumer): labels/state have nowhere to go.
+        assert not hasattr(record, "labels")
+        assert not hasattr(record, "state")
+        # Required content shape is unchanged.
+        assert record.source_id == "github-issue-7"
+        assert record.content == "Issue #7: Fix flake\n\nDetails"
+
+    async def test_absent_user_degrades_to_none(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[{"number": 8, "title": "No user", "body": ""}],
+            )
+
+        result = await self._adapter(handler).fetch(
+            ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+            "example/acme",
+        )
+        (record,) = result.records
+        assert record.author is None
+        assert record.external_created_at is None
+        assert record.external_updated_at is None
+
+    async def test_malformed_user_degrades_to_none_not_error(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 9,
+                        "title": "Odd user",
+                        "body": "",
+                        "user": "not-a-dict",
+                        "created_at": 12345,
+                    }
+                ],
+            )
+
+        result = await self._adapter(handler).fetch(
+            ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+            "example/acme",
+        )
+        (record,) = result.records
+        assert record.author is None
+        assert record.external_created_at is None
+
+    async def test_oversized_author_fails_closed_as_provider_response_error(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 10,
+                        "title": "Big author",
+                        "body": "",
+                        "user": {"login": "x" * 256},
+                    }
+                ],
+            )
+
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(handler).fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+                "example/acme",
+            )
+
+    async def test_oversized_timestamp_fails_closed_as_provider_response_error(self):
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 11,
+                        "title": "Big timestamp",
+                        "body": "",
+                        "created_at": "x" * 65,
+                    }
+                ],
+            )
+
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(handler).fetch(
+                ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+                "example/acme",
+            )
+
+
+class TestSlackMetadataMapping:
+    """Issue #326: Slack parser preserves already-fetched metadata."""
+
+    def _adapter(self, handler):
+        transport = httpx.MockTransport(handler)
+        return SlackProviderAdapter(client=httpx.AsyncClient(transport=transport))
+
+    def _history_handler(self, messages):
+        def handler(request):
+            if request.url.path == "/api/conversations.list":
+                return httpx.Response(
+                    200,
+                    json={"ok": True, "channels": [{"id": "C123", "name": "general"}]},
+                )
+            return httpx.Response(200, json={"ok": True, "messages": messages})
+
+        return handler
+
+    async def test_author_ts_parent_and_container_are_preserved(self):
+        messages = [
+            {"text": "Root cause found", "ts": "1700000001.000001", "user": "U0000001"},
+            {
+                "text": "Agreed, shipping fix",
+                "ts": "1700000002.000002",
+                "user": "U0000002",
+                "thread_ts": "1700000001.000001",
+            },
+        ]
+        result = await self._adapter(self._history_handler(messages)).fetch(
+            ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+            "general",
+        )
+        assert len(result.records) == 2
+        root, reply = result.records
+        assert root.author == "U0000001"
+        assert root.external_created_at == "1700000001.000001"
+        assert root.parent_source_id is None
+        assert root.container_id == "general"
+        assert reply.author == "U0000002"
+        assert reply.parent_source_id == "slack-general-1700000001.000001"
+        assert reply.container_id == "general"
+
+    async def test_thread_ts_equal_to_ts_is_not_a_parent(self):
+        messages = [{"text": "Parent", "ts": "1700000001.000001", "thread_ts": "1700000001.000001"}]
+        result = await self._adapter(self._history_handler(messages)).fetch(
+            ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+            "general",
+        )
+        (record,) = result.records
+        assert record.parent_source_id is None
+
+    async def test_absent_user_degrades_to_none(self):
+        messages = [{"text": "Bot post", "ts": "1700000003.000003"}]
+        result = await self._adapter(self._history_handler(messages)).fetch(
+            ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+            "general",
+        )
+        (record,) = result.records
+        assert record.author is None
+
+    async def test_oversized_author_fails_closed_as_provider_response_error(self):
+        messages = [{"text": "Big author", "ts": "1700000004.000004", "user": "x" * 256}]
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(self._history_handler(messages)).fetch(
+                ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+                "general",
+            )
+
+    async def test_oversized_thread_parent_fails_closed_as_provider_response_error(self):
+        messages = [
+            {
+                "text": "Deep reply",
+                "ts": "1700000005.000005",
+                "user": "U0000001",
+                "thread_ts": "y" * 300,
+            }
+        ]
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(self._history_handler(messages)).fetch(
+                ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+                "general",
+            )
+
+    async def test_oversized_ts_fails_closed_as_provider_response_error(self):
+        messages = [{"text": "Big ts", "ts": "1" * 65}]
+        with pytest.raises(ProviderResponseError):
+            await self._adapter(self._history_handler(messages)).fetch(
+                ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+                "general",
+            )
+
+
+class TestFakeMetadataParity:
+    """Issue #326: fakes mirror what live parsers preserve, field for field."""
+
+    async def test_fake_github_carries_contract_metadata(self):
+        adapter = FakeGitHubProvider()
+        result = await adapter.fetch(
+            ProviderCredential(provider=ConnectorProvider.GITHUB, token="dev-token"),
+            "example/acme",
+        )
+        assert result.records
+        for record in result.records:
+            assert record.author
+            assert record.external_created_at
+            assert record.external_updated_at
+            assert record.container_id == "example/acme"
+
+    async def test_fake_slack_reply_carries_parent(self):
+        adapter = FakeSlackProvider()
+        result = await adapter.fetch(
+            ProviderCredential(provider=ConnectorProvider.SLACK, token="dev-token"),
+            "general",
+        )
+        by_id = {record.source_id: record for record in result.records}
+        reply = by_id["slack-general-1700000002.000002"]
+        assert reply.parent_source_id == "slack-general-1700000001.000001"
+        assert reply.author == "U0000002"
+        assert result.records[0].parent_source_id is None
 
 
 class TestProviderModeGate:
