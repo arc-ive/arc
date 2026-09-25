@@ -1,0 +1,134 @@
+name: Promote release artifact
+
+# Promotes an image that ALREADY PASSED CI to a release tag. It does not
+# build, and it cannot: promotion is a retag of an existing manifest.
+#
+# Why this exists at all, given ARC has no deployment target yet:
+#
+# The rest of this repository's CI establishes "build once, test that exact
+# artifact". Releasing is where that invariant is easiest to lose — the
+# natural thing to do when cutting v0.2.0 is to build the image again from
+# the tag, which produces a DIFFERENT artifact from the one every test ran
+# against. Rebuilding is not reproducing: a floating transitive dependency,
+# a base-image refresh, or a changed build host all yield a different image
+# from identical source.
+#
+# So this workflow encodes the one rule that matters at release time, and
+# does nothing else. There is no deploy step, because ARC has no deployment
+# target (no Kubernetes, no Terraform, no cloud manifests, no environment).
+# Inventing one here would be speculative; refusing to rebuild is not.
+#
+# `docker buildx imagetools create` copies a manifest between tags inside
+# the registry. Nothing is pulled, nothing is built, and the digest is
+# preserved by construction — the promoted tag and the tested tag name the
+# same bytes.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      commit-sha:
+        description: 'Commit SHA whose tested image should be promoted'
+        required: true
+      release-tag:
+        description: 'Release tag to publish (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    name: Promote tested image to a release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Resolve what is being promoted
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            sha='${{ inputs.commit-sha }}'
+            tag='${{ inputs.release-tag }}'
+          else
+            # A tag push: the commit the tag points at is the one whose image
+            # should be promoted. If CI never built that commit, the source
+            # image will not exist and this fails — which is the correct
+            # outcome. A release must not be the first time an artifact is
+            # produced.
+            sha='${{ github.sha }}'
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "promoting image built from $sha to $tag"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Fails loudly if CI never published an image for this commit, rather
+      # than helpfully building one. "The image does not exist" is the signal
+      # that something skipped validation.
+      - name: Verify the source image exists and capture its digest
+        id: source
+        run: |
+          src="ghcr.io/${{ github.repository }}:${{ steps.resolve.outputs.sha }}"
+          if ! digest="$(docker buildx imagetools inspect "$src" \
+                          --format '{{json .Manifest.Digest}}' 2>/dev/null)"; then
+            echo "::error::no published image for commit ${{ steps.resolve.outputs.sha }}."
+            echo "::error::Promotion does not build. Push the commit through CI first."
+            exit 1
+          fi
+          digest="${digest//\"/}"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "source: $src"
+          echo "digest: $digest"
+
+      # Retag by DIGEST, not by tag. Referencing the source by its mutable
+      # commit tag would leave a window in which the tag moved between the
+      # verification above and the copy below.
+      - name: Promote
+        run: |
+          docker buildx imagetools create \
+            --tag "ghcr.io/${{ github.repository }}:${{ steps.resolve.outputs.tag }}" \
+            "ghcr.io/${{ github.repository }}@${{ steps.source.outputs.digest }}"
+
+      # Proves the promotion preserved identity. If these digests ever
+      # differ, something rebuilt.
+      - name: Verify the promoted tag is the same artifact
+        run: |
+          promoted="$(docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository }}:${{ steps.resolve.outputs.tag }}" \
+            --format '{{json .Manifest.Digest}}')"
+          promoted="${promoted//\"/}"
+          echo "source digest:   ${{ steps.source.outputs.digest }}"
+          echo "promoted digest: $promoted"
+          test "$promoted" = "${{ steps.source.outputs.digest }}" \
+            || { echo "::error::promoted tag does not match the tested digest"; exit 1; }
+
+      - name: Summarise the promotion
+        run: |
+          {
+            echo "### Release promotion"
+            echo ""
+            echo "| field | value |"
+            echo "|---|---|"
+            echo "| commit | \`${{ steps.resolve.outputs.sha }}\` |"
+            echo "| release tag | \`${{ steps.resolve.outputs.tag }}\` |"
+            echo "| digest | \`${{ steps.source.outputs.digest }}\` |"
+            echo "| deploy identity | \`ghcr.io/${{ github.repository }}@${{ steps.source.outputs.digest }}\` |"
+            echo ""
+            echo "Promoted by retag. Nothing was rebuilt; the digest is unchanged."
+            echo ""
+            echo "_Deploy by digest, never by tag. ARC has no deployment target yet._"
+          } >> "$GITHUB_STEP_SUMMARY"

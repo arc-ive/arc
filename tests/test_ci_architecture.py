@@ -74,15 +74,24 @@ CONSUMERS = TEST_IMAGE_CONSUMERS | PRODUCTION_IMAGE_CONSUMERS
 
 BUILD_JOBS = {"build-test-image", "build-production-image"}
 
-# Shell fragments that mean "this step builds an image".
-BUILD_COMMANDS = (
-    "docker build",
-    "docker buildx build",
-    "docker compose build",
-    "compose up --build",
-    "up -d --build",
-    "--build",
+# Patterns that mean "this step builds an image".
+#
+# Anchored with word boundaries on purpose. A bare "docker build" substring
+# also matches "docker buildx imagetools", which copies a manifest between
+# registry tags and builds nothing — the release-promotion path. A detector
+# that cries wolf gets loosened, and a loosened detector stops catching the
+# thing it exists for.
+BUILD_COMMAND_PATTERNS = (
+    r"docker\s+build\s",
+    r"docker\s+buildx\s+build\b",
+    r"docker\s+compose\s+build\b",
+    r"compose\s+up\b[^\n]*--build\b",
+    r"\bup\s+-d\b[^\n]*--build\b",
 )
+
+
+def _looks_like_a_build(run: str) -> bool:
+    return any(re.search(pattern, run) for pattern in BUILD_COMMAND_PATTERNS)
 
 
 def _load(path: Path):
@@ -118,8 +127,7 @@ def _build_steps(job):
         if "build-push-action" in _uses(step):
             found.append(step.get("name", "<unnamed>"))
             continue
-        run = _run(step)
-        if any(cmd in run for cmd in BUILD_COMMANDS):
+        if _looks_like_a_build(_run(step)):
             found.append(step.get("name", "<unnamed>"))
     return found
 
@@ -319,8 +327,7 @@ class TestArtifactIdentityIsVerified:
 
     def test_action_never_builds(self, action):
         for step in action["runs"]["steps"]:
-            run = _run(step)
-            assert not any(cmd in run for cmd in BUILD_COMMANDS), (
+            assert not _looks_like_a_build(_run(step)), (
                 f"the acquire action must never build: {step.get('name')}"
             )
             assert "build-push-action" not in _uses(step)

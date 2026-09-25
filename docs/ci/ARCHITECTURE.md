@@ -102,9 +102,19 @@ Listed because their absence is a decision, not an oversight.
   that dev-only endpoints stay absent. A schema snapshot would duplicate it
   with worse failure messages.
 - **No deployment job.** ARC has no deployment target: no Kubernetes, no
-  Terraform, no cloud manifests, no deployed environment. A deploy job would
-  be speculative architecture. The production image is built, tested and
-  published by digest, which is the part that can be done honestly today.
+  Terraform, no cloud manifests, no deployed environment, zero git tags and
+  zero releases. A deploy job would be speculative architecture. The
+  production image is built, tested and published by digest, which is the
+  part that can be done honestly today.
+
+  There *is* a `promote` workflow, and it is deliberately not a deployment.
+  It exists because releasing is where build-once is easiest to lose: the
+  natural thing to do when cutting `v0.2.0` is to build the image from the
+  tag, producing a different artifact from the one every test ran against.
+  `promote` retags an already-tested digest with `docker buildx imagetools
+  create` — nothing is pulled, nothing is built — and fails loudly if CI
+  never published an image for that commit. It is unused until ARC cuts its
+  first release, and costs nothing until then.
 - **No `latest` tag.** Deployment identity is a digest. A mutable tag is not
   an identity.
 - **No self-hosted runners, no second registry, no external CI service.**
