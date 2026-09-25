@@ -364,3 +364,117 @@ class TestArtifactIdentityIsVerified:
             "an unrecognised mode must fail closed rather than silently "
             "acquiring nothing and letting compose decide what to run"
         )
+
+
+class TestInvariantHoldsAcrossEveryWorkflow:
+    """The invariant is repository-wide, not a property of ci.yml.
+
+    The earlier tests in this module all read ci.yml. That was the gap: a
+    build added to security.yml, promote.yml, or any workflow added later
+    would satisfy every assertion above while breaking the guarantee. The
+    scan below is deliberately unbounded — it walks whatever is in
+    .github/workflows, so a new file is covered the moment it lands rather
+    than when someone remembers to add it here.
+    """
+
+    @pytest.fixture(scope="class")
+    def workflows(self):
+        found = {}
+        for path in sorted(WORKFLOW_DIR.glob("*.yml")):
+            found[path.name] = _load(path)
+        assert found, "no workflows found; this test would pass vacuously"
+        return found
+
+    def test_only_the_sanctioned_jobs_build_arc_images(self, workflows):
+        """Exactly two jobs in the whole repository may build an ARC image."""
+        builders = {}
+        for filename, workflow in workflows.items():
+            for job_name, job in (workflow.get("jobs") or {}).items():
+                steps = job.get("steps", []) or []
+                if any(
+                    "build-push-action" in _uses(s) or _looks_like_a_build(_run(s)) for s in steps
+                ):
+                    builders[f"{filename}:{job_name}"] = job_name
+
+        unexpected = {k: v for k, v in builders.items() if v not in BUILD_JOBS}
+        assert unexpected == {}, (
+            f"these jobs build an ARC image but are not the dedicated build "
+            f"jobs: {sorted(unexpected)}. Building outside build-test-image / "
+            "build-production-image produces a second artifact from the same "
+            "source, which is what the build-once invariant exists to prevent. "
+            "See docs/ci/IMAGE_LIFECYCLE.md."
+        )
+        assert set(builders.values()) == BUILD_JOBS, (
+            f"expected exactly {sorted(BUILD_JOBS)} to build, found "
+            f"{sorted(set(builders.values()))}"
+        )
+
+    def test_nothing_rebuilds_after_the_tested_artifact_exists(self, workflows):
+        """Post-merge and release work must consume, never re-produce.
+
+        A workflow that runs after CI — scanning, promoting, releasing —
+        rebuilding from the same commit would produce a different image from
+        the one that passed the tests. Rebuilding is not reproducing.
+        """
+        post_ci = {
+            name: wf for name, wf in workflows.items() if name in {"promote.yml", "security.yml"}
+        }
+        assert post_ci, "expected the promote and security workflows to exist"
+        for filename, workflow in post_ci.items():
+            for job_name, job in (workflow.get("jobs") or {}).items():
+                for step in job.get("steps", []) or []:
+                    assert not _looks_like_a_build(_run(step)), (
+                        f"{filename}:{job_name} step {step.get('name')!r} builds "
+                        "an image after CI already produced and tested one"
+                    )
+                    assert "build-push-action" not in _uses(step), (
+                        f"{filename}:{job_name} step {step.get('name')!r} uses a "
+                        "build action; it should consume the published artifact"
+                    )
+
+    def test_promotion_moves_a_digest_rather_than_rebuilding(self, workflows):
+        """Release promotion must be a retag of an already-tested manifest."""
+        promote = workflows.get("promote.yml")
+        assert promote, "promote.yml is missing"
+        body = "\n".join(_run(s) for j in promote["jobs"].values() for s in (j.get("steps") or []))
+        assert "imagetools create" in body, (
+            "promotion must copy an existing manifest, not produce a new image"
+        )
+        assert "@${{ steps.source.outputs.digest }}" in body, (
+            "promotion must reference the source image by DIGEST; a mutable tag "
+            "could move between verification and copy"
+        )
+
+    def test_registry_builds_attach_provenance_and_sbom(self, workflows):
+        """Published images must be traceable to their commit and run."""
+        ci = workflows["ci.yml"]
+        for job_name in BUILD_JOBS:
+            pushes = [
+                s
+                for s in ci["jobs"][job_name]["steps"]
+                if "build-push-action" in _uses(s) and (s.get("with") or {}).get("push")
+            ]
+            assert len(pushes) == 1, f"{job_name} should have one pushing build step"
+            with_ = pushes[0]["with"]
+            assert with_.get("provenance"), (
+                f"{job_name} must attach provenance so a published image traces "
+                "back to its commit and workflow run"
+            )
+            assert with_.get("sbom"), f"{job_name} must attach an SBOM"
+
+    def test_security_scanning_reuses_the_published_image(self, workflows):
+        """Scanning must not be an excuse to build a second artifact."""
+        security = workflows["security.yml"]
+        scan_steps = [
+            s
+            for j in security["jobs"].values()
+            for s in (j.get("steps") or [])
+            if "trivy" in _uses(s).lower()
+        ]
+        assert scan_steps, "expected a container scanning step"
+        for step in scan_steps:
+            ref = str((step.get("with") or {}).get("image-ref", ""))
+            assert ref.startswith("ghcr.io/"), (
+                "the scanner must point at the image CI published, not a "
+                f"locally built one (image-ref={ref!r})"
+            )
