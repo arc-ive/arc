@@ -53,7 +53,7 @@ jobs:
       tarball-sha256: ${{ steps.export.outputs.tarball-sha256 }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # One decision point for the whole workflow. A PR whose head repo is
       # not this repository is a fork: untrusted code, read-only token, no
@@ -197,7 +197,7 @@ jobs:
       tarball-sha256: ${{ steps.export.outputs.tarball-sha256 }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # One decision point for the whole workflow. A PR whose head repo is
       # not this repository is a fork: untrusted code, read-only token, no
@@ -324,7 +324,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -416,7 +416,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Registry login is needed only when the image comes from GHCR. A fork
       # run has no credentials to log in with, and needs none: its image
@@ -489,7 +489,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Registry login is needed only when the image comes from GHCR. A fork
       # run has no credentials to log in with, and needs none: its image
@@ -556,7 +556,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Registry login is needed only when the image comes from GHCR. A fork
       # run has no credentials to log in with, and needs none: its image
@@ -617,7 +617,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -671,7 +671,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
         uses: actions/setup-node@v4
