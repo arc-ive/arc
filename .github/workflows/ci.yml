@@ -265,17 +265,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Buildx + the Actions cache replace a cold `docker compose build`.
-      # Before this, the image was rebuilt from scratch 7 times per run (4
-      # shards + production-config + schema-bootstrap + e2e), each one
-      # re-downloading the ~400 MB en_core_web_lg wheel. The dependency layer
-      # is keyed on pyproject.toml alone, so an ordinary code change now
-      # restores it from cache instead of refetching the model.
-      #
-      # scope=test is shared by every job that needs the test image, so they
-      # populate and read one cache entry rather than three. `load: true`
-      # puts the image in the local daemon under the tag compose expects, so
-      # the compose step below finds it and does not rebuild.
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -339,17 +328,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Buildx + the Actions cache replace a cold `docker compose build`.
-      # Before this, the image was rebuilt from scratch 7 times per run (4
-      # shards + production-config + schema-bootstrap + e2e), each one
-      # re-downloading the ~400 MB en_core_web_lg wheel. The dependency layer
-      # is keyed on pyproject.toml alone, so an ordinary code change now
-      # restores it from cache instead of refetching the model.
-      #
-      # scope=test is shared by every job that needs the test image, so they
-      # populate and read one cache entry rather than three. `load: true`
-      # puts the image in the local daemon under the tag compose expects, so
-      # the compose step below finds it and does not rebuild.
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
