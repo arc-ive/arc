@@ -57,7 +57,7 @@ dependencies = [
 # Install: pip install "arc[ocr]" plus the binary (apt-get install
 # tesseract-ocr, or brew install tesseract), then OCR_PROVIDER=tesseract.
 ocr = [
-    "pytesseract>=0.3.10,<1.0",
+    "pytesseract>=0.3.13,<1.0",
     "Pillow>=10.0,<13.0",
 ]
 dev = [
