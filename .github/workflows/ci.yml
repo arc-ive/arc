@@ -90,7 +90,7 @@ jobs:
       - name: Build and push test image
         id: push
         if: steps.mode.outputs.mode == 'registry'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: test
@@ -116,7 +116,7 @@ jobs:
       - name: Build test image for handoff
         id: build-local
         if: steps.mode.outputs.mode == 'artifact'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: test
@@ -234,7 +234,7 @@ jobs:
       - name: Build and push production image
         id: push
         if: steps.mode.outputs.mode == 'registry'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: production
@@ -259,7 +259,7 @@ jobs:
       - name: Build production image for handoff
         id: build-local
         if: steps.mode.outputs.mode == 'artifact'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: production
