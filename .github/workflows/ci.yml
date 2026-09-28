@@ -72,7 +72,7 @@ jobs:
           fi
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: steps.mode.outputs.mode == 'registry'
@@ -216,7 +216,7 @@ jobs:
           fi
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: steps.mode.outputs.mode == 'registry'
