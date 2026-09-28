@@ -752,3 +752,62 @@ jobs:
         env:
           ARC_IMAGE: ${{ steps.image.outputs.image }}
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+
+  # ---------------------------------------------------------------------
+  # Container vulnerability scan for the artifact this run produced.
+  #
+  # This lives in ci.yml, not security.yml, for one structural reason: the
+  # scan must not start until the image it scans exists, and GitHub Actions
+  # expresses that only as a `needs:` edge WITHIN a workflow. There is no
+  # cross-workflow job dependency.
+  #
+  # It previously sat in security.yml with no ordering at all. Both
+  # workflows fire on push to main and nothing sequenced them, so the scan
+  # raced the build and usually lost — on 0452924 it gave up 3m31s before
+  # the build even started. The failure was masked for months behind a
+  # broken action reference, which is how a scan can be red continuously
+  # and still teach nobody anything.
+  #
+  # It consumes the producing job's `image` output, which is digest-pinned.
+  # The old reference was `:${{ github.sha }}` — a mutable tag, in a
+  # repository where every other image consumer takes a digest. A tag can
+  # be repointed between publish and scan; a digest names one manifest.
+  #
+  # The weekly rescan of the SHIPPED image stays in security.yml, where a
+  # cron belongs. That one asks a different question and must keep running
+  # long after this commit stops being interesting.
+  # ---------------------------------------------------------------------
+  container-image-scan:
+    name: Container image scan
+    runs-on: ubuntu-latest
+    needs: build-production-image
+    # Not on pull_request: a PR's image is never published to a tag anyone
+    # ships, and scanning it would report base-image CVEs against changes
+    # that did not introduce them. The registry-mode gate is belt and
+    # braces — a fork PR builds in artifact mode and publishes nothing, so
+    # there would be no digest to scan even if this ran.
+    if: >-
+      github.event_name != 'pull_request' &&
+      needs.build-production-image.outputs.mode == 'registry'
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Nothing is built here. The image was produced once by the job this
+      # one depends on, and is referenced by the digest that job published
+      # — the same artifact the E2E suite ran against.
+      - name: Scan the image this run published
+        uses: ./.github/actions/scan-arc-image
+        with:
+          image-ref: ${{ needs.build-production-image.outputs.image }}
+          context: 'the production image built by this run'

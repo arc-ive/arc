@@ -1,0 +1,92 @@
+name: Scan ARC image
+description: >-
+  Scan an ARC container image that has ALREADY been published, referenced by
+  digest. Never builds, never resolves a tag.
+
+# Why this is a composite action rather than steps copied into two workflows:
+#
+# Two callers scan ARC images, and they answer different questions.
+#
+#   ci.yml         "is the artifact this commit produced clean?" — runs once
+#                  per push to main, immediately after the build job that
+#                  published it, ordered by a `needs:` edge.
+#
+#   security.yml   "has the world changed under the artifact we shipped?" —
+#                  runs weekly on a schedule, against whatever main currently
+#                  publishes. This is the one that finds CVEs disclosed after
+#                  a merge, which no per-commit scan can catch.
+#
+# They differ only in how they obtain the digest. Everything after that —
+# the scanner, its severity floor, its advisory exit code, the summary — is
+# one decision that should be made in one place. Copied into two workflows it
+# would drift, and the weekly scan is exactly the one nobody would notice
+# drifting.
+#
+# The `image-ref` input is a DIGEST reference, and this action rejects
+# anything else. The defect that prompted it was a scan pointed at
+# `ghcr.io/arc-ive/arc:<sha>` — a mutable tag, in a repository where every
+# other image consumer takes a digest from the job that produced it. The tag
+# did not exist yet when the scan ran, and even once it did, a tag can be
+# repointed between publish and scan. Refusing tags here means that class of
+# bug cannot be reintroduced by either caller.
+
+inputs:
+  image-ref:
+    description: 'Digest-pinned reference to scan (ghcr.io/owner/repo@sha256:...)'
+    required: true
+  context:
+    description: 'Short label describing what is being scanned, for the summary'
+    required: false
+    default: 'published image'
+
+runs:
+  using: composite
+  steps:
+    # Fail closed on a tag. A tag reference is the exact defect this action
+    # exists to prevent, so it is rejected before the scanner runs rather
+    # than producing a confusing "image not found" three minutes later.
+    - name: Require a digest-pinned reference
+      shell: bash
+      run: |
+        ref='${{ inputs.image-ref }}'
+        test -n "$ref" || { echo "::error::image-ref is required"; exit 1; }
+        case "$ref" in
+          *@sha256:*) ;;
+          *) echo "::error::image-ref must be digest-pinned, got '$ref'."
+             echo "::error::A tag can be repointed between publish and scan."
+             exit 1 ;;
+        esac
+        echo "scanning by digest: $ref"
+
+    - name: Scan the published image
+      uses: aquasecurity/trivy-action@v0.36.0
+      with:
+        image-ref: ${{ inputs.image-ref }}
+        format: table
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        exit-code: '0'
+        output: /tmp/trivy.txt
+
+    # exit-code 0 above: this reports, it does not gate. A base-image CVE
+    # with no fix available is not something a merge can resolve, and a gate
+    # nobody can satisfy gets bypassed. Promote to a gate once the findings
+    # are triaged and an allowlist exists — a decision to take deliberately,
+    # not a default to inherit.
+    - name: Publish scan summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "### Container image scan (HIGH/CRITICAL, fixable only)"
+          echo ""
+          echo "Scanned: ${{ inputs.context }}"
+          echo ""
+          echo "Image: \`${{ inputs.image-ref }}\`"
+          echo ""
+          echo '```'
+          cat /tmp/trivy.txt 2>/dev/null || echo "no scan output"
+          echo '```'
+          echo ""
+          echo "_Advisory, not gating. See docs/ci/IMAGE_LIFECYCLE.md._"
+        } >> "$GITHUB_STEP_SUMMARY"

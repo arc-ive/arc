@@ -60,6 +60,7 @@ updates:
     directories:
       - /
       - /.github/actions/acquire-arc-image
+      - /.github/actions/scan-arc-image
     schedule:
       interval: weekly
       day: monday

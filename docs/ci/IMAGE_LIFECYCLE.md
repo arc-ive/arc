@@ -27,6 +27,7 @@ hiccup — the suite would report green on an image nobody shipped.
 | `production-config` | consumer | 0 |
 | `schema-bootstrap` | consumer | 0 |
 | `e2e` | consumer | 0 |
+| `container-image-scan` | consumer | 0 |
 
 `lint` and `frontend` touch no ARC image and are not consumers.
 
@@ -40,7 +41,7 @@ build-test-image                    build-production-image
 ghcr.io/arc-ive/arc-test@sha256:…   ghcr.io/arc-ive/arc@sha256:…
    |                                   |
    +-- test shard 1                    +-- Playwright E2E
-   +-- test shard 2
+   +-- test shard 2                    +-- container-image-scan
    +-- test shard 3
    +-- test shard 4
    +-- production-config
@@ -157,6 +158,54 @@ write permissions, and the checksum is verified before load.
 
 Reintroducing a build in a consumer job turns CI red with a message pointing
 here.
+
+## Scanning is a consumer too
+
+The vulnerability scan is subject to the same rule as every other consumer:
+it must run against the artifact that was built, and it must not go looking
+for one by name.
+
+It did not always. The scan lived in `security.yml` with no `needs:` at all,
+because `security.yml` is deliberately separate from `ci.yml` — different
+question, different trigger, and a CVE disclosed against a shipped
+dependency should not turn an unrelated PR red. But a push to `main` starts
+CI and Security as two *independent workflow runs*, and nothing orders them.
+The scan resolved `ghcr.io/arc-ive/arc:<sha>` — a tag that does not exist
+until CI's build job pushes it. On `0452924`:
+
+```
+container-image scan   : started 13:15:29  finished 13:15:52  FAILURE
+build-production-image : started 13:19:23  finished 13:20:41  SUCCESS
+```
+
+The scan gave up **3m31s before the build began**. It had been failing on
+every push for months, first behind a broken action reference and then on
+this, and ARC had zero container scan results the entire time.
+
+GitHub Actions has no cross-workflow job dependency. `workflow_run` runs in
+a detached context and cannot read the producing job's outputs, and polling
+the registry would replace a race with a slower race. The only ordering
+primitive that actually holds is `needs:`, and it works only within one
+workflow — so the per-commit scan moved to `ci.yml`, where that edge can be
+declared:
+
+```
+build-production-image ──needs──> container-image-scan
+```
+
+It consumes `needs.build-production-image.outputs.image`, the digest the
+build job published — the same reference the E2E suite ran against. The old
+tag reference was the only place in ARC's CI that trusted a mutable name.
+
+**The weekly rescan stays in `security.yml`**, which is the check that
+actually earns its keep: a CVE disclosed against a base-image package after
+the merge is invisible to every per-commit scan. On a schedule there is
+nothing to race, so it asks the registry what `main` currently publishes and
+fails loudly if the answer is nothing, rather than scanning a guess.
+
+Both callers go through `.github/actions/scan-arc-image`, which **rejects a
+non-digest reference** before the scanner starts. One scanner definition, so
+the weekly path — the one nobody would notice drifting — cannot drift.
 
 ## Security model for fork PRs
 

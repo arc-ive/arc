@@ -37,6 +37,7 @@ CI_WORKFLOW = WORKFLOW_DIR / "ci.yml"
 CI_COMPOSE = REPO_ROOT / "docker-compose.ci.yml"
 BASE_COMPOSE = REPO_ROOT / "docker-compose.yml"
 ACQUIRE_ACTION = REPO_ROOT / ".github" / "actions" / "acquire-arc-image" / "action.yml"
+SCAN_ACTION = REPO_ROOT / ".github" / "actions" / "scan-arc-image" / "action.yml"
 
 # These tests analyse repository configuration, not application behaviour, so
 # they need the checkout rather than the application image. The test image
@@ -106,6 +107,17 @@ def ci():
 @pytest.fixture(scope="module")
 def jobs(ci):
     return ci["jobs"]
+
+
+# Module-scoped: the repository-wide invariants and the container-scan
+# ordering tests both walk every workflow, and they must walk the same set.
+@pytest.fixture(scope="module")
+def workflows():
+    found = {}
+    for path in sorted(WORKFLOW_DIR.glob("*.yml")):
+        found[path.name] = _load(path)
+    assert found, "no workflows found; these tests would pass vacuously"
+    return found
 
 
 def _steps(job):
@@ -377,14 +389,6 @@ class TestInvariantHoldsAcrossEveryWorkflow:
     than when someone remembers to add it here.
     """
 
-    @pytest.fixture(scope="class")
-    def workflows(self):
-        found = {}
-        for path in sorted(WORKFLOW_DIR.glob("*.yml")):
-            found[path.name] = _load(path)
-        assert found, "no workflows found; this test would pass vacuously"
-        return found
-
     def test_only_the_sanctioned_jobs_build_arc_images(self, workflows):
         """Exactly two jobs in the whole repository may build an ARC image."""
         builders = {}
@@ -463,21 +467,162 @@ class TestInvariantHoldsAcrossEveryWorkflow:
             assert with_.get("sbom"), f"{job_name} must attach an SBOM"
 
     def test_security_scanning_reuses_the_published_image(self, workflows):
-        """Scanning must not be an excuse to build a second artifact."""
-        security = workflows["security.yml"]
+        """Scanning must not be an excuse to build a second artifact.
+
+        The scanner now lives in a shared composite action, so this walks
+        every workflow AND that action rather than assuming a Trivy step
+        sits inline in security.yml.
+        """
         scan_steps = [
             s
-            for j in security["jobs"].values()
+            for wf in list(workflows.values()) + [_load(SCAN_ACTION)]
+            for j in (wf.get("jobs") or {"_": wf.get("runs", {})}).values()
             for s in (j.get("steps") or [])
             if "trivy" in _uses(s).lower()
         ]
         assert scan_steps, "expected a container scanning step"
         for step in scan_steps:
             ref = str((step.get("with") or {}).get("image-ref", ""))
-            assert ref.startswith("ghcr.io/"), (
+            assert ref.startswith("ghcr.io/") or ref.startswith("${{ inputs."), (
                 "the scanner must point at the image CI published, not a "
                 f"locally built one (image-ref={ref!r})"
             )
+
+
+class TestContainerScanConsumesTheBuiltArtifact:
+    """The scan must run after — and against — the artifact CI published.
+
+    This job used to sit in security.yml with no `needs:` at all. Push to
+    main starts CI and Security as two independent workflow runs and nothing
+    orders them, so the scan raced the build and lost: on 0452924 it failed
+    at 13:15:52 looking for an image whose build started at 13:19:23.
+
+    GitHub has no cross-workflow job dependency, so the per-commit scan has
+    to live in the workflow that builds the image. These tests hold it there
+    and hold it to a digest.
+    """
+
+    SCAN_JOB = "container-image-scan"
+    SCAN_USES = "./.github/actions/scan-arc-image"
+
+    @pytest.fixture(scope="class")
+    def scan_action(self):
+        return _load(SCAN_ACTION)
+
+    @pytest.fixture(scope="class")
+    def scan_job(self, jobs):
+        assert self.SCAN_JOB in jobs, (
+            f"{self.SCAN_JOB} must live in ci.yml: a `needs:` edge on the "
+            "build job is the only ordering GitHub Actions provides, and it "
+            "does not cross workflow boundaries"
+        )
+        return jobs[self.SCAN_JOB]
+
+    def test_the_scan_waits_for_the_build_that_publishes_the_image(self, scan_job):
+        needs = scan_job.get("needs") or []
+        needs = [needs] if isinstance(needs, str) else needs
+        assert "build-production-image" in needs, (
+            f"{self.SCAN_JOB} must declare needs: build-production-image. "
+            "Without that edge it races the build and scans an image that "
+            "does not exist yet."
+        )
+
+    def test_the_scan_uses_the_digest_the_build_job_published(self, jobs, scan_job):
+        """Transitive: the ref must trace back to a digest, not a tag."""
+        steps = [s for s in _steps(scan_job) if _uses(s) == self.SCAN_USES]
+        assert len(steps) == 1, f"{self.SCAN_JOB} should scan exactly once"
+        ref = str((steps[0].get("with") or {}).get("image-ref", ""))
+        match = re.fullmatch(r"\$\{\{\s*needs\.([\w-]+)\.outputs\.([\w-]+)\s*\}\}", ref.strip())
+        assert match, (
+            f"{self.SCAN_JOB} must consume the producing job's output, not "
+            f"re-derive a reference (image-ref={ref!r})"
+        )
+        producer, output = match.group(1), match.group(2)
+        # Pinned to the production image specifically. `build-test-image`
+        # also publishes a digest, so a generic "some producer" check would
+        # accept a scan of the test image — which ships pytest and a
+        # different dependency tree and is never deployed.
+        assert producer == "build-production-image", (
+            f"{self.SCAN_JOB} must scan the PRODUCTION image, not {producer!r}'s output"
+        )
+        needs = scan_job.get("needs") or []
+        needs = [needs] if isinstance(needs, str) else needs
+        assert producer in needs, (
+            f"{self.SCAN_JOB} references needs.{producer} without declaring "
+            "it; the expression would resolve to an empty string"
+        )
+        published = str((jobs[producer].get("outputs") or {}).get(output, ""))
+        assert "@" in published, (
+            f"{producer}.outputs.{output} resolves to {published!r}, which is "
+            "a mutable TAG. A tag can be repointed between publish and scan; "
+            "every other image consumer in this repo takes a digest."
+        )
+
+    def test_the_scan_never_runs_on_a_pull_request(self, scan_job):
+        condition = str(scan_job.get("if", ""))
+        assert "pull_request" in condition, (
+            f"{self.SCAN_JOB} must stay off pull_request: a fork build "
+            "publishes nothing, so there would be no digest to scan"
+        )
+        assert "registry" in condition, (
+            f"{self.SCAN_JOB} must be gated on registry mode as well, so the "
+            "fork (artifact) path can never reach it"
+        )
+
+    def test_the_scan_requests_no_write_permissions(self, scan_job):
+        for scope, level in (scan_job.get("permissions") or {}).items():
+            assert level == "read", f"{self.SCAN_JOB} requests {scope}: {level}; scanning reads"
+
+    def test_the_scheduled_rescan_is_not_triggered_by_push(self, workflows):
+        """The racing path must not be able to come back.
+
+        security.yml keeps the weekly rescan of the SHIPPED image — the only
+        check that finds a CVE disclosed after a merge. It must not also run
+        on push, which is where the race lived.
+        """
+        security = workflows["security.yml"]
+        scanners = [
+            (name, job)
+            for name, job in security["jobs"].items()
+            for s in (job.get("steps") or [])
+            if _uses(s) == self.SCAN_USES
+        ]
+        assert scanners, "security.yml must keep the scheduled rescan"
+        for name, job in scanners:
+            condition = str(job.get("if", ""))
+            assert "push" in condition and "pull_request" in condition, (
+                f"security.yml:{name} must exclude push and pull_request "
+                "(if: ...). On push it cannot order itself against the build "
+                f"job in ci.yml and will race it. Got if={condition!r}"
+            )
+
+    def test_the_shared_action_refuses_a_tag(self, scan_action):
+        body = "\n".join(_run(s) for s in scan_action["runs"]["steps"])
+        assert "@sha256:" in body, (
+            "scan-arc-image must reject a non-digest image-ref; that guard is "
+            "what stops either caller reintroducing a mutable tag"
+        )
+        assert "exit 1" in body, "the digest guard must fail the job, not warn"
+
+    def test_the_shared_action_stays_advisory(self, scan_action):
+        trivy = [s for s in scan_action["runs"]["steps"] if "trivy" in _uses(s).lower()]
+        assert len(trivy) == 1, "expected exactly one Trivy step"
+        with_ = trivy[0]["with"]
+        assert str(with_.get("exit-code")) == "0", (
+            "the scan reports, it does not gate: an unfixable base-image CVE "
+            "is not something a merge can resolve"
+        )
+        assert with_.get("severity") == "HIGH,CRITICAL"
+
+    def test_no_workflow_pins_trivy_outside_the_shared_action(self, workflows):
+        """One scanner definition, so the weekly path cannot drift."""
+        for filename, workflow in workflows.items():
+            for job_name, job in (workflow.get("jobs") or {}).items():
+                for step in job.get("steps", []) or []:
+                    assert "trivy" not in _uses(step).lower(), (
+                        f"{filename}:{job_name} pins Trivy directly; use "
+                        f"{self.SCAN_USES} so both callers stay in step"
+                    )
 
 
 class TestDependabotCoversEveryActionPin:

@@ -155,13 +155,21 @@ jobs:
         run: npm audit --audit-level=high
 
   container-image:
-    name: Container image scan
+    name: Container image rescan
     runs-on: ubuntu-latest
-    # Not on pull_request: scanning an image means building it, and the PR
-    # path already builds one under the build-once discipline in ci.yml.
-    # Duplicating that here would be a second build of the same source,
-    # which is the thing ARC's CI architecture exists to avoid.
-    if: github.event_name != 'pull_request'
+    # Scheduled and manual only.
+    #
+    # The per-commit scan lives in ci.yml, where it can declare `needs:` on
+    # the job that publishes the image. It cannot live here: push to main
+    # starts CI and Security as two independent runs, nothing orders them,
+    # and this job used to lose that race every time — looking for an image
+    # minutes before the build that produces it had started.
+    #
+    # What remains here is the check only a schedule can perform: ARC
+    # shipped an artifact, and the world has moved since. A CVE disclosed
+    # against a base-image package last Thursday is invisible to every
+    # per-commit scan and is exactly the finding this exists for.
+    if: github.event_name != 'pull_request' && github.event_name != 'push'
     permissions:
       contents: read
       packages: read
@@ -176,35 +184,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Scans the image CI already published for this commit rather than
-      # building a fresh one. Same artifact, same discipline: the thing that
-      # was tested is the thing that gets scanned.
-      - name: Scan the published production image
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ghcr.io/${{ github.repository }}:${{ github.sha }}
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '0'
-          output: /tmp/trivy.txt
-
-      # exit-code 0 above: this reports, it does not gate. A base-image CVE
-      # with no fix available is not something a merge can resolve, and a
-      # gate nobody can satisfy gets bypassed. Promote to a gate once the
-      # findings are triaged and an allowlist exists — that is a decision to
-      # take deliberately, not a default to inherit.
-      - name: Publish scan summary
-        if: always()
+      # Ask the registry what main currently publishes rather than assuming
+      # an image exists for this SHA. On a schedule, github.sha is main's
+      # tip, whose CI run may have failed or may still be in flight — and
+      # "no image" must be a loud, legible failure, not a scan of something
+      # arbitrary. Same discipline as promote.yml: resolve, then verify.
+      - name: Resolve the published digest for main
+        id: resolve
         run: |
-          {
-            echo "### Container image scan (HIGH/CRITICAL, fixable only)"
-            echo ""
-            echo "Image: \`ghcr.io/${{ github.repository }}:${{ github.sha }}\`"
-            echo ""
-            echo '```'
-            cat /tmp/trivy.txt 2>/dev/null || echo "no scan output"
-            echo '```'
-            echo ""
-            echo "_Advisory, not gating. See docs/ci/ARCHITECTURE.md._"
-          } >> "$GITHUB_STEP_SUMMARY"
+          src="ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          if ! digest="$(docker buildx imagetools inspect "$src" \
+                          --format '{{json .Manifest.Digest}}' 2>/dev/null)"; then
+            echo "::error::no published image for ${{ github.sha }}."
+            echo "::error::This scan consumes what CI published; it does not build."
+            exit 1
+          fi
+          digest="${digest//\"/}"
+          echo "image=ghcr.io/${{ github.repository }}@$digest" >> "$GITHUB_OUTPUT"
+          echo "resolved $src -> $digest"
+
+      - name: Rescan the image main currently publishes
+        uses: ./.github/actions/scan-arc-image
+        with:
+          image-ref: ${{ steps.resolve.outputs.image }}
+          context: 'the image main currently publishes (scheduled rescan)'
