@@ -186,12 +186,42 @@ def _assert_slack_ok(payload: Any) -> None:
 
 
 def _parse_slack_message(message: Dict[str, Any], channel: str) -> ProviderRecord:
+    """Validate one Slack message into a typed record.
+
+    Source metadata contract (Issue #326): preserves the author
+    (``user`` handle), creation timestamp (``ts``), thread parent
+    (``thread_ts`` when it names a different message — i.e. this message
+    is a reply), and container identity (the validated channel name) that
+    the history response already carries. Deliberately dropped (no
+    consumer yet): thread-reply bodies (replies are not fetched in this
+    scope), reactions, attachments/files, edited timestamps, permalinks.
+    Required-field failures still fail closed; absent optional metadata
+    degrades to ``None``, never to an invented value.
+    """
     text = message.get("text")
     ts = message.get("ts")
     if not isinstance(text, str) or not text or not isinstance(ts, str) or not ts:
         raise ProviderResponseError("Slack message is missing required fields")
-    return ProviderRecord(
-        source_id=f"slack-{channel}-{ts}",
-        title=f"Slack message in #{channel}",
-        content=f"Slack message in #{channel}:\n\n{text}".strip(),
-    )
+    user = message.get("user")
+    thread_ts = message.get("thread_ts")
+    try:
+        return ProviderRecord(
+            source_id=f"slack-{channel}-{ts}",
+            title=f"Slack message in #{channel}",
+            content=f"Slack message in #{channel}:\n\n{text}".strip(),
+            author=user if isinstance(user, str) and user else None,
+            external_created_at=ts,
+            parent_source_id=(
+                f"slack-{channel}-{thread_ts}"
+                if isinstance(thread_ts, str) and thread_ts and thread_ts != ts
+                else None
+            ),
+            container_id=channel,
+        )
+    except ValueError as exc:
+        # Optional source metadata is untrusted provider data: an
+        # oversized author/timestamp must fail closed as a provider
+        # response error (caught by the sync boundary for audit), never
+        # escape as a raw ValueError past ProviderError handling into
+        # an uncontrolled 500.
+        raise ProviderResponseError(f"Slack message has invalid source metadata: {exc}") from exc

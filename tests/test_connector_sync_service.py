@@ -19,6 +19,7 @@ Security invariants under test:
 import uuid
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from arc.db.connection import NotFoundError
@@ -49,6 +50,7 @@ from arc.services.connector_providers.base import (
     ProviderTransportError,
 )
 from arc.services.connector_providers.fake import FakeGitHubProvider
+from arc.services.connector_providers.github import GitHubProviderAdapter
 from arc.services.connector_providers.registry import ProviderRegistry
 from arc.services.connector_providers.settings import ConnectorCredentialStore
 from arc.services.connector_sync import ConnectorSyncError, ConnectorSyncService
@@ -558,6 +560,178 @@ class TestConnectorSyncDocumentIdentity:
         # Stable identity across re-deliveries is what lets the Company Brain
         # deduplicate instead of creating duplicate logical documents.
         assert sorted(first) == sorted(second)
+
+
+class TestConnectorGrammarWiring:
+    """Issue #326: sync routes identity through the grammar helpers.
+
+    Byte-stability is the whole point: the helpers must emit exactly the
+    legacy strings, record metadata must not leak into (or churn) them,
+    and no credential material may appear in any persisted string.
+    """
+
+    async def test_ingest_receives_byte_exact_legacy_strings(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+
+        class MetadataProvider:
+            provider = ConnectorProvider.GITHUB
+
+            async def fetch(self, credential, target, limit=25):
+                return ProviderFetchResult(
+                    provider=self.provider,
+                    records=[
+                        ProviderRecord(
+                            source_id="github-issue-42",
+                            title="Fix bug",
+                            content="Issue #42: Fix bug\n\nDetails here",
+                            url="https://github.com/example/acme/issues/42",
+                            author="acme-dev",
+                            external_created_at="2026-01-10T09:00:00Z",
+                            external_updated_at="2026-01-11T10:00:00Z",
+                            container_id="example/acme",
+                        )
+                    ],
+                )
+
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: MetadataProvider()}),
+            credential_store=ConnectorCredentialStore(raw='{"tenant-1": {"github": "dev-token"}}'),
+            knowledge_service=knowledge_service,
+        )
+
+        await service.sync(_context(), config.id)
+
+        (call,) = knowledge_service.ingest_document.await_args_list
+        assert call.kwargs["provenance"] == "connector:github:github-issue-42"
+        assert call.kwargs["external_id"] == "github:github-issue-42"
+        assert call.kwargs["content"] == "Issue #42: Fix bug\n\nDetails here"
+        assert call.kwargs["source"] is KnowledgeSource.INTERNAL_KNOWLEDGE
+
+    async def test_no_credential_material_in_persisted_strings(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+        service = _service(connector_repo, sync_repo, knowledge_service)
+
+        await service.sync(_context(), config.id)
+
+        for call in knowledge_service.ingest_document.await_args_list:
+            for key in ("provenance", "content", "external_id"):
+                assert "dev-token" not in call.kwargs[key]
+
+    async def test_malformed_source_metadata_is_a_controlled_sync_failure(
+        self, connector_repo, sync_repo, knowledge_service
+    ):
+        """Oversized provider metadata must surface as ConnectorSyncError
+        with an audited failed record — never an uncontrolled ValueError."""
+        config = _config()
+        connector_repo.get_by_id.return_value = config
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "number": 1,
+                        "title": "Big author",
+                        "body": "",
+                        "user": {"login": "x" * 256},
+                    }
+                ],
+            )
+
+        adapter = GitHubProviderAdapter(
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        )
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: adapter}),
+            credential_store=ConnectorCredentialStore(raw='{"tenant-1": {"github": "dev-token"}}'),
+            knowledge_service=knowledge_service,
+        )
+
+        with pytest.raises(ConnectorSyncError):
+            await service.sync(_context(), config.id)
+
+        assert knowledge_service.ingest_document.await_count == 0
+        record = sync_repo.create_record.await_args_list[0][0][0]
+        assert record.status is ConnectorSyncStatus.FAILED
+        assert record.error_kind == "invalid_provider_response"
+
+
+class TestConnectorSyncMetadataPersistence:
+    """Issue #326 end to end: metadata-carrying records persist with exact
+    legacy identity strings, and re-sync is a no-op (no duplicates, no
+    version bump)."""
+
+    async def test_resync_preserves_exact_identity_without_churn(self, db):
+        tenant_repo = PostgreSQLTenantRepository(db)
+        connector_repo = PostgreSQLConnectorRepository(db)
+        sync_repo = PostgreSQLConnectorSyncRepository(db)
+        knowledge_repo = PostgreSQLKnowledgeRepository(db)
+
+        tenant = await tenant_repo.create(Tenant(id=_unique("tenant"), name="Grammar Tenant"))
+        connector = await connector_repo.create(
+            ConnectorConfig(
+                id=_unique("connector"),
+                tenant_id=tenant.id,
+                provider=ConnectorProvider.GITHUB,
+                name="example/acme",
+                target="example/acme",
+            )
+        )
+
+        service = ConnectorSyncService(
+            connector_repo=connector_repo,
+            sync_repo=sync_repo,
+            registry=ProviderRegistry({ConnectorProvider.GITHUB: FakeGitHubProvider()}),
+            credential_store=ConnectorCredentialStore(
+                raw=f'{{"{tenant.id}": {{"github": "dev-token"}}}}'
+            ),
+            # Indexed like production: without chunks the Issue #214
+            # backfill path treats every re-ingest as needing chunk
+            # creation and bumps the version, which would mask the
+            # idempotency this test proves.
+            knowledge_service=KnowledgeService(
+                knowledge_repo,
+                indexer=RetrievalService(
+                    PostgreSQLKnowledgeChunkRepository(db),
+                    embedding_provider=DeterministicEmbeddingProvider(),
+                ),
+            ),
+        )
+        context = _context(tenant_id=tenant.id)
+
+        await service.sync(context, connector.id)
+        first = await knowledge_repo.list_for_tenant(tenant.id)
+        assert len(first) == 3
+        assert {doc.external_id for doc in first} == {
+            "github:github-issue-101",
+            "github:github-issue-102",
+            "github:github-issue-103",
+        }
+        assert {doc.provenance for doc in first} == {
+            "connector:github:github-issue-101",
+            "connector:github:github-issue-102",
+            "connector:github:github-issue-103",
+        }
+        assert all(doc.version == 1 for doc in first)
+
+        await service.sync(context, connector.id)
+        second = await knowledge_repo.list_for_tenant(tenant.id)
+        assert len(second) == 3
+        assert {doc.id for doc in second} == {doc.id for doc in first}
+        assert all(doc.version == 1 for doc in second)
+
+        await connector_repo.delete(connector.id, tenant.id)
+        await tenant_repo.delete(tenant.id)
 
 
 class TestConnectorSyncRepeatedSyncDeduplication:

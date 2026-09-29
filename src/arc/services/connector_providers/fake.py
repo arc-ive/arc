@@ -73,6 +73,9 @@ class FakeGitHubProvider(_FakeAdapter):
     ) -> ProviderFetchResult:
         validate_github_target(target)
         self._maybe_fail()
+        # Source metadata contract (Issue #326): mirrors what the live
+        # parser preserves (author, timestamps, container) for the same
+        # shapes, so fake/live parity holds field for field.
         records = [
             ProviderRecord(
                 source_id="github-issue-101",
@@ -82,6 +85,10 @@ class FakeGitHubProvider(_FakeAdapter):
                     "Reproduce cross-tenant access on the knowledge search endpoint."
                 ),
                 url="https://github.com/example/acme/issues/101",
+                author="acme-dev",
+                external_created_at="2026-01-10T09:00:00Z",
+                external_updated_at="2026-01-11T10:00:00Z",
+                container_id=target,
             ),
             ProviderRecord(
                 source_id="github-issue-102",
@@ -91,6 +98,10 @@ class FakeGitHubProvider(_FakeAdapter):
                     "Return a controlled error and record a failed sync attempt on 429."
                 ),
                 url="https://github.com/example/acme/issues/102",
+                author="acme-ops",
+                external_created_at="2026-02-10T09:00:00Z",
+                external_updated_at="2026-02-10T09:00:00Z",
+                container_id=target,
             ),
             ProviderRecord(
                 source_id="github-issue-103",
@@ -100,6 +111,10 @@ class FakeGitHubProvider(_FakeAdapter):
                     "Contact support@example.com for the onboarding checklist."
                 ),
                 url="https://github.com/example/acme/issues/103",
+                author="acme-people",
+                external_created_at="2026-03-10T09:00:00Z",
+                external_updated_at="2026-03-12T10:00:00Z",
+                container_id=target,
             ),
         ]
         return ProviderFetchResult(provider=self.provider, records=records[: max(1, int(limit))])
@@ -125,11 +140,17 @@ class FakeSlackProvider(_FakeAdapter):
     ) -> ProviderFetchResult:
         validate_slack_target(target)
         self._maybe_fail()
+        # Source metadata contract (Issue #326): mirrors what the live
+        # parser preserves (author, ts, thread parent, container). The
+        # second message is a thread reply, so it carries a parent.
         records = [
             ProviderRecord(
                 source_id=f"slack-{target}-1700000001.000001",
                 title=f"Slack message in #{target}",
                 content=f"Slack message in #{target}:\n\nIncident resolved: API gateway recovered.",
+                author="U0000001",
+                external_created_at="1700000001.000001",
+                container_id=target,
             ),
             ProviderRecord(
                 source_id=f"slack-{target}-1700000002.000002",
@@ -138,11 +159,18 @@ class FakeSlackProvider(_FakeAdapter):
                     f"Slack message in #{target}:\n\n"
                     "Follow-up: email the on-call rotation at ops@example.com."
                 ),
+                author="U0000002",
+                external_created_at="1700000002.000002",
+                parent_source_id=f"slack-{target}-1700000001.000001",
+                container_id=target,
             ),
             ProviderRecord(
                 source_id=f"slack-{target}-1700000003.000003",
                 title=f"Slack message in #{target}",
                 content=f"Slack message in #{target}:\n\nPostmortem link shared for review.",
+                author="U0000003",
+                external_created_at="1700000003.000003",
+                container_id=target,
             ),
         ]
         return ProviderFetchResult(provider=self.provider, records=records[: max(1, int(limit))])
