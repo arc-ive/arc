@@ -329,7 +329,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       # Ruff is pinned exactly in pyproject.toml and read from there, so the
       # linter cannot drift between a developer's machine, this job, and the
