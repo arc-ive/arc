@@ -34,7 +34,7 @@ Current Phase:
 
 
 
-Foundation Phase — X-10 complete, X-11 next
+Foundation Phase — X-10 (tenant membership boundary) and X-11 (application RBAC) complete; ADR-001 through ADR-014 accepted and implemented (ADR-014 merged after this baseline); QA Phases 0–4 merged (PR #320, `41f32fd`)
 
 
 
