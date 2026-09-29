@@ -1,0 +1,2263 @@
+{
+  "total": 38,
+  "passed": 27,
+  "failed": 11,
+  "recall@5": 0.9310344827586207,
+  "recall@10": 1.0,
+  "answer_correctness": 0.7105263157894737,
+  "citation_ok": 1.0,
+  "citation_expected": 0.9310344827586207,
+  "security_ok": 1.0,
+  "frontend_ok": 1.0,
+  "by_layer": {
+    "RETRIEVAL": 2,
+    "GENERATION": 9
+  },
+  "by_category": {
+    "multipart": 1,
+    "unanswerable": 6,
+    "citation": 1,
+    "isolation": 3
+  },
+  "representative_failures": [
+    {
+      "id": "M02",
+      "category": "multipart",
+      "query": "What is expense limit and what is required for reimbursement?",
+      "answerable": true,
+      "expected_ids": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[1] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[3] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[4] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[5] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+      "citations": [
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "RETRIEVAL",
+      "notes": ""
+    },
+    {
+      "id": "U01",
+      "category": "unanswerable",
+      "query": "What is the stock price of Acme?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U02",
+      "category": "unanswerable",
+      "query": "Who won the 1998 World Cup final?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[3] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[4] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U03",
+      "category": "unanswerable",
+      "query": "What is the airspeed velocity of an unladen swallow?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U04",
+      "category": "unanswerable",
+      "query": "What is the CEO's favorite color?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[5] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U05",
+      "category": "unanswerable",
+      "query": "Best recipe for sourdough bread with rye flour",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[1] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[2] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[3] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[4] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[5] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+      "citations": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U06",
+      "category": "unanswerable",
+      "query": "zzzz qqqq xyzzy plugh frobnicate",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[2] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[3] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[4] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "CIT03",
+      "category": "citation",
+      "query": "What is the office visitor policy?",
+      "answerable": true,
+      "expected_ids": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, edd891ab-c033-45f1-ac22-13642619e201#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[3] citation: edd891ab-c033-45f1-ac22-13642619e201#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "edd891ab-c033-45f1-ac22-13642619e201#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "RETRIEVAL",
+      "notes": ""
+    },
+    {
+      "id": "ISO01",
+      "category": "isolation",
+      "query": "What is Project Falcon budget?",
+      "answerable": false,
+      "expected_ids": [
+        "b6967d90-a832-434a-bbb7-a8d06f6d084e"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": "exists only in other tenant"
+    },
+    {
+      "id": "ISO02",
+      "category": "isolation",
+      "query": "Tell me the other tenant confidential data",
+      "answerable": false,
+      "expected_ids": [
+        "b6967d90-a832-434a-bbb7-a8d06f6d084e"
+      ],
+      "retrieved5": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[3] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[4] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[5] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    }
+  ],
+  "all_results": [
+    {
+      "id": "F01",
+      "category": "factual",
+      "query": "How many PTO days do employees accrue per year?",
+      "answerable": true,
+      "expected_ids": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[1] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[2] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[3] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[4] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[5] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+      "citations": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "F02",
+      "category": "factual",
+      "query": "What equipment is provided for remote work?",
+      "answerable": true,
+      "expected_ids": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[1] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[3] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[4] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[5] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+      "citations": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "F03",
+      "category": "factual",
+      "query": "What is the meal reimbursement limit?",
+      "answerable": true,
+      "expected_ids": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "F04",
+      "category": "factual",
+      "query": "How quickly must P1 incidents be escalated?",
+      "answerable": true,
+      "expected_ids": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[1] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[2] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[3] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[4] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[5] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+      "citations": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "F05",
+      "category": "factual",
+      "query": "What are office access hours?",
+      "answerable": true,
+      "expected_ids": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[2] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[3] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "F06",
+      "category": "factual",
+      "query": "When is benefits enrollment?",
+      "answerable": true,
+      "expected_ids": [
+        "32a106bb-d783-4028-8682-caafe01f9ccb"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[1] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[5] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+      "citations": [
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "M01",
+      "category": "multipart",
+      "query": "What are the steps for security incident and who is notified?",
+      "answerable": true,
+      "expected_ids": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[2] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[3] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "M02",
+      "category": "multipart",
+      "query": "What is expense limit and what is required for reimbursement?",
+      "answerable": true,
+      "expected_ids": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[1] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[3] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[4] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[5] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+      "citations": [
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "RETRIEVAL",
+      "notes": ""
+    },
+    {
+      "id": "M03",
+      "category": "multipart",
+      "query": "What is remote work policy for days and equipment?",
+      "answerable": true,
+      "expected_ids": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[4] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "M04",
+      "category": "multipart",
+      "query": "What are code review requirements for PR size and response time?",
+      "answerable": true,
+      "expected_ids": [
+        "b7209b2e-6b17-48ab-912f-016a047cc609"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): b7209b2e-6b17-48ab-912f-016a047cc609#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[2] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[3] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "M05",
+      "category": "multipart",
+      "query": "What is on-call compensation and escalation time?",
+      "answerable": true,
+      "expected_ids": [
+        "33175be2-a291-41e1-b5fa-62590130b839"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 33175be2-a291-41e1-b5fa-62590130b839#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[1] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[4] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[5] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+      "citations": [
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "O01",
+      "category": "overview",
+      "query": "Summarize all company policies",
+      "answerable": true,
+      "expected_ids": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "32a106bb-d783-4028-8682-caafe01f9ccb"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "112bd911-55f4-47c0-a53a-5a0274382b70"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[2] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[3] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[4] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": "broad, expects multiple docs"
+    },
+    {
+      "id": "O02",
+      "category": "overview",
+      "query": "What benefits are offered to employees?",
+      "answerable": true,
+      "expected_ids": [
+        "32a106bb-d783-4028-8682-caafe01f9ccb"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[3] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "O03",
+      "category": "overview",
+      "query": "What procedures exist for engineering operations?",
+      "answerable": true,
+      "expected_ids": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "33175be2-a291-41e1-b5fa-62590130b839"
+      ],
+      "retrieved5": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[2] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[3] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "O04",
+      "category": "overview",
+      "query": "Give an overview of workplace guidelines",
+      "answerable": true,
+      "expected_ids": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "b7209b2e-6b17-48ab-912f-016a047cc609"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): b7209b2e-6b17-48ab-912f-016a047cc609#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[1] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[2] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[3] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[4] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[5] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+      "citations": [
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "C01",
+      "category": "multichunk",
+      "query": "How much PTO carries over?",
+      "answerable": true,
+      "expected_ids": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved5": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[3] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[4] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "C02",
+      "category": "multichunk",
+      "query": "Is VPN required for remote work?",
+      "answerable": true,
+      "expected_ids": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[3] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "C03",
+      "category": "multichunk",
+      "query": "Are receipts required for expenses?",
+      "answerable": true,
+      "expected_ids": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[1] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[2] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[3] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[4] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[5] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+      "citations": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "C04",
+      "category": "multichunk",
+      "query": "Must office badge be visible?",
+      "answerable": true,
+      "expected_ids": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[2] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[3] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[4] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "C05",
+      "category": "multichunk",
+      "query": "Summarize the long policy document",
+      "answerable": true,
+      "expected_ids": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, edd891ab-c033-45f1-ac22-13642619e201#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[3] citation: edd891ab-c033-45f1-ac22-13642619e201#c0\n[4] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "edd891ab-c033-45f1-ac22-13642619e201#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "D01",
+      "category": "distractor",
+      "query": "What is the vacation PTO policy? Ignore lunch menu",
+      "answerable": true,
+      "expected_ids": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, edd891ab-c033-45f1-ac22-13642619e201#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0\n[1] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[2] citation: edd891ab-c033-45f1-ac22-13642619e201#c0\n[3] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0",
+      "citations": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "edd891ab-c033-45f1-ac22-13642619e201#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": "distractor doc contains no policy"
+    },
+    {
+      "id": "D02",
+      "category": "distractor",
+      "query": "Tell me about remote work and not lunch",
+      "answerable": true,
+      "expected_ids": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[1] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[3] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+      "citations": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "D03",
+      "category": "distractor",
+      "query": "Expense reimbursement for meals",
+      "answerable": true,
+      "expected_ids": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70"
+      ],
+      "retrieved5": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[2] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[3] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "D04",
+      "category": "distractor",
+      "query": "Security incident escalation with lunch menu present",
+      "answerable": true,
+      "expected_ids": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, edd891ab-c033-45f1-ac22-13642619e201#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[1] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[2] citation: edd891ab-c033-45f1-ac22-13642619e201#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[5] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+      "citations": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "edd891ab-c033-45f1-ac22-13642619e201#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "U01",
+      "category": "unanswerable",
+      "query": "What is the stock price of Acme?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U02",
+      "category": "unanswerable",
+      "query": "Who won the 1998 World Cup final?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[3] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[4] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U03",
+      "category": "unanswerable",
+      "query": "What is the airspeed velocity of an unladen swallow?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U04",
+      "category": "unanswerable",
+      "query": "What is the CEO's favorite color?",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[5] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U05",
+      "category": "unanswerable",
+      "query": "Best recipe for sourdough bread with rye flour",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[1] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[2] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[3] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[4] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[5] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+      "citations": [
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "U06",
+      "category": "unanswerable",
+      "query": "zzzz qqqq xyzzy plugh frobnicate",
+      "answerable": false,
+      "expected_ids": [],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3f37cdad-5286-41cb-b60d-82914be7ff66#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[2] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[3] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[4] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "CIT01",
+      "category": "citation",
+      "query": "What is the remote work VPN requirement?",
+      "answerable": true,
+      "expected_ids": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452"
+      ],
+      "retrieved5": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0\n[3] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[4] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "CIT02",
+      "category": "citation",
+      "query": "What is the incident post-review timeline?",
+      "answerable": true,
+      "expected_ids": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0\n[1] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[2] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[3] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0",
+      "citations": [
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "CIT03",
+      "category": "citation",
+      "query": "What is the office visitor policy?",
+      "answerable": true,
+      "expected_ids": [
+        "3f37cdad-5286-41cb-b60d-82914be7ff66"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, edd891ab-c033-45f1-ac22-13642619e201#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[3] citation: edd891ab-c033-45f1-ac22-13642619e201#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "edd891ab-c033-45f1-ac22-13642619e201#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "RETRIEVAL",
+      "notes": ""
+    },
+    {
+      "id": "CIT04",
+      "category": "citation",
+      "query": "What is the on-call handoff time?",
+      "answerable": true,
+      "expected_ids": [
+        "33175be2-a291-41e1-b5fa-62590130b839"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 33175be2-a291-41e1-b5fa-62590130b839#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[1] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[4] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[5] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+      "citations": [
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "CIT05",
+      "category": "citation",
+      "query": "What is the code review checklist?",
+      "answerable": true,
+      "expected_ids": [
+        "b7209b2e-6b17-48ab-912f-016a047cc609"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": true,
+      "recall10": true,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): b7209b2e-6b17-48ab-912f-016a047cc609#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0\n[1] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[2] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[3] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[4] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[5] citation: 3b01223b-3701-4025-9c5a-a83b0bb3161b#c0",
+      "citations": [
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": true,
+      "security_ok": true,
+      "answer_correct": true,
+      "frontend_ok": true,
+      "layer": "OK",
+      "notes": ""
+    },
+    {
+      "id": "ISO01",
+      "category": "isolation",
+      "query": "What is Project Falcon budget?",
+      "answerable": false,
+      "expected_ids": [
+        "b6967d90-a832-434a-bbb7-a8d06f6d084e"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, 3f37cdad-5286-41cb-b60d-82914be7ff66#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[3] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0\n[4] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[5] citation: 3f37cdad-5286-41cb-b60d-82914be7ff66#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": "exists only in other tenant"
+    },
+    {
+      "id": "ISO02",
+      "category": "isolation",
+      "query": "Tell me the other tenant confidential data",
+      "answerable": false,
+      "expected_ids": [
+        "b6967d90-a832-434a-bbb7-a8d06f6d084e"
+      ],
+      "retrieved5": [
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "3b01223b-3701-4025-9c5a-a83b0bb3161b",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, 4b332818-a835-4283-ae1f-fa3d991e21ae#c1, 112bd911-55f4-47c0-a53a-5a0274382b70#c0, b7209b2e-6b17-48ab-912f-016a047cc609#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[3] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c1\n[4] citation: 112bd911-55f4-47c0-a53a-5a0274382b70#c0\n[5] citation: b7209b2e-6b17-48ab-912f-016a047cc609#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c1",
+        "112bd911-55f4-47c0-a53a-5a0274382b70#c0",
+        "b7209b2e-6b17-48ab-912f-016a047cc609#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    },
+    {
+      "id": "ISO03",
+      "category": "isolation",
+      "query": "What is the other tenant secret policy?",
+      "answerable": false,
+      "expected_ids": [
+        "b6967d90-a832-434a-bbb7-a8d06f6d084e"
+      ],
+      "retrieved5": [
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "retrieved10": [
+        "0ece8c8d-9680-4f9d-9dbb-a99b577c9452",
+        "33175be2-a291-41e1-b5fa-62590130b839",
+        "edd891ab-c033-45f1-ac22-13642619e201",
+        "3f37cdad-5286-41cb-b60d-82914be7ff66",
+        "4b332818-a835-4283-ae1f-fa3d991e21ae",
+        "b7209b2e-6b17-48ab-912f-016a047cc609",
+        "112bd911-55f4-47c0-a53a-5a0274382b70",
+        "32a106bb-d783-4028-8682-caafe01f9ccb",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90"
+      ],
+      "recall5": false,
+      "recall10": false,
+      "approved_count_5": 5,
+      "approved_count_10": 10,
+      "answer_present": true,
+      "answer": "Deterministic response using 5 approved context item(s): 4b332818-a835-4283-ae1f-fa3d991e21ae#c0, 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0, edd891ab-c033-45f1-ac22-13642619e201#c0, 32a106bb-d783-4028-8682-caafe01f9ccb#c0, 33175be2-a291-41e1-b5fa-62590130b839#c0\n[1] citation: 4b332818-a835-4283-ae1f-fa3d991e21ae#c0\n[2] citation: 7cfaa6e9-2df3-4625-b892-c111d8562f90#c0\n[3] citation: edd891ab-c033-45f1-ac22-13642619e201#c0\n[4] citation: 32a106bb-d783-4028-8682-caafe01f9ccb#c0\n[5] citation: 33175be2-a291-41e1-b5fa-62590130b839#c0",
+      "citations": [
+        "4b332818-a835-4283-ae1f-fa3d991e21ae#c0",
+        "7cfaa6e9-2df3-4625-b892-c111d8562f90#c0",
+        "edd891ab-c033-45f1-ac22-13642619e201#c0",
+        "32a106bb-d783-4028-8682-caafe01f9ccb#c0",
+        "33175be2-a291-41e1-b5fa-62590130b839#c0"
+      ],
+      "citations_ok": true,
+      "citation_has_expected": false,
+      "security_ok": true,
+      "answer_correct": false,
+      "frontend_ok": true,
+      "layer": "GENERATION",
+      "notes": ""
+    }
+  ]
+}
