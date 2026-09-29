@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "arc"
 version = "0.1.0"
 description = "Arc — company intelligence and automation platform"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.116,<1.0",
     "psycopg[binary]>=3.2,<4.0",
@@ -15,7 +15,7 @@ dependencies = [
     "PyJWT>=2.9,<3.0",
     "presidio-analyzer==2.2.364",
     "presidio-anonymizer==2.2.364",
-    "spacy==3.8.15",
+    "spacy==3.8.16",
     "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
     "httpx>=0.28,<1.0",
     "openai>=3.19.2,<4.0",
@@ -97,6 +97,15 @@ markers = [
 ]
 
 [tool.ruff]
+# Deliberately py312, not py314, while the runtime moves to 3.14.
+# `target-version` tells the formatter which syntax it may EMIT. At
+# py314 ruff rewrites `except (A, B):` into PEP 758's `except A, B:`
+# across 12 files. That is valid on 3.14 and invalid everywhere else,
+# and it reads exactly like Python 2's `except E, name:` — which bound
+# the exception to a variable rather than catching two types. In the
+# approval, PII and auth paths that is a misreading worth avoiding for
+# no functional gain. Adopting PEP 758 is a style decision; it should
+# be taken on its own, not smuggled in with a platform migration.
 target-version = "py312"
 line-length = 100
 exclude = ["build/"]
