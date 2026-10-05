@@ -31,7 +31,7 @@ dependencies = [
     # off by default. Without the extra, images are refused with a reason
     # naming OCR -- the behaviour this file previously described as
     # permanent.
-    "pypdf>=5.0,<7.0",
+    "pypdf>=6.19.0,<7.0",
     "python-docx>=1.2.0,<2.0",
     # Required by FastAPI to parse multipart bodies; the upload endpoint
     # returns 500 at import time without it, not a helpful 400.
