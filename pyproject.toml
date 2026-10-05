@@ -58,7 +58,7 @@ dependencies = [
 # tesseract-ocr, or brew install tesseract), then OCR_PROVIDER=tesseract.
 ocr = [
     "pytesseract>=0.3.13,<1.0",
-    "Pillow>=10.0,<13.0",
+    "Pillow>=12.3.0,<13.0",
 ]
 dev = [
     # Pillow is how pypdf decodes the images embedded in a PDF, and the
@@ -66,7 +66,7 @@ dev = [
     # through the "ocr" extra above; it is repeated here so the tests
     # covering that path run against the real pypdf image API rather
     # than a stub, on any machine and in CI.
-    "Pillow>=10.0,<13.0",
+    "Pillow>=12.3.0,<13.0",
     "pytest>=9.1.1,<10.0",
     # pytest 9 requires pytest-asyncio 1.3 or newer: 1.0 through 1.2 all
     # declare `pytest<9`, so bumping pytest alone is unresolvable. The two
